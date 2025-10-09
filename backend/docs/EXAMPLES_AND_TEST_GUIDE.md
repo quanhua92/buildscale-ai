@@ -24,7 +24,7 @@ This guide provides comprehensive documentation for the examples and testing inf
 ## Overview
 
 This backend project demonstrates a complete user management system with:
-- **Robust testing** with 23 comprehensive tests
+- **Robust testing** with comprehensive test coverage
 - **Working examples** showcasing all features
 - **Database integration** with PostgreSQL
 - **Proper error handling** and validation
