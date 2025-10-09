@@ -1,13 +1,13 @@
+use crate::DbConn;
 use crate::{
     error::{Error, Result},
     models::users::{NewUser, RegisterUser, User},
     queries::users,
 };
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
-use crate::DbConn;
 
 /// Registers a new user with password validation and hashing
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User> {
@@ -18,7 +18,9 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
 
     // Validate password length (minimum 8 characters)
     if register_user.password.len() < 8 {
-        return Err(Error::Validation("Password must be at least 8 characters long".to_string()));
+        return Err(Error::Validation(
+            "Password must be at least 8 characters long".to_string(),
+        ));
     }
 
     // Hash the password using Argon2
@@ -52,6 +54,9 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     match argon2.verify_password(password.as_bytes(), &parsed_hash) {
         Ok(()) => Ok(true),
         Err(argon2::password_hash::Error::Password) => Ok(false),
-        Err(e) => Err(Error::Validation(format!("Password verification failed: {}", e))),
+        Err(e) => Err(Error::Validation(format!(
+            "Password verification failed: {}",
+            e
+        ))),
     }
 }

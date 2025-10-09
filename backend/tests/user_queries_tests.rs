@@ -24,9 +24,19 @@ async fn test_create_user_query() {
     let created_user = create_user(&mut conn, new_user).await.unwrap();
 
     assert_eq!(created_user.email, email, "Email should match");
-    assert_eq!(created_user.password_hash, "test_hash_12345", "Password hash should match");
-    assert_eq!(created_user.full_name, Some("Test User".to_string()), "Full name should match");
-    assert!(created_user.id.to_string().len() > 0, "ID should be populated");
+    assert_eq!(
+        created_user.password_hash, "test_hash_12345",
+        "Password hash should match"
+    );
+    assert_eq!(
+        created_user.full_name,
+        Some("Test User".to_string()),
+        "Full name should match"
+    );
+    assert!(
+        !created_user.id.to_string().is_empty(),
+        "ID should be populated"
+    );
 }
 
 #[tokio::test]
@@ -48,8 +58,16 @@ async fn test_get_user_by_id_query() {
     let found_user = get_user_by_id(&mut conn, user_id).await.unwrap();
 
     assert_eq!(found_user.id, user_id, "User ID should match");
-    assert_eq!(found_user.email, format!("{}_get_by_id@example.com", test_db.test_prefix()), "Email should match");
-    assert_eq!(found_user.full_name, Some("Test User".to_string()), "Full name should match");
+    assert_eq!(
+        found_user.email,
+        format!("{}_get_by_id@example.com", test_db.test_prefix()),
+        "Email should match"
+    );
+    assert_eq!(
+        found_user.full_name,
+        Some("Test User".to_string()),
+        "Full name should match"
+    );
 }
 
 #[tokio::test]
@@ -64,8 +82,11 @@ async fn test_get_user_by_id_not_found() {
     assert!(result.is_err(), "Should return error for non-existent user");
     let error = result.unwrap_err();
     let error_message = error.to_string();
-    assert!(error_message.contains("no rows") || error_message.contains("found"),
-           "Error should indicate user not found: {}", error_message);
+    assert!(
+        error_message.contains("no rows") || error_message.contains("found"),
+        "Error should indicate user not found: {}",
+        error_message
+    );
 }
 
 #[tokio::test]
@@ -98,10 +119,24 @@ async fn test_update_user_query() {
     let updated_user = update_user(&mut conn, &user_to_update).await.unwrap();
 
     assert_eq!(updated_user.id, created_user.id, "ID should not change");
-    assert_eq!(updated_user.email, format!("{}_updated@example.com", test_db.test_prefix()), "Email should be updated");
-    assert_eq!(updated_user.password_hash, "new_hash", "Password hash should be updated");
-    assert_eq!(updated_user.full_name, Some("New Name".to_string()), "Full name should be updated");
-    assert!(updated_user.updated_at > created_user.updated_at, "Updated timestamp should be newer");
+    assert_eq!(
+        updated_user.email,
+        format!("{}_updated@example.com", test_db.test_prefix()),
+        "Email should be updated"
+    );
+    assert_eq!(
+        updated_user.password_hash, "new_hash",
+        "Password hash should be updated"
+    );
+    assert_eq!(
+        updated_user.full_name,
+        Some("New Name".to_string()),
+        "Full name should be updated"
+    );
+    assert!(
+        updated_user.updated_at > created_user.updated_at,
+        "Updated timestamp should be newer"
+    );
 }
 
 #[tokio::test]
@@ -124,9 +159,20 @@ async fn test_update_user_partial() {
 
     let updated_user = update_user(&mut conn, &user_to_update).await.unwrap();
 
-    assert_eq!(updated_user.email, format!("{}_new_email@example.com", test_db.test_prefix()), "Email should be updated");
-    assert_eq!(updated_user.password_hash, "hash123", "Password hash should remain unchanged");
-    assert_eq!(updated_user.full_name, Some("Original Name".to_string()), "Full name should remain unchanged");
+    assert_eq!(
+        updated_user.email,
+        format!("{}_new_email@example.com", test_db.test_prefix()),
+        "Email should be updated"
+    );
+    assert_eq!(
+        updated_user.password_hash, "hash123",
+        "Password hash should remain unchanged"
+    );
+    assert_eq!(
+        updated_user.full_name,
+        Some("Original Name".to_string()),
+        "Full name should remain unchanged"
+    );
 }
 
 #[tokio::test]
@@ -148,8 +194,10 @@ async fn test_delete_user_query() {
     let user_id = created_user.id;
 
     // Verify user exists before deletion
-    assert!(test_db.user_exists(&test_email).await.unwrap(),
-           "User should exist before deletion");
+    assert!(
+        test_db.user_exists(&test_email).await.unwrap(),
+        "User should exist before deletion"
+    );
 
     let initial_count = test_db.count_test_users().await.unwrap();
 
@@ -158,11 +206,17 @@ async fn test_delete_user_query() {
     assert_eq!(rows_affected, 1, "Should delete exactly 1 row");
 
     // Verify user no longer exists
-    assert!(!test_db.user_exists(&test_email).await.unwrap(),
-            "User should not exist after deletion");
+    assert!(
+        !test_db.user_exists(&test_email).await.unwrap(),
+        "User should not exist after deletion"
+    );
 
     let final_count = test_db.count_test_users().await.unwrap();
-    assert_eq!(final_count, initial_count - 1, "Test user count should decrease by 1 after deletion");
+    assert_eq!(
+        final_count,
+        initial_count - 1,
+        "Test user count should decrease by 1 after deletion"
+    );
 }
 
 #[tokio::test]
@@ -172,7 +226,10 @@ async fn test_delete_nonexistent_user() {
 
     let fake_id = uuid::Uuid::now_v7();
     let rows_affected = delete_user(&mut conn, fake_id).await.unwrap();
-    assert_eq!(rows_affected, 0, "Should delete 0 rows for non-existent user");
+    assert_eq!(
+        rows_affected, 0,
+        "Should delete 0 rows for non-existent user"
+    );
 }
 
 #[tokio::test]
@@ -189,9 +246,15 @@ async fn test_list_users_empty() {
 
     // If there are users, they should have valid fields
     for user in current_users {
-        assert!(!user.id.to_string().is_empty(), "User ID should not be empty");
+        assert!(
+            !user.id.to_string().is_empty(),
+            "User ID should not be empty"
+        );
         assert!(!user.email.is_empty(), "User email should not be empty");
-        assert!(!user.password_hash.is_empty(), "Password hash should not be empty");
+        assert!(
+            !user.password_hash.is_empty(),
+            "Password hash should not be empty"
+        );
     }
 }
 
@@ -221,8 +284,12 @@ async fn test_list_users_with_multiple_users() {
     let all_users = list_users(&mut conn).await.unwrap();
 
     // Count our test users specifically
-    let test_user_count = all_users.iter()
-        .filter(|u| u.email.starts_with(&format!("{}_list_test_", test_db.test_prefix())))
+    let test_user_count = all_users
+        .iter()
+        .filter(|u| {
+            u.email
+                .starts_with(&format!("{}_list_test_", test_db.test_prefix()))
+        })
         .count();
 
     assert_eq!(test_user_count, 5, "Should have 5 test users");
@@ -278,5 +345,8 @@ async fn test_user_field_constraints() {
 
     // Second user with same email should fail
     let result = create_user(&mut conn, new_user2).await;
-    assert!(result.is_err(), "Duplicate email should violate unique constraint");
+    assert!(
+        result.is_err(),
+        "Duplicate email should violate unique constraint"
+    );
 }

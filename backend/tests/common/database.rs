@@ -12,7 +12,7 @@ pub async fn init_test_db() -> PgPool {
     });
 
     let config = load_config().expect("Failed to load config");
-    let pool = PgPool::connect(&config.database.connection_string().expose_secret())
+    let pool = PgPool::connect(config.database.connection_string().expose_secret())
         .await
         .expect("Failed to connect to database");
 
@@ -61,7 +61,6 @@ async fn cleanup_test_data(pool: &PgPool) {
         .await
         .expect("Failed to cleanup test data");
 }
-
 
 /// Test database wrapper for better test isolation
 pub struct TestDb {
@@ -133,7 +132,6 @@ impl TestDb {
             .expect("Failed to cleanup test data");
     }
 
-    
     /// Get a count of users with test prefix
     pub async fn count_test_users(&self) -> Result<i64, sqlx::Error> {
         let count = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE email LIKE $1")
@@ -178,7 +176,6 @@ impl Drop for TestDb {
     }
 }
 
-
 /// Test application wrapper that manages test data creation
 pub struct TestApp {
     pub test_db: TestDb,
@@ -212,7 +209,11 @@ impl TestApp {
     }
 
     /// Generate a unique test user data with custom password
-    pub fn generate_test_user_with_password(&self, password: &str) -> backend::models::users::RegisterUser {
+    #[allow(dead_code)]
+    pub fn generate_test_user_with_password(
+        &self,
+        password: &str,
+    ) -> backend::models::users::RegisterUser {
         let mut user = self.generate_test_user();
         user.password = password.to_string();
         user.confirm_password = password.to_string();
@@ -220,31 +221,43 @@ impl TestApp {
     }
 
     /// Generate a unique test user data with custom email
-    pub fn generate_test_user_with_email(&self, email: &str) -> backend::models::users::RegisterUser {
+    #[allow(dead_code)]
+    pub fn generate_test_user_with_email(
+        &self,
+        email: &str,
+    ) -> backend::models::users::RegisterUser {
         let mut user = self.generate_test_user();
         user.email = email.to_string();
         user
     }
 
     /// Generate test users for list testing with proper prefix
-    pub fn generate_list_test_users(&self, count: usize) -> Vec<backend::models::users::RegisterUser> {
-        (0..count).map(|i| {
-            let mut user = self.generate_test_user();
-            user.email = format!("{}_test_list_{}@example.com", self.test_prefix(), i);
-            user
-        }).collect()
+    #[allow(dead_code)]
+    pub fn generate_list_test_users(
+        &self,
+        count: usize,
+    ) -> Vec<backend::models::users::RegisterUser> {
+        (0..count)
+            .map(|i| {
+                let mut user = self.generate_test_user();
+                user.email = format!("{}_test_list_{}@example.com", self.test_prefix(), i);
+                user
+            })
+            .collect()
     }
 
     /// Generate test users for edge case email testing
+    #[allow(dead_code)]
     pub fn generate_edge_case_users(&self) -> Vec<backend::models::users::RegisterUser> {
         vec![
             format!("{}_user+tag@example.com", self.test_prefix()),
             format!("{}_user.name@example.com", self.test_prefix()),
             format!("{}_user123@example.com", self.test_prefix()),
             format!("{}_UPPERCASE@EXAMPLE.COM", self.test_prefix()),
-        ].into_iter().map(|email| {
-            self.generate_test_user_with_email(&email)
-        }).collect()
+        ]
+        .into_iter()
+        .map(|email| self.generate_test_user_with_email(&email))
+        .collect()
     }
 
     /// Generate a unique test email with proper prefix
@@ -254,11 +267,13 @@ impl TestApp {
     }
 
     /// Get a count of users with test prefix
+    #[allow(dead_code)]
     pub async fn count_test_users(&self) -> Result<i64, sqlx::Error> {
         self.test_db.count_test_users().await
     }
 
     /// Check if a user exists by email
+    #[allow(dead_code)]
     pub async fn user_exists(&self, email: &str) -> Result<bool, sqlx::Error> {
         self.test_db.user_exists(email).await
     }
@@ -269,5 +284,3 @@ impl TestApp {
         self.test_db.get_user_password_hash(email).await
     }
 }
-
-
