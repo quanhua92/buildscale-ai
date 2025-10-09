@@ -25,3 +25,10 @@ pub struct UpdateUser {
     pub password_hash: Option<String>,
     pub full_name: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterUser {
+    pub email: String,
+    pub password: String,
+    pub confirm_password: String,
+}
