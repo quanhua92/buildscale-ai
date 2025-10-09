@@ -247,7 +247,7 @@ impl TestApp {
     }
 
     /// Generate test users for edge case email testing
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Actually used in user_services_tests.rs, clippy false positive
     pub fn generate_edge_case_users(&self) -> Vec<backend::models::users::RegisterUser> {
         vec![
             format!("{}_user+tag@example.com", self.test_prefix()),
@@ -267,13 +267,13 @@ impl TestApp {
     }
 
     /// Get a count of users with test prefix
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Actually used in user_services_tests.rs and user_queries_tests.rs, clippy false positive
     pub async fn count_test_users(&self) -> Result<i64, sqlx::Error> {
         self.test_db.count_test_users().await
     }
 
     /// Check if a user exists by email
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Actually used in user_services_tests.rs and user_queries_tests.rs, clippy false positive
     pub async fn user_exists(&self, email: &str) -> Result<bool, sqlx::Error> {
         self.test_db.user_exists(email).await
     }
