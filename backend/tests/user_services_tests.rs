@@ -4,16 +4,16 @@ use backend::{
     queries::users::{find_user_by_email, list_users},
     services::users::{register_user, verify_password},
 };
-use common::database::{generate_test_user, generate_test_user_with_email, generate_test_user_with_password, TestDb};
+use common::database::TestApp;
 
 #[tokio::test]
 async fn test_user_registration_success() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_user_registration_success").await;
+    let mut conn = test_app.get_connection().await;
 
-    let initial_count = test_db.count_test_users().await.unwrap();
+    let initial_count = test_app.count_test_users().await.unwrap();
 
-    let register_user_data = generate_test_user(test_db.test_prefix());
+    let register_user_data = test_app.generate_test_user();
     let user_email = register_user_data.email.clone();
 
     // Test successful user registration
@@ -27,19 +27,19 @@ async fn test_user_registration_success() {
     assert!(created_user.full_name.is_none(), "Full name should be None by default");
     assert!(created_user.created_at <= chrono::Utc::now(), "Created timestamp should be valid");
 
-    let final_count = test_db.count_users().await.unwrap();
+    let final_count = test_app.count_test_users().await.unwrap();
     assert_eq!(final_count, initial_count + 1, "User count should increase by 1");
 
     // Verify user exists in database
-    assert!(test_db.user_exists(&user_email).await.unwrap(), "User should exist in database");
+    assert!(test_app.user_exists(&user_email).await.unwrap(), "User should exist in database");
 }
 
 #[tokio::test]
 async fn test_password_verification() {
-    let test_db = TestDb::new("test_password_verification").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_password_verification").await;
+    let mut conn = test_app.get_connection().await;
 
-    let register_user_data = generate_test_user(test_db.test_prefix());
+    let register_user_data = test_app.generate_test_user();
     let password = register_user_data.password.clone();
 
     // Register user
@@ -60,10 +60,10 @@ async fn test_password_verification() {
 
 #[tokio::test]
 async fn test_user_lookup_by_email() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_user_lookup_by_email").await;
+    let mut conn = test_app.get_connection().await;
 
-    let register_user_data = generate_test_user(test_db.test_prefix());
+    let register_user_data = test_app.generate_test_user();
     let user_email = register_user_data.email.clone();
 
     // Register user
@@ -84,25 +84,26 @@ async fn test_user_lookup_by_email() {
 
 #[tokio::test]
 async fn test_list_users() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_list_users").await;
+    let mut conn = test_app.get_connection().await;
 
-    // Get initial user count
-    let initial_users = list_users(&mut conn).await.unwrap();
-    let initial_count = initial_users.len();
+    // Get initial test user count
+    let initial_test_count = test_app.count_test_users().await.unwrap();
 
-    // Register multiple users
+    // Register multiple users using TestApp helper
+    let test_users = test_app.generate_list_test_users(3);
     let mut registered_emails = Vec::new();
-    for i in 0..3 {
-        let mut user_data = generate_test_user(test_db.test_prefix());
-        user_data.email = format!("test_list_{}@example.com", i);
+    for user_data in test_users {
         registered_emails.push(user_data.email.clone());
         register_user(&mut conn, user_data).await.unwrap();
     }
 
     // Check that users are listed
     let all_users = list_users(&mut conn).await.unwrap();
-    assert_eq!(all_users.len(), initial_count + 3, "Should have 3 more users");
+    let final_test_count = test_app.count_test_users().await.unwrap();
+
+    // Assert that we have exactly 3 more test users than before
+    assert_eq!(final_test_count, initial_test_count + 3, "Should have 3 more test users");
 
     // Verify our test users are in the list
     for email in registered_emails {
@@ -121,10 +122,10 @@ async fn test_list_users() {
 
 #[tokio::test]
 async fn test_password_mismatch_validation() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_password_mismatch_validation").await;
+    let mut conn = test_app.get_connection().await;
 
-    let mut register_user_data = generate_test_user(test_db.test_prefix());
+    let mut register_user_data = test_app.generate_test_user();
     register_user_data.confirm_password = "differentpassword".to_string();
 
     // Test password mismatch validation
@@ -142,10 +143,10 @@ async fn test_password_mismatch_validation() {
 
 #[tokio::test]
 async fn test_short_password_validation() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_short_password_validation").await;
+    let mut conn = test_app.get_connection().await;
 
-    let register_user_data = generate_test_user_with_password(test_db.test_prefix(), "short");
+    let register_user_data = test_app.generate_test_user_with_password("short");
 
     // Test short password validation
     let result = register_user(&mut conn, register_user_data).await;
@@ -162,28 +163,30 @@ async fn test_short_password_validation() {
 
 #[tokio::test]
 async fn test_minimum_valid_password_length() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_minimum_valid_password_length").await;
+    let mut conn = test_app.get_connection().await;
 
     // Test exactly 8 characters (should succeed)
-    let register_user_data = generate_test_user_with_password(test_db.test_prefix(), "valid123");
+    let register_user_data = test_app.generate_test_user_with_password("valid123");
     let result = register_user(&mut conn, register_user_data).await;
     assert!(result.is_ok(), "8-character password should be valid");
 }
 
 #[tokio::test]
 async fn test_duplicate_email_validation() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_duplicate_email_validation").await;
+    let mut conn = test_app.get_connection().await;
 
-    let email = generate_test_user(test_db.test_prefix()).email;
-    let register_user_data = generate_test_user_with_email(&email);
+    let email = test_app.generate_test_user().email;
+    let mut register_user_data = test_app.generate_test_user();
+    register_user_data.email = email.clone();
 
     // Register first user
     register_user(&mut conn, register_user_data).await.unwrap();
 
     // Try to register second user with same email
-    let duplicate_user_data = generate_test_user_with_email(&email);
+    let mut duplicate_user_data = test_app.generate_test_user();
+    duplicate_user_data.email = email.clone();
     let result = register_user(&mut conn, duplicate_user_data).await;
     assert!(result.is_err(), "Duplicate email should cause registration to fail");
 
@@ -199,10 +202,10 @@ async fn test_duplicate_email_validation() {
 
 #[tokio::test]
 async fn test_user_fields_are_populated() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_user_fields_are_populated").await;
+    let mut conn = test_app.get_connection().await;
 
-    let register_user_data = generate_test_user(test_db.test_prefix());
+    let register_user_data = test_app.generate_test_user();
     let email = register_user_data.email.clone();
 
     // Register user
@@ -225,8 +228,8 @@ async fn test_user_fields_are_populated() {
 
 #[tokio::test]
 async fn test_multiple_users_different_passwords() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_multiple_users_different_passwords").await;
+    let mut conn = test_app.get_connection().await;
 
     // Register users with different passwords
     let passwords = vec![
@@ -239,7 +242,7 @@ async fn test_multiple_users_different_passwords() {
     let mut user_ids = Vec::new();
 
     for password in passwords {
-        let register_user_data = generate_test_user_with_password(test_db.test_prefix(), password);
+        let register_user_data = test_app.generate_test_user_with_password(password);
         let created_user = register_user(&mut conn, register_user_data).await.unwrap();
         user_ids.push(created_user.id);
 
@@ -255,9 +258,10 @@ async fn test_multiple_users_different_passwords() {
     // Verify all users have different password hashes
     let mut password_hashes = Vec::new();
     for user_id in user_ids {
-        let user = find_user_by_email(&mut conn, &format!("test_{}@example.com", user_id)).await.unwrap();
-        if let Some(user) = user {
-            password_hashes.push(user.password_hash);
+        // Look up user by finding a user with matching ID in our test prefix
+        let all_users = list_users(&mut conn).await.unwrap();
+        if let Some(user) = all_users.iter().find(|u| u.id == user_id) {
+            password_hashes.push(user.password_hash.clone());
         }
     }
 
@@ -268,40 +272,35 @@ async fn test_multiple_users_different_passwords() {
 
 #[tokio::test]
 async fn test_edge_case_email_addresses() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_edge_case_email_addresses").await;
+    let mut conn = test_app.get_connection().await;
 
-    // Test various email formats
-    let test_emails = vec![
-        "user+tag@example.com",
-        "user.name@example.com",
-        "user123@example.com",
-        "UPPERCASE@EXAMPLE.COM",
-    ];
+    // Test various email formats using TestApp helper
+    let edge_case_users = test_app.generate_edge_case_users();
 
-    for email in test_emails {
-        let register_user_data = generate_test_user_with_email(email);
-        let result = register_user(&mut conn, register_user_data).await;
+    for user_data in edge_case_users {
+        let email = user_data.email.clone();
+        let result = register_user(&mut conn, user_data).await;
         assert!(result.is_ok(), "Email '{}' should be valid", email);
 
         let created_user = result.unwrap();
-        assert_eq!(created_user.email.to_lowercase(), email.to_lowercase(),
-                  "Email should be stored exactly as provided (case handling depends on database)");
+        assert_eq!(created_user.email, email,
+                  "Email should be stored exactly as provided");
     }
 }
 
 #[tokio::test]
 async fn test_database_transaction_isolation() {
-    let test_db = TestDb::new("test_user_registration_success").await;
-    let mut conn = test_db.get_connection().await;
+    let test_app = TestApp::new("test_database_transaction_isolation").await;
+    let mut conn = test_app.get_connection().await;
 
-    let initial_count = test_db.count_test_users().await.unwrap();
+    let initial_count = test_app.count_test_users().await.unwrap();
 
     // Start a transaction
-    let mut tx = test_db.pool.begin().await.unwrap();
+    let mut tx = test_app.test_db.pool.begin().await.unwrap();
 
     // Register user within transaction
-    let register_user_data = generate_test_user(test_db.test_prefix());
+    let register_user_data = test_app.generate_test_user();
     let user_email = register_user_data.email.clone();
 
     // Use transaction connection
@@ -322,6 +321,6 @@ async fn test_database_transaction_isolation() {
     let found_after_commit = find_user_by_email(&mut conn, &user_email).await.unwrap();
     assert!(found_after_commit.is_some(), "User should exist after transaction commit");
 
-    let final_count = test_db.count_users().await.unwrap();
+    let final_count = test_app.count_test_users().await.unwrap();
     assert_eq!(final_count, initial_count + 1, "User count should increase after commit");
 }

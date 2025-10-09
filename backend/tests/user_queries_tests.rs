@@ -1,17 +1,16 @@
 mod common;
 
 use backend::{
-    models::users::{UpdateUser, User},
+    models::users::UpdateUser,
     queries::users::{create_user, delete_user, get_user_by_id, list_users, update_user},
 };
-use common::database::{generate_test_user, TestDb};
+use common::database::{TestApp, TestDb};
 
 #[tokio::test]
 async fn test_create_user_query() {
-    let test_db = TestDb::new("test_create_user_query").await;
-    let mut conn = test_db.get_connection().await;
-
-    let register_user_data = generate_test_user(test_db.test_prefix());
+    let test_app = TestApp::new("test_create_user_query").await;
+    let mut conn = test_app.get_connection().await;
+    let register_user_data = test_app.generate_test_user();
     let email = register_user_data.email.clone();
 
     // Create a NewUser manually (bypassing service layer)
@@ -183,10 +182,10 @@ async fn test_list_users_empty() {
 
     // Get current users count
     let current_users = list_users(&mut conn).await.unwrap();
-    let current_count = current_users.len();
+    let _current_count = current_users.len();
 
     // Verify list_users works even when there are no test users
-    assert!(current_count >= 0, "Should be able to list users even if empty");
+    assert!(!current_users.is_empty(), "Should be able to list users");
 
     // If there are users, they should have valid fields
     for user in current_users {
@@ -203,7 +202,7 @@ async fn test_list_users_with_multiple_users() {
 
     // Get initial user count
     let initial_users = list_users(&mut conn).await.unwrap();
-    let initial_count = initial_users.len();
+    let _initial_count = initial_users.len();
 
     // Create multiple users
     let mut created_ids = Vec::new();

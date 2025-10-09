@@ -1,8 +1,7 @@
 use backend::load_config;
 use secrecy::ExposeSecret;
-use sqlx::{PgPool, Executor};
+use sqlx::PgPool;
 use std::sync::Once;
-use uuid::Uuid;
 
 static INIT: Once = Once::new();
 
@@ -63,10 +62,6 @@ async fn cleanup_test_data(pool: &PgPool) {
         .expect("Failed to cleanup test data");
 }
 
-/// Clean up test data at the beginning of each test
-pub async fn cleanup_test_users(pool: &PgPool) {
-    cleanup_test_data(pool).await;
-}
 
 /// Test database wrapper for better test isolation
 pub struct TestDb {
@@ -138,14 +133,7 @@ impl TestDb {
             .expect("Failed to cleanup test data");
     }
 
-    /// Get a count of users in the database
-    pub async fn count_users(&self) -> Result<i64, sqlx::Error> {
-        let count = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(count)
-    }
-
+    
     /// Get a count of users with test prefix
     pub async fn count_test_users(&self) -> Result<i64, sqlx::Error> {
         let count = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE email LIKE $1")
@@ -190,37 +178,96 @@ impl Drop for TestDb {
     }
 }
 
-/// Generate a unique test email with test prefix
-pub fn generate_test_email(prefix: &str) -> String {
-    let uuid = Uuid::now_v7();
-    format!("{}_{}@example.com", prefix, uuid)
+
+/// Test application wrapper that manages test data creation
+pub struct TestApp {
+    pub test_db: TestDb,
 }
 
-/// Generate a unique test user data
-pub fn generate_test_user(prefix: &str) -> backend::models::users::RegisterUser {
-    let email = generate_test_email(prefix);
-    backend::models::users::RegisterUser {
-        email,
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+impl TestApp {
+    /// Creates a new test app with isolated data namespace
+    pub async fn new(test_name: &str) -> Self {
+        let test_db = TestDb::new(test_name).await;
+        Self { test_db }
+    }
+
+    /// Get the test database connection
+    pub async fn get_connection(&self) -> sqlx::pool::PoolConnection<sqlx::Postgres> {
+        self.test_db.get_connection().await
+    }
+
+    /// Get the test prefix
+    pub fn test_prefix(&self) -> &str {
+        self.test_db.test_prefix()
+    }
+
+    /// Generate a unique test user data with proper prefix
+    pub fn generate_test_user(&self) -> backend::models::users::RegisterUser {
+        let email = self.generate_test_email();
+        backend::models::users::RegisterUser {
+            email,
+            password: "testpassword123".to_string(),
+            confirm_password: "testpassword123".to_string(),
+        }
+    }
+
+    /// Generate a unique test user data with custom password
+    pub fn generate_test_user_with_password(&self, password: &str) -> backend::models::users::RegisterUser {
+        let mut user = self.generate_test_user();
+        user.password = password.to_string();
+        user.confirm_password = password.to_string();
+        user
+    }
+
+    /// Generate a unique test user data with custom email
+    pub fn generate_test_user_with_email(&self, email: &str) -> backend::models::users::RegisterUser {
+        let mut user = self.generate_test_user();
+        user.email = email.to_string();
+        user
+    }
+
+    /// Generate test users for list testing with proper prefix
+    pub fn generate_list_test_users(&self, count: usize) -> Vec<backend::models::users::RegisterUser> {
+        (0..count).map(|i| {
+            let mut user = self.generate_test_user();
+            user.email = format!("{}_test_list_{}@example.com", self.test_prefix(), i);
+            user
+        }).collect()
+    }
+
+    /// Generate test users for edge case email testing
+    pub fn generate_edge_case_users(&self) -> Vec<backend::models::users::RegisterUser> {
+        vec![
+            format!("{}_user+tag@example.com", self.test_prefix()),
+            format!("{}_user.name@example.com", self.test_prefix()),
+            format!("{}_user123@example.com", self.test_prefix()),
+            format!("{}_UPPERCASE@EXAMPLE.COM", self.test_prefix()),
+        ].into_iter().map(|email| {
+            self.generate_test_user_with_email(&email)
+        }).collect()
+    }
+
+    /// Generate a unique test email with proper prefix
+    pub fn generate_test_email(&self) -> String {
+        let uuid = uuid::Uuid::now_v7();
+        format!("{}_{}@example.com", self.test_prefix(), uuid)
+    }
+
+    /// Get a count of users with test prefix
+    pub async fn count_test_users(&self) -> Result<i64, sqlx::Error> {
+        self.test_db.count_test_users().await
+    }
+
+    /// Check if a user exists by email
+    pub async fn user_exists(&self, email: &str) -> Result<bool, sqlx::Error> {
+        self.test_db.user_exists(email).await
+    }
+
+    /// Get user password hash for testing
+    #[allow(dead_code)]
+    pub async fn get_user_password_hash(&self, email: &str) -> Result<Option<String>, sqlx::Error> {
+        self.test_db.get_user_password_hash(email).await
     }
 }
 
-/// Generate test user with custom password
-pub fn generate_test_user_with_password(prefix: &str, password: &str) -> backend::models::users::RegisterUser {
-    let email = generate_test_email(prefix);
-    backend::models::users::RegisterUser {
-        email,
-        password: password.to_string(),
-        confirm_password: password.to_string(),
-    }
-}
 
-/// Generate test user with custom email
-pub fn generate_test_user_with_email(email: &str) -> backend::models::users::RegisterUser {
-    backend::models::users::RegisterUser {
-        email: email.to_string(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
-    }
-}
