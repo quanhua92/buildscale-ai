@@ -1,3 +1,8 @@
-pub fn run() {
-    println!("Hello from the library!");
+pub mod config;
+
+pub use config::Config;
+
+/// Load configuration from environment variables
+pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    Ok(Config::load()?)
 }
