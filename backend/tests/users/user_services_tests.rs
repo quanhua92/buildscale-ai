@@ -1,10 +1,9 @@
-mod common;
 
 use backend::{
     queries::users::{get_user_by_email, list_users},
     services::users::{register_user, verify_password, generate_password_hash},
 };
-use common::database::TestApp;
+use crate::common::database::TestApp;
 
 #[tokio::test]
 async fn test_user_registration_success() {

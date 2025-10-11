@@ -1,10 +1,11 @@
-mod common;
+mod user_services_tests;
+
 
 use backend::{
     models::users::UpdateUser,
     queries::users::{create_user, delete_user, get_user_by_id, list_users, update_user},
 };
-use common::database::{TestApp, TestDb};
+use crate::common::database::{TestApp, TestDb};
 
 #[tokio::test]
 async fn test_create_user_query() {
