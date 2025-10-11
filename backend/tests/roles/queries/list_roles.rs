@@ -96,22 +96,37 @@ async fn test_list_roles_all() {
     let (_, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
     let (_, workspace2) = test_app.create_test_workspace_with_user().await.unwrap();
 
-    // Create roles in both workspaces
-    let role1_data = test_app.generate_test_role_with_name(workspace1.id, "admin");
-    let role2_data = test_app.generate_test_role_with_name(workspace1.id, "editor");
-    let role3_data = test_app.generate_test_role_with_name(workspace2.id, "viewer");
+    // Create roles in both workspaces using custom names that include test prefix
+    let role1_data = backend::models::roles::NewRole {
+        workspace_id: workspace1.id,
+        name: format!("{}_admin", test_app.test_prefix()),
+        description: Some("Test role description".to_string()),
+    };
+    let role2_data = backend::models::roles::NewRole {
+        workspace_id: workspace1.id,
+        name: format!("{}_editor", test_app.test_prefix()),
+        description: Some("Test role description".to_string()),
+    };
+    let role3_data = backend::models::roles::NewRole {
+        workspace_id: workspace2.id,
+        name: format!("{}_viewer", test_app.test_prefix()),
+        description: Some("Test role description".to_string()),
+    };
 
     let role1 = create_role(&mut conn, role1_data).await.unwrap();
     let role2 = create_role(&mut conn, role2_data).await.unwrap();
     let role3 = create_role(&mut conn, role3_data).await.unwrap();
 
-    // List all roles
+    // List all roles and filter by test prefix
     let all_roles = list_roles(&mut conn).await.unwrap();
+    let test_roles: Vec<_> = all_roles.iter()
+        .filter(|r| r.name.starts_with(&test_app.test_prefix()))
+        .collect();
 
-    assert_eq!(all_roles.len(), 3, "Should return all roles from all workspaces");
+    assert_eq!(test_roles.len(), 3, "Should return all test roles from all workspaces");
 
     // Verify all created roles are in the list
-    let role_ids: Vec<_> = all_roles.iter().map(|r| r.id).collect();
+    let role_ids: Vec<_> = test_roles.iter().map(|r| r.id).collect();
     assert!(role_ids.contains(&role1.id), "Role1 should be in the list");
     assert!(role_ids.contains(&role2.id), "Role2 should be in the list");
     assert!(role_ids.contains(&role3.id), "Role3 should be in the list");

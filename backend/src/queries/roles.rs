@@ -124,7 +124,7 @@ pub async fn update_role(conn: &mut DbConn, id: Uuid, update_role: UpdateRole) -
         r#"
         UPDATE roles
         SET name = COALESCE($1, name),
-            description = $2
+            description = COALESCE($2, description)
         WHERE id = $3
         RETURNING id, workspace_id, name, description
         "#,

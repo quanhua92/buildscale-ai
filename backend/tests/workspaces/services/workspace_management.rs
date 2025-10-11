@@ -56,8 +56,9 @@ async fn test_workspace_creation_empty_name_validation() {
     let test_app = TestApp::new("test_workspace_creation_empty_name_validation").await;
     let mut conn = test_app.get_connection().await;
 
-    // Test empty workspace name
-    let mut workspace_data = test_app.generate_test_workspace();
+    // Test empty workspace name - create a user first to get a valid owner_id
+    let (user, _) = test_app.create_test_workspace_with_user().await.unwrap();
+    let mut workspace_data = test_app.generate_test_workspace_with_owner_id(user.id);
     workspace_data.name = String::new();
 
     let result = create_workspace(&mut conn, workspace_data).await;
@@ -80,8 +81,9 @@ async fn test_workspace_creation_whitespace_name_validation() {
     let test_app = TestApp::new("test_workspace_creation_whitespace_name_validation").await;
     let mut conn = test_app.get_connection().await;
 
-    // Test whitespace-only workspace name
-    let mut workspace_data = test_app.generate_test_workspace();
+    // Test whitespace-only workspace name - create a user first to get a valid owner_id
+    let (user, _) = test_app.create_test_workspace_with_user().await.unwrap();
+    let mut workspace_data = test_app.generate_test_workspace_with_owner_id(user.id);
     workspace_data.name = "   ".to_string();
 
     let result = create_workspace(&mut conn, workspace_data).await;
@@ -104,8 +106,9 @@ async fn test_workspace_creation_name_length_validation() {
     let test_app = TestApp::new("test_workspace_creation_name_length_validation").await;
     let mut conn = test_app.get_connection().await;
 
-    // Test workspace name that's too long (> 100 characters)
-    let mut workspace_data = test_app.generate_test_workspace();
+    // Test workspace name that's too long (> 100 characters) - create a user first to get a valid owner_id
+    let (user, _) = test_app.create_test_workspace_with_user().await.unwrap();
+    let mut workspace_data = test_app.generate_test_workspace_with_owner_id(user.id);
     workspace_data.name = "a".repeat(101);
 
     let result = create_workspace(&mut conn, workspace_data).await;
@@ -128,8 +131,9 @@ async fn test_workspace_creation_max_valid_name() {
     let test_app = TestApp::new("test_workspace_creation_max_valid_name").await;
     let mut conn = test_app.get_connection().await;
 
-    // Test workspace name that's exactly 100 characters (should succeed)
-    let mut workspace_data = test_app.generate_test_workspace();
+    // Test workspace name that's exactly 100 characters (should succeed) - create a user first to get a valid owner_id
+    let (user, _) = test_app.create_test_workspace_with_user().await.unwrap();
+    let mut workspace_data = test_app.generate_test_workspace_with_owner_id(user.id);
     workspace_data.name = "a".repeat(100);
 
     let result = create_workspace(&mut conn, workspace_data).await;
