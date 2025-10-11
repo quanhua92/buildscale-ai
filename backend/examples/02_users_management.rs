@@ -4,7 +4,7 @@ use backend::{
     queries::users::{
         create_user, delete_user, get_user_by_email, get_user_by_id, list_users, update_user,
     },
-    services::users::{register_user, verify_password},
+    services::users::{register_user, verify_password, generate_password_hash},
 };
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
@@ -191,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let update_data = UpdateUser {
         email: Some(format!("{}_robert.smith@{}", EXAMPLE_PREFIX, "example.com")),
-        password_hash: Some("new_secure_hash_789".to_string()),
+        password_hash: Some(generate_password_hash("new_secure_password_789")?),
         full_name: Some("Robert Smith".to_string()),
     };
 
@@ -221,8 +221,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         (
             format!("{}_robert.smith@{}", EXAMPLE_PREFIX, "example.com"),
-            "bobsecure456",
-        ), // Note: Still using original password
+            "new_secure_password_789",
+        ), // Note: Updated to match new password hash
         (
             format!("{}_charlie+tag@{}", EXAMPLE_PREFIX, "example.com"),
             "Complex!@#$%^789",
@@ -235,15 +235,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (email, password) in test_passwords {
         if let Some(user) = get_user_by_email(&mut conn, &email).await? {
-            match verify_password(password, &user.password_hash) {
-                Ok(is_valid) => {
-                    println!("✓ Password verification for {}: {}", email, is_valid);
-                }
-                Err(e) => {
-                    println!("⚠️  Password verification for {} failed: {}", email, e);
-                    println!("  (This is expected for the updated user with demo password hash)");
-                }
-            }
+            let is_valid = verify_password(password, &user.password_hash)?;
+            println!("✓ Password verification for {}: {}", email, is_valid);
         }
     }
     println!();
