@@ -24,12 +24,7 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
     }
 
     // Hash the password using Argon2
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let password_hash = argon2
-        .hash_password(register_user.password.as_bytes(), &salt)
-        .map_err(|e| Error::Validation(format!("Failed to hash password: {}", e)))?
-        .to_string();
+    let password_hash = generate_password_hash(&register_user.password)?;
 
     // Create NewUser struct
     let new_user = NewUser {
@@ -42,6 +37,19 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
     let user = users::create_user(conn, new_user).await?;
 
     Ok(user)
+}
+
+/// Generates a password hash using Argon2
+pub fn generate_password_hash(password: &str) -> Result<String> {
+    // Hash the password using Argon2
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| Error::Validation(format!("Failed to hash password: {}", e)))?
+        .to_string();
+
+    Ok(password_hash)
 }
 
 /// Verifies a password against a password hash
