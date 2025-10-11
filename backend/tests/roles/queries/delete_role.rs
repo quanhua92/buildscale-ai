@@ -45,9 +45,8 @@ async fn test_delete_role_multiple_roles() {
     let test_app = TestApp::new("test_delete_role_multiple_roles").await;
     let mut conn = test_app.get_connection().await;
 
-    // Create a workspace
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    // Create a workspace with real user
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create multiple roles
     let role1_data = test_app.generate_test_role_with_name(workspace.id, "role1");

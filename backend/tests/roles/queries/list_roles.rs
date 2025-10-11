@@ -56,18 +56,9 @@ async fn test_list_roles_by_workspace_filtered() {
     let test_app = TestApp::new("test_list_roles_by_workspace_filtered").await;
     let mut conn = test_app.get_connection().await;
 
-    // Create two workspaces
-    let workspace1_data = backend::models::workspaces::NewWorkspace {
-        name: format!("{}_workspace1", test_app.test_prefix()),
-        owner_id: test_app.generate_test_uuid(),
-    };
-    let workspace2_data = backend::models::workspaces::NewWorkspace {
-        name: format!("{}_workspace2", test_app.test_prefix()),
-        owner_id: test_app.generate_test_uuid(),
-    };
-
-    let workspace1 = backend::queries::workspaces::create_workspace(&mut conn, workspace1_data).await.unwrap();
-    let workspace2 = backend::queries::workspaces::create_workspace(&mut conn, workspace2_data).await.unwrap();
+    // Create two workspaces with real users
+    let (_, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
+    let (_, workspace2) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create roles in both workspaces
     let role1_data = test_app.generate_test_role_with_name(workspace1.id, "role1");
@@ -101,18 +92,9 @@ async fn test_list_roles_all() {
     let test_app = TestApp::new("test_list_roles_all").await;
     let mut conn = test_app.get_connection().await;
 
-    // Create multiple workspaces and roles
-    let workspace1_data = backend::models::workspaces::NewWorkspace {
-        name: format!("{}_workspace1", test_app.test_prefix()),
-        owner_id: test_app.generate_test_uuid(),
-    };
-    let workspace2_data = backend::models::workspaces::NewWorkspace {
-        name: format!("{}_workspace2", test_app.test_prefix()),
-        owner_id: test_app.generate_test_uuid(),
-    };
-
-    let workspace1 = backend::queries::workspaces::create_workspace(&mut conn, workspace1_data).await.unwrap();
-    let workspace2 = backend::queries::workspaces::create_workspace(&mut conn, workspace2_data).await.unwrap();
+    // Create multiple workspaces and roles with real users
+    let (_, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
+    let (_, workspace2) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create roles in both workspaces
     let role1_data = test_app.generate_test_role_with_name(workspace1.id, "admin");

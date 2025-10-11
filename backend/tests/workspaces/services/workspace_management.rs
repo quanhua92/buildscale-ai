@@ -11,10 +11,14 @@ async fn test_workspace_creation_success() {
 
     let initial_count = test_app.count_test_workspaces().await.unwrap();
 
-    // Create a workspace through the service layer
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace_name = workspace_data.name.clone();
+    // Create a user first for the service layer test
+    let (user, _) = test_app.create_test_workspace_with_user().await.unwrap();
 
+    // For service layer testing, we need to test the service directly
+    let workspace_data = backend::models::workspaces::NewWorkspace {
+        name: format!("{}_test_workspace", test_app.test_prefix()),
+        owner_id: user.id,
+    };
     let result = create_workspace(&mut conn, workspace_data).await;
     assert!(result.is_ok(), "Workspace creation should succeed");
 
@@ -23,7 +27,7 @@ async fn test_workspace_creation_success() {
         !created_workspace.id.to_string().is_empty(),
         "Workspace should have a valid UUID"
     );
-    assert_eq!(created_workspace.name, workspace_name, "Workspace name should match");
+    assert_eq!(created_workspace.owner_id, user.id, "Workspace owner should match");
     assert!(
         created_workspace.created_at <= chrono::Utc::now(),
         "Created timestamp should be valid"
@@ -36,8 +40,8 @@ async fn test_workspace_creation_success() {
     let final_count = test_app.count_test_workspaces().await.unwrap();
     assert_eq!(
         final_count,
-        initial_count + 1,
-        "Workspace count should increase by 1"
+        initial_count + 2,
+        "Workspace count should increase by 2 (one from helper, one from service)"
     );
 
     // Verify workspace exists in database
@@ -137,8 +141,14 @@ async fn test_workspace_deletion_service() {
     let test_app = TestApp::new("test_workspace_deletion_service").await;
     let mut conn = test_app.get_connection().await;
 
-    // Create a workspace
-    let workspace_data = test_app.generate_test_workspace();
+    // Create a workspace with real user first
+    let (user, _) = test_app.create_test_workspace_with_user().await.unwrap();
+
+    // Create another workspace through the service for testing
+    let workspace_data = backend::models::workspaces::NewWorkspace {
+        name: format!("{}_delete_workspace", test_app.test_prefix()),
+        owner_id: user.id,
+    };
     let created_workspace = backend::services::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
 
     // Verify workspace exists
