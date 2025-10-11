@@ -10,6 +10,18 @@ pub enum Error {
     /// A validation error.
     #[error("Validation error: {0}")]
     Validation(String),
+
+    /// A not found error (resource does not exist).
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// A forbidden error (user lacks permission).
+    #[error("Access forbidden: {0}")]
+    Forbidden(String),
+
+    /// A conflict error (resource already exists).
+    #[error("Conflict: {0}")]
+    Conflict(String),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.
