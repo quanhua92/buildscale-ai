@@ -124,12 +124,32 @@ impl TestDb {
 
     /// Clean up users with specific test prefix
     async fn cleanup_prefix(pool: &PgPool, prefix: &str) {
-        let cleanup_query = "DELETE FROM users WHERE email LIKE $1";
-        sqlx::query(cleanup_query)
-            .bind(format!("{}%", prefix))
+        let pattern = format!("{}%", prefix);
+
+        // Clean up in reverse order of dependencies
+        let cleanup_members = "DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1) OR workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)";
+        let _ = sqlx::query(cleanup_members)
+            .bind(&pattern)
             .execute(pool)
-            .await
-            .expect("Failed to cleanup test data");
+            .await;
+
+        let cleanup_roles = "DELETE FROM roles WHERE name LIKE $1";
+        let _ = sqlx::query(cleanup_roles)
+            .bind(&pattern)
+            .execute(pool)
+            .await;
+
+        let cleanup_workspaces = "DELETE FROM workspaces WHERE name LIKE $1";
+        let _ = sqlx::query(cleanup_workspaces)
+            .bind(&pattern)
+            .execute(pool)
+            .await;
+
+        let cleanup_users = "DELETE FROM users WHERE email LIKE $1";
+        let _ = sqlx::query(cleanup_users)
+            .bind(&pattern)
+            .execute(pool)
+            .await;
     }
 
     /// Get a count of users with test prefix
@@ -283,5 +303,175 @@ impl TestApp {
     #[allow(dead_code)]
     pub async fn get_user_password_hash(&self, email: &str) -> Result<Option<String>, sqlx::Error> {
         self.test_db.get_user_password_hash(email).await
+    }
+
+    // Workspace helpers
+
+    /// Generate a test workspace with proper prefix
+    pub fn generate_test_workspace(&self) -> backend::models::workspaces::NewWorkspace {
+        let workspace_name = format!("{}_workspace", self.test_prefix());
+        let owner_id = self.generate_test_uuid();
+        backend::models::workspaces::NewWorkspace {
+            name: workspace_name,
+            owner_id,
+        }
+    }
+
+    /// Generate a test workspace with custom owner
+    pub fn generate_test_workspace_with_owner(
+        &self,
+        owner_id: uuid::Uuid,
+    ) -> backend::models::workspaces::NewWorkspace {
+        let workspace_name = format!("{}_workspace", self.test_prefix());
+        backend::models::workspaces::NewWorkspace {
+            name: workspace_name,
+            owner_id,
+        }
+    }
+
+    /// Generate a test role with proper prefix
+    pub fn generate_test_role(&self, workspace_id: uuid::Uuid) -> backend::models::roles::NewRole {
+        let role_name = format!("{}_role", self.test_prefix());
+        backend::models::roles::NewRole {
+            workspace_id,
+            name: role_name,
+            description: Some("Test role description".to_string()),
+        }
+    }
+
+    /// Generate a test role with custom name
+    pub fn generate_test_role_with_name(
+        &self,
+        workspace_id: uuid::Uuid,
+        role_name: &str,
+    ) -> backend::models::roles::NewRole {
+        backend::models::roles::NewRole {
+            workspace_id,
+            name: role_name.to_string(),
+            description: Some("Test role description".to_string()),
+        }
+    }
+
+    /// Generate a test workspace member
+    pub fn generate_test_workspace_member(
+        &self,
+        workspace_id: uuid::Uuid,
+        user_id: uuid::Uuid,
+        role_id: uuid::Uuid,
+    ) -> backend::models::workspace_members::NewWorkspaceMember {
+        backend::models::workspace_members::NewWorkspaceMember {
+            workspace_id,
+            user_id,
+            role_id,
+        }
+    }
+
+    /// Generate a unique test UUID
+    pub fn generate_test_uuid(&self) -> uuid::Uuid {
+        uuid::Uuid::now_v7()
+    }
+
+    // Workspace-specific helper methods
+
+    /// Get a count of workspaces with test prefix
+    pub async fn count_test_workspaces(&self) -> Result<i64, sqlx::Error> {
+        let count = sqlx::query_scalar("SELECT COUNT(*) FROM workspaces WHERE name LIKE $1")
+            .bind(format!("{}%", self.test_prefix()))
+            .fetch_one(&self.test_db.pool)
+            .await?;
+        Ok(count)
+    }
+
+    /// Get a count of roles with test prefix
+    pub async fn count_test_roles(&self) -> Result<i64, sqlx::Error> {
+        let count = sqlx::query_scalar("SELECT COUNT(*) FROM roles WHERE name LIKE $1")
+            .bind(format!("{}%", self.test_prefix()))
+            .fetch_one(&self.test_db.pool)
+            .await?;
+        Ok(count)
+    }
+
+    /// Get a count of workspace members for a specific workspace
+    pub async fn count_workspace_members(&self, workspace_id: uuid::Uuid) -> Result<i64, sqlx::Error> {
+        let count = sqlx::query_scalar("SELECT COUNT(*) FROM workspace_members WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .fetch_one(&self.test_db.pool)
+            .await?;
+        Ok(count)
+    }
+
+    /// Check if a workspace exists by name
+    pub async fn workspace_exists(&self, workspace_name: &str) -> Result<bool, sqlx::Error> {
+        let exists = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM workspaces WHERE name = $1)")
+            .bind(workspace_name)
+            .fetch_one(&self.test_db.pool)
+            .await?;
+        Ok(exists)
+    }
+
+    /// Check if a role exists in a workspace
+    pub async fn role_exists(&self, workspace_id: uuid::Uuid, role_name: &str) -> Result<bool, sqlx::Error> {
+        let exists = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM roles WHERE workspace_id = $1 AND name = $2)"
+        )
+            .bind(workspace_id)
+            .bind(role_name)
+            .fetch_one(&self.test_db.pool)
+            .await?;
+        Ok(exists)
+    }
+
+    /// Check if a user is a member of a workspace
+    pub async fn is_workspace_member(
+        &self,
+        workspace_id: uuid::Uuid,
+        user_id: uuid::Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        let exists = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2)"
+        )
+            .bind(workspace_id)
+            .bind(user_id)
+            .fetch_one(&self.test_db.pool)
+            .await?;
+        Ok(exists)
+    }
+
+    /// Create a complete test scenario: user + workspace + role + member
+    pub async fn create_complete_test_scenario(&self) -> Result<(backend::models::users::User, backend::models::workspaces::Workspace, backend::models::roles::Role, backend::models::workspace_members::WorkspaceMember), sqlx::Error> {
+        let mut conn = self.get_connection().await;
+
+        // Create user
+        let user_data = self.generate_test_user();
+        let user = backend::services::users::register_user(&mut conn, user_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
+
+        // Create workspace with user as owner
+        let workspace_data = backend::models::workspaces::NewWorkspace {
+            name: format!("{}_workspace", self.test_prefix()),
+            owner_id: user.id,
+        };
+        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
+
+        // Create role in workspace
+        let role_data = backend::models::roles::NewRole {
+            workspace_id: workspace.id,
+            name: format!("{}_role", self.test_prefix()),
+            description: Some("Test role description".to_string()),
+        };
+        let role = backend::queries::roles::create_role(&mut conn, role_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("Role creation failed: {}", e)))?;
+
+        // Add user as workspace member with the role
+        let member_data = backend::models::workspace_members::NewWorkspaceMember {
+            workspace_id: workspace.id,
+            user_id: user.id,
+            role_id: role.id,
+        };
+        let member = backend::queries::workspace_members::create_workspace_member(&mut conn, member_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("Member creation failed: {}", e)))?;
+
+        Ok((user, workspace, role, member))
     }
 }
