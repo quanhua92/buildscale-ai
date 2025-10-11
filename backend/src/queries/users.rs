@@ -44,8 +44,8 @@ pub async fn get_user_by_id(conn: &mut DbConn, id: Uuid) -> Result<User> {
     Ok(user)
 }
 
-/// Finds a single user by their email address. The user may not exist.
-pub async fn find_user_by_email(conn: &mut DbConn, email: &str) -> Result<Option<User>> {
+/// Gets a single user by their email address. The user may not exist.
+pub async fn get_user_by_email(conn: &mut DbConn, email: &str) -> Result<Option<User>> {
     let user = sqlx::query_as!(
         User,
         r#"

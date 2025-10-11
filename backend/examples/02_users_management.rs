@@ -2,7 +2,7 @@ use backend::{
     load_config,
     models::users::{RegisterUser, UpdateUser},
     queries::users::{
-        create_user, delete_user, find_user_by_email, get_user_by_id, list_users, update_user,
+        create_user, delete_user, get_user_by_email, get_user_by_id, list_users, update_user,
     },
     services::users::{register_user, verify_password},
 };
@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test finding user by email
     println!("Testing find user by email...");
-    let found_user = find_user_by_email(
+    let found_user = get_user_by_email(
         &mut conn,
         &format!("{}_test@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -234,9 +234,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for (email, password) in test_passwords {
-        if let Some(user) = find_user_by_email(&mut conn, &email).await? {
-            let is_valid = verify_password(password, &user.password_hash)?;
-            println!("✓ Password verification for {}: {}", email, is_valid);
+        if let Some(user) = get_user_by_email(&mut conn, &email).await? {
+            match verify_password(password, &user.password_hash) {
+                Ok(is_valid) => {
+                    println!("✓ Password verification for {}: {}", email, is_valid);
+                }
+                Err(e) => {
+                    println!("⚠️  Password verification for {} failed: {}", email, e);
+                    println!("  (This is expected for the updated user with demo password hash)");
+                }
+            }
         }
     }
     println!();
@@ -245,7 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing user lookup methods...");
 
     // Find user by email
-    if let Some(found_user) = find_user_by_email(
+    if let Some(found_user) = get_user_by_email(
         &mut conn,
         &format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -306,7 +313,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ Created user within transaction: {}", tx_user.email);
 
     // User should exist within transaction
-    if let Some(user) = find_user_by_email(
+    if let Some(user) = get_user_by_email(
         tx.as_mut(),
         &format!("{}_transaction_user@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -316,7 +323,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // User should NOT exist outside transaction yet
-    let user_outside = find_user_by_email(
+    let user_outside = get_user_by_email(
         &mut conn,
         &format!("{}_transaction_user@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -332,7 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ Transaction committed");
 
     // Now user should exist outside transaction
-    if let Some(user) = find_user_by_email(
+    if let Some(user) = get_user_by_email(
         &mut conn,
         &format!("{}_transaction_user@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -407,7 +414,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test partial updates
     println!("Testing partial user updates...");
-    if let Some(user) = find_user_by_email(
+    if let Some(user) = get_user_by_email(
         &mut conn,
         &format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -448,7 +455,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ Deleted user: {} rows affected", rows_affected);
 
     // Verify deletion
-    let deleted_user = find_user_by_email(
+    let deleted_user = get_user_by_email(
         &mut conn,
         &format!("{}_direct@{}", EXAMPLE_PREFIX, "example.com"),
     )
@@ -463,7 +470,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Try to create duplicate user
     // First ensure example_02_alice@example.com exists
     let alice_email = format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com");
-    if find_user_by_email(&mut conn, &alice_email).await?.is_none() {
+    if get_user_by_email(&mut conn, &alice_email).await?.is_none() {
         // Re-create alice if she was cleaned up
         register_user(
             &mut conn,

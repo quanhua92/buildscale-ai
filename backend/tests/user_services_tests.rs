@@ -1,7 +1,7 @@
 mod common;
 
 use backend::{
-    queries::users::{find_user_by_email, list_users},
+    queries::users::{get_user_by_email, list_users},
     services::users::{register_user, verify_password, generate_password_hash},
 };
 use common::database::TestApp;
@@ -89,7 +89,7 @@ async fn test_user_lookup_by_email() {
     let created_user = register_user(&mut conn, register_user_data).await.unwrap();
 
     // Test successful lookup
-    let found_user = find_user_by_email(&mut conn, &user_email).await.unwrap();
+    let found_user = get_user_by_email(&mut conn, &user_email).await.unwrap();
     assert!(found_user.is_some(), "User should be found by email");
 
     let found_user = found_user.unwrap();
@@ -100,7 +100,7 @@ async fn test_user_lookup_by_email() {
     );
 
     // Test lookup of non-existent user
-    let not_found = find_user_by_email(&mut conn, "nonexistent@example.com")
+    let not_found = get_user_by_email(&mut conn, "nonexistent@example.com")
         .await
         .unwrap();
     assert!(not_found.is_none(), "Non-existent user should not be found");
@@ -379,14 +379,14 @@ async fn test_database_transaction_isolation() {
         .unwrap();
 
     // User should exist within transaction
-    let found_in_tx = find_user_by_email(tx.as_mut(), &user_email).await.unwrap();
+    let found_in_tx = get_user_by_email(tx.as_mut(), &user_email).await.unwrap();
     assert!(
         found_in_tx.is_some(),
         "User should exist within transaction"
     );
 
     // User should NOT exist outside transaction yet
-    let found_outside = find_user_by_email(&mut conn, &user_email).await.unwrap();
+    let found_outside = get_user_by_email(&mut conn, &user_email).await.unwrap();
     assert!(
         found_outside.is_none(),
         "User should not exist outside transaction before commit"
@@ -396,7 +396,7 @@ async fn test_database_transaction_isolation() {
     tx.commit().await.unwrap();
 
     // Now user should exist outside transaction
-    let found_after_commit = find_user_by_email(&mut conn, &user_email).await.unwrap();
+    let found_after_commit = get_user_by_email(&mut conn, &user_email).await.unwrap();
     assert!(
         found_after_commit.is_some(),
         "User should exist after transaction commit"
