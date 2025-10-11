@@ -31,4 +31,5 @@ pub struct RegisterUser {
     pub email: String,
     pub password: String,
     pub confirm_password: String,
+    pub full_name: Option<String>,
 }

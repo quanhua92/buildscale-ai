@@ -84,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         email: format!("{}_test@{}", EXAMPLE_PREFIX, "example.com"),
         password: "testpassword123".to_string(),
         confirm_password: "testpassword123".to_string(),
+        full_name: None,
     };
 
     // Register the user
@@ -129,6 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             email: format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com"),
             password: "alicepassword123".to_string(),
             confirm_password: "alicepassword123".to_string(),
+            full_name: None,
         },
     )
     .await?;
@@ -141,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             email: format!("{}_bob.smith@{}", EXAMPLE_PREFIX, "example.com"),
             password: "bobsecure456".to_string(),
             confirm_password: "bobsecure456".to_string(),
+            full_name: Some("Bob Smith".to_string()),
         },
     )
     .await?;
@@ -153,6 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             email: format!("{}_charlie+tag@{}", EXAMPLE_PREFIX, "example.com"),
             password: "Complex!@#$%^789".to_string(),
             confirm_password: "Complex!@#$%^789".to_string(),
+            full_name: Some("Charlie Day".to_string()),
         },
     )
     .await?;
@@ -165,6 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             email: format!("{}_david@{}", EXAMPLE_PREFIX, "EXAMPLE.COM"),
             password: "UPPERCASE123".to_string(),
             confirm_password: "UPPERCASE123".to_string(),
+            full_name: Some("David Williams".to_string()),
         },
     )
     .await?;
@@ -293,6 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             email: format!("{}_transaction_user@{}", EXAMPLE_PREFIX, "example.com"),
             password: "transaction123".to_string(),
             confirm_password: "transaction123".to_string(),
+            full_name: Some("Transaction User".to_string()),
         },
     )
     .await?;
@@ -351,6 +357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 email: format!("{}_{}@{}", EXAMPLE_PREFIX, name, "example.com"),
                 password: password.to_string(),
                 confirm_password: password.to_string(),
+                full_name: None,
             },
         )
         .await?;
@@ -371,6 +378,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         email: format!("{}_invalid@{}", EXAMPLE_PREFIX, "example.com"),
         password: "password123".to_string(),
         confirm_password: "different123".to_string(),
+        full_name: None,
     };
 
     match register_user(&mut conn, invalid_register_user).await {
@@ -388,6 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         email: format!("{}_short@{}", EXAMPLE_PREFIX, "example.com"),
         password: "short".to_string(),
         confirm_password: "short".to_string(),
+        full_name: None,
     };
 
     match register_user(&mut conn, short_password_user).await {
@@ -462,6 +471,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 email: alice_email.clone(),
                 password: "alicepassword123".to_string(),
                 confirm_password: "alicepassword123".to_string(),
+                full_name: None,
             },
         )
         .await
@@ -474,6 +484,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             email: alice_email, // Already exists
             password: "newpassword123".to_string(),
             confirm_password: "newpassword123".to_string(),
+            full_name: None,
         },
     )
     .await

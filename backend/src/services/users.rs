@@ -35,7 +35,7 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
     let new_user = NewUser {
         email: register_user.email,
         password_hash,
-        full_name: None,
+        full_name: register_user.full_name,
     };
 
     // Insert user into database

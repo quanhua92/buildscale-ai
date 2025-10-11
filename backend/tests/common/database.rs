@@ -205,6 +205,7 @@ impl TestApp {
             email,
             password: "testpassword123".to_string(),
             confirm_password: "testpassword123".to_string(),
+            full_name: None,
         }
     }
 
