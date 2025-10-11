@@ -9,8 +9,7 @@ async fn test_delete_role_query() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace and role first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     let new_role = test_app.generate_test_role(workspace.id);
     let created_role = create_role(&mut conn, new_role).await.unwrap();

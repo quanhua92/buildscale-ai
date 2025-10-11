@@ -1,5 +1,5 @@
 use backend::{
-    services::roles::{create_role, delete_role},
+    services::roles::create_role,
     queries::roles::get_role_by_id,
 };
 use crate::common::database::TestApp;
@@ -10,8 +10,7 @@ async fn test_role_creation_success() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     let initial_count = test_app.count_test_roles().await.unwrap();
 
@@ -54,8 +53,7 @@ async fn test_role_creation_empty_name_validation() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test empty role name
     let mut role_data = test_app.generate_test_role(workspace.id);
@@ -82,8 +80,7 @@ async fn test_role_creation_whitespace_name_validation() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test whitespace-only role name
     let mut role_data = test_app.generate_test_role(workspace.id);
@@ -110,8 +107,7 @@ async fn test_role_creation_name_length_validation() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test role name that's too long (> 100 characters)
     let mut role_data = test_app.generate_test_role(workspace.id);
@@ -138,8 +134,7 @@ async fn test_role_creation_max_valid_name() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test role name that's exactly 100 characters (should succeed)
     let mut role_data = test_app.generate_test_role(workspace.id);
@@ -155,8 +150,7 @@ async fn test_role_creation_duplicate_name_validation() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     let role_name = format!("{}_duplicate_test", test_app.test_prefix());
 
@@ -187,8 +181,7 @@ async fn test_role_creation_description_length_validation() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test role description that's too long (> 500 characters)
     let mut role_data = test_app.generate_test_role(workspace.id);
@@ -215,8 +208,7 @@ async fn test_role_creation_max_valid_description() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test role description that's exactly 500 characters (should succeed)
     let mut role_data = test_app.generate_test_role(workspace.id);
@@ -232,8 +224,7 @@ async fn test_role_deletion_service() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create a role
     let role_data = test_app.generate_test_role(workspace.id);

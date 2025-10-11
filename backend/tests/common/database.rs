@@ -307,7 +307,27 @@ impl TestApp {
 
     // Workspace helpers
 
-    /// Generate a test workspace with proper prefix
+    /// Create a test workspace with proper prefix and create the owner user
+    pub async fn create_test_workspace_with_user(&self) -> Result<(backend::models::users::User, backend::models::workspaces::Workspace), sqlx::Error> {
+        let mut conn = self.get_connection().await;
+
+        // Create the owner user first
+        let user_data = self.generate_test_user();
+        let user = backend::services::users::register_user(&mut conn, user_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
+
+        // Create workspace with real user as owner
+        let workspace_data = backend::models::workspaces::NewWorkspace {
+            name: format!("{}_workspace", self.test_prefix()),
+            owner_id: user.id,
+        };
+        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
+
+        Ok((user, workspace))
+    }
+
+    /// Generate a test workspace with proper prefix (for tests that need NewWorkspace struct)
     pub fn generate_test_workspace(&self) -> backend::models::workspaces::NewWorkspace {
         let workspace_name = format!("{}_workspace", self.test_prefix());
         let owner_id = self.generate_test_uuid();
@@ -317,7 +337,25 @@ impl TestApp {
         }
     }
 
-    /// Generate a test workspace with custom owner
+    /// Create a test workspace with custom owner (ensures user exists)
+    pub async fn create_workspace_with_user_owner(
+        &self,
+        owner_id: uuid::Uuid,
+    ) -> Result<backend::models::workspaces::Workspace, sqlx::Error> {
+        let mut conn = self.get_connection().await;
+
+        // Create workspace with real user as owner
+        let workspace_data = backend::models::workspaces::NewWorkspace {
+            name: format!("{}_workspace", self.test_prefix()),
+            owner_id,
+        };
+        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
+
+        Ok(workspace)
+    }
+
+    /// Generate a test workspace with custom owner (for tests that need NewWorkspace struct)
     pub fn generate_test_workspace_with_owner(
         &self,
         owner_id: uuid::Uuid,

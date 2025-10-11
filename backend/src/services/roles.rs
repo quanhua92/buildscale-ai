@@ -115,7 +115,11 @@ pub async fn update_role(conn: &mut DbConn, id: Uuid, update_role: UpdateRole) -
 /// Deletes a role by ID
 pub async fn delete_role(conn: &mut DbConn, id: Uuid) -> Result<u64> {
     // Check if the role exists
-    let _role = roles::get_role_by_id(conn, id).await?;
+    let role = roles::get_role_by_id_optional(conn, id).await?;
+
+    if role.is_none() {
+        return Err(Error::NotFound("Role not found".to_string()));
+    }
 
     // Delete the role
     let rows_affected = roles::delete_role(conn, id).await?;

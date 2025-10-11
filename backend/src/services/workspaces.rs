@@ -88,7 +88,11 @@ pub async fn update_workspace(
 /// Deletes a workspace by ID
 pub async fn delete_workspace(conn: &mut DbConn, id: Uuid) -> Result<u64> {
     // Check if the workspace exists
-    let _workspace = workspaces::get_workspace_by_id(conn, id).await?;
+    let workspace = workspaces::get_workspace_by_id_optional(conn, id).await?;
+
+    if workspace.is_none() {
+        return Err(Error::NotFound("Workspace not found".to_string()));
+    }
 
     // Delete the workspace
     let rows_affected = workspaces::delete_workspace(conn, id).await?;

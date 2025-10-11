@@ -9,8 +9,7 @@ async fn test_list_roles_empty() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // List roles for workspace (should be empty)
     let roles = list_roles_by_workspace(&mut conn, workspace.id).await.unwrap();
@@ -24,8 +23,7 @@ async fn test_list_roles_by_workspace() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create multiple roles
     let role_names = vec!["admin", "editor", "viewer"];
@@ -143,8 +141,7 @@ async fn test_list_roles_ordering() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create roles in non-alphabetical order
     let role_names = vec!["zebra", "alpha", "beta"];

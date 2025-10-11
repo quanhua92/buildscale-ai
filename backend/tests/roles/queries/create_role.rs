@@ -10,8 +10,7 @@ async fn test_create_role_query() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first (required for role)
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
     let workspace_id = workspace.id;
 
     // Create a NewRole manually (bypassing service layer)
@@ -47,8 +46,7 @@ async fn test_create_role_without_description() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create a role without description
     let new_role = NewRole {
@@ -78,8 +76,7 @@ async fn test_create_role_with_long_name() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create a role with a long name
     let long_name = format!("{}_very_long_role_name_that_is_still_valid", test_app.test_prefix());

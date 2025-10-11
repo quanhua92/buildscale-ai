@@ -44,6 +44,24 @@ pub async fn get_role_by_id(conn: &mut DbConn, id: Uuid) -> Result<Role> {
     Ok(role)
 }
 
+/// Gets a single role by their ID. The role may not exist.
+pub async fn get_role_by_id_optional(conn: &mut DbConn, id: Uuid) -> Result<Option<Role>> {
+    let role = sqlx::query_as!(
+        Role,
+        r#"
+        SELECT id, workspace_id, name, description
+        FROM roles
+        WHERE id = $1
+        "#,
+        id,
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(role)
+}
+
 /// Gets a single role by workspace ID and name. The role may not exist.
 pub async fn get_role_by_workspace_and_name(conn: &mut DbConn, workspace_id: Uuid, name: &str) -> Result<Option<Role>> {
     let role = sqlx::query_as!(

@@ -10,8 +10,7 @@ async fn test_role_field_constraints() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test that role name constraint works (unique constraint within workspace)
     let role_name = format!("{}_unique_role", test_app.test_prefix());
@@ -50,17 +49,9 @@ async fn test_role_name_unique_per_workspace() {
     let mut conn = test_app.get_connection().await;
 
     // Create two workspaces
-    let workspace1_data = backend::models::workspaces::NewWorkspace {
-        name: format!("{}_workspace1", test_app.test_prefix()),
-        owner_id: test_app.generate_test_uuid(),
-    };
-    let workspace2_data = backend::models::workspaces::NewWorkspace {
-        name: format!("{}_workspace2", test_app.test_prefix()),
-        owner_id: test_app.generate_test_uuid(),
-    };
-
-    let workspace1 = backend::queries::workspaces::create_workspace(&mut conn, workspace1_data).await.unwrap();
-    let workspace2 = backend::queries::workspaces::create_workspace(&mut conn, workspace2_data).await.unwrap();
+    let (_, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
+    let mut second_app = TestApp::new(&format!("{}_second", test_app.test_prefix())).await;
+    let (_, workspace2) = second_app.create_test_workspace_with_user().await.unwrap();
 
     // Create roles with same name in different workspaces (should succeed)
     let role_name = format!("{}_shared_role_name", test_app.test_prefix());

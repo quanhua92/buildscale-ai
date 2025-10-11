@@ -9,8 +9,7 @@ async fn test_get_role_by_id_query() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create a role
     let new_role = test_app.generate_test_role(workspace.id);
@@ -59,8 +58,7 @@ async fn test_get_role_by_workspace_and_name() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create a role
     let role_name = format!("{}_test_role", test_app.test_prefix());
@@ -84,8 +82,7 @@ async fn test_get_role_by_workspace_and_name_not_found() {
     let mut conn = test_app.get_connection().await;
 
     // Create a workspace first
-    let workspace_data = test_app.generate_test_workspace();
-    let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await.unwrap();
+    let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test with non-existent role name
     let fake_role_name = "non_existent_role";

@@ -43,6 +43,24 @@ pub async fn get_workspace_by_id(conn: &mut DbConn, id: Uuid) -> Result<Workspac
     Ok(workspace)
 }
 
+/// Gets a single workspace by their ID. The workspace may not exist.
+pub async fn get_workspace_by_id_optional(conn: &mut DbConn, id: Uuid) -> Result<Option<Workspace>> {
+    let workspace = sqlx::query_as!(
+        Workspace,
+        r#"
+        SELECT id, name, owner_id, created_at, updated_at
+        FROM workspaces
+        WHERE id = $1
+        "#,
+        id,
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(workspace)
+}
+
 /// Gets a single workspace by owner ID. The workspace may not exist.
 pub async fn get_workspaces_by_owner(conn: &mut DbConn, owner_id: Uuid) -> Result<Vec<Workspace>> {
     let workspaces = sqlx::query_as!(
