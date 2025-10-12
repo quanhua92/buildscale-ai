@@ -184,31 +184,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test user updates
     println!("Testing user updates...");
 
-    // Update Bob's profile using query layer
-    let mut updated_bob = user2.clone();
-    updated_bob.email = "robert.smith@example.com".to_string();
-    updated_bob.password_hash = "updated_hash".to_string(); // This would normally be a new hash
-
+    // Update Bob's profile using query layer (excluding email - emails cannot be updated)
     let update_data = UpdateUser {
-        email: Some(format!("{}_robert.smith@{}", EXAMPLE_PREFIX, "example.com")),
         password_hash: Some(generate_password_hash("new_secure_password_789")?),
         full_name: Some("Robert Smith".to_string()),
     };
 
     // Manually update using the query layer (bypassing service for demo)
     let mut bob_for_update = user2.clone();
-    bob_for_update.email = update_data.email.clone().unwrap();
     bob_for_update.password_hash = update_data.password_hash.clone().unwrap();
     bob_for_update.full_name = update_data.full_name.clone();
+    // Note: email remains unchanged as emails cannot be updated
 
     let updated_user = update_user(&mut conn, &bob_for_update).await?;
     println!(
-        "✓ Updated user's email from '{}' to '{}'",
-        user2.email, updated_user.email
-    );
-    println!(
         "✓ Updated user's full name to: {:?}",
         updated_user.full_name
+    );
+    println!(
+        "✓ Updated user's password hash (email remains unchanged: '{}')",
+        updated_user.email
     );
     println!();
 
@@ -220,9 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "alicepassword123",
         ),
         (
-            format!("{}_robert.smith@{}", EXAMPLE_PREFIX, "example.com"),
+            format!("{}_bob.smith@{}", EXAMPLE_PREFIX, "example.com"),
             "new_secure_password_789",
-        ), // Note: Updated to match new password hash
+        ), // Note: Bob's email remains unchanged, only password hash updated
         (
             format!("{}_charlie+tag@{}", EXAMPLE_PREFIX, "example.com"),
             "Complex!@#$%^789",
@@ -517,7 +512,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ User Registration & Validation");
     println!("✅ Password Hashing & Verification (Argon2)");
     println!("✅ Multiple User Management");
-    println!("✅ User Updates (Full & Partial)");
+    println!("✅ User Updates (Password & Full Name only - emails cannot be updated)");
     println!("✅ Database Lookup Methods");
     println!("✅ Transaction Isolation");
     println!("✅ Various Email Formats & Passwords");

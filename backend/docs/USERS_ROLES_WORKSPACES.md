@@ -87,11 +87,12 @@ pub struct NewUser {
 #### `UpdateUser` - User Update Request
 ```rust
 pub struct UpdateUser {
-    pub email: Option<String>,         // New email (optional)
     pub password_hash: Option<String>, // New password hash (optional)
     pub full_name: Option<String>,     // New display name (optional)
 }
 ```
+
+**Note:** Email addresses cannot be updated through the `UpdateUser` model. This is a security design choice to maintain user identity consistency.
 
 ### User Services
 

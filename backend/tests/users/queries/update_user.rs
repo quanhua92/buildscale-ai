@@ -20,25 +20,19 @@ async fn test_update_user_query() {
 
     // Create update data
     let update_data = UpdateUser {
-        email: Some(format!("{}_updated@example.com", test_db.test_prefix())),
         password_hash: Some("new_hash".to_string()),
         full_name: Some("New Name".to_string()),
     };
 
     // Update the user by modifying the created_user
     let mut user_to_update = created_user.clone();
-    user_to_update.email = update_data.email.clone().unwrap();
     user_to_update.password_hash = update_data.password_hash.clone().unwrap();
     user_to_update.full_name = update_data.full_name.clone();
 
     let updated_user = update_user(&mut conn, &user_to_update).await.unwrap();
 
     assert_eq!(updated_user.id, created_user.id, "ID should not change");
-    assert_eq!(
-        updated_user.email,
-        format!("{}_updated@example.com", test_db.test_prefix()),
-        "Email should be updated"
-    );
+    assert_eq!(updated_user.email, created_user.email, "Email should remain unchanged");
     assert_eq!(
         updated_user.password_hash, "new_hash",
         "Password hash should be updated"
@@ -68,16 +62,16 @@ async fn test_update_user_partial() {
 
     let created_user = create_user(&mut conn, new_user).await.unwrap();
 
-    // Update only email
+    // Update only full name
     let mut user_to_update = created_user.clone();
-    user_to_update.email = format!("{}_new_email@example.com", test_db.test_prefix());
+    user_to_update.full_name = Some("Updated Name".to_string());
 
     let updated_user = update_user(&mut conn, &user_to_update).await.unwrap();
 
     assert_eq!(
         updated_user.email,
-        format!("{}_new_email@example.com", test_db.test_prefix()),
-        "Email should be updated"
+        format!("{}_partial_update@example.com", test_db.test_prefix()),
+        "Email should remain unchanged"
     );
     assert_eq!(
         updated_user.password_hash, "hash123",
@@ -85,7 +79,7 @@ async fn test_update_user_partial() {
     );
     assert_eq!(
         updated_user.full_name,
-        Some("Original Name".to_string()),
-        "Full name should remain unchanged"
+        Some("Updated Name".to_string()),
+        "Full name should be updated"
     );
 }

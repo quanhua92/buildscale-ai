@@ -21,7 +21,6 @@ pub struct NewUser {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateUser {
-    pub email: Option<String>,
     pub password_hash: Option<String>,
     pub full_name: Option<String>,
 }
