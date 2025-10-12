@@ -32,7 +32,6 @@ async fn test_create_workspace_member_query() {
 #[tokio::test]
 async fn test_create_workspace_member_complete_scenario() {
     let test_app = TestApp::new("test_create_workspace_member_complete_scenario").await;
-    let mut conn = test_app.get_connection().await;
 
     // Use the complete test scenario helper
     let (user, workspace, role, member) = test_app.create_complete_test_scenario().await.unwrap();

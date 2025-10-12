@@ -2,26 +2,20 @@ use backend::{
     load_config,
     models::{
         users::RegisterUser,
-        workspaces::NewWorkspace,
-        roles::NewRole,
-        workspace_members::NewWorkspaceMember,
+        requests::{
+            CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
+            WorkspaceMemberRequest, UserWorkspaceRegistrationRequest
+        },
     },
     queries::{
-        users::{get_user_by_email, get_user_by_id, list_users},
-        workspaces::{create_workspace, get_workspace_by_id, list_workspaces},
-        roles::{create_role, get_role_by_id, get_role_by_id_optional, list_roles_by_workspace},
-        workspace_members::{list_workspace_members},
+        users::list_users,
+        workspaces::{list_workspaces},
+          workspace_members::{list_workspace_members},
     },
     services::{
-        users::register_user,
-        workspaces::{create_workspace as create_workspace_service, delete_workspace as delete_workspace_service},
-        roles::{create_role as create_role_service},
-        workspace_members::{
-            create_workspace_member as add_member,
-            remove_workspace_member as remove_member,
-            is_workspace_member as check_membership,
-            add_user_to_workspace,
-        },
+        users::{register_user, register_user_with_workspace},
+        workspaces::{create_workspace, create_workspace_with_members, update_workspace_owner, delete_workspace},
+        roles::list_workspace_roles,
     },
 };
 use secrecy::ExposeSecret;
@@ -57,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}_viewer@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_member1@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_member2@{}", EXAMPLE_PREFIX, "example.com"),
-        format!("{}_temp@{}", EXAMPLE_PREFIX, "example.com"),
+        format!("{}_new_user@{}", EXAMPLE_PREFIX, "example.com"),
     ];
 
     // Try to clean up all related tables in proper order (respecting foreign keys)
@@ -202,148 +196,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // ========================================================
-    // STEP 2: Create workspaces with owners
+    // STEP 2: Demonstrate simplified workspace creation
     // ========================================================
-    println!("🏢 STEP 2: Creating workspaces");
+    println!("🏢 STEP 2: Creating workspaces with simplified workflows");
 
-    // Create first workspace using service layer
-    let workspace1_data = NewWorkspace {
+    // Create first workspace using new comprehensive method
+    let workspace1_request = CreateWorkspaceRequest {
         name: format!("{}_marketing_team", EXAMPLE_PREFIX),
         owner_id: owner_user.id,
     };
-    let workspace1 = create_workspace_service(&mut conn, workspace1_data).await?;
-    println!("✓ Created workspace1: '{}' (ID: {}, Owner: {})",
-        workspace1.name, workspace1.id, owner_user.email);
+    let workspace1_result = create_workspace(&mut conn, workspace1_request).await?;
+    println!("✓ Created workspace1: '{}' with {} default roles",
+        workspace1_result.workspace.name, workspace1_result.roles.len());
+    println!("  - Owner automatically added as admin member");
 
-    // Create second workspace using direct query layer
-    let workspace2_data = NewWorkspace {
+    // Create second workspace with multiple initial members
+    let workspace2_request = CreateWorkspaceWithMembersRequest {
         name: format!("{}_engineering_team", EXAMPLE_PREFIX),
         owner_id: owner_user.id,
+        members: vec![
+            WorkspaceMemberRequest {
+                user_id: admin_user.id,
+                role_name: "admin".to_string(),
+            },
+            WorkspaceMemberRequest {
+                user_id: editor_user.id,
+                role_name: "editor".to_string(),
+            },
+            WorkspaceMemberRequest {
+                user_id: viewer_user.id,
+                role_name: "viewer".to_string(),
+            },
+        ],
     };
-    let workspace2 = create_workspace(&mut conn, workspace2_data).await?;
-    println!("✓ Created workspace2: '{}' (ID: {}, Owner: {})",
-        workspace2.name, workspace2.id, owner_user.email);
+    let workspace2_result = create_workspace_with_members(&mut conn, workspace2_request).await?;
+    println!("✓ Created workspace2: '{}' with {} initial members",
+        workspace2_result.workspace.name, workspace2_result.members.len());
+    println!("  - Owner + 3 members added with their roles in one operation");
+    println!();
 
-    // Create third workspace with different owner
-    let temp_user = register_user(
-        &mut conn,
-        RegisterUser {
-            email: format!("{}_temp@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "temppass123".to_string(),
-            confirm_password: "temppass123".to_string(),
-            full_name: Some("Temp Owner".to_string()),
-        },
-    )
-    .await?;
-    let workspace3_data = NewWorkspace {
-        name: format!("{}_research_team", EXAMPLE_PREFIX),
-        owner_id: temp_user.id,
+    // ========================================================
+    // STEP 3: Demonstrate user registration with workspace
+    // ========================================================
+    println!("👤 STEP 3: Registering user with workspace creation");
+
+    let new_user_request = UserWorkspaceRegistrationRequest {
+        email: format!("{}_new_user@{}", EXAMPLE_PREFIX, "example.com"),
+        password: "newuserpass123".to_string(),
+        confirm_password: "newuserpass123".to_string(),
+        full_name: Some("New User with Workspace".to_string()),
+        workspace_name: format!("{}_personal_workspace", EXAMPLE_PREFIX),
     };
-    let workspace3 = create_workspace(&mut conn, workspace3_data).await?;
-    println!("✓ Created workspace3: '{}' (ID: {}, Owner: {})",
-        workspace3.name, workspace3.id, temp_user.email);
+    let new_user_result = register_user_with_workspace(&mut conn, new_user_request).await?;
+    println!("✓ Registered new user: {}", new_user_result.user.email);
+    println!("✓ Created personal workspace: '{}' with default setup",
+        new_user_result.workspace.workspace.name);
+    println!("  - User registration + workspace creation in one transaction");
     println!();
 
     // ========================================================
-    // STEP 3: Create roles in workspaces
+    // STEP 4: Verify the simplified setup
     // ========================================================
-    println!("👥 STEP 3: Creating roles in workspaces");
-
-    // Create roles in workspace1
-    let admin_role1 = create_role_service(&mut conn, NewRole {
-        workspace_id: workspace1.id,
-        name: format!("{}_admin", EXAMPLE_PREFIX),
-        description: Some("Full administrative access".to_string()),
-    }).await?;
-    println!("✓ Created admin role in workspace1: '{}' (ID: {})", admin_role1.name, admin_role1.id);
-
-    let editor_role1 = create_role_service(&mut conn, NewRole {
-        workspace_id: workspace1.id,
-        name: format!("{}_editor", EXAMPLE_PREFIX),
-        description: Some("Can edit and create content".to_string()),
-    }).await?;
-    println!("✓ Created editor role in workspace1: '{}' (ID: {})", editor_role1.name, editor_role1.id);
-
-    let viewer_role1 = create_role_service(&mut conn, NewRole {
-        workspace_id: workspace1.id,
-        name: format!("{}_viewer", EXAMPLE_PREFIX),
-        description: Some("Read-only access".to_string()),
-    }).await?;
-    println!("✓ Created viewer role in workspace1: '{}' (ID: {})", viewer_role1.name, viewer_role1.id);
-
-    // Create roles in workspace2
-    let developer_role2 = create_role_service(&mut conn, NewRole {
-        workspace_id: workspace2.id,
-        name: format!("{}_developer", EXAMPLE_PREFIX),
-        description: Some("Can develop and deploy code".to_string()),
-    }).await?;
-    println!("✓ Created developer role in workspace2: '{}' (ID: {})", developer_role2.name, developer_role2.id);
-
-    let tester_role2 = create_role_service(&mut conn, NewRole {
-        workspace_id: workspace2.id,
-        name: format!("{}_tester", EXAMPLE_PREFIX),
-        description: Some("Can test and review code".to_string()),
-    }).await?;
-    println!("✓ Created tester role in workspace2: '{}' (ID: {})", tester_role2.name, tester_role2.id);
-    println!();
-
-    // ========================================================
-    // STEP 4: Add members to workspaces with roles
-    // ========================================================
-    println!("🔗 STEP 4: Adding members to workspaces");
-
-    // Add admin to workspace1 as admin
-    let admin_member1 = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace1.id,
-        user_id: admin_user.id,
-        role_id: admin_role1.id,
-    }).await?;
-    println!("✓ Added {} to workspace1 as admin", admin_user.email);
-
-    // Add editor to workspace1 as editor
-    let editor_member1 = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace1.id,
-        user_id: editor_user.id,
-        role_id: editor_role1.id,
-    }).await?;
-    println!("✓ Added {} to workspace1 as editor", editor_user.email);
-
-    // Add viewer to workspace1 as viewer
-    let viewer_member1 = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace1.id,
-        user_id: viewer_user.id,
-        role_id: viewer_role1.id,
-    }).await?;
-    println!("✓ Added {} to workspace1 as viewer", viewer_user.email);
-
-    // Add member1 and member2 to workspace2 with different roles
-    let member1_developer = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace2.id,
-        user_id: member1_user.id,
-        role_id: developer_role2.id,
-    }).await?;
-    println!("✓ Added {} to workspace2 as developer", member1_user.email);
-
-    let member2_tester = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace2.id,
-        user_id: member2_user.id,
-        role_id: tester_role2.id,
-    }).await?;
-    println!("✓ Added {} to workspace2 as tester", member2_user.email);
-
-    // Add admin user also to workspace2 as developer (show multiple workspace membership)
-    let admin_developer2 = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace2.id,
-        user_id: admin_user.id,
-        role_id: developer_role2.id,
-    }).await?;
-    println!("✓ Added {} to workspace2 as developer (multiple membership)", admin_user.email);
-    println!();
-
-    // ========================================================
-    // STEP 5: List and verify workspace memberships
-    // ========================================================
-    println!("📋 STEP 5: Listing and verifying workspace memberships");
+    println!("🔍 STEP 4: Verifying workspace setup");
 
     // List all workspaces
     let all_workspaces = list_workspaces(&mut conn).await?;
@@ -354,271 +268,149 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // List members of workspace1
-    let workspace1_members = list_workspace_members(&mut conn, workspace1.id).await?;
-    println!("✓ Workspace1 '{}' has {} members:", workspace1.name, workspace1_members.len());
-    for (i, member) in workspace1_members.iter().enumerate() {
-        // Get user details
-        if let Ok(user) = get_user_by_id(&mut conn, member.user_id).await {
-            // Get role details
-            if let Ok(Some(role)) = get_role_by_id_optional(&mut conn, member.role_id).await {
-                println!("  {}. {} - Role: {}", i + 1, user.email, role.name);
-            }
-        }
+    // Verify workspace1 has default roles
+    let workspace1_roles = list_workspace_roles(&mut conn, workspace1_result.workspace.id).await?;
+    println!("✓ Workspace1 '{}' has {} default roles:", workspace1_result.workspace.name, workspace1_roles.len());
+    for role in &workspace1_roles {
+        println!("  - {} ({})", role.name, role.description.as_ref().unwrap_or(&"No description".to_string()));
     }
     println!();
 
-    // List roles in workspace1
-    let workspace1_roles = list_roles_by_workspace(&mut conn, workspace1.id).await?;
-    println!("✓ Workspace1 '{}' has {} roles:", workspace1.name, workspace1_roles.len());
-    for (i, role) in workspace1_roles.iter().enumerate() {
-        println!("  {}. {} - Description: {:?}", i + 1, role.name, role.description);
+    // Verify workspace2 has members with their roles
+    let workspace2_members = list_workspace_members(&mut conn, workspace2_result.workspace.id).await?;
+    println!("✓ Workspace2 '{}' has {} members:", workspace2_result.workspace.name, workspace2_members.len());
+    for member in &workspace2_members {
+        // Get user details (simplified for demo)
+        println!("  - User ID: {} with role ID: {}", member.user_id, member.role_id);
     }
     println!();
 
     // ========================================================
-    // STEP 6: Test membership validation and constraints
+    // STEP 5: Demonstrate workspace ownership transfer
     // ========================================================
-    println!("🔍 STEP 6: Testing membership validation and constraints");
+    println!("🔄 STEP 5: Testing workspace ownership transfer");
 
-    // Check if specific users are members
-    let is_admin_member1 = check_membership(&mut conn, workspace1.id, admin_user.id).await?;
-    println!("✓ Is {} a member of workspace1? {}", admin_user.email, is_admin_member1);
+    // Transfer ownership of workspace1 to admin_user
+    println!("Transferring workspace1 ownership from {} to {}...",
+        owner_user.email, admin_user.email);
 
-    let is_member1_workspace1 = check_membership(&mut conn, workspace1.id, member1_user.id).await?;
-    println!("✓ Is {} a member of workspace1? {}", member1_user.email, is_member1_workspace1);
-
-    // Test adding duplicate member (should fail)
-    println!("Testing duplicate member addition (should fail)...");
-    match add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace1.id,
-        user_id: admin_user.id,
-        role_id: admin_role1.id,
-    }).await {
-        Ok(_) => println!("✗ Constraint failed - should not allow duplicate membership"),
-        Err(e) => println!("✓ Correctly prevented duplicate membership: {}", e),
-    }
-
-    // Test adding member with non-existent workspace (should fail)
-    println!("Testing invalid workspace membership (should fail)...");
-    match add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: uuid::Uuid::now_v7(),
-        user_id: viewer_user.id,
-        role_id: viewer_role1.id,
-    }).await {
-        Ok(_) => println!("✗ Constraint failed - should not allow membership in non-existent workspace"),
-        Err(e) => println!("✓ Correctly prevented membership in non-existent workspace: {}", e),
-    }
-
-    // Test adding member with non-existent role (should fail)
-    println!("Testing invalid role membership (should fail)...");
-    match add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace1.id,
-        user_id: viewer_user.id,
-        role_id: uuid::Uuid::now_v7(),
-    }).await {
-        Ok(_) => println!("✗ Constraint failed - should not allow membership with non-existent role"),
-        Err(e) => println!("✓ Correctly prevented membership with non-existent role: {}", e),
-    }
-    println!();
-
-    // ========================================================
-    // STEP 7: Test role management
-    // ========================================================
-    println!("⚙️ STEP 7: Testing role management");
-
-    // Create a new role in workspace1
-    let moderator_role1 = create_role_service(&mut conn, NewRole {
-        workspace_id: workspace1.id,
-        name: format!("{}_moderator", EXAMPLE_PREFIX),
-        description: Some("Can moderate content and users".to_string()),
-    }).await?;
-    println!("✓ Created moderator role in workspace1: '{}' (ID: {})", moderator_role1.name, moderator_role1.id);
-
-    // Verify role was created
-    let workspace1_roles_updated = list_roles_by_workspace(&mut conn, workspace1.id).await?;
-    println!("✓ Workspace1 now has {} roles", workspace1_roles_updated.len());
-
-    // Test duplicate role creation (should fail)
-    println!("Testing duplicate role creation (should fail)...");
-    match create_role_service(&mut conn, NewRole {
-        workspace_id: workspace1.id,
-        name: format!("{}_admin", EXAMPLE_PREFIX), // Same name as existing
-        description: Some("Duplicate admin role".to_string()),
-    }).await {
-        Ok(_) => println!("✗ Constraint failed - should not allow duplicate role names"),
-        Err(e) => println!("✓ Correctly prevented duplicate role creation: {}", e),
-    }
-    println!();
-
-    // ========================================================
-    // STEP 8: Test member role changes
-    // ========================================================
-    println!("🔄 STEP 8: Testing member role changes");
-
-    // Change viewer's role to moderator in workspace1
-    println!("Changing {}'s role from viewer to moderator...", viewer_user.email);
-
-    // First remove current membership
-    remove_member(&mut conn, workspace1.id, viewer_user.id).await?;
-    println!("✓ Removed {} from workspace1", viewer_user.email);
-
-    // Add with new role
-    let viewer_moderator = add_member(&mut conn, NewWorkspaceMember {
-        workspace_id: workspace1.id,
-        user_id: viewer_user.id,
-        role_id: moderator_role1.id,
-    }).await?;
-    println!("✓ Added {} back to workspace1 as moderator", viewer_user.email);
-
-    // Verify the change
-    let updated_workspace1_members = list_workspace_members(&mut conn, workspace1.id).await?;
-    println!("✓ Workspace1 now has {} members", updated_workspace1_members.len());
-    println!();
-
-    // ========================================================
-    // STEP 9: Test member removal and workspace deletion
-    // ========================================================
-    println!("🗑️ STEP 9: Testing member removal and workspace deletion");
-
-    // Remove member2 from workspace2
-    println!("Removing {} from workspace2...", member2_user.email);
-    let removed_rows = remove_member(&mut conn, workspace2.id, member2_user.id).await?;
-    println!("✓ Removed {} member(s) from workspace2", removed_rows);
-
-    // Try to remove workspace owner (should fail)
-    println!("Testing owner removal prevention (should fail)...");
-    match remove_member(&mut conn, workspace1.id, owner_user.id).await {
-        Ok(_) => println!("✗ Security failed - should not allow removing workspace owner"),
-        Err(e) => println!("✓ Correctly prevented owner removal: {}", e),
-    }
-
-    // Delete workspace3 (owned by temp user)
-    println!("Deleting workspace3...");
-    let deleted_workspace3 = delete_workspace_service(&mut conn, workspace3.id).await?;
-    println!("✓ Deleted workspace3: {}", deleted_workspace3);
-
-    // Try to delete non-existent workspace (should fail)
-    println!("Testing non-existent workspace deletion (should fail)...");
-    match delete_workspace_service(&mut conn, uuid::Uuid::now_v7()).await {
-        Ok(_) => println!("✗ Should not succeed with non-existent workspace"),
-        Err(e) => println!("✓ Correctly failed for non-existent workspace: {}", e),
-    }
-    println!();
-
-    // ========================================================
-    // STEP 10: Test advanced scenarios and transactions
-    // ========================================================
-    println!("🔬 STEP 10: Testing advanced scenarios and transactions");
-
-    // Test adding user to workspace using service method
-    println!("Testing service method: add_user_to_workspace...");
-    let new_user = register_user(
+    let updated_workspace1 = update_workspace_owner(
         &mut conn,
-        RegisterUser {
-            email: format!("{}_advanced@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "advancedpass123".to_string(),
-            confirm_password: "advancedpass123".to_string(),
-            full_name: Some("Advanced User".to_string()),
-        },
-    )
-    .await?;
-
-    let _new_member = add_user_to_workspace(
-        &mut conn,
-        workspace1.id,
-        new_user.id,
-        &format!("{}_editor", EXAMPLE_PREFIX) // Role name
+        workspace1_result.workspace.id,
+        owner_user.id,
+        admin_user.id,
     ).await?;
-    println!("✓ Added {} to workspace1 using role name 'editor'", new_user.email);
 
-    // Test transaction isolation for workspace creation
-    println!("Testing transaction isolation for workspace creation...");
-    let mut tx = pool.begin().await?;
-
-    // Create workspace in transaction
-    let tx_workspace = create_workspace(&mut *tx, NewWorkspace {
-        name: format!("{}_transaction_workspace", EXAMPLE_PREFIX),
-        owner_id: owner_user.id,
-    }).await?;
-    println!("✓ Created workspace within transaction: {}", tx_workspace.name);
-
-    // Create role in transaction
-    let tx_role = create_role(&mut *tx, NewRole {
-        workspace_id: tx_workspace.id,
-        name: format!("{}_transaction_role", EXAMPLE_PREFIX),
-        description: Some("Transaction test role".to_string()),
-    }).await?;
-    println!("✓ Created role within transaction: {}", tx_role.name);
-
-    // Workspace should exist within transaction
-    let tx_workspace_check = get_workspace_by_id(&mut *tx, tx_workspace.id).await?;
-    println!("✓ Workspace exists within transaction: {}", tx_workspace_check.name);
-
-    // But NOT outside transaction yet
-    let outside_check = get_workspace_by_id(&mut conn, tx_workspace.id).await;
-    assert!(outside_check.is_err(), "Workspace should not exist outside transaction before commit");
-    println!("✓ Workspace correctly not visible outside transaction before commit");
-
-    // Commit transaction
-    tx.commit().await?;
-    println!("✓ Transaction committed");
-
-    // Now workspace should exist outside transaction
-    let committed_workspace = get_workspace_by_id(&mut conn, tx_workspace.id).await?;
-    println!("✓ Workspace now exists after commit: {}", committed_workspace.name);
+    println!("✓ Ownership transferred successfully");
+    println!("  - New owner: {}", updated_workspace1.owner_id);
+    println!("  - Previous owner automatically added as admin member");
     println!();
 
     // ========================================================
-    // STEP 11: Final summary and cleanup
+    // STEP 6: Test edge cases and validation
     // ========================================================
-    println!("📊 STEP 11: Final summary");
+    println!("⚠️ STEP 6: Testing validation and edge cases");
 
-    // List final workspaces
+    // Test creating workspace with empty name
+    println!("Testing empty workspace name validation...");
+    let empty_workspace_request = CreateWorkspaceRequest {
+        name: "".to_string(),
+        owner_id: member1_user.id,
+    };
+    match create_workspace(&mut conn, empty_workspace_request).await {
+        Ok(_) => println!("✗ Validation failed - should not allow empty workspace name"),
+        Err(e) => println!("✓ Correctly prevented empty workspace name: {}", e),
+    }
+
+    // Test creating workspace with name too long
+    println!("Testing workspace name length validation...");
+    let long_name_request = CreateWorkspaceRequest {
+        name: "a".repeat(101),
+        owner_id: member1_user.id,
+    };
+    match create_workspace(&mut conn, long_name_request).await {
+        Ok(_) => println!("✗ Validation failed - should not allow workspace name > 100 chars"),
+        Err(e) => println!("✓ Correctly prevented long workspace name: {}", e),
+    }
+
+    // Test transferring ownership to same user
+    println!("Testing ownership transfer to same user...");
+    match update_workspace_owner(
+        &mut conn,
+        workspace2_result.workspace.id,
+        owner_user.id,
+        owner_user.id,
+    ).await {
+        Ok(_) => println!("✗ Validation failed - should not allow transfer to same user"),
+        Err(e) => println!("✓ Correctly prevented transfer to same user: {}", e),
+    }
+    println!();
+
+    // ========================================================
+    // STEP 7: Demonstrate workspace deletion
+    // ========================================================
+    println!("🗑️ STEP 7: Testing workspace deletion");
+
+    // Delete workspace3 (new user's personal workspace)
+    println!("Deleting personal workspace...");
+    let deleted_count = delete_workspace(&mut conn, new_user_result.workspace.workspace.id).await?;
+    println!("✓ Deleted workspace ({} rows affected)", deleted_count);
+
+    // Verify workspace no longer exists
     let final_workspaces = list_workspaces(&mut conn).await?;
-    println!("✓ Final workspaces count: {}", final_workspaces.len());
+    println!("✓ Final workspace count: {}", final_workspaces.len());
+    println!();
+
+    // ========================================================
+    // STEP 8: Final summary
+    // ========================================================
+    println!("📊 STEP 8: Final summary");
+
+    // List final workspaces and their setup
+    let final_workspaces = list_workspaces(&mut conn).await?;
+    println!("✓ Final workspaces and their complete setup:");
+
+    for workspace in &final_workspaces {
+        let roles = list_workspace_roles(&mut conn, workspace.id).await.unwrap_or_default();
+        let members = list_workspace_members(&mut conn, workspace.id).await.unwrap_or_default();
+
+        println!("  📁 Workspace: {}", workspace.name);
+        println!("     Owner: {}", workspace.owner_id);
+        println!("     Roles: {} (default: admin, editor, viewer)", roles.len());
+        println!("     Members: {}", members.len());
+
+        for (i, member) in members.iter().enumerate() {
+            // Get role name by checking against default roles
+            let role_name = if member.role_id == roles[0].id { "admin" }
+                           else if roles.len() > 1 && member.role_id == roles[1].id { "editor" }
+                           else if roles.len() > 2 && member.role_id == roles[2].id { "viewer" }
+                           else { "unknown" };
+            println!("       {}. User ID: {} - {}", i + 1, member.user_id, role_name);
+        }
+        println!();
+    }
 
     // List final users
     let final_users = list_users(&mut conn).await?;
-    println!("✓ Final users count: {}", final_users.len());
-
-    // List all roles across all workspaces
-    let mut total_roles = 0;
-    for workspace in &final_workspaces {
-        let roles = list_roles_by_workspace(&mut conn, workspace.id).await.unwrap_or_default();
-        total_roles += roles.len();
-        println!("  - Workspace '{}' has {} roles", workspace.name, roles.len());
-    }
-    println!("✓ Total roles across all workspaces: {}", total_roles);
-
-    // List all members across all workspaces
-    let mut total_members = 0;
-    for workspace in &final_workspaces {
-        let members = list_workspace_members(&mut conn, workspace.id).await.unwrap_or_default();
-        total_members += members.len();
-        println!("  - Workspace '{}' has {} members", workspace.name, members.len());
-    }
-    println!("✓ Total workspace memberships: {}", total_members);
+    println!("✓ Total users created: {}", final_users.len());
     println!();
 
-    println!("🎉 All workspace management features demonstrated successfully!");
-    println!("✅ User Management & Multi-tenant Architecture");
-    println!("✅ Workspace Creation & Management");
-    println!("✅ Role-Based Access Control (RBAC)");
-    println!("✅ Workspace Member Management");
-    println!("✅ Role Assignment & Changes");
-    println!("✅ Database Constraints & Validation");
-    println!("✅ Service Layer Business Logic");
-    println!("✅ Transaction Isolation");
-    println!("✅ Owner Removal Prevention");
-    println!("✅ Cross-Entity Relationships");
-    println!("✅ Error Handling & Edge Cases");
-    println!("✅ Re-run Safety (Auto-cleanup & Idempotent)");
+    println!("🎉 Simplified workspace management demonstrated successfully!");
+    println!("✅ Single-method workspace creation with automatic setup");
+    println!("✅ Workspace creation with multiple initial members");
+    println!("✅ User registration with workspace in one transaction");
+    println!("✅ Automatic default roles creation (admin, editor, viewer)");
+    println!("✅ Automatic owner as admin member assignment");
+    println!("✅ Streamlined ownership transfer with role management");
+    println!("✅ Comprehensive validation and error handling");
+    println!("✅ Simplified API - no more fragmented multi-step operations");
     println!();
-    println!("💡 This example demonstrates a complete multi-tenant workspace system");
-    println!("   with proper RBAC, constraints, and business logic validation.");
-    println!("   It's re-run safe and works with sqlx CLI migrations.");
+    println!("💡 The new simplified approach reduces complexity from 10+ methods to 3 core methods:");
+    println!("   - create_workspace() - creates workspace + default roles + owner as admin");
+    println!("   - create_workspace_with_members() - above + multiple members with roles");
+    println!("   - register_user_with_workspace() - user registration + workspace creation");
     println!();
+    println!("🚀 This makes it much easier for REST APIs and frontend applications!");
 
     // Clean up the connection
     drop(conn);

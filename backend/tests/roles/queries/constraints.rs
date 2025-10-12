@@ -50,7 +50,7 @@ async fn test_role_name_unique_per_workspace() {
 
     // Create two workspaces
     let (_, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
-    let mut second_app = TestApp::new(&format!("{}_second", test_app.test_prefix())).await;
+    let second_app = TestApp::new(&format!("{}_second", test_app.test_prefix())).await;
     let (_, workspace2) = second_app.create_test_workspace_with_user().await.unwrap();
 
     // Create roles with same name in different workspaces (should succeed)

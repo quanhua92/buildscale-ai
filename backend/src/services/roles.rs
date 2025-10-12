@@ -1,13 +1,38 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result},
-    models::roles::{NewRole, Role, UpdateRole},
+    models::roles::{NewRole, Role},
     queries::roles,
 };
 use uuid::Uuid;
 
-/// Creates a new role with validation
-pub async fn create_role(conn: &mut DbConn, new_role: NewRole) -> Result<Role> {
+/// Creates default roles for a workspace (admin, editor, viewer)
+pub async fn create_default_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>> {
+    let mut created_roles = Vec::new();
+
+    // Define default roles
+    let default_roles = vec![
+        ("admin", "Full administrative access to workspace"),
+        ("editor", "Can create and edit content"),
+        ("viewer", "Read-only access to workspace"),
+    ];
+
+    for (role_name, description) in default_roles {
+        let new_role = NewRole {
+            workspace_id,
+            name: role_name.to_string(),
+            description: Some(description.to_string()),
+        };
+
+        let role = create_single_role(conn, new_role).await?;
+        created_roles.push(role);
+    }
+
+    Ok(created_roles)
+}
+
+/// Creates a single custom role (kept for flexibility but simplified)
+pub async fn create_single_role(conn: &mut DbConn, new_role: NewRole) -> Result<Role> {
     // Validate role name is not empty
     if new_role.name.trim().is_empty() {
         return Err(Error::Validation("Role name cannot be empty".to_string()));
@@ -46,12 +71,11 @@ pub async fn create_role(conn: &mut DbConn, new_role: NewRole) -> Result<Role> {
 
     // Create the role
     let role = roles::create_role(conn, new_role).await?;
-
     Ok(role)
 }
 
 /// Gets a role by ID with workspace validation
-pub async fn get_role_by_id(conn: &mut DbConn, id: Uuid) -> Result<Role> {
+pub async fn get_role(conn: &mut DbConn, id: Uuid) -> Result<Role> {
     let role = roles::get_role_by_id(conn, id).await?;
     Ok(role)
 }
@@ -62,81 +86,14 @@ pub async fn list_workspace_roles(conn: &mut DbConn, workspace_id: Uuid) -> Resu
     Ok(roles)
 }
 
-/// Updates an existing role with validation
-pub async fn update_role(conn: &mut DbConn, id: Uuid, update_role: UpdateRole) -> Result<Role> {
-    // Get the existing role first
-    let existing_role = roles::get_role_by_id(conn, id).await?;
-
-    // Validate new name if provided
-    if let Some(ref name) = update_role.name {
-        if name.trim().is_empty() {
-            return Err(Error::Validation("Role name cannot be empty".to_string()));
-        }
-
-        if name.len() > 100 {
-            return Err(Error::Validation(
-                "Role name must be less than 100 characters".to_string(),
-            ));
-        }
-
-        // Check if another role with the same name already exists in the workspace
-        let duplicate_role = roles::get_role_by_workspace_and_name(
-            conn,
-            existing_role.workspace_id,
-            name,
-        )
-        .await?;
-
-        if let Some(duplicate) = duplicate_role {
-            if duplicate.id != id {
-                return Err(Error::Validation(format!(
-                    "Role '{}' already exists in this workspace",
-                    name
-                )));
-            }
-        }
+/// Gets a role by name in a workspace
+pub async fn get_role_by_name(conn: &mut DbConn, workspace_id: Uuid, role_name: &str) -> Result<Role> {
+    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, role_name).await?;
+    match role {
+        Some(role) => Ok(role),
+        None => Err(Error::NotFound(format!(
+            "Role '{}' not found in workspace",
+            role_name
+        ))),
     }
-
-    // Validate description length if provided
-    if let Some(ref description) = update_role.description {
-        if description.len() > 500 {
-            return Err(Error::Validation(
-                "Role description must be less than 500 characters".to_string(),
-            ));
-        }
-    }
-
-    // Update the role
-    let updated_role = roles::update_role(conn, id, update_role).await?;
-
-    Ok(updated_role)
-}
-
-/// Deletes a role by ID
-pub async fn delete_role(conn: &mut DbConn, id: Uuid) -> Result<u64> {
-    // Check if the role exists
-    let role = roles::get_role_by_id_optional(conn, id).await?;
-
-    if role.is_none() {
-        return Err(Error::NotFound("Role not found".to_string()));
-    }
-
-    // Delete the role
-    let rows_affected = roles::delete_role(conn, id).await?;
-
-    if rows_affected == 0 {
-        return Err(Error::NotFound("Role not found".to_string()));
-    }
-
-    Ok(rows_affected)
-}
-
-/// Validates that a role belongs to a specific workspace
-pub async fn validate_role_in_workspace(
-    conn: &mut DbConn,
-    role_id: Uuid,
-    workspace_id: Uuid,
-) -> Result<bool> {
-    let role = roles::get_role_by_id(conn, role_id).await?;
-    Ok(role.workspace_id == workspace_id)
 }

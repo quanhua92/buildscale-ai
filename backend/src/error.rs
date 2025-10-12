@@ -22,6 +22,10 @@ pub enum Error {
     /// A conflict error (resource already exists).
     #[error("Conflict: {0}")]
     Conflict(String),
+
+    /// An internal server error.
+    #[error("Internal error: {0}")]
+    Internal(String),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.

@@ -9,7 +9,7 @@ async fn test_workspace_member_creation_success() {
     let mut conn = test_app.get_connection().await;
 
     // Create a complete test scenario
-    let (user, workspace, role, _) = test_app.create_complete_test_scenario().await.unwrap();
+    let (_user, workspace, role, _) = test_app.create_complete_test_scenario().await.unwrap();
 
     // Create a new user to add as member
     let user_data = test_app.generate_test_user();
@@ -65,7 +65,7 @@ async fn test_workspace_member_removal() {
     let mut conn = test_app.get_connection().await;
 
     // Create a complete test scenario (owner is automatically created as member)
-    let (owner, workspace, role, _) = test_app.create_complete_test_scenario().await.unwrap();
+    let (_owner, workspace, role, _) = test_app.create_complete_test_scenario().await.unwrap();
 
     // Create a separate user to add as a member (not the owner)
     let user_data = test_app.generate_test_user();

@@ -287,6 +287,23 @@ impl TestApp {
         format!("{}_{}@example.com", self.test_prefix(), uuid)
     }
 
+    /// Create a test user
+    pub async fn create_test_user(&self, email: &str) -> Result<(backend::models::users::User, sqlx::PgPool), sqlx::Error> {
+        let mut conn = self.get_connection().await;
+
+        let user_data = backend::models::users::RegisterUser {
+            email: email.to_string(),
+            password: "testpassword123".to_string(),
+            confirm_password: "testpassword123".to_string(),
+            full_name: Some("Test User".to_string()),
+        };
+
+        let user = backend::services::users::register_user(&mut conn, user_data).await
+            .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
+
+        Ok((user, self.test_db.pool.clone()))
+    }
+
     /// Get a count of users with test prefix
     #[allow(dead_code)] // Actually used in user_services_tests.rs and user_queries_tests.rs, clippy false positive
     pub async fn count_test_users(&self) -> Result<i64, sqlx::Error> {

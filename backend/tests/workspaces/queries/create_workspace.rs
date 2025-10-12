@@ -3,7 +3,7 @@ use crate::common::database::TestApp;
 #[tokio::test]
 async fn test_create_workspace_query() {
     let test_app = TestApp::new("test_create_workspace_query").await;
-    let mut conn = test_app.get_connection().await;
+    let _conn = test_app.get_connection().await;
 
     // Create a workspace with real user
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
@@ -34,7 +34,7 @@ async fn test_create_workspace_query() {
 #[tokio::test]
 async fn test_create_workspace_with_different_owner() {
     let test_app = TestApp::new("test_create_workspace_with_different_owner").await;
-    let mut conn = test_app.get_connection().await;
+    let _conn = test_app.get_connection().await;
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -44,11 +44,11 @@ async fn test_create_workspace_with_different_owner() {
 #[tokio::test]
 async fn test_create_workspace_long_name() {
     let test_app = TestApp::new("test_create_workspace_long_name").await;
-    let mut conn = test_app.get_connection().await;
+    let _conn = test_app.get_connection().await;
 
     let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Test that we can create a workspace with a long name
-    let long_name = format!("{}_very_long_workspace_name_that_is_still_valid", test_app.test_prefix());
+    let _long_name = format!("{}_very_long_workspace_name_that_is_still_valid", test_app.test_prefix());
     assert!(workspace.name.len() <= 100, "Workspace name should be valid length");
 }

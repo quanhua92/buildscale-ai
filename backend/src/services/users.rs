@@ -1,8 +1,12 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result},
-    models::users::{NewUser, RegisterUser, User},
+    models::{
+        users::{NewUser, RegisterUser, User},
+        requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest}
+    },
     queries::users,
+    services::workspaces,
 };
 use argon2::{
     Argon2,
@@ -37,6 +41,53 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
     let user = users::create_user(conn, new_user).await?;
 
     Ok(user)
+}
+
+/// Registers a new user and creates their first workspace in one transaction
+pub async fn register_user_with_workspace(conn: &mut DbConn, request: UserWorkspaceRegistrationRequest) -> Result<UserWorkspaceResult> {
+    // Validate that password and confirm_password match
+    if request.password != request.confirm_password {
+        return Err(Error::Validation("Passwords do not match".to_string()));
+    }
+
+    // Validate password length (minimum 8 characters)
+    if request.password.len() < 8 {
+        return Err(Error::Validation(
+            "Password must be at least 8 characters long".to_string(),
+        ));
+    }
+
+    // Validate workspace name is not empty
+    if request.workspace_name.trim().is_empty() {
+        return Err(Error::Validation("Workspace name cannot be empty".to_string()));
+    }
+
+    // Validate workspace name length (maximum 100 characters)
+    if request.workspace_name.len() > 100 {
+        return Err(Error::Validation(
+            "Workspace name must be less than 100 characters".to_string(),
+        ));
+    }
+
+    // Register the user
+    let user = register_user(conn, RegisterUser {
+        email: request.email,
+        password: request.password,
+        confirm_password: request.confirm_password,
+        full_name: request.full_name,
+    }).await?;
+
+    // Create the user's first workspace with default roles and owner as admin
+    let workspace_request = CreateWorkspaceRequest {
+        name: request.workspace_name,
+        owner_id: user.id,
+    };
+    let workspace_result = workspaces::create_workspace(conn, workspace_request).await?;
+
+    Ok(UserWorkspaceResult {
+        user,
+        workspace: workspace_result,
+    })
 }
 
 /// Generates a password hash using Argon2
