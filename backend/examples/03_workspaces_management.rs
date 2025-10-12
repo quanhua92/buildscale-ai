@@ -6,6 +6,7 @@ use backend::{
             CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
             WorkspaceMemberRequest, UserWorkspaceRegistrationRequest
         },
+        roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE},
     },
     queries::{
         users::list_users,
@@ -217,15 +218,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         members: vec![
             WorkspaceMemberRequest {
                 user_id: admin_user.id,
-                role_name: "admin".to_string(),
+                role_name: ADMIN_ROLE.to_string(),
             },
             WorkspaceMemberRequest {
                 user_id: editor_user.id,
-                role_name: "editor".to_string(),
+                role_name: EDITOR_ROLE.to_string(),
             },
             WorkspaceMemberRequest {
                 user_id: viewer_user.id,
-                role_name: "viewer".to_string(),
+                role_name: VIEWER_ROLE.to_string(),
             },
         ],
     };
@@ -381,9 +382,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for (i, member) in members.iter().enumerate() {
             // Get role name by checking against default roles
-            let role_name = if member.role_id == roles[0].id { "admin" }
-                           else if roles.len() > 1 && member.role_id == roles[1].id { "editor" }
-                           else if roles.len() > 2 && member.role_id == roles[2].id { "viewer" }
+            let role_name = if member.role_id == roles[0].id { ADMIN_ROLE }
+                           else if roles.len() > 1 && member.role_id == roles[1].id { EDITOR_ROLE }
+                           else if roles.len() > 2 && member.role_id == roles[2].id { VIEWER_ROLE }
                            else { "unknown" };
             println!("       {}. User ID: {} - {}", i + 1, member.user_id, role_name);
         }

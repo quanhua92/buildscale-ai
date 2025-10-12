@@ -8,6 +8,7 @@ use crate::{
         },
         workspaces::{NewWorkspace, Workspace},
         workspace_members::NewWorkspaceMember,
+        roles::ADMIN_ROLE,
     },
     queries::{workspaces, workspace_members},
     services::roles,
@@ -41,7 +42,7 @@ pub async fn create_workspace(conn: &mut DbConn, request: CreateWorkspaceRequest
     // Find the admin role
     let admin_role = created_roles
         .iter()
-        .find(|role| role.name == "admin")
+        .find(|role| role.name == ADMIN_ROLE)
         .ok_or_else(|| Error::Internal("Admin role not created properly".to_string()))?;
 
     // Add owner as admin member
@@ -87,7 +88,7 @@ pub async fn create_workspace_with_members(conn: &mut DbConn, request: CreateWor
     // Find the admin role
     let admin_role = created_roles
         .iter()
-        .find(|role| role.name == "admin")
+        .find(|role| role.name == ADMIN_ROLE)
         .ok_or_else(|| Error::Internal("Admin role not created properly".to_string()))?;
 
     // Add owner as admin member
@@ -149,7 +150,7 @@ pub async fn update_workspace_owner(
     }
 
     // Get admin role to ensure new owner has admin access
-    let admin_role = roles::get_role_by_name(conn, workspace_id, "admin").await?;
+    let admin_role = roles::get_role_by_name(conn, workspace_id, ADMIN_ROLE).await?;
 
     // Add new owner as admin member if not already a member
     let existing_member = workspace_members::get_workspace_member_optional(

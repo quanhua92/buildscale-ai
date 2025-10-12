@@ -1,6 +1,7 @@
 use backend::{
     services::workspaces::{create_workspace, create_workspace_with_members, delete_workspace, get_workspace},
     models::requests::{CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest, WorkspaceMemberRequest},
+    models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE},
 };
 use crate::common::database::TestApp;
 
@@ -40,9 +41,9 @@ async fn test_comprehensive_workspace_creation_success() {
     // Verify default roles were created
     assert_eq!(workspace_result.roles.len(), 3, "Should create 3 default roles");
     let role_names: Vec<String> = workspace_result.roles.iter().map(|r| r.name.clone()).collect();
-    assert!(role_names.contains(&"admin".to_string()), "Should have admin role");
-    assert!(role_names.contains(&"editor".to_string()), "Should have editor role");
-    assert!(role_names.contains(&"viewer".to_string()), "Should have viewer role");
+    assert!(role_names.contains(&ADMIN_ROLE.to_string()), "Should have admin role");
+    assert!(role_names.contains(&EDITOR_ROLE.to_string()), "Should have editor role");
+    assert!(role_names.contains(&VIEWER_ROLE.to_string()), "Should have viewer role");
 
     // Verify owner was added as admin member
     assert_eq!(workspace_result.owner_membership.user_id, user.id, "Owner should be added as member");
@@ -181,11 +182,11 @@ async fn test_workspace_creation_with_members() {
         members: vec![
             WorkspaceMemberRequest {
                 user_id: member1_user.id,
-                role_name: "editor".to_string(),
+                role_name: EDITOR_ROLE.to_string(),
             },
             WorkspaceMemberRequest {
                 user_id: member2_user.id,
-                role_name: "viewer".to_string(),
+                role_name: VIEWER_ROLE.to_string(),
             },
         ],
     };
@@ -211,7 +212,7 @@ async fn test_workspace_creation_with_members() {
 
     // Find admin role ID
     let admin_role = workspace_result.roles.iter()
-        .find(|r| r.name == "admin")
+        .find(|r| r.name == ADMIN_ROLE)
         .expect("Should have admin role");
 
     assert_eq!(owner_member.role_id, admin_role.id, "Owner should have admin role");
@@ -222,7 +223,7 @@ async fn test_workspace_creation_with_members() {
         .expect("Member1 should be in members list");
 
     let editor_role = workspace_result.roles.iter()
-        .find(|r| r.name == "editor")
+        .find(|r| r.name == EDITOR_ROLE)
         .expect("Should have editor role");
 
     assert_eq!(member1.role_id, editor_role.id, "Member1 should have editor role");
@@ -296,11 +297,11 @@ async fn test_workspace_creation_with_duplicate_owner_as_member() {
         members: vec![
             WorkspaceMemberRequest {
                 user_id: owner_user.id, // Owner listed as member
-                role_name: "admin".to_string(),
+                role_name: ADMIN_ROLE.to_string(),
             },
             WorkspaceMemberRequest {
                 user_id: member_user.id,
-                role_name: "editor".to_string(),
+                role_name: EDITOR_ROLE.to_string(),
             },
         ],
     };

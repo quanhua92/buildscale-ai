@@ -1,7 +1,7 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result},
-    models::roles::{NewRole, Role},
+    models::roles::{NewRole, Role, DEFAULT_ROLES, descriptions},
     queries::roles,
 };
 use uuid::Uuid;
@@ -10,18 +10,12 @@ use uuid::Uuid;
 pub async fn create_default_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>> {
     let mut created_roles = Vec::new();
 
-    // Define default roles
-    let default_roles = vec![
-        ("admin", "Full administrative access to workspace"),
-        ("editor", "Can create and edit content"),
-        ("viewer", "Read-only access to workspace"),
-    ];
-
-    for (role_name, description) in default_roles {
+    // Create default roles using constants
+    for role_name in DEFAULT_ROLES {
         let new_role = NewRole {
             workspace_id,
             name: role_name.to_string(),
-            description: Some(description.to_string()),
+            description: Some(descriptions::for_role(role_name).to_string()),
         };
 
         let role = create_single_role(conn, new_role).await?;

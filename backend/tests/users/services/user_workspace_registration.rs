@@ -3,6 +3,7 @@ use backend::{
     models::requests::UserWorkspaceRegistrationRequest,
     services::workspaces::get_workspace,
     services::roles::list_workspace_roles,
+    models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE},
 };
 use crate::common::database::TestApp;
 
@@ -225,13 +226,13 @@ async fn test_user_registration_with_workspace_default_roles_created() {
     assert_eq!(registration_result.workspace.roles.len(), 3, "Should create 3 default roles");
 
     let role_names: Vec<String> = registration_result.workspace.roles.iter().map(|r| r.name.clone()).collect();
-    assert!(role_names.contains(&"admin".to_string()), "Should have admin role");
-    assert!(role_names.contains(&"editor".to_string()), "Should have editor role");
-    assert!(role_names.contains(&"viewer".to_string()), "Should have viewer role");
+    assert!(role_names.contains(&ADMIN_ROLE.to_string()), "Should have admin role");
+    assert!(role_names.contains(&EDITOR_ROLE.to_string()), "Should have editor role");
+    assert!(role_names.contains(&VIEWER_ROLE.to_string()), "Should have viewer role");
 
     // Verify owner was added with admin role
     let admin_role = registration_result.workspace.roles.iter()
-        .find(|r| r.name == "admin")
+        .find(|r| r.name == ADMIN_ROLE)
         .expect("Should have admin role");
 
     assert_eq!(
