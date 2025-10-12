@@ -4,10 +4,11 @@ use uuid::Uuid;
 /// Default workspace roles
 pub const ADMIN_ROLE: &str = "admin";
 pub const EDITOR_ROLE: &str = "editor";
+pub const MEMBER_ROLE: &str = "member";
 pub const VIEWER_ROLE: &str = "viewer";
 
-/// All default roles in order of hierarchy (admin > editor > viewer)
-pub const DEFAULT_ROLES: [&str; 3] = [ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE];
+/// All default roles in order of hierarchy (admin > editor > member > viewer)
+pub const DEFAULT_ROLES: [&str; 4] = [ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE];
 
 /// Enum representing workspace roles with type safety
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,6 +16,7 @@ pub const DEFAULT_ROLES: [&str; 3] = [ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE];
 pub enum WorkspaceRole {
     Admin,
     Editor,
+    Member,
     Viewer,
 }
 
@@ -24,6 +26,7 @@ impl WorkspaceRole {
         match self {
             WorkspaceRole::Admin => ADMIN_ROLE,
             WorkspaceRole::Editor => EDITOR_ROLE,
+            WorkspaceRole::Member => MEMBER_ROLE,
             WorkspaceRole::Viewer => VIEWER_ROLE,
         }
     }
@@ -38,6 +41,7 @@ impl WorkspaceRole {
         match role {
             ADMIN_ROLE => Some(WorkspaceRole::Admin),
             EDITOR_ROLE => Some(WorkspaceRole::Editor),
+            MEMBER_ROLE => Some(WorkspaceRole::Member),
             VIEWER_ROLE => Some(WorkspaceRole::Viewer),
             _ => None,
         }
@@ -64,10 +68,11 @@ impl std::fmt::Display for WorkspaceRole {
 
 /// Role descriptions for default roles
 pub mod descriptions {
-    use super::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE};
+    use super::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE};
 
     pub const ADMIN: &str = "Full administrative access to workspace";
     pub const EDITOR: &str = "Can create and edit content";
+    pub const MEMBER: &str = "Can comment and participate in discussions";
     pub const VIEWER: &str = "Read-only access to workspace";
 
     /// Get description for a role name
@@ -75,6 +80,7 @@ pub mod descriptions {
         match role_name {
             ADMIN_ROLE => ADMIN,
             EDITOR_ROLE => EDITOR,
+            MEMBER_ROLE => MEMBER,
             VIEWER_ROLE => VIEWER,
             _ => "Custom role",
         }

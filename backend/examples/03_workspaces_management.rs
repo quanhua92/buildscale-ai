@@ -6,7 +6,7 @@ use backend::{
             CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
             WorkspaceMemberRequest, UserWorkspaceRegistrationRequest
         },
-        roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE},
+        roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
     },
     queries::{
         users::list_users,
@@ -49,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}_owner@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_admin@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_editor@{}", EXAMPLE_PREFIX, "example.com"),
+        format!("{}_member@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_viewer@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_member1@{}", EXAMPLE_PREFIX, "example.com"),
         format!("{}_member2@{}", EXAMPLE_PREFIX, "example.com"),
@@ -171,6 +172,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("✓ Created viewer user: {} (ID: {})", viewer_user.email, viewer_user.id);
 
+    let member_user = register_user(
+        &mut conn,
+        RegisterUser {
+            email: format!("{}_member@{}", EXAMPLE_PREFIX, "example.com"),
+            password: "memberpass123".to_string(),
+            confirm_password: "memberpass123".to_string(),
+            full_name: Some("Member User".to_string()),
+        },
+    )
+    .await?;
+    println!("✓ Created member user: {} (ID: {})", member_user.email, member_user.id);
+
     let member1_user = register_user(
         &mut conn,
         RegisterUser {
@@ -225,6 +238,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 role_name: EDITOR_ROLE.to_string(),
             },
             WorkspaceMemberRequest {
+                user_id: member_user.id,
+                role_name: MEMBER_ROLE.to_string(),
+            },
+            WorkspaceMemberRequest {
                 user_id: viewer_user.id,
                 role_name: VIEWER_ROLE.to_string(),
             },
@@ -233,7 +250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workspace2_result = create_workspace_with_members(&mut conn, workspace2_request).await?;
     println!("✓ Created workspace2: '{}' with {} initial members",
         workspace2_result.workspace.name, workspace2_result.members.len());
-    println!("  - Owner + 3 members added with their roles in one operation");
+    println!("  - Owner + 4 members added with their roles in one operation");
     println!();
 
     // ========================================================
@@ -377,14 +394,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("  📁 Workspace: {}", workspace.name);
         println!("     Owner: {}", workspace.owner_id);
-        println!("     Roles: {} (default: admin, editor, viewer)", roles.len());
+        println!("     Roles: {} (default: admin, editor, member, viewer)", roles.len());
         println!("     Members: {}", members.len());
 
         for (i, member) in members.iter().enumerate() {
             // Get role name by checking against default roles
             let role_name = if member.role_id == roles[0].id { ADMIN_ROLE }
                            else if roles.len() > 1 && member.role_id == roles[1].id { EDITOR_ROLE }
-                           else if roles.len() > 2 && member.role_id == roles[2].id { VIEWER_ROLE }
+                           else if roles.len() > 2 && member.role_id == roles[2].id { MEMBER_ROLE }
+                           else if roles.len() > 3 && member.role_id == roles[3].id { VIEWER_ROLE }
                            else { "unknown" };
             println!("       {}. User ID: {} - {}", i + 1, member.user_id, role_name);
         }
@@ -400,7 +418,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Single-method workspace creation with automatic setup");
     println!("✅ Workspace creation with multiple initial members");
     println!("✅ User registration with workspace in one transaction");
-    println!("✅ Automatic default roles creation (admin, editor, viewer)");
+    println!("✅ Automatic default roles creation (admin, editor, member, viewer)");
     println!("✅ Automatic owner as admin member assignment");
     println!("✅ Streamlined ownership transfer with role management");
     println!("✅ Comprehensive validation and error handling");

@@ -1,7 +1,7 @@
 use backend::{
     services::workspaces::{create_workspace, create_workspace_with_members, delete_workspace, get_workspace},
     models::requests::{CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest, WorkspaceMemberRequest},
-    models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE},
+    models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
 };
 use crate::common::database::TestApp;
 
@@ -39,10 +39,11 @@ async fn test_comprehensive_workspace_creation_success() {
     );
 
     // Verify default roles were created
-    assert_eq!(workspace_result.roles.len(), 3, "Should create 3 default roles");
+    assert_eq!(workspace_result.roles.len(), 4, "Should create 4 default roles");
     let role_names: Vec<String> = workspace_result.roles.iter().map(|r| r.name.clone()).collect();
     assert!(role_names.contains(&ADMIN_ROLE.to_string()), "Should have admin role");
     assert!(role_names.contains(&EDITOR_ROLE.to_string()), "Should have editor role");
+    assert!(role_names.contains(&MEMBER_ROLE.to_string()), "Should have member role");
     assert!(role_names.contains(&VIEWER_ROLE.to_string()), "Should have viewer role");
 
     // Verify owner was added as admin member
@@ -200,7 +201,7 @@ async fn test_workspace_creation_with_members() {
     assert_eq!(workspace_result.workspace.owner_id, owner_user.id, "Workspace owner should match");
 
     // Verify default roles were created
-    assert_eq!(workspace_result.roles.len(), 3, "Should create 3 default roles");
+    assert_eq!(workspace_result.roles.len(), 4, "Should create 4 default roles");
 
     // Verify all members were added (owner + 2 additional members)
     assert_eq!(workspace_result.members.len(), 3, "Should have 3 members total");

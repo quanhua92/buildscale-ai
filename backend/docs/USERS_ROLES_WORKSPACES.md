@@ -24,7 +24,7 @@ This comprehensive documentation covers the complete user-role-workspace managem
 The system implements a **multi-tenant workspace-based architecture** with the following key characteristics:
 
 - **Workspace Isolation**: Each workspace is completely isolated from others
-- **Role-Based Access Control (RBAC)**: Three-tier role system (Admin > Editor > Viewer)
+- **Role-Based Access Control (RBAC)**: Four-tier role system (Admin > Editor > Member > Viewer)
 - **Single Owner Model**: Each workspace has exactly one owner with full control
 - **Flexible Membership**: Users can be members of multiple workspaces with different roles
 - **Centralized Role Management**: Default roles are automatically created for each workspace
@@ -149,8 +149,9 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool>
 ```rust
 pub const ADMIN_ROLE: &str = "admin";    // Full administrative access
 pub const EDITOR_ROLE: &str = "editor";  // Can create and edit content
+pub const MEMBER_ROLE: &str = "member";  // Can comment and participate in discussions
 pub const VIEWER_ROLE: &str = "viewer";  // Read-only access
-pub const DEFAULT_ROLES: [&str; 3] = [ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE];
+pub const DEFAULT_ROLES: [&str; 4] = [ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE];
 ```
 
 #### `WorkspaceRole` Enum - Type Safety
@@ -160,6 +161,7 @@ pub const DEFAULT_ROLES: [&str; 3] = [ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE];
 pub enum WorkspaceRole {
     Admin,   // Full administrative access
     Editor,  // Can create and edit content
+    Member,  // Can comment and participate in discussions
     Viewer,  // Read-only access
 }
 ```
@@ -180,7 +182,7 @@ impl WorkspaceRole {
 pub struct Role {
     pub id: Uuid,                    // Primary key
     pub workspace_id: Uuid,          // Associated workspace
-    pub name: String,                // Role name (admin, editor, viewer, custom)
+    pub name: String,                // Role name (admin, editor, member, viewer, custom)
     pub description: Option<String>, // Optional description
 }
 ```
@@ -210,12 +212,14 @@ Built-in descriptions for default roles:
 pub mod descriptions {
     pub const ADMIN: &str = "Full administrative access to workspace";
     pub const EDITOR: &str = "Can create and edit content";
+    pub const MEMBER: &str = "Can comment and participate in discussions";
     pub const VIEWER: &str = "Read-only access to workspace";
 
     pub fn for_role(role_name: &str) -> &'static str {
         match role_name {
             ADMIN_ROLE => ADMIN,
             EDITOR_ROLE => EDITOR,
+            MEMBER_ROLE => MEMBER,
             VIEWER_ROLE => VIEWER,
             _ => "Custom role",
         }
@@ -231,7 +235,7 @@ pub async fn create_default_roles(conn: &mut DbConn, workspace_id: Uuid) -> Resu
 ```
 
 **Features:**
-- Automatically creates admin, editor, and viewer roles
+- Automatically creates admin, editor, member, and viewer roles
 - Assigns appropriate descriptions
 - Returns all created roles for immediate use
 
@@ -249,6 +253,7 @@ pub async fn get_role_by_name(conn: &mut DbConn, workspace_id: Uuid, role_name: 
 |------|-------------|------------------|
 | **Admin** | Full workspace control, user management, role assignment, workspace settings | Workspace owners, administrators |
 | **Editor** | Create and edit content, invite viewers, moderate content | Content creators, team leads |
+| **Member** | Comment and participate in discussions, limited content interaction | Team members, collaborators, contributors |
 | **Viewer** | Read-only access to content and discussions | Clients, stakeholders, read-only team members |
 
 ### Role Validation Rules
@@ -302,7 +307,7 @@ pub async fn create_workspace(
 ```
 
 **Features:**
-- Creates workspace with default roles (admin, editor, viewer)
+- Creates workspace with default roles (admin, editor, member, viewer)
 - Automatically adds owner as admin member
 - Returns complete workspace setup with roles and members
 - Validates workspace name (1-100 characters, not empty)
@@ -558,7 +563,7 @@ pub struct CreateWorkspaceWithMembersRequest {
 ```rust
 pub struct WorkspaceMemberRequest {
     pub user_id: Uuid,       // User to add
-    pub role_name: String,    // Role name (admin, editor, viewer, custom)
+    pub role_name: String,    // Role name (admin, editor, member, viewer, custom)
 }
 ```
 
@@ -786,7 +791,7 @@ let result = create_workspace(&mut conn, workspace_request).await?;
 ```rust
 use backend::services::workspaces::create_workspace_with_members;
 use backend::models::requests::{CreateWorkspaceWithMembersRequest, WorkspaceMemberRequest};
-use backend::models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE};
+use backend::models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE};
 
 let workspace_request = CreateWorkspaceWithMembersRequest {
     name: "Project Team".to_string(),
@@ -811,7 +816,7 @@ let result = create_workspace_with_members(&mut conn, workspace_request).await?;
 
 #### Using Role Constants
 ```rust
-use backend::models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE};
+use backend::models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE};
 
 // Always use constants instead of hardcoded strings
 let admin_request = WorkspaceMemberRequest {
@@ -965,7 +970,7 @@ let member = add_owner_as_member(&mut conn, workspace.id, owner_id).await?;
 #### Role Constant Usage
 ```rust
 // ✅ Preferred: Use centralized constants
-use backend::models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE};
+use backend::models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE};
 
 let member_request = WorkspaceMemberRequest {
     user_id: user.id,

@@ -3,7 +3,7 @@ use backend::{
     models::requests::UserWorkspaceRegistrationRequest,
     services::workspaces::get_workspace,
     services::roles::list_workspace_roles,
-    models::roles::{ADMIN_ROLE, EDITOR_ROLE, VIEWER_ROLE},
+    models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
 };
 use crate::common::database::TestApp;
 
@@ -43,7 +43,7 @@ async fn test_user_registration_with_workspace_success() {
     );
 
     // Verify default roles were created
-    assert_eq!(registration_result.workspace.roles.len(), 3, "Should create 3 default roles");
+    assert_eq!(registration_result.workspace.roles.len(), 4, "Should create 4 default roles");
 
     // Verify owner was added as admin member
     assert_eq!(
@@ -222,12 +222,13 @@ async fn test_user_registration_with_workspace_default_roles_created() {
 
     let registration_result = result.unwrap();
 
-    // Verify all three default roles were created
-    assert_eq!(registration_result.workspace.roles.len(), 3, "Should create 3 default roles");
+    // Verify all four default roles were created
+    assert_eq!(registration_result.workspace.roles.len(), 4, "Should create 4 default roles");
 
     let role_names: Vec<String> = registration_result.workspace.roles.iter().map(|r| r.name.clone()).collect();
     assert!(role_names.contains(&ADMIN_ROLE.to_string()), "Should have admin role");
     assert!(role_names.contains(&EDITOR_ROLE.to_string()), "Should have editor role");
+    assert!(role_names.contains(&MEMBER_ROLE.to_string()), "Should have member role");
     assert!(role_names.contains(&VIEWER_ROLE.to_string()), "Should have viewer role");
 
     // Verify owner was added with admin role
@@ -273,5 +274,5 @@ async fn test_user_registration_with_workspace_workspace_accessible() {
     assert!(roles.is_ok(), "Roles should be accessible");
 
     let role_list = roles.unwrap();
-    assert_eq!(role_list.len(), 3, "Should have 3 roles in database");
+    assert_eq!(role_list.len(), 4, "Should have 4 roles in database");
 }
