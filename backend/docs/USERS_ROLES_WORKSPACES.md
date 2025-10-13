@@ -148,8 +148,8 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool>
 #### Role Constants
 ```rust
 pub const ADMIN_ROLE: &str = "admin";    // Full administrative access
-pub const EDITOR_ROLE: &str = "editor";  // Can create and edit content
-pub const MEMBER_ROLE: &str = "member";  // Can comment and participate in discussions
+pub const EDITOR_ROLE: &str = "editor";  // Can create and edit any content
+pub const MEMBER_ROLE: &str = "member";  // Can create and edit their own content, comment, and participate in discussions
 pub const VIEWER_ROLE: &str = "viewer";  // Read-only access
 pub const DEFAULT_ROLES: [&str; 4] = [ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE];
 ```
@@ -160,8 +160,8 @@ pub const DEFAULT_ROLES: [&str; 4] = [ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEW
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceRole {
     Admin,   // Full administrative access
-    Editor,  // Can create and edit content
-    Member,  // Can comment and participate in discussions
+    Editor,  // Can create and edit any content
+    Member,  // Can create and edit their own content, comment, and participate in discussions
     Viewer,  // Read-only access
 }
 ```
@@ -211,8 +211,8 @@ Built-in descriptions for default roles:
 ```rust
 pub mod descriptions {
     pub const ADMIN: &str = "Full administrative access to workspace";
-    pub const EDITOR: &str = "Can create and edit content";
-    pub const MEMBER: &str = "Can comment and participate in discussions";
+    pub const EDITOR: &str = "Can create and edit any content";
+    pub const MEMBER: &str = "Can create and edit their own content, comment, and participate in discussions";
     pub const VIEWER: &str = "Read-only access to workspace";
 
     pub fn for_role(role_name: &str) -> &'static str {
@@ -252,8 +252,8 @@ pub async fn get_role_by_name(conn: &mut DbConn, workspace_id: Uuid, role_name: 
 | Role | Permissions | Typical Use Cases |
 |------|-------------|------------------|
 | **Admin** | Full workspace control, user management, role assignment, workspace settings | Workspace owners, administrators |
-| **Editor** | Create and edit content, invite viewers, moderate content | Content creators, team leads |
-| **Member** | Comment and participate in discussions, limited content interaction | Team members, collaborators, contributors |
+| **Editor** | Create and edit any content, invite viewers, moderate content | Content creators, team leads |
+| **Member** | Create and edit their own content, comment, and participate in discussions | Team members, collaborators, contributors |
 | **Viewer** | Read-only access to content and discussions | Clients, stakeholders, read-only team members |
 
 ### Role Validation Rules
