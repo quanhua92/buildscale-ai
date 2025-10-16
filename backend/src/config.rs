@@ -11,7 +11,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DatabaseConfig {
     pub user: String,
-    #[serde(skip)]
+    #[serde(skip_serializing)]
     pub password: SecretString,
     pub host: String,
     pub port: u16,
