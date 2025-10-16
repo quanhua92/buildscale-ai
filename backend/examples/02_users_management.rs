@@ -2,9 +2,9 @@ use backend::{
     load_config,
     models::users::{LoginUser, RegisterUser, UpdateUser},
     queries::users::{
-        create_user, delete_user, get_user_by_email, get_user_by_id, list_users, update_user,
+        create_user, delete_user, get_user_by_email, list_users, update_user,
     },
-    services::users::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash},
+    services::users::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash, get_user_by_id, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
 };
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
@@ -296,10 +296,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Get user by ID
+    // Get user by ID using service method
     if let Some((_, first_user)) = created_users.first() {
-        let user_by_id = get_user_by_id(&mut conn, first_user.id).await?;
-        println!("✓ Found user by ID {}: {}", user_by_id.id, user_by_id.email);
+        match get_user_by_id(&mut conn, first_user.id).await? {
+            Some(user_by_id) => println!("✓ Found user by ID {}: {}", user_by_id.id, user_by_id.email),
+            None => println!("✗ User not found by ID {}", first_user.id),
+        }
     }
     println!();
 
@@ -552,6 +554,141 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
+    // ===== NEW SERVICE METHOD DEMONSTRATIONS =====
+
+    // Demonstrate email availability checking
+    println!("Testing email availability checking...");
+
+    // Check if new email is available
+    let available_email = format!("{}_new_user@{}", EXAMPLE_PREFIX, "example.com");
+    let is_available = is_email_available(&mut conn, &available_email).await?;
+    println!("✓ Email '{}' is available: {}", available_email, is_available);
+
+    // Check if existing email is available
+    let existing_email = format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com");
+    let is_existing_available = is_email_available(&mut conn, &existing_email).await?;
+    println!("✓ Email '{}' is available: {}", existing_email, is_existing_available);
+
+    // Test invalid email formats
+    let invalid_emails = vec!["", "   ", "invalid-email", "nodomain@", "@nodomain.com"];
+    for invalid_email in invalid_emails {
+        match is_email_available(&mut conn, invalid_email).await {
+            Ok(_) => println!("✗ Should have rejected invalid email: '{}'", invalid_email),
+            Err(_) => println!("✓ Correctly rejected invalid email: '{}'", invalid_email),
+        }
+    }
+    println!();
+
+    // Demonstrate password updates using service method
+    println!("Testing password update service method...");
+
+    if let Some((_, charlie_user)) = created_users.iter().find(|(name, _)| name.contains("Charlie")) {
+        println!("Updating password for {}...", charlie_user.email);
+
+        // Update Charlie's password
+        update_password(&mut conn, charlie_user.id, "NewCharliePassword2024").await?;
+        println!("✓ Password updated successfully for {}", charlie_user.email);
+
+        // Verify new password works by logging in
+        let _login_result = login_user(&mut conn, LoginUser {
+            email: charlie_user.email.clone(),
+            password: "NewCharliePassword2024".to_string(),
+        }).await?;
+        println!("✓ Login successful with new password for {}", charlie_user.email);
+
+        // Verify old password no longer works
+        match login_user(&mut conn, LoginUser {
+            email: charlie_user.email.clone(),
+            password: "Complex!@#$%^789".to_string(), // Old password
+        }).await {
+            Ok(_) => println!("✗ Old password should no longer work"),
+            Err(_) => println!("✓ Old password correctly rejected"),
+        }
+    }
+    println!();
+
+    // Demonstrate session info access
+    println!("Testing session info service method...");
+
+    // Create a new session for Alice
+    if let Some((_, alice_user)) = created_users.iter().find(|(name, _)| name.contains("Alice")) {
+        let login_result = login_user(&mut conn, LoginUser {
+            email: alice_user.email.clone(),
+            password: "alicepassword123".to_string(),
+        }).await?;
+
+        // Get session info without validation
+        match get_session_info(&mut conn, &login_result.session_token).await? {
+            Some(session_info) => {
+                println!("✓ Retrieved session info:");
+                println!("  Session ID: {}", session_info.id);
+                println!("  User ID: {}", session_info.user_id);
+                println!("  Token: {}...", &session_info.token[..8]);
+                println!("  Expires at: {}", session_info.expires_at);
+                println!("  Created at: {}", session_info.created_at);
+            },
+            None => println!("✗ Session info not found"),
+        }
+
+        // Test with invalid token
+        match get_session_info(&mut conn, "invalid_token").await? {
+            Some(_) => println!("✗ Should not find session info for invalid token"),
+            None => println!("✓ Correctly returned None for invalid token"),
+        }
+    }
+    println!();
+
+    // Demonstrate user session management
+    println!("Testing user session management methods...");
+
+    if let Some((_, david_user)) = created_users.iter().find(|(name, _)| name.contains("David")) {
+        // Create multiple sessions for David
+        let mut session_tokens = Vec::new();
+        for i in 0..3 {
+            let login_result = login_user(&mut conn, LoginUser {
+                email: david_user.email.clone(),
+                password: "UPPERCASE123".to_string(),
+            }).await?;
+            session_tokens.push(login_result.session_token);
+            println!("✓ Created session {} for {}", i + 1, david_user.email);
+        }
+
+        // Get active sessions
+        let active_sessions = get_user_active_sessions(&mut conn, david_user.id).await?;
+        println!("✓ David has {} active sessions", active_sessions.len());
+
+        // Display session details
+        for (i, session) in active_sessions.iter().enumerate() {
+            println!("  Session {}: expires at {}", i + 1, session.expires_at);
+        }
+
+        // Revoke all sessions
+        let revoked_count = revoke_all_user_sessions(&mut conn, david_user.id).await?;
+        println!("✓ Revoked {} sessions for {}", revoked_count, david_user.email);
+
+        // Verify sessions are no longer active
+        let remaining_sessions = get_user_active_sessions(&mut conn, david_user.id).await?;
+        println!("✓ David now has {} active sessions", remaining_sessions.len());
+
+        // Verify tokens are invalid
+        for (i, token) in session_tokens.iter().enumerate() {
+            match validate_session(&mut conn, token).await {
+                Ok(_) => println!("✗ Session {} should be invalid", i + 1),
+                Err(_) => println!("✓ Session {} correctly invalidated", i + 1),
+            }
+        }
+    }
+    println!();
+
+    // Test get_user_by_id with non-existent user
+    println!("Testing get_user_by_id with non-existent user...");
+    let non_existent_id = uuid::Uuid::now_v7();
+    match get_user_by_id(&mut conn, non_existent_id).await? {
+        Some(_) => println!("✗ Should not find non-existent user"),
+        None => println!("✓ Correctly returned None for non-existent user ID"),
+    }
+    println!();
+
     println!("🎉 All features demonstrated successfully!");
     println!("✅ User Registration & Validation");
     println!("✅ User Login & Authentication");
@@ -566,6 +703,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Direct Database Operations");
     println!("✅ Error Handling & Validation");
     println!("✅ Re-run Safety (Auto-cleanup & Idempotent)");
+    println!("🆕 Email Availability Checking");
+    println!("🆕 Service Layer Password Updates");
+    println!("🆕 Session Information Access");
+    println!("🆕 User Session Management (Active Sessions & Revocation)");
+    println!("🆕 Safe User ID Lookups with Option Handling");
     println!();
     println!("💡 This example is re-run safe - it automatically cleans up previous data");
     println!("   and works with sqlx CLI migrations (no manual table creation).");

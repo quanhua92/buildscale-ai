@@ -94,7 +94,7 @@ Data models and type definitions:
 
 #### `/src/services/`
 Business logic layer:
-- `users.rs`: User registration, login, logout, session validation, password hashing, authentication
+- `users.rs`: User registration, login, logout, session validation, password hashing, authentication, user management utilities
 - `workspaces.rs`: Workspace creation, ownership transfer, access control
 - `roles.rs`: Role creation, default role setup, role management
 - `workspace_members.rs`: Member assignment and role validation
@@ -218,6 +218,18 @@ generate_session_token() -> Result<String>
 
 // Combined user + workspace creation in single transaction
 register_user_with_workspace(&mut conn, UserWorkspaceRegistrationRequest) -> Result<UserWorkspaceResult>
+
+// Enhanced user utility methods
+get_user_by_id(&mut conn, user_id: Uuid) -> Result<Option<User>>
+update_password(&mut conn, user_id: Uuid, new_password: &str) -> Result<()>
+is_email_available(&mut conn, email: &str) -> Result<bool>
+
+// Session information access
+get_session_info(&mut conn, session_token: &str) -> Result<Option<UserSession>>
+
+// User session management convenience methods
+get_user_active_sessions(&mut conn, user_id: Uuid) -> Result<Vec<UserSession>>
+revoke_all_user_sessions(&mut conn, user_id: Uuid) -> Result<u64>
 ```
 
 ### Session Query Layer (Database Operations)

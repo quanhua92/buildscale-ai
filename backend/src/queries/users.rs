@@ -101,6 +101,29 @@ pub async fn update_user(conn: &mut DbConn, user: &User) -> Result<User> {
     Ok(updated_user)
 }
 
+/// Updates a user's password hash.
+pub async fn update_user_password(conn: &mut DbConn, user_id: Uuid, password_hash: &str) -> Result<()> {
+    let rows_affected = sqlx::query(
+        r#"
+        UPDATE users
+        SET password_hash = $1, updated_at = now()
+        WHERE id = $2
+        "#,
+    )
+    .bind(password_hash)
+    .bind(user_id)
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(Error::NotFound(format!("User with ID {} not found", user_id)));
+    }
+
+    Ok(())
+}
+
 /// Deletes a user by their ID.
 pub async fn delete_user(conn: &mut DbConn, id: Uuid) -> Result<u64> {
     let rows_affected = sqlx::query(

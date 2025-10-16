@@ -1,6 +1,7 @@
 use backend::{
     queries::users::list_users,
-    services::users::{register_user, verify_password},
+    services::users::{register_user, verify_password, get_user_by_id, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
+    models::users::LoginUser,
 };
 use crate::common::database::TestApp;
 
@@ -96,4 +97,282 @@ async fn test_multiple_users_different_passwords() {
         password_hashes.len(),
         "All password hashes should be unique"
     );
+}
+
+// Tests for get_user_by_id service method
+#[tokio::test]
+async fn test_get_user_by_id_success() {
+    let test_app = TestApp::new("test_get_user_by_id_success").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register a test user
+    let register_user_data = test_app.generate_test_user();
+    let registered_user = register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Get user by ID
+    let found_user = get_user_by_id(&mut conn, registered_user.id).await.unwrap();
+    assert!(found_user.is_some());
+
+    let found_user = found_user.unwrap();
+    assert_eq!(found_user.id, registered_user.id);
+    assert_eq!(found_user.email, registered_user.email);
+    assert_eq!(found_user.full_name, registered_user.full_name);
+}
+
+#[tokio::test]
+async fn test_get_user_by_id_not_found() {
+    let test_app = TestApp::new("test_get_user_by_id_not_found").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Try to get non-existent user
+    let non_existent_id = uuid::Uuid::now_v7();
+    let found_user = get_user_by_id(&mut conn, non_existent_id).await.unwrap();
+    assert!(found_user.is_none());
+}
+
+// Tests for update_password service method
+#[tokio::test]
+async fn test_update_password_success() {
+    let test_app = TestApp::new("test_update_password_success").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register a test user
+    let register_user_data = test_app.generate_test_user();
+    let original_password = register_user_data.password.clone();
+    let registered_user = register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Update password
+    let new_password = "newpassword123";
+    update_password(&mut conn, registered_user.id, new_password).await.unwrap();
+
+    // Verify the new password works by logging in
+    let login_data = LoginUser {
+        email: registered_user.email.clone(),
+        password: new_password.to_string(),
+    };
+
+    let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+    assert_eq!(login_result.user.id, registered_user.id);
+
+    // Verify the old password no longer works
+    let old_login_data = LoginUser {
+        email: registered_user.email,
+        password: original_password,
+    };
+
+    let result = backend::services::users::login_user(&mut conn, old_login_data).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_update_password_too_short() {
+    let test_app = TestApp::new("test_update_password_too_short").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register a test user
+    let register_user_data = test_app.generate_test_user();
+    let registered_user = register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Try to update with too short password
+    let result = update_password(&mut conn, registered_user.id, "short").await;
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+}
+
+#[tokio::test]
+async fn test_update_password_non_existent_user() {
+    let test_app = TestApp::new("test_update_password_non_existent_user").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Try to update password for non-existent user
+    let non_existent_id = uuid::Uuid::now_v7();
+    let result = update_password(&mut conn, non_existent_id, "newpassword123").await;
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), backend::error::Error::NotFound(_)));
+}
+
+// Tests for get_session_info service method
+#[tokio::test]
+async fn test_get_session_info_success() {
+    let test_app = TestApp::new("test_get_session_info_success").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register and login a user
+    let register_user_data = test_app.generate_test_user();
+    let password = register_user_data.password.clone();
+    let email = register_user_data.email.clone();
+
+    register_user(&mut conn, register_user_data).await.unwrap();
+
+    let login_data = LoginUser {
+        email,
+        password,
+    };
+
+    let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+
+    // Get session info
+    let session_info = get_session_info(&mut conn, &login_result.session_token).await.unwrap();
+    assert!(session_info.is_some());
+
+    let session_info = session_info.unwrap();
+    assert_eq!(session_info.token, login_result.session_token);
+    assert_eq!(session_info.user_id, login_result.user.id);
+    assert!(session_info.expires_at > chrono::Utc::now());
+}
+
+#[tokio::test]
+async fn test_get_session_info_not_found() {
+    let test_app = TestApp::new("test_get_session_info_not_found").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Try to get info for non-existent session
+    let session_info = get_session_info(&mut conn, "non_existent_token").await.unwrap();
+    assert!(session_info.is_none());
+}
+
+#[tokio::test]
+async fn test_get_session_info_empty_token() {
+    let test_app = TestApp::new("test_get_session_info_empty_token").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Try to get info with empty token
+    let result = get_session_info(&mut conn, "").await;
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+}
+
+// Tests for is_email_available service method
+#[tokio::test]
+async fn test_is_email_available_true() {
+    let test_app = TestApp::new("test_is_email_available_true").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Check if email is available (should be true)
+    let available = is_email_available(&mut conn, "newemail@example.com").await.unwrap();
+    assert!(available);
+}
+
+#[tokio::test]
+async fn test_is_email_available_false() {
+    let test_app = TestApp::new("test_is_email_available_false").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register a test user
+    let register_user_data = test_app.generate_test_user();
+    let email = register_user_data.email.clone();
+    register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Check if the same email is available (should be false)
+    let available = is_email_available(&mut conn, &email).await.unwrap();
+    assert!(!available);
+}
+
+#[tokio::test]
+async fn test_is_email_available_case_insensitive() {
+    let test_app = TestApp::new("test_is_email_available_case_insensitive").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register a test user with lowercase email
+    let register_user_data = test_app.generate_test_user();
+    let email = register_user_data.email.clone();
+    register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Check if uppercase version is available (should be false)
+    let available = is_email_available(&mut conn, &email.to_uppercase()).await.unwrap();
+    assert!(!available);
+}
+
+#[tokio::test]
+async fn test_is_email_available_invalid_format() {
+    let test_app = TestApp::new("test_is_email_available_invalid_format").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Check invalid email formats
+    let invalid_emails = vec!["", "   ", "invalid-email", "nodomain@", "@nodomain.com"];
+
+    for invalid_email in invalid_emails {
+        let result = is_email_available(&mut conn, invalid_email).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    }
+}
+
+// Tests for user service session management methods
+#[tokio::test]
+async fn test_get_user_active_sessions() {
+    let test_app = TestApp::new("test_get_user_active_sessions").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register and login a user
+    let register_user_data = test_app.generate_test_user();
+    let password = register_user_data.password.clone();
+    let email = register_user_data.email.clone();
+
+    let registered_user = register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Create multiple sessions by logging in multiple times
+    let mut session_tokens = Vec::new();
+    for _i in 0..3 {
+        let login_data = LoginUser {
+            email: email.clone(),
+            password: password.clone(),
+        };
+
+        let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+        session_tokens.push(login_result.session_token);
+    }
+
+    // Get active sessions
+    let active_sessions = get_user_active_sessions(&mut conn, registered_user.id).await.unwrap();
+    assert_eq!(active_sessions.len(), 3);
+
+    // Verify all our session tokens are in the list
+    for token in &session_tokens {
+        let found = active_sessions.iter().any(|s| s.token == *token);
+        assert!(found, "Session token {} should be in active sessions", token);
+    }
+}
+
+#[tokio::test]
+async fn test_revoke_all_user_sessions() {
+    let test_app = TestApp::new("test_revoke_all_user_sessions").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Register and login a user multiple times
+    let register_user_data = test_app.generate_test_user();
+    let password = register_user_data.password.clone();
+    let email = register_user_data.email.clone();
+
+    let registered_user = register_user(&mut conn, register_user_data).await.unwrap();
+
+    // Create multiple sessions
+    let mut session_tokens = Vec::new();
+    for _ in 0..3 {
+        let login_data = LoginUser {
+            email: email.clone(),
+            password: password.clone(),
+        };
+
+        let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+        session_tokens.push(login_result.session_token);
+    }
+
+    // Verify sessions are active before revocation
+    let active_sessions_before = get_user_active_sessions(&mut conn, registered_user.id).await.unwrap();
+    assert_eq!(active_sessions_before.len(), 3);
+
+    // Revoke all sessions
+    let revoked_count = revoke_all_user_sessions(&mut conn, registered_user.id).await.unwrap();
+    assert_eq!(revoked_count, 3);
+
+    // Verify sessions are no longer active
+    let active_sessions_after = get_user_active_sessions(&mut conn, registered_user.id).await.unwrap();
+    assert_eq!(active_sessions_after.len(), 0);
+
+    // Verify tokens are no longer valid
+    for token in session_tokens {
+        let result = backend::services::users::validate_session(&mut conn, &token).await;
+        assert!(result.is_err());
+    }
 }

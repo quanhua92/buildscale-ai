@@ -229,3 +229,64 @@ pub fn generate_session_token() -> Result<String> {
     let token = Uuid::now_v7().to_string();
     Ok(token)
 }
+
+/// Gets a user by their ID, returns None if not found
+pub async fn get_user_by_id(conn: &mut DbConn, user_id: Uuid) -> Result<Option<User>> {
+    // Use existing query function
+    match users::get_user_by_id(conn, user_id).await {
+        Ok(user) => Ok(Some(user)),
+        Err(crate::error::Error::Sqlx(sqlx::Error::RowNotFound)) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Updates a user's password with validation
+pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &str) -> Result<()> {
+    // Validate password length (minimum 8 characters)
+    if new_password.len() < 8 {
+        return Err(Error::Validation("Password must be at least 8 characters long".to_string()));
+    }
+
+    // Hash the password using existing utility
+    let password_hash = generate_password_hash(new_password)?;
+
+    // Update password using existing query function
+    users::update_user_password(conn, user_id, &password_hash).await
+}
+
+/// Gets session information without user validation
+pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<crate::models::users::UserSession>> {
+    // Validate token format
+    if session_token.trim().is_empty() {
+        return Err(Error::Validation("Session token cannot be empty".to_string()));
+    }
+
+    // Use existing query function
+    sessions::get_session_by_token(conn, session_token.trim()).await
+        .map_err(|e| e.into())
+}
+
+/// Checks if an email is available for registration
+pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool> {
+    // Validate email format
+    let email = email.trim();
+    if email.is_empty() || !email.contains('@') || email.starts_with('@') || email.ends_with('@') {
+        return Err(Error::Validation("Invalid email format".to_string()));
+    }
+
+    // Check if user exists using existing query function
+    let existing_user = users::get_user_by_email(conn, &email.to_lowercase()).await?;
+    Ok(existing_user.is_none())
+}
+
+/// Gets all active sessions for a user
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<crate::models::users::UserSession>> {
+    crate::services::sessions::get_user_active_sessions(conn, user_id).await
+        .map_err(|e| e.into())
+}
+
+/// Revokes all sessions for a user
+pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64> {
+    crate::services::sessions::revoke_all_user_sessions(conn, user_id).await
+        .map_err(|e| e.into())
+}
