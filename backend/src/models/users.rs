@@ -32,3 +32,38 @@ pub struct RegisterUser {
     pub confirm_password: String,
     pub full_name: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginUser {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginResult {
+    pub user: User,
+    pub session_token: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserSession {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewUserSession {
+    pub user_id: Uuid,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateUserSession {
+    pub expires_at: Option<DateTime<Utc>>,
+}

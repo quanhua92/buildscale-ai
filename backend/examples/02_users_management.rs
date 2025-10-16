@@ -1,10 +1,10 @@
 use backend::{
     load_config,
-    models::users::{RegisterUser, UpdateUser},
+    models::users::{LoginUser, RegisterUser, UpdateUser},
     queries::users::{
         create_user, delete_user, get_user_by_email, get_user_by_id, list_users, update_user,
     },
-    services::users::{register_user, verify_password, generate_password_hash},
+    services::users::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash},
 };
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
@@ -99,6 +99,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing password verification...");
     let is_valid = verify_password("testpassword123", &created_user.password_hash)?;
     println!("✓ Password verification: {}", is_valid);
+    println!();
+
+    // Test user login
+    println!("Testing user login...");
+    let login_user_data = LoginUser {
+        email: format!("{}_test@{}", EXAMPLE_PREFIX, "example.com"),
+        password: "testpassword123".to_string(),
+    };
+
+    let login_result = login_user(&mut conn, login_user_data).await?;
+    println!("✓ User login successful:");
+    println!("  User ID: {}", login_result.user.id);
+    println!("  User Email: {}", login_result.user.email);
+    println!("  Session Token: {}...", &login_result.session_token[..8]);
+    println!("  Expires at: {}", login_result.expires_at);
+    println!();
+
+    // Test session validation
+    println!("Testing session validation...");
+    let validated_user = validate_session(&mut conn, &login_result.session_token).await?;
+    println!("✓ Session validation successful:");
+    println!("  Validated User ID: {}", validated_user.id);
+    println!("  Validated User Email: {}", validated_user.email);
+    println!();
+
+    // Test session refresh
+    println!("Testing session refresh...");
+    let refreshed_token = refresh_session(&mut conn, &login_result.session_token, 48).await?;
+    println!("✓ Session refresh successful:");
+    println!("  New expires at: {}", login_result.expires_at + chrono::Duration::hours(48)); // Should be extended
+    println!("  Token unchanged: {}", refreshed_token == login_result.session_token);
+    println!();
+
+    // Test logout
+    println!("Testing user logout...");
+    logout_user(&mut conn, &login_result.session_token).await?;
+    println!("✓ User logout successful");
+
+    // Verify session is no longer valid after logout
+    let validation_result = validate_session(&mut conn, &login_result.session_token).await;
+    match validation_result {
+        Ok(_) => println!("✗ Session validation should have failed after logout"),
+        Err(_) => println!("✓ Session correctly invalidated after logout"),
+    }
     println!();
 
     // Test finding user by email
@@ -510,6 +554,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("🎉 All features demonstrated successfully!");
     println!("✅ User Registration & Validation");
+    println!("✅ User Login & Authentication");
+    println!("✅ Session Management (Create, Validate, Refresh, Logout)");
     println!("✅ Password Hashing & Verification (Argon2)");
     println!("✅ Multiple User Management");
     println!("✅ User Updates (Password & Full Name only - emails cannot be updated)");

@@ -5,17 +5,18 @@ This comprehensive documentation covers the complete user-role-workspace managem
 ## Table of Contents
 
 1. [System Architecture](#system-architecture)
-2. [User Management System](#user-management-system)
-3. [Role Management System](#role-management-system)
-4. [Workspace Management System](#workspace-management-system)
-5. [Workspace Members System](#workspace-members-system)
-6. [Service Layer API](#service-layer-api)
-7. [Request/Response Models](#requestresponse-models)
-8. [Validation and Error Handling](#validation-and-error-handling)
-9. [Database Schema and Relationships](#database-schema-and-relationships)
-10. [Usage Examples and Patterns](#usage-examples-and-patterns)
-11. [Security Considerations](#security-considerations)
-12. [Best Practices and Guidelines](#best-practices-and-guidelines)
+2. [Authentication and Session Management](#authentication-and-session-management)
+3. [User Management System](#user-management-system)
+4. [Role Management System](#role-management-system)
+5. [Workspace Management System](#workspace-management-system)
+6. [Workspace Members System](#workspace-members-system)
+7. [Service Layer API](#service-layer-api)
+8. [Request/Response Models](#requestresponse-models)
+9. [Validation and Error Handling](#validation-and-error-handling)
+10. [Database Schema and Relationships](#database-schema-and-relationships)
+11. [Usage Examples and Patterns](#usage-examples-and-patterns)
+12. [Security Considerations](#security-considerations)
+13. [Best Practices and Guidelines](#best-practices-and-guidelines)
 
 ## System Architecture
 
@@ -35,19 +36,245 @@ The system implements a **multi-tenant workspace-based architecture** with the f
 Users (1) ←→ (N) Workspaces
    ↓                   ↓
    └── Workspace Members ──→ Roles (per workspace)
+   ↓
+   └── User Sessions (authentication tokens)
 ```
 
 - **Users** can be members of multiple workspaces
 - **Workspaces** have exactly one owner (a user)
 - **Roles** are scoped to individual workspaces
 - **Workspace Members** represent the many-to-many relationship between users and workspaces with specific roles
+- **User Sessions** provide authentication tokens for secure user access
 
 ### Data Flow
 
-1. **User Registration** → Creates user account
-2. **Workspace Creation** → Creates workspace with default roles
-3. **Member Assignment** → Users assigned to workspaces with specific roles
-4. **Access Control** → Role-based permissions determine workspace access
+1. **User Registration** → Creates user account with password hashing
+2. **User Authentication** → Login creates session token for authenticated access
+3. **Session Validation** → Each request validates session token and retrieves user
+4. **Workspace Creation** → Creates workspace with default roles
+5. **Member Assignment** → Users assigned to workspaces with specific roles
+6. **Access Control** → Role-based permissions determine workspace access
+7. **Session Management** → Session refresh, cleanup, and logout operations
+
+## Authentication and Session Management
+
+The authentication system provides secure user login with session-based authentication, complementing the user management system with robust access control.
+
+### Authentication Flow
+
+1. **User Registration** → Users register with email and password (hashed with Argon2)
+2. **Login Attempt** → Users authenticate with email/password credentials
+3. **Session Creation** → Successful login creates a session token (UUID v7) with 24-hour expiration
+4. **Session Validation** → Each API call validates the session token and returns user info
+5. **Session Refresh** → Sessions can be extended before expiration
+6. **Logout** → Sessions are invalidated on logout
+
+### Authentication Models
+
+#### `LoginUser` - Authentication Request
+```rust
+pub struct LoginUser {
+    pub email: String,        // User email (case-insensitive lookup)
+    pub password: String,     // Plain text password for verification
+}
+```
+
+#### `LoginResult` - Authentication Response
+```rust
+pub struct LoginResult {
+    pub user: User,                      // Authenticated user details
+    pub session_token: String,           // Session token for API calls
+    pub expires_at: DateTime<Utc>,       // Session expiration timestamp
+}
+```
+
+#### `UserSession` - Session Entity
+```rust
+pub struct UserSession {
+    pub id: Uuid,                    // Session primary key
+    pub user_id: Uuid,               // Associated user
+    pub token: String,               // Unique session token
+    pub expires_at: DateTime<Utc>,   // Session expiration
+    pub created_at: DateTime<Utc>,   // Session creation time
+    pub updated_at: DateTime<Utc>,   // Last update time
+}
+```
+
+#### `NewUserSession` - Session Creation
+```rust
+pub struct NewUserSession {
+    pub user_id: Uuid,               // Session owner
+    pub token: String,               // Session token
+    pub expires_at: DateTime<Utc>,   // Expiration time
+}
+```
+
+#### `UpdateUserSession` - Session Update
+```rust
+pub struct UpdateUserSession {
+    pub expires_at: Option<DateTime<Utc>>,   // New expiration time (optional)
+}
+```
+
+### Authentication Services
+
+#### Core Authentication Functions
+```rust
+// User authentication and session creation
+pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<LoginResult>
+
+// Session validation and user retrieval
+pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User>
+
+// Session termination
+pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()>
+
+// Session expiration extension
+pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_extend: i64) -> Result<String>
+```
+
+#### Advanced Session Management Functions
+```rust
+// Cleanup expired sessions
+pub async fn cleanup_expired_sessions(conn: &mut DbConn) -> Result<u64>
+
+// Revoke all sessions for a user
+pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64>
+
+// Get active sessions for a user
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<UserSession>>
+
+// Check if user has active sessions
+pub async fn user_has_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<bool>
+
+// Revoke specific session by token
+pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> Result<()>
+
+// Extend all sessions for a user
+pub async fn extend_all_user_sessions(conn: &mut DbConn, user_id: Uuid, hours_to_extend: i64) -> Result<u64>
+```
+
+#### Password Utility Functions
+```rust
+// Generate secure password hash
+pub fn generate_password_hash(password: &str) -> Result<String>
+
+// Verify password against hash
+pub fn verify_password(password: &str, hash: &str) -> Result<bool>
+
+// Generate session token
+pub fn generate_session_token() -> Result<String>
+```
+
+### Authentication Features
+
+#### Security Features
+- **UUID v7 Session Tokens**: Time-based sortable unique tokens
+- **24-Hour Default Expiration**: Configurable session duration
+- **Automatic Session Cleanup**: Periodic removal of expired sessions
+- **Case-Insensitive Email Login**: Users can login with any email case variation
+- **Secure Logout**: Immediate session invalidation
+- **Session Refresh**: Extend session duration before expiration
+
+#### Session Management
+- **Multiple Active Sessions**: Users can have multiple concurrent sessions
+- **Session Monitoring**: Track and manage user sessions
+- **Bulk Session Operations**: Revoke or extend all user sessions
+- **Session Validation**: Automatic validation of token existence and expiration
+- **Graceful Error Handling**: Comprehensive error types for authentication failures
+
+### Authentication Validation Rules
+
+| Field | Validation | Error Message |
+|-------|------------|---------------|
+| `email` | Required, non-empty | "Email is required" |
+| `password` | Required, non-empty | "Password is required" |
+| `session_token` | Required, non-empty | "Session token is required" |
+| `email/password` | Invalid credentials | "Invalid email or password" |
+| `session_token` | Invalid or expired | "Invalid or expired session token" |
+
+### Authentication Error Types
+
+The system includes authentication-specific error variants:
+
+```rust
+#[error("Authentication failed: {0}")]
+Authentication(String),        // Invalid credentials
+
+#[error("Invalid session token: {0}")]
+InvalidToken(String),         // Invalid or expired tokens
+
+#[error("Session expired: {0}")]
+SessionExpired(String),       // Session expiration errors
+```
+
+### Session Database Schema
+
+#### `user_sessions` Table
+```sql
+CREATE TABLE user_sessions (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+#### Session Indexes
+```sql
+-- Performance indexes for session operations
+CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_token ON user_sessions(token);
+CREATE INDEX idx_user_sessions_expires_at ON user_sessions(expires_at);
+```
+
+### Authentication Usage Examples
+
+#### User Login
+```rust
+use backend::services::users::{login_user, validate_session, logout_user};
+use backend::models::users::LoginUser;
+
+// Login user
+let login_request = LoginUser {
+    email: "user@example.com".to_string(),
+    password: "userpassword123".to_string(),
+};
+
+let login_result = login_user(&mut conn, login_request).await?;
+println!("Login successful! Token: {}", login_result.session_token);
+
+// Validate session
+let user = validate_session(&mut conn, &login_result.session_token).await?;
+println!("Authenticated user: {}", user.email);
+
+// Logout user
+logout_user(&mut conn, &login_result.session_token).await?;
+println!("User logged out successfully");
+```
+
+#### Session Management
+```rust
+use backend::services::sessions::*;
+
+// Get user's active sessions
+let active_sessions = get_user_active_sessions(&mut conn, user.id).await?;
+println!("User has {} active sessions", active_sessions.len());
+
+// Extend all user sessions by 24 hours
+let extended_count = extend_all_user_sessions(&mut conn, user.id, 24).await?;
+println!("Extended {} sessions", extended_count);
+
+// Revoke all user sessions (force logout)
+let revoked_count = revoke_all_user_sessions(&mut conn, user.id).await?;
+println!("Revoked {} sessions", revoked_count);
+
+// Cleanup expired sessions
+let cleaned_count = cleanup_expired_sessions(&mut conn).await?;
+println!("Cleaned up {} expired sessions", cleaned_count);
+```
 
 ## User Management System
 
@@ -439,6 +666,24 @@ pub async fn update_workspace_owner(...) // Transfers ownership with role manage
 
 ### User Services
 
+#### Authentication Operations
+```rust
+// User authentication and session creation
+pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<LoginResult>
+
+// Session validation and user retrieval
+pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User>
+
+// Session termination
+pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()>
+
+// Session expiration extension
+pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_extend: i64) -> Result<String>
+
+// Generate session token
+pub fn generate_session_token() -> Result<String>
+```
+
 #### Core User Operations
 ```rust
 // User registration with validation and password hashing
@@ -453,6 +698,32 @@ pub async fn register_user_with_workspace(
 // Password security operations
 pub fn generate_password_hash(password: &str) -> Result<String>
 pub fn verify_password(password: &str, hash: &str) -> Result<bool>
+```
+
+### Session Services
+
+#### Advanced Session Management
+```rust
+// Cleanup expired sessions from database
+pub async fn cleanup_expired_sessions(conn: &mut DbConn) -> Result<u64>
+
+// Update session expiration
+pub async fn update_session(conn: &mut DbConn, session_id: Uuid, update_data: UpdateUserSession) -> Result<UserSession>
+
+// Revoke all sessions for a specific user
+pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64>
+
+// Get all active sessions for a user
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<UserSession>>
+
+// Check if user has any active sessions
+pub async fn user_has_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<bool>
+
+// Revoke a specific session by its token
+pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> Result<()>
+
+// Extend all active sessions for a user
+pub async fn extend_all_user_sessions(conn: &mut DbConn, user_id: Uuid, hours_to_extend: i64) -> Result<u64>
 ```
 
 ### Workspace Services
@@ -611,6 +882,15 @@ pub enum Error {
     #[error("Conflict: {0}")]
     Conflict(String),                      // Resource conflicts
 
+    #[error("Authentication failed: {0}")]
+    Authentication(String),               // Authentication failures
+
+    #[error("Invalid session token: {0}")]
+    InvalidToken(String),                 // Invalid or expired session tokens
+
+    #[error("Session expired: {0}")]
+    SessionExpired(String),               // Session expiration errors
+
     #[error("Internal error: {0}")]
     Internal(String),                      // System errors
 }
@@ -629,6 +909,13 @@ pub enum Error {
 | Duplicate role name | "Role '{name}' already exists in this workspace" | Role creation |
 | Ownership transfer to self | "Cannot transfer ownership to yourself" | Ownership transfer |
 | Not workspace owner | "You are not the owner of this workspace" | Ownership operations |
+| **Authentication Errors** | | |
+| Empty email | "Email is required" | User login |
+| Empty password | "Password is required" | User login |
+| Invalid credentials | "Invalid email or password" | User login |
+| Empty session token | "Session token is required" | Session validation |
+| Invalid session token | "Invalid or expired session token" | Session validation |
+| Session expired | "Session has expired" | Session validation |
 
 ### Business Logic Validation
 
@@ -667,6 +954,18 @@ CREATE TABLE users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     full_name TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+#### `user_sessions` Table
+```sql
+CREATE TABLE user_sessions (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -712,16 +1011,19 @@ CREATE TABLE workspace_members (
 3. **workspace_members.workspace_id → workspaces.id**: Members belong to workspaces (ON DELETE CASCADE)
 4. **workspace_members.user_id → users.id**: Members are users (ON DELETE CASCADE)
 5. **workspace_members.role_id → roles.id**: Members have roles (ON DELETE CASCADE)
+6. **user_sessions.user_id → users.id**: Sessions belong to users (ON DELETE CASCADE)
 
 #### Unique Constraints
 1. **users.email**: Email addresses must be globally unique
 2. **roles(workspace_id, name)**: Role names must be unique within each workspace
 3. **workspace_members(workspace_id, user_id)**: Users can only have one membership per workspace
+4. **user_sessions.token**: Session tokens must be globally unique
 
 #### Cascade Operations
 - Deleting a workspace cascades to delete all its roles and members
-- Deleting a user removes them from all workspace memberships
+- Deleting a user removes them from all workspace memberships and deletes all their sessions
 - Deleting a role removes the role assignment from all members
+- Deleting a user removes all their authentication sessions
 
 ### Database Indexes
 
@@ -733,6 +1035,11 @@ CREATE INDEX idx_roles_workspace_id ON roles(workspace_id);
 CREATE INDEX idx_workspace_members_workspace_id ON workspace_members(workspace_id);
 CREATE INDEX idx_workspace_members_user_id ON workspace_members(user_id);
 CREATE INDEX idx_workspace_members_role_id ON workspace_members(role_id);
+
+-- Session management indexes
+CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_token ON user_sessions(token);
+CREATE INDEX idx_user_sessions_expires_at ON user_sessions(expires_at);
 ```
 
 ## Usage Examples and Patterns
@@ -769,6 +1076,97 @@ let registration_request = UserWorkspaceRegistrationRequest {
 
 let result = register_user_with_workspace(&mut conn, registration_request).await?;
 // Returns: UserWorkspaceResult { user, workspace: CompleteWorkspaceResult }
+```
+
+### Authentication Patterns
+
+#### User Login and Session Management
+```rust
+use backend::services::users::{login_user, validate_session, logout_user, refresh_session};
+use backend::services::sessions::*;
+use backend::models::users::LoginUser;
+
+// User login
+let login_request = LoginUser {
+    email: "user@example.com".to_string(),
+    password: "userpassword123".to_string(),
+};
+
+let login_result = login_user(&mut conn, login_request).await?;
+println!("Logged in user: {}", login_result.user.email);
+println!("Session token: {}", login_result.session_token);
+println!("Expires at: {}", login_result.expires_at);
+
+// Validate session (for API requests)
+let authenticated_user = validate_session(&mut conn, &login_result.session_token).await?;
+println!("Validated user ID: {}", authenticated_user.id);
+
+// Refresh session (extend expiration)
+let new_expires_at = refresh_session(&mut conn, &login_result.session_token, 24).await?;
+println!("Session extended to: {}", new_expires_at);
+
+// Logout user
+logout_user(&mut conn, &login_result.session_token).await?;
+println!("User logged out successfully");
+```
+
+#### Advanced Session Management
+```rust
+// Monitor user sessions
+let active_sessions = get_user_active_sessions(&mut conn, user.id).await?;
+println!("User has {} active sessions", active_sessions.len());
+
+// Force logout from all devices (password change, security concern)
+let revoked_count = revoke_all_user_sessions(&mut conn, user.id).await?;
+println!("Revoked {} sessions", revoked_count);
+
+// Extend all sessions for premium users
+let extended_count = extend_all_user_sessions(&mut conn, user.id, 72).await?;
+println!("Extended {} sessions by 72 hours", extended_count);
+
+// Regular maintenance cleanup
+let cleaned_count = cleanup_expired_sessions(&mut conn).await?;
+println!("Cleaned up {} expired sessions", cleaned_count);
+```
+
+#### Authentication Error Handling
+```rust
+match login_user(&mut conn, login_request).await {
+    Ok(login_result) => {
+        // Successful authentication
+        create_user_session(&login_result.session_token);
+        redirect_to_dashboard();
+    },
+    Err(Error::Authentication(msg)) => {
+        // Invalid credentials
+        show_error("Invalid email or password");
+    },
+    Err(Error::Validation(msg)) => {
+        // Missing required fields
+        show_error(&format!("Please fill in all fields: {}", msg));
+    },
+    Err(error) => {
+        // Other errors (database, etc.)
+        log_error("Login error", &error);
+        show_error("An error occurred during login");
+    }
+}
+
+match validate_session(&mut conn, session_token).await {
+    Ok(user) => {
+        // Valid session - proceed with request
+        handle_authenticated_request(user);
+    },
+    Err(Error::InvalidToken(_)) | Err(Error::SessionExpired(_)) => {
+        // Invalid or expired session
+        redirect_to_login();
+    },
+    Err(error) => {
+        // Other errors
+        log_error("Session validation error", &error);
+        redirect_to_login();
+    }
+}
 ```
 
 ### Workspace Creation Patterns
@@ -921,14 +1319,24 @@ match register_user(&mut conn, register_user_data).await {
 
 #### Workspace Isolation
 - **Data Separation**: Each workspace's data is completely isolated
-- **Role-Based Permissions**: Three-tier role system with clear permission boundaries
+- **Role-Based Permissions**: Four-tier role system with clear permission boundaries
 - **Ownership Model**: Single owner with full control and transfer capabilities
 
+#### Authentication and Session Security
+- **Session-Based Authentication**: UUID v7 tokens with configurable expiration
+- **Secure Session Management**: Automatic cleanup, validation, and revocation
+- **Case-Insensitive Login**: User-friendly email authentication
+- **Multi-Device Support**: Users can maintain multiple concurrent sessions
+- **Session Monitoring**: Track and manage user sessions across devices
+
 #### Authentication Flow
-1. User registration with password hashing
+1. User registration with Argon2 password hashing
 2. Email uniqueness enforced by database constraints
-3. Password verification uses constant-time comparison
-4. Workspace access validated through membership checks
+3. User login with email/password verification
+4. Session token creation with 24-hour expiration
+5. Session validation for each API request
+6. Workspace access validated through membership checks
+7. Session refresh, cleanup, and logout operations
 
 ### Input Validation
 
@@ -947,9 +1355,18 @@ match register_user(&mut conn, register_user_data).await {
 
 #### Sensitive Data Handling
 - **Password Hashes**: Never stored in plain text
+- **Session Tokens**: Treated as sensitive credentials, never logged
 - **Connection Security**: Assumes TLS for database connections
 - **Log Safety**: Sensitive data excluded from logs
 - **Memory Management**: Passwords cleared from memory when possible
+
+#### Session Security Best Practices
+- **Token Generation**: Cryptographically secure UUID v7 tokens
+- **Expiration Management**: Configurable session timeouts with automatic cleanup
+- **Session Isolation**: Each session tied to specific user with proper validation
+- **Revocation Support**: Immediate session invalidation on logout or security events
+- **Concurrent Sessions**: Support for multiple devices with independent session management
+- **Monitoring**: Comprehensive session tracking and audit capabilities
 
 ## Best Practices and Guidelines
 

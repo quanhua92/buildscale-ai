@@ -2,16 +2,18 @@ use crate::DbConn;
 use crate::{
     error::{Error, Result},
     models::{
-        users::{NewUser, RegisterUser, User},
+        users::{LoginUser, LoginResult, NewUser, NewUserSession, RegisterUser, User},
         requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest}
     },
-    queries::users,
+    queries::{users, sessions},
     services::workspaces,
 };
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
+use chrono::{Duration, Utc};
+use uuid::Uuid;
 
 /// Registers a new user with password validation and hashing
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User> {
@@ -118,4 +120,112 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
             e
         ))),
     }
+}
+
+/// Logs in a user with email and password validation
+pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<LoginResult> {
+    // Validate input
+    if login_user.email.trim().is_empty() {
+        return Err(Error::Validation("Email cannot be empty".to_string()));
+    }
+
+    if login_user.password.is_empty() {
+        return Err(Error::Validation("Password cannot be empty".to_string()));
+    }
+
+    // Find user by email
+    let user = users::get_user_by_email(conn, &login_user.email.trim().to_lowercase()).await?
+        .ok_or_else(|| Error::Authentication("Invalid email or password".to_string()))?;
+
+    // Verify password
+    let is_valid = verify_password(&login_user.password, &user.password_hash)?;
+    if !is_valid {
+        return Err(Error::Authentication("Invalid email or password".to_string()));
+    }
+
+    // Generate secure session token
+    let session_token = generate_session_token()?;
+
+    // Set session expiration (24 hours from now)
+    let expires_at = Utc::now() + Duration::hours(24);
+
+    // Create session
+    let new_session = NewUserSession {
+        user_id: user.id,
+        token: session_token.clone(),
+        expires_at,
+    };
+
+    let session = sessions::create_session(conn, new_session).await?;
+
+    Ok(LoginResult {
+        user,
+        session_token: session.token,
+        expires_at: session.expires_at,
+    })
+}
+
+/// Validates a session token and returns the associated user
+pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User> {
+    // Validate input
+    if session_token.trim().is_empty() {
+        return Err(Error::Validation("Session token cannot be empty".to_string()));
+    }
+
+    // Get valid session by token
+    let session = sessions::get_valid_session_by_token(conn, session_token.trim()).await?
+        .ok_or_else(|| Error::InvalidToken("Invalid or expired session token".to_string()))?;
+
+    // Get user by session user_id
+    let user = users::get_user_by_id(conn, session.user_id).await?;
+
+    Ok(user)
+}
+
+/// Logs out a user by invalidating their session token
+pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()> {
+    // Validate input
+    if session_token.trim().is_empty() {
+        return Err(Error::Validation("Session token cannot be empty".to_string()));
+    }
+
+    // Delete session by token
+    let rows_affected = sessions::delete_session_by_token(conn, session_token.trim()).await?;
+
+    if rows_affected == 0 {
+        return Err(Error::InvalidToken("Invalid session token".to_string()));
+    }
+
+    Ok(())
+}
+
+/// Refreshes a session by extending its expiration time
+pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_extend: i64) -> Result<String> {
+    // Validate input
+    if session_token.trim().is_empty() {
+        return Err(Error::Validation("Session token cannot be empty".to_string()));
+    }
+
+    // Get current session
+    let session = sessions::get_session_by_token(conn, session_token.trim()).await?
+        .ok_or_else(|| Error::InvalidToken("Invalid session token".to_string()))?;
+
+    // Check if session is expired
+    if session.expires_at < Utc::now() {
+        return Err(Error::SessionExpired("Session has expired".to_string()));
+    }
+
+    // Calculate new expiration time
+    let new_expires_at = Utc::now() + Duration::hours(hours_to_extend);
+
+    // Update session
+    let updated_session = sessions::refresh_session(conn, session.id, new_expires_at).await?;
+
+    Ok(updated_session.token)
+}
+
+/// Generates a secure session token using UUID v7
+pub fn generate_session_token() -> Result<String> {
+    let token = Uuid::now_v7().to_string();
+    Ok(token)
 }

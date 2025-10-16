@@ -23,6 +23,18 @@ pub enum Error {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// An authentication error (invalid credentials).
+    #[error("Authentication failed: {0}")]
+    Authentication(String),
+
+    /// A session expired error.
+    #[error("Session expired: {0}")]
+    SessionExpired(String),
+
+    /// An invalid session token error.
+    #[error("Invalid session token: {0}")]
+    InvalidToken(String),
+
     /// An internal server error.
     #[error("Internal error: {0}")]
     Internal(String),

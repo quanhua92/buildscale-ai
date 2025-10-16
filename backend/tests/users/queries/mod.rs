@@ -4,3 +4,4 @@ pub mod update_user;
 pub mod delete_user;
 pub mod list_users;
 pub mod constraints;
+pub mod sessions;
