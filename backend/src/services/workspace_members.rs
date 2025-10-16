@@ -1,7 +1,10 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result},
-    models::workspace_members::{WorkspaceMember},
+    models::{
+        workspace_members::{WorkspaceMember},
+        permissions::{PermissionValidator},
+    },
     queries::{workspace_members, workspaces, roles},
 };
 use uuid::Uuid;
@@ -166,6 +169,14 @@ pub async fn validate_workspace_permission(
         return Ok(true);
     }
 
+    // Validate that the permission exists
+    if !PermissionValidator::is_valid_permission(required_permission) {
+        return Err(Error::Validation(format!(
+            "Invalid permission: {}",
+            required_permission
+        )));
+    }
+
     // Get the user's membership
     let member = workspace_members::get_workspace_member_optional(conn, workspace_id, user_id).await?;
 
@@ -173,17 +184,110 @@ pub async fn validate_workspace_permission(
         // Get the role details
         let role = roles::get_role_by_id(conn, membership.role_id).await?;
 
-        // Here you would implement your permission checking logic
-        // For now, we'll do a simple role name check
-        // In a real implementation, you'd have a permissions system
-        match role.name.to_lowercase().as_str() {
-            "admin" | "owner" => Ok(true),
-            "editor" if required_permission == "read" => Ok(true),
-            "editor" if required_permission == "write" => Ok(true),
-            "viewer" if required_permission == "read" => Ok(true),
-            _ => Ok(false),
-        }
+        // Use the new permission validation system
+        Ok(PermissionValidator::role_has_permission(&role.name.to_lowercase(), required_permission))
     } else {
         Ok(false) // User is not a member
+    }
+}
+
+/// Validates that a user can perform an action in a workspace based on their role
+/// Returns an error if permission is denied (convenient for guard clauses)
+pub async fn require_workspace_permission(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permission: &str,
+) -> Result<()> {
+    if validate_workspace_permission(conn, workspace_id, user_id, required_permission).await? {
+        Ok(())
+    } else {
+        Err(Error::Forbidden(format!(
+            "Insufficient permissions. Required: {}",
+            required_permission
+        )))
+    }
+}
+
+/// Validates that a user can perform any of the specified actions in a workspace
+pub async fn validate_any_workspace_permission(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permissions: &[&str],
+) -> Result<bool> {
+    // Check if user is the owner (owners have all permissions)
+    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+        return Ok(true);
+    }
+
+    // Get the user's membership
+    let member = workspace_members::get_workspace_member_optional(conn, workspace_id, user_id).await?;
+
+    if let Some(membership) = member {
+        // Get the role details
+        let role = roles::get_role_by_id(conn, membership.role_id).await?;
+
+        // Check if role has any of the required permissions
+        Ok(PermissionValidator::role_has_any_permission(&role.name.to_lowercase(), required_permissions))
+    } else {
+        Ok(false) // User is not a member
+    }
+}
+
+/// Validates that a user can perform all of the specified actions in a workspace
+pub async fn validate_all_workspace_permissions(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permissions: &[&str],
+) -> Result<bool> {
+    // Check if user is the owner (owners have all permissions)
+    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+        return Ok(true);
+    }
+
+    // Get the user's membership
+    let member = workspace_members::get_workspace_member_optional(conn, workspace_id, user_id).await?;
+
+    if let Some(membership) = member {
+        // Get the role details
+        let role = roles::get_role_by_id(conn, membership.role_id).await?;
+
+        // Check if role has all of the required permissions
+        Ok(PermissionValidator::role_has_all_permissions(&role.name.to_lowercase(), required_permissions))
+    } else {
+        Ok(false) // User is not a member
+    }
+}
+
+/// Get all permissions for a user in a workspace
+pub async fn get_user_workspace_permissions(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<String>> {
+    // Check if user is the owner (owners have all permissions)
+    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+        return Ok(PermissionValidator::get_role_permissions("admin")
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect());
+    }
+
+    // Get the user's membership
+    let member = workspace_members::get_workspace_member_optional(conn, workspace_id, user_id).await?;
+
+    if let Some(membership) = member {
+        // Get the role details
+        let role = roles::get_role_by_id(conn, membership.role_id).await?;
+        let permissions = PermissionValidator::get_role_permissions(&role.name.to_lowercase());
+
+        Ok(permissions
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect())
+    } else {
+        Ok(Vec::new()) // User is not a member
     }
 }
