@@ -23,14 +23,16 @@ pub const DEFAULT_INVITATION_EXPIRATION_HOURS: i64 = 168; // 7 days
 pub const MAX_INVITATION_EXPIRATION_HOURS: i64 = 720; // 30 days
 
 /// Invitation status enum for type safety
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "text")]
 pub enum InvitationStatus {
     Pending,
     Accepted,
     Expired,
     Revoked,
 }
+
 
 impl InvitationStatus {
     /// Get the string representation of the status
@@ -76,11 +78,18 @@ pub struct WorkspaceInvitation {
     pub invited_by: Uuid,
     pub role_id: Uuid,
     pub invitation_token: String,
-    pub status: InvitationStatus,
+    pub status: String, // Using String to avoid SQLx complexity
     pub expires_at: DateTime<Utc>,
     pub accepted_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl WorkspaceInvitation {
+    /// Get the status as InvitationStatus enum
+    pub fn status_enum(&self) -> InvitationStatus {
+        InvitationStatus::from_str(&self.status).unwrap_or(InvitationStatus::Pending)
+    }
 }
 
 /// New workspace invitation entity for creation
@@ -97,7 +106,7 @@ pub struct NewWorkspaceInvitation {
 /// Update workspace invitation entity for modifications
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateWorkspaceInvitation {
-    pub status: Option<InvitationStatus>,
+    pub status: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
     pub accepted_at: Option<DateTime<Utc>>,
 }
@@ -147,9 +156,16 @@ pub struct InvitationSummary {
     pub invited_by: Uuid,
     pub invited_by_name: Option<String>, // Populated when joining with user
     pub role_name: Option<String>, // Populated when joining with role
-    pub status: InvitationStatus,
+    pub status: String, // Using String to avoid SQLx complexity
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+}
+
+impl InvitationSummary {
+    /// Get the status as InvitationStatus enum
+    pub fn status_enum(&self) -> InvitationStatus {
+        InvitationStatus::from_str(&self.status).unwrap_or(InvitationStatus::Pending)
+    }
 }
 
 /// Invitation validation utilities

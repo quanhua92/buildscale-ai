@@ -190,8 +190,9 @@ pub async fn accept_invitation(
     ).await?;
 
     // Check if invitation can be accepted
-    if !InvitationValidator::can_accept(&invitation.status, invitation.expires_at) {
-        let reason = match invitation.status {
+    let status_enum = invitation.status_enum();
+    if !InvitationValidator::can_accept(&status_enum, invitation.expires_at) {
+        let reason = match status_enum {
             InvitationStatus::Accepted => "Invitation has already been accepted",
             InvitationStatus::Revoked => "Invitation has been revoked",
             InvitationStatus::Expired => "Invitation has expired",
@@ -226,7 +227,7 @@ pub async fn accept_invitation(
         let _ = invitations::update_invitation_status_by_token(
             conn,
             &request.invitation_token,
-            InvitationStatus::Accepted,
+            InvitationStatus::Accepted.to_string(),
             Some(chrono::Utc::now()),
         ).await?;
 
@@ -248,7 +249,7 @@ pub async fn accept_invitation(
     invitation = invitations::update_invitation_status_by_token(
         conn,
         &request.invitation_token,
-        InvitationStatus::Accepted,
+        InvitationStatus::Accepted.to_string(),
         Some(chrono::Utc::now()),
     ).await?;
 
@@ -276,7 +277,8 @@ pub async fn revoke_invitation(
     ).await?;
 
     // Check if invitation can be revoked
-    if !InvitationValidator::can_revoke(&invitation.status) {
+    let status_enum = invitation.status_enum();
+    if !InvitationValidator::can_revoke(&status_enum) {
         return Err(Error::Validation(
             "Invitation cannot be revoked in current state".to_string(),
         ));
@@ -287,7 +289,7 @@ pub async fn revoke_invitation(
         conn,
         invitation.id,
         UpdateWorkspaceInvitation {
-            status: Some(InvitationStatus::Revoked),
+            status: Some(InvitationStatus::Revoked.to_string()),
             expires_at: None,
             accepted_at: None,
         },
@@ -325,7 +327,7 @@ pub async fn get_invitations_expiring_soon(
     conn: &mut DbConn,
     hours: i32,
 ) -> Result<Vec<WorkspaceInvitation>> {
-    invitations::get_invitations_expiring_soon(conn, hours).await
+    invitations::get_invitations_expiring_soon(conn, hours.into()).await
 }
 
 /// Gets invitation statistics for a workspace
@@ -333,7 +335,7 @@ pub async fn get_workspace_invitation_stats(
     conn: &mut DbConn,
     workspace_id: Uuid,
     requester_id: Uuid,
-) -> Result<Vec<(InvitationStatus, i64)>> {
+) -> Result<Vec<(String, i64)>> {
     // Check if requester has permission to view members
     validate_workspace_permission(
         conn,
