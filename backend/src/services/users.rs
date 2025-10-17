@@ -7,36 +7,40 @@ use crate::{
     },
     queries::{users, sessions},
     services::workspaces,
+    validation::{validate_email, validate_password, validate_full_name, validate_session_token, validate_required_string},
 };
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
+use sqlx::Acquire;
 use uuid::Uuid;
 
-/// Registers a new user with password validation and hashing
+/// Registers a new user with comprehensive validation and password hashing
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User> {
+    // Validate email format
+    validate_email(&register_user.email)?;
+
     // Validate that password and confirm_password match
     if register_user.password != register_user.confirm_password {
         return Err(Error::Validation("Passwords do not match".to_string()));
     }
 
-    // Validate password length (minimum 8 characters)
-    if register_user.password.len() < 8 {
-        return Err(Error::Validation(
-            "Password must be at least 8 characters long".to_string(),
-        ));
-    }
+    // Validate password strength
+    validate_password(&register_user.password)?;
+
+    // Validate full name format
+    validate_full_name(&register_user.full_name)?;
 
     // Hash the password using Argon2
     let password_hash = generate_password_hash(&register_user.password)?;
 
-    // Create NewUser struct
+    // Create NewUser struct with sanitized email
     let new_user = NewUser {
-        email: register_user.email,
+        email: validate_required_string(&register_user.email, "Email")?.to_lowercase(),
         password_hash,
-        full_name: register_user.full_name,
+        full_name: register_user.full_name.map(|name| validate_required_string(&name, "Full name")).transpose()?,
     };
 
     // Insert user into database
@@ -46,33 +50,35 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
 }
 
 /// Registers a new user and creates their first workspace in one transaction
+///
+/// This operation ensures atomicity - both user creation and workspace creation
+/// succeed together, or both fail together. No orphaned users or incomplete
+/// workspaces are left behind.
+///
+/// Comprehensive validation is performed before starting the transaction
+/// to fail fast on invalid input.
 pub async fn register_user_with_workspace(conn: &mut DbConn, request: UserWorkspaceRegistrationRequest) -> Result<UserWorkspaceResult> {
-    // Validate that password and confirm_password match
+    // Validate all input first before starting transaction
+    validate_email(&request.email)?;
+
     if request.password != request.confirm_password {
         return Err(Error::Validation("Passwords do not match".to_string()));
     }
 
-    // Validate password length (minimum 8 characters)
-    if request.password.len() < 8 {
-        return Err(Error::Validation(
-            "Password must be at least 8 characters long".to_string(),
-        ));
-    }
+    validate_password(&request.password)?;
+    validate_full_name(&request.full_name)?;
 
-    // Validate workspace name is not empty
-    if request.workspace_name.trim().is_empty() {
-        return Err(Error::Validation("Workspace name cannot be empty".to_string()));
-    }
+    // Import workspace validation function
+    use crate::validation::validate_workspace_name;
+    validate_workspace_name(&request.workspace_name)?;
 
-    // Validate workspace name length (maximum 100 characters)
-    if request.workspace_name.len() > 100 {
-        return Err(Error::Validation(
-            "Workspace name must be less than 100 characters".to_string(),
-        ));
-    }
+    // Start a transaction for atomic user + workspace creation
+    let mut tx = conn.begin().await.map_err(|e| {
+        Error::Internal(format!("Failed to begin transaction: {}", e))
+    })?;
 
-    // Register the user
-    let user = register_user(conn, RegisterUser {
+    // Register the user within the transaction
+    let user = register_user(&mut tx, RegisterUser {
         email: request.email,
         password: request.password,
         confirm_password: request.confirm_password,
@@ -84,7 +90,12 @@ pub async fn register_user_with_workspace(conn: &mut DbConn, request: UserWorksp
         name: request.workspace_name,
         owner_id: user.id,
     };
-    let workspace_result = workspaces::create_workspace(conn, workspace_request).await?;
+    let workspace_result = workspaces::create_workspace(&mut tx, workspace_request).await?;
+
+    // Commit the transaction - both user and workspace are now persisted atomically
+    tx.commit().await.map_err(|e| {
+        Error::Internal(format!("Failed to commit transaction: {}", e))
+    })?;
 
     Ok(UserWorkspaceResult {
         user,
@@ -122,19 +133,19 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     }
 }
 
-/// Logs in a user with email and password validation
+/// Logs in a user with comprehensive email and password validation
 pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<LoginResult> {
-    // Validate input
-    if login_user.email.trim().is_empty() {
-        return Err(Error::Validation("Email cannot be empty".to_string()));
-    }
+    // Validate email format
+    validate_email(&login_user.email)?;
 
+    // Validate password is not empty (password strength check not needed for login)
     if login_user.password.is_empty() {
         return Err(Error::Validation("Password cannot be empty".to_string()));
     }
 
-    // Find user by email
-    let user = users::get_user_by_email(conn, &login_user.email.trim().to_lowercase()).await?
+    // Find user by email (case-insensitive, sanitized)
+    let sanitized_email = validate_required_string(&login_user.email, "Email")?.to_lowercase();
+    let user = users::get_user_by_email(conn, &sanitized_email).await?
         .ok_or_else(|| Error::Authentication("Invalid email or password".to_string()))?;
 
     // Verify password
@@ -167,13 +178,12 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
 
 /// Validates a session token and returns the associated user
 pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User> {
-    // Validate input
-    if session_token.trim().is_empty() {
-        return Err(Error::Validation("Session token cannot be empty".to_string()));
-    }
+    // Validate session token format
+    validate_session_token(session_token)?;
 
     // Get valid session by token
-    let session = sessions::get_valid_session_by_token(conn, session_token.trim()).await?
+    let sanitized_token = validate_required_string(session_token, "Session token")?;
+    let session = sessions::get_valid_session_by_token(conn, &sanitized_token).await?
         .ok_or_else(|| Error::InvalidToken("Invalid or expired session token".to_string()))?;
 
     // Get user by session user_id
@@ -184,13 +194,12 @@ pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<
 
 /// Logs out a user by invalidating their session token
 pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()> {
-    // Validate input
-    if session_token.trim().is_empty() {
-        return Err(Error::Validation("Session token cannot be empty".to_string()));
-    }
+    // Validate session token format
+    validate_session_token(session_token)?;
 
     // Delete session by token
-    let rows_affected = sessions::delete_session_by_token(conn, session_token.trim()).await?;
+    let sanitized_token = validate_required_string(session_token, "Session token")?;
+    let rows_affected = sessions::delete_session_by_token(conn, &sanitized_token).await?;
 
     if rows_affected == 0 {
         return Err(Error::InvalidToken("Invalid session token".to_string()));
@@ -201,13 +210,21 @@ pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()> {
 
 /// Refreshes a session by extending its expiration time
 pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_extend: i64) -> Result<String> {
-    // Validate input
-    if session_token.trim().is_empty() {
-        return Err(Error::Validation("Session token cannot be empty".to_string()));
+    // Validate session token format
+    validate_session_token(session_token)?;
+
+    // Validate hours to extend
+    if hours_to_extend <= 0 {
+        return Err(Error::Validation("Hours to extend must be positive".to_string()));
+    }
+
+    if hours_to_extend > 168 { // Max 7 days
+        return Err(Error::Validation("Cannot extend session by more than 168 hours (7 days)".to_string()));
     }
 
     // Get current session
-    let session = sessions::get_session_by_token(conn, session_token.trim()).await?
+    let sanitized_token = validate_required_string(session_token, "Session token")?;
+    let session = sessions::get_session_by_token(conn, &sanitized_token).await?
         .ok_or_else(|| Error::InvalidToken("Invalid session token".to_string()))?;
 
     // Check if session is expired
@@ -268,14 +285,12 @@ pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<
 
 /// Checks if an email is available for registration
 pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool> {
-    // Validate email format
-    let email = email.trim();
-    if email.is_empty() || !email.contains('@') || email.starts_with('@') || email.ends_with('@') {
-        return Err(Error::Validation("Invalid email format".to_string()));
-    }
+    // Validate email format using comprehensive validation
+    validate_email(email)?;
 
-    // Check if user exists using existing query function
-    let existing_user = users::get_user_by_email(conn, &email.to_lowercase()).await?;
+    // Check if user exists using existing query function (case-insensitive)
+    let sanitized_email = validate_required_string(email, "Email")?.to_lowercase();
+    let existing_user = users::get_user_by_email(conn, &sanitized_email).await?;
     Ok(existing_user.is_none())
 }
 

@@ -23,7 +23,7 @@ async fn test_user_registration_success() {
         !created_user.id.to_string().is_empty(),
         "User should have a valid UUID"
     );
-    assert_eq!(created_user.email, user_email, "Email should match");
+    assert_eq!(created_user.email, user_email.to_lowercase(), "Email should be stored in lowercase");
     assert!(
         !created_user.password_hash.is_empty(),
         "Password hash should not be empty"
@@ -158,7 +158,7 @@ async fn test_user_fields_are_populated() {
         !created_user.id.to_string().is_empty(),
         "ID should be populated"
     );
-    assert_eq!(created_user.email, email, "Email should match");
+    assert_eq!(created_user.email, email.to_lowercase(), "Email should be stored in lowercase");
     assert!(
         !created_user.password_hash.is_empty(),
         "Password hash should be populated"
@@ -203,9 +203,10 @@ async fn test_edge_case_email_addresses() {
         assert!(result.is_ok(), "Email '{}' should be valid", email);
 
         let created_user = result.unwrap();
+        // Email should be stored in lowercase (email addresses are case-insensitive)
         assert_eq!(
-            created_user.email, email,
-            "Email should be stored exactly as provided"
+            created_user.email, email.to_lowercase(),
+            "Email should be stored in lowercase"
         );
     }
 }

@@ -283,8 +283,13 @@ impl TestApp {
 
     /// Generate a unique test email with proper prefix
     pub fn generate_test_email(&self) -> String {
-        let uuid = uuid::Uuid::now_v7();
-        format!("{}_{}@example.com", self.test_prefix(), uuid)
+        // Generate a shorter unique identifier to stay within 64 character limit for local part
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let short_id = format!("{:x}", timestamp % 0xFFFFFFFF); // 8 hex characters
+        format!("{}{}@example.com", self.test_prefix(), short_id)
     }
 
     /// Create a test user
