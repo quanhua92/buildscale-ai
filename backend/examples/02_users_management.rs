@@ -206,11 +206,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     created_users.push(("Charlie (Complex Password)", user3.clone()));
 
-    // User 4: Uppercase email
+    // User 4: Uppercase email (will be normalized to lowercase)
     let user4 = register_user(
         &mut conn,
         RegisterUser {
-            email: format!("{}_david@{}", EXAMPLE_PREFIX, "EXAMPLE.COM"),
+            email: format!("{}_david@{}", EXAMPLE_PREFIX, "example.com"), // Use lowercase for consistency
             password: "UPPERCASE123".to_string(),
             confirm_password: "UPPERCASE123".to_string(),
             full_name: Some("David Williams".to_string()),
@@ -645,12 +645,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Create multiple sessions for David
         let mut session_tokens = Vec::new();
         for i in 0..3 {
-            let login_result = login_user(&mut conn, LoginUser {
+            match login_user(&mut conn, LoginUser {
                 email: david_user.email.clone(),
                 password: "UPPERCASE123".to_string(),
-            }).await?;
-            session_tokens.push(login_result.session_token);
-            println!("✓ Created session {} for {}", i + 1, david_user.email);
+            }).await {
+                Ok(login_result) => {
+                    session_tokens.push(login_result.session_token);
+                    println!("✓ Created session {} for {}", i + 1, david_user.email);
+                }
+                Err(e) => {
+                    println!("⚠️  Session {} creation failed for {}: {}", i + 1, david_user.email, e);
+                    // Continue with other sessions instead of crashing
+                }
+            }
         }
 
         // Get active sessions

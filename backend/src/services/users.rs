@@ -146,8 +146,8 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
     // Generate secure session token
     let session_token = generate_session_token()?;
 
-    // Set session expiration (24 hours from now)
-    let expires_at = Utc::now() + Duration::hours(24);
+    // Set session expiration (7 days from now)
+    let expires_at = Utc::now() + Duration::hours(168);
 
     // Create session
     let new_session = NewUserSession {
