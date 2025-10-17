@@ -64,7 +64,7 @@ The authentication system provides secure user login with session-based authenti
 
 1. **User Registration** → Users register with email and password (hashed with Argon2)
 2. **Login Attempt** → Users authenticate with email/password credentials
-3. **Session Creation** → Successful login creates a session token (UUID v7) with 24-hour expiration
+3. **Session Creation** → Successful login creates a session token (UUID v7) with 7-day expiration
 4. **Session Validation** → Each API call validates the session token and returns user info
 5. **Session Refresh** → Sessions can be extended before expiration
 6. **Logout** → Sessions are invalidated on logout
@@ -661,6 +661,17 @@ pub async fn update_workspace_owner(...) // Transfers ownership with role manage
 - Role must exist in the workspace
 - Cannot create duplicate memberships
 - Owner always has admin role
+
+### Related Documentation
+
+**Workspace Invitation System**: For comprehensive invitation functionality including token-based user onboarding, bulk invitations, and invitation management, see [WORKSPACE_INVITATIONS.md](./WORKSPACE_INVITATIONS.md).
+
+The invitation system provides:
+- Secure token-based user invitations with UUID v7 tokens
+- Role-based invitation assignments with automatic membership creation
+- Comprehensive validation, expiration handling, and security features
+- Bulk invitation operations and invitation management tools
+- Full integration with the existing RBAC and permission systems
 
 ## Service Layer API
 
