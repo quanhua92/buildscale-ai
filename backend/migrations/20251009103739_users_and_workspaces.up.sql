@@ -33,3 +33,17 @@ CREATE TABLE workspace_members (
     role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     PRIMARY KEY (workspace_id, user_id)
 );
+
+-- Indexes for performance optimization
+
+-- Index for finding workspaces by owner (frequently queried in ownership operations)
+CREATE INDEX idx_workspaces_owner_id ON workspaces(owner_id);
+
+-- Index for finding roles within a workspace (constantly filtered in role-based queries)
+CREATE INDEX idx_roles_workspace_id ON roles(workspace_id);
+
+-- Index for finding users by role (needed for membership and permission checks)
+CREATE INDEX idx_workspace_members_role_id ON workspace_members(role_id);
+
+-- Index for users email lookup (authentication - case-insensitive searches)
+CREATE INDEX idx_users_email ON users(email);
