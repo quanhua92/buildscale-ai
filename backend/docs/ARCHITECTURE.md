@@ -229,6 +229,7 @@ CREATE INDEX idx_workspaces_owner_id ON workspaces(owner_id);
 CREATE INDEX idx_roles_workspace_id ON roles(workspace_id);
 CREATE INDEX idx_workspace_members_workspace_id ON workspace_members(workspace_id);
 CREATE INDEX idx_workspace_members_user_id ON workspace_members(user_id);
+CREATE INDEX idx_workspace_members_role_id ON workspace_members(role_id);
 
 -- Invitation system performance
 CREATE INDEX idx_workspace_invitations_workspace ON workspace_invitations(workspace_id);

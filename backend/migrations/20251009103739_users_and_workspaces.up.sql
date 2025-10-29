@@ -42,6 +42,12 @@ CREATE INDEX idx_workspaces_owner_id ON workspaces(owner_id);
 -- Index for finding roles within a workspace (constantly filtered in role-based queries)
 CREATE INDEX idx_roles_workspace_id ON roles(workspace_id);
 
+-- Index for finding workspaces by user (needed for user workspace listing)
+CREATE INDEX idx_workspace_members_user_id ON workspace_members(user_id);
+
+-- Index for finding members by workspace (needed for workspace member listing)
+CREATE INDEX idx_workspace_members_workspace_id ON workspace_members(workspace_id);
+
 -- Index for finding users by role (needed for membership and permission checks)
 CREATE INDEX idx_workspace_members_role_id ON workspace_members(role_id);
 
