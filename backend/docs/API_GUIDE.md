@@ -275,23 +275,204 @@ let result = create_workspace(&mut conn, workspace_request).await?;
 // ❌ Avoid: Manual multi-step creation
 ```
 
-### Error Handling Pattern
+## Error Handling Guide
+
+### Error Types
+
+The system uses a comprehensive error hierarchy with specific error types for different scenarios:
+
+```rust
+#[derive(Debug, Error)]
+pub enum Error {
+    Sqlx(#[from] sqlx::Error),           // Database errors
+    Validation(String),                   // Input validation errors
+    NotFound(String),                      // Resource not found
+    Forbidden(String),                    // Permission denied
+    Conflict(String),                      // Resource conflicts
+    Authentication(String),               // Invalid credentials
+    InvalidToken(String),                 // Invalid/expired session tokens
+    SessionExpired(String),               // Session expiration errors
+    Internal(String),                      // System errors
+}
+```
+
+### Error Handling Patterns
+
+#### 1. Comprehensive Error Handling
 ```rust
 match service_function(&mut conn, request).await {
     Ok(result) => handle_success(result),
-    Err(Error::Validation(msg)) => show_validation_error(msg),
-    Err(Error::Conflict(msg)) => handle_conflict(msg),
-    Err(Error::NotFound(msg)) => handle_not_found(msg),
-    Err(Error::Forbidden(msg)) => handle_forbidden(msg),
-    Err(error) => handle_generic_error(error),
+    Err(Error::Validation(msg)) => {
+        log::warn!("Validation error: {}", msg);
+        return Err(create_api_error(400, msg));
+    },
+    Err(Error::Authentication(msg)) => {
+        log::info!("Authentication failed: {}", msg);
+        return Err(create_api_error(401, "Invalid credentials"));
+    },
+    Err(Error::InvalidToken(msg) | Error::SessionExpired(msg)) => {
+        log::info!("Session error: {}", msg);
+        return Err(create_api_error(401, "Session expired"));
+    },
+    Err(Error::Forbidden(msg)) => {
+        log::warn!("Access forbidden: {}", msg);
+        return Err(create_api_error(403, "Access denied"));
+    },
+    Err(Error::NotFound(msg)) => {
+        log::info!("Resource not found: {}", msg);
+        return Err(create_api_error(404, msg));
+    },
+    Err(Error::Conflict(msg)) => {
+        log::warn!("Conflict error: {}", msg);
+        return Err(create_api_error(409, msg));
+    },
+    Err(Error::Sqlx(db_error)) => {
+        log::error!("Database error: {}", db_error);
+        return Err(create_api_error(500, "Database error"));
+    },
+    Err(Error::Internal(msg)) => {
+        log::error!("Internal error: {}", msg);
+        return Err(create_api_error(500, "Internal server error"));
+    }
 }
 ```
+
+#### 2. User Registration Error Handling
+```rust
+match register_user(&mut conn, register_request).await {
+    Ok(user) => create_user_session(user),
+    Err(Error::Validation(msg)) => {
+        match msg.as_str() {
+            "Password must meet minimum length requirements" =>
+                show_field_error("password", "Password too short"),
+            "Passwords do not match" =>
+                show_field_error("confirm_password", "Passwords don't match"),
+            "Email cannot be empty" =>
+                show_field_error("email", "Email is required"),
+            _ => show_general_error("Validation failed")
+        }
+    },
+    Err(Error::Conflict(msg)) if msg.contains("duplicate key value violates unique constraint") => {
+        show_field_error("email", "Email already registered");
+    },
+    Err(error) => {
+        log::error!("Registration error: {}", error);
+        show_general_error("Registration failed. Please try again.");
+    }
+}
+```
+
+#### 3. Authentication Error Handling
+```rust
+match login_user(&mut conn, login_request).await {
+    Ok(login_result) => {
+        create_user_session(login_result);
+        redirect_to_dashboard();
+    },
+    Err(Error::Authentication(_)) => {
+        show_error("Invalid email or password");
+        increment_login_attempts();
+    },
+    Err(Error::Validation(msg)) => {
+        show_error(&format!("Please fill in all fields: {}", msg));
+    },
+    Err(error) => {
+        log::error!("Login error: {}", error);
+        show_error("Login failed. Please try again.");
+    }
+}
+```
+
+#### 4. Workspace Access Error Handling
+```rust
+match can_access_workspace(&mut conn, workspace_id, user.id).await {
+    Ok(true) => {
+        // User has access - proceed
+        handle_workspace_request();
+    },
+    Ok(false) => {
+        log::warn!("User {} attempted to access workspace {}", user.id, workspace_id);
+        return Err(create_api_error(403, "You don't have access to this workspace"));
+    },
+    Err(Error::NotFound(_)) => {
+        return Err(create_api_error(404, "Workspace not found"));
+    },
+    Err(Error::InvalidToken(_) | Error::SessionExpired(_)) => {
+        return Err(create_api_error(401, "Please log in to continue"));
+    },
+    Err(error) => {
+        log::error!("Workspace access check failed: {}", error);
+        return Err(create_api_error(500, "Access check failed"));
+    }
+}
+```
+
+#### 5. Session Management Error Handling
+```rust
+match validate_session(&mut conn, session_token).await {
+    Ok(user) => {
+        // Valid session - proceed with request
+        handle_authenticated_request(user);
+    },
+    Err(Error::InvalidToken(_) | Error::SessionExpired(_)) => {
+        // Clear invalid session cookie
+        clear_session_cookie();
+        redirect_to_login_with_message("Your session has expired. Please log in again.");
+    },
+    Err(error) => {
+        log::error!("Session validation error: {}", error);
+        clear_session_cookie();
+        redirect_to_login_with_message("Authentication error. Please log in again.");
+    }
+}
+```
+
+### Error Response Format
+
+#### API Error Response Structure
+```rust
+pub struct ApiError {
+    pub error: String,
+    pub message: String,
+    pub details: Option<String>,
+    pub code: Option<String>,
+}
+
+// Example error responses
+{
+    "error": "validation_error",
+    "message": "Email is required",
+    "details": "The email field cannot be empty",
+    "code": "EMAIL_REQUIRED"
+}
+
+{
+    "error": "authentication_error",
+    "message": "Invalid credentials",
+    "details": null,
+    "code": "INVALID_CREDENTIALS"
+}
+```
+
+### Common Error Scenarios
+
+| Scenario | Error Type | HTTP Status | User Message |
+|----------|------------|-------------|--------------|
+| Invalid email format | `Validation` | 400 | "Invalid email format" |
+| Password too short | `Validation` | 400 | "Password must meet minimum length requirements" |
+| Email already exists | `Conflict` | 409 | "Email already registered" |
+| Invalid login credentials | `Authentication` | 401 | "Invalid email or password" |
+| Session expired | `SessionExpired` | 401 | "Session expired. Please log in again" |
+| No workspace access | `Forbidden` | 403 | "You don't have access to this workspace" |
+| Workspace not found | `NotFound` | 404 | "Workspace not found" |
+| Database connection failed | `Sqlx` | 500 | "Database error. Please try again" |
+| Internal system error | `Internal` | 500 | "Internal server error" |
 
 ## Key Architecture
 
 - **Three-Layer**: Service → Query → Model architecture
 - **RBAC System**: 4-tier roles (Admin > Editor > Member > Viewer)
-- **18 Permissions**: Across workspace, content, and member categories
+- **Comprehensive Permissions**: Fine-grained permissions across workspace, content, and member categories
 - **Multi-Tenant**: Complete workspace isolation with shared users
 - **Session-Based**: UUID v7 tokens with Argon2 password hashing
 

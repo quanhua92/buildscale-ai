@@ -103,7 +103,7 @@ pub struct User {
 
 pub struct Workspace {
     pub id: Uuid,                    // Primary key (UUID v7)
-    pub name: String,                 // Workspace name (1-100 chars)
+    pub name: String,                 // Workspace name (constrained length)
     pub owner_id: Uuid,               // Owner user ID (RESTRICT constraint)
     pub created_at: DateTime<Utc>,   // Creation time
     pub updated_at: DateTime<Utc>,   // Last update time
@@ -204,3 +204,11 @@ CREATE TABLE workspace_members (
     PRIMARY KEY (workspace_id, user_id)
 );
 ```
+
+## Related Documentation
+
+- **[Authentication & Security](./AUTHENTICATION.md)** - User authentication and session management
+- **[Role Management](./ROLE_MANAGEMENT.md)** - RBAC system and role assignments
+- **[Workspace Invitations](./WORKSPACE_INVITATIONS.md)** - Token-based member onboarding
+- **[Architecture Overview](./ARCHITECTURE.md)** - System design and database schema
+- **[API Guide](./API_GUIDE.md)** - Complete API reference and usage examples

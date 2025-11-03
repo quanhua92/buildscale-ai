@@ -11,7 +11,7 @@ Multi-tenant workspace-based RBAC architecture with clear separation of concerns
 - **RBAC System**: Four-tier role hierarchy (Admin > Editor > Member > Viewer)
 - **Single Owner Model**: Each workspace has exactly one owner
 - **Flexible Membership**: Users can belong to multiple workspaces with different roles
-- **Hardcoded Permissions**: 18 permissions across 3 categories (workspace, content, members)
+- **Comprehensive Permission System**: Fine-grained permissions across workspace, content, and member management categories
 
 ## Module Structure
 
@@ -29,7 +29,7 @@ src/
 │   ├── roles.rs     # Role, WorkspaceRole enum, role constants
 │   ├── workspace_members.rs # WorkspaceMember assignments
 │   ├── invitations.rs # Invitation entities and validation
-│   ├── permissions.rs # 18 hardcoded permissions with role mappings
+│   ├── permissions.rs # Comprehensive permission system with role mappings
 │   └── requests.rs  # Complex API request models
 ├── services/        # Business logic layer
 │   ├── mod.rs       # Module exports
@@ -81,14 +81,14 @@ Users (1) ←→ (N) Workspaces
 - `content:update_own`, `content:update_all`
 - `content:delete_own`, `content:delete_all`, `content:comment`
 
-### Member Permissions (3)
+### Member Permissions (4)
 - `members:add`, `members:remove`, `members:update_roles`, `members:view`
 
 **Role Hierarchy**:
-- **Admin**: All 18 permissions
-- **Editor**: 13 permissions (content + workspace read/write + member view)
-- **Member**: 9 permissions (basic content + workspace read)
-- **Viewer**: 3 permissions (read-only)
+- **Admin**: All permissions (full workspace control)
+- **Editor**: Content creation and management permissions
+- **Member**: Basic content participation permissions
+- **Viewer**: Read-only access permissions
 
 ## Data Flow Architecture
 

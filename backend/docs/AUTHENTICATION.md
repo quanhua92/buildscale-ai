@@ -1,12 +1,108 @@
 # Authentication & Security
 
-Session-based authentication with UUID v7 tokens, Argon2 password hashing, and 7-day session expiration.
+Session-based authentication with UUID v7 tokens, Argon2 password hashing, and configurable session expiration periods.
+
+## Authentication Flow
+
+### User Registration Flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+
+    Client->>API: POST /register (email, password, confirm_password)
+    API->>API: Validate input (email format, password length >= 8)
+    API->>API: Hash password with Argon2
+    API->>Database: INSERT INTO users (email, password_hash, ...)
+    Database-->>API: User created
+    API-->>Client: 201 Created (User object)
+```
+
+### User Login Flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+
+    Client->>API: POST /login (email, password)
+    API->>API: Validate input
+    API->>Database: SELECT user WHERE email = ? (case-insensitive)
+    Database-->>API: User record (if exists)
+    API->>API: Verify password against hash
+    API->>API: Generate UUID v7 session token
+    API->>Database: INSERT INTO user_sessions (user_id, token, expires_at)
+    Database-->>API: Session created
+    API-->>Client: 200 OK (session_token, expires_at, user_data)
+    Client->>Client: Store session token securely
+```
+
+### Session Validation Flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+
+    Client->>API: Request with Authorization: Bearer <session_token>
+    API->>API: Extract and validate session token format
+    API->>Database: SELECT session WHERE token = ? AND expires_at > NOW()
+    Database-->>API: Session record (if valid)
+    API->>Database: SELECT user WHERE id = session.user_id
+    Database-->>API: User record
+    API-->>API: User authenticated, proceed with request
+    API-->>Client: Response with requested data
+```
+
+### Session Refresh Flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+
+    Client->>API: POST /session/refresh (session_token, hours_to_extend)
+    API->>Database: SELECT session WHERE token = ? AND expires_at > NOW()
+    Database-->>API: Valid session
+    API->>API: Calculate new expiration time
+    API->>Database: UPDATE session SET expires_at = ? WHERE id = ?
+    Database-->>API: Session updated
+    API-->>Client: 200 OK (new_expires_at)
+```
+
+### Logout Flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+
+    Client->>API: POST /logout (session_token)
+    API->>Database: DELETE FROM user_sessions WHERE token = ?
+    Database-->>API: Session deleted
+    API-->>Client: 200 OK
+    Client->>Client: Clear stored session token
+```
+
+### Session Cleanup Flow (Automated)
+```mermaid
+sequenceDiagram
+    participant System
+    participant Database
+
+    loop Every 24 hours
+        System->>Database: DELETE FROM user_sessions WHERE expires_at < NOW()
+        Database-->>System: Count of expired sessions deleted
+        System->>System: Log cleanup metrics
+    end
+```
 
 ## Core API
 
 ### User Authentication
 ```rust
-// User registration (8+ char password, email validation)
+// User registration (minimum password length requirements, email validation)
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User>
 
 // User authentication and session creation
@@ -51,7 +147,7 @@ pub struct LoginUser {
 pub struct LoginResult {
     pub user: User,                   // Authenticated user
     pub session_token: String,          // UUID v7 token
-    pub expires_at: DateTime<Utc>,    // Session expiration (7 days)
+    pub expires_at: DateTime<Utc>,    // Session expiration (configurable duration)
 }
 
 pub struct UserSession {
@@ -68,7 +164,7 @@ pub struct UserSession {
 
 - **UUID v7 Tokens**: Time-based sortable unique session identifiers
 - **Argon2 Hashing**: Industry-standard password hashing with unique salts
-- **7-Day Expiration**: Default session duration with automatic cleanup
+- **Configurable Expiration**: Default session duration with automatic cleanup
 - **Case-Insensitive Email**: User-friendly login experience
 - **Multi-Device Support**: Users can maintain concurrent sessions
 - **Session Revocation**: Immediate token invalidation on logout
@@ -78,7 +174,7 @@ pub struct UserSession {
 | Input | Requirement | Error Message |
 |--------|-------------|---------------|
 | Email | Required, valid format | "Email cannot be empty" / "Invalid email format" |
-| Password | Min 8 characters | "Password must be at least 8 characters long" |
+| Password | Minimum length | "Password must meet minimum length requirements" |
 | Session Token | Required, non-empty | "Session token cannot be empty" |
 | Login | Valid credentials | "Invalid email or password" |
 | Session | Non-expired token | "Invalid or expired session token" |
@@ -128,7 +224,7 @@ logout_user(&mut conn, &login_result.session_token).await?;
 // Get active sessions
 let sessions = get_user_active_sessions(&mut conn, user.id).await?;
 
-// Extend all sessions by 7 days (168 hours)
+// Extend all sessions by default duration
 let extended = extend_all_user_sessions(&mut conn, user.id, 168).await?;
 
 // Force logout from all devices
@@ -137,3 +233,52 @@ let revoked = revoke_all_user_sessions(&mut conn, user.id).await?;
 // Cleanup expired sessions
 let cleaned = cleanup_expired_sessions(&mut conn).await?;
 ```
+
+## Related Documentation
+
+- **[Architecture Overview](./ARCHITECTURE.md)** - System design and database schema
+- **[User & Workspace Management](./USER_WORKSPACE_MANAGEMENT.md)** - User registration and management APIs
+- **[Role Management](./ROLE_MANAGEMENT.md)** - RBAC system and permissions
+- **[API Guide](./API_GUIDE.md)** - Complete API reference with error handling
+- **[Installation Guide](./README.md#installation--setup)** - Development setup and troubleshooting
+
+## For Developers
+
+### Finding Current Configuration Values
+```bash
+# Check password length requirements (hardcoded in services/users.rs)
+grep -n "password.len() < 8" src/services/users.rs
+
+# Check session extension limits
+grep -n "Cannot extend session by more than" src/services/users.rs
+
+# Check session management functions
+grep -n "pub async fn.*session" src/services/sessions.rs
+
+# View session table structure
+psql -d buildscale -c "\d user_sessions"
+
+# Check workspace name validation
+grep -n "validate_workspace_name" src/validation.rs
+```
+
+### Session Management Configuration
+Session management settings are typically found in:
+- `src/models/users.rs`: Password validation requirements
+- `src/services/sessions.rs`: Session cleanup and management
+- `src/services/users.rs`: Authentication logic
+
+### Security Configuration
+- **Token Generation**: UUID v7 tokens generated in `src/services/users.rs`
+- **Password Hashing**: Argon2 configuration in password utility functions
+- **Session Validation**: Token format and expiration checking
+
+### Changing Security Settings
+1. Update constants in appropriate source files
+2. Update database schema if needed (migrations/)
+3. Add tests for new security settings
+4. Update CONFIGURATION.md with new values
+5. Update API documentation if interfaces change
+
+### Current Security Defaults
+See [CONFIGURATION.md](./CONFIGURATION.md) for current security-related configuration values, including session durations, password requirements, and token settings.
