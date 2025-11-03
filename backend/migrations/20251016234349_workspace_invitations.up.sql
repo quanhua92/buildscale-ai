@@ -2,7 +2,7 @@
 CREATE TABLE workspace_invitations (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    invited_email TEXT NOT NULL NOT NULL,
+    invited_email TEXT NOT NULL,
     invited_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     invitation_token TEXT UNIQUE NOT NULL,

@@ -69,7 +69,7 @@ Users (1) ←→ (N) Workspaces
 
 ## Permission System
 
-**18 Hardcoded Permissions** across 3 categories:
+**20 Hardcoded Permissions** across 3 categories:
 
 ### Workspace Permissions (8)
 - `workspace:read`, `workspace:write`, `workspace:delete`
