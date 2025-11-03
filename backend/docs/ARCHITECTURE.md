@@ -22,6 +22,7 @@ src/
 ├── config.rs        # Environment configuration with BUILDSCALE__ prefix
 ├── database.rs      # Database connection pooling
 ├── error.rs         # Comprehensive error handling
+├── validation.rs    # Input validation utilities (email, password, workspace names, etc.)
 ├── models/          # Data structures and validation
 │   ├── mod.rs       # Module exports
 │   ├── users.rs     # User, LoginUser, UserSession, RegisterUser

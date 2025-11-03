@@ -6,12 +6,14 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
 
 | Area | Key Functions |
 |------|--------------|
-| **Users** | `register_user`, `login_user`, `validate_session`, `logout_user` |
-| **Workspaces** | `create_workspace`, `get_workspace`, `list_user_workspaces` |
-| **Members** | `add_workspace_member`, `update_workspace_member_role`, `remove_workspace_member` |
-| **Roles** | `create_default_roles`, `get_role_by_name`, `list_workspace_roles` |
-| **Invitations** | `create_invitation`, `accept_invitation`, `revoke_invitation` |
-| **Sessions** | `cleanup_expired_sessions`, `revoke_all_user_sessions` |
+| **Users** | `register_user`, `login_user`, `validate_session`, `logout_user`, `get_user_by_id`, `update_password` |
+| **Workspaces** | `create_workspace`, `get_workspace`, `list_user_workspaces`, `update_workspace_owner`, `can_access_workspace` |
+| **Members** | `create_workspace_member`, `update_workspace_member`, `remove_workspace_member`, `list_workspace_members` |
+| **Permissions** | `validate_workspace_permission`, `require_workspace_permission`, `get_user_workspace_permissions` |
+| **Roles** | `create_default_roles`, `get_role_by_name`, `list_workspace_roles`, `get_role` |
+| **Invitations** | `create_invitation`, `accept_invitation`, `revoke_invitation`, `bulk_create_invitations`, `get_invitation_by_token` |
+| **Sessions** | `cleanup_expired_sessions`, `revoke_all_user_sessions`, `revoke_session_by_token`, `user_has_active_sessions` |
+| **Validation** | `validate_email`, `validate_password`, `validate_workspace_name`, `validate_session_token` |
 
 ---
 
@@ -54,24 +56,44 @@ pub async fn create_workspace_with_members(
 // Basic operations
 pub async fn get_workspace(conn: &mut DbConn, id: Uuid) -> Result<Workspace>
 pub async fn list_user_workspaces(conn: &mut DbConn, owner_id: Uuid) -> Result<Vec<Workspace>>
+pub async fn list_workspaces(conn: &mut DbConn) -> Result<Vec<Workspace>>
 pub async fn delete_workspace(conn: &mut DbConn, id: Uuid) -> Result<u64>
+
+// Critical ownership and access functions
+pub async fn update_workspace_owner(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    current_owner_id: Uuid,
+    new_owner_id: Uuid,
+) -> Result<Workspace>
+
+pub async fn can_access_workspace(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool>
+
+pub async fn validate_workspace_ownership(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<()>
 ```
 
 ### Member Management
 ```rust
-// Member assignment and role updates
-pub async fn add_workspace_member(
+// Member creation and assignment
+pub async fn create_workspace_member(
     conn: &mut DbConn,
-    workspace_id: Uuid,
-    user_id: Uuid,
-    role_id: Uuid,
+    new_member: NewWorkspaceMember,
 ) -> Result<WorkspaceMember>
 
-pub async fn update_workspace_member_role(
+// Member updates and role changes
+pub async fn update_workspace_member(
     conn: &mut DbConn,
     workspace_id: Uuid,
     user_id: Uuid,
-    new_role_id: Uuid,
+    update_member: UpdateWorkspaceMember,
 ) -> Result<WorkspaceMember>
 
 pub async fn remove_workspace_member(
@@ -80,11 +102,34 @@ pub async fn remove_workspace_member(
     user_id: Uuid,
 ) -> Result<u64>
 
-// Member queries
+// Member queries and lookups
 pub async fn list_workspace_members(
     conn: &mut DbConn,
     workspace_id: Uuid,
 ) -> Result<Vec<WorkspaceMember>>
+
+pub async fn list_user_workspaces(
+    conn: &mut DbConn,
+    user_id: Uuid,
+) -> Result<Vec<WorkspaceMember>>
+
+pub async fn get_workspace_member(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<WorkspaceMember>
+
+pub async fn get_workspace_member_optional(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<WorkspaceMember>>
+
+pub async fn is_workspace_member(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool>
 ```
 
 ### Role Management
@@ -100,6 +145,48 @@ pub async fn get_role_by_name(
 ) -> Result<Role>
 
 pub async fn list_workspace_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>>
+
+// Individual role lookup
+pub async fn get_role(conn: &mut DbConn, id: Uuid) -> Result<Role>
+```
+
+### Permission Validation
+```rust
+// Permission checking functions
+pub async fn validate_workspace_permission(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permission: &str,
+) -> Result<bool>
+
+pub async fn require_workspace_permission(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permission: &str,
+) -> Result<()>
+
+pub async fn validate_any_workspace_permission(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permissions: &[&str],
+) -> Result<bool>
+
+pub async fn validate_all_workspace_permissions(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    required_permissions: &[&str],
+) -> Result<bool>
+
+// User permission lookup
+pub async fn get_user_workspace_permissions(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<String>>
 ```
 
 ### Invitations
@@ -133,6 +220,59 @@ pub async fn bulk_create_invitations(
     inviter_id: Uuid,
     expires_in_hours: Option<i64>,
 ) -> Result<Vec<CreateInvitationResponse>>
+
+// Additional invitation utilities
+pub async fn get_invitation_by_token(
+    conn: &mut DbConn,
+    token: &str,
+) -> Result<WorkspaceInvitation>
+
+pub async fn list_workspace_invitations(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+) -> Result<Vec<WorkspaceInvitation>>
+
+pub async fn list_user_sent_invitations(
+    conn: &mut DbConn,
+    user_id: Uuid,
+) -> Result<Vec<WorkspaceInvitation>>
+
+pub async fn cleanup_expired_invitations(conn: &mut DbConn) -> Result<u64>
+```
+
+### Enhanced User Management
+```rust
+// User lookup and utilities
+pub async fn get_user_by_id(conn: &mut DbConn, user_id: Uuid) -> Result<Option<User>>
+pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool>
+pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &str) -> Result<()>
+pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<UserSession>>
+
+// User workspace memberships
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<UserSession>>
+pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64>
+```
+
+### Session Management
+```rust
+// Session cleanup and maintenance
+pub async fn cleanup_expired_sessions(conn: &mut DbConn) -> Result<u64>
+pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> Result<()>
+pub async fn user_has_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<bool>
+pub async fn extend_all_user_sessions(conn: &mut DbConn, user_id: Uuid, hours_to_extend: i64) -> Result<u64>
+```
+
+### Input Validation Utilities
+```rust
+// Core validation functions (from validation.rs)
+pub fn validate_email(email: &str) -> Result<()>
+pub fn validate_password(password: &str) -> Result<()>
+pub fn validate_workspace_name(name: &str) -> Result<()>
+pub fn validate_full_name(full_name: &Option<String>) -> Result<()>
+pub fn validate_session_token(token: &str) -> Result<()>
+pub fn validate_uuid(uuid_str: &str) -> Result<Uuid>
+pub fn validate_required_string(input: &str, field_name: &str) -> Result<String>
+pub fn sanitize_string(input: &str) -> String
 ```
 
 ### Key Request Models

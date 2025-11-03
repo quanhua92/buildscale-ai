@@ -23,6 +23,134 @@ if hours_to_extend > 168 {
 // No hardcoded constants for session duration - passed as parameters
 ```
 
+## Input Validation System
+
+The system includes comprehensive input validation utilities in `src/validation.rs` to ensure data integrity and security across all operations.
+
+### Core Validation Functions
+
+#### Email Validation (`validate_email`)
+```rust
+// Validation rules:
+// - Required field (cannot be empty)
+// - Maximum 254 characters (RFC 5321)
+// - Valid email format with local part and domain
+// - Must contain exactly one @ symbol
+// - Cannot start or end with @
+// - Local part: 1-64 characters, alphanumerics + .!#$%&'*+/=?^_`{|}~-
+// - Domain part: valid domain format
+// Returns: Result<()> with descriptive error messages
+```
+
+#### Password Validation (`validate_password`)
+```rust
+// Validation rules:
+// - Minimum 8 characters (configurable minimum length)
+// - Cannot be empty
+// - No additional complexity requirements (only length-based)
+// - Password hashing is handled separately with Argon2
+// Returns: Result<()> with "Password must be at least X characters long" error
+```
+
+#### Workspace Name Validation (`validate_workspace_name`)
+```rust
+// Validation rules:
+// - Required field (cannot be empty after trimming)
+// - Maximum 100 characters
+// - Leading/trailing whitespace trimmed
+// - No other format restrictions (allows Unicode characters)
+// Returns: Result<()> with descriptive error messages
+```
+
+#### Full Name Validation (`validate_full_name`)
+```rust
+// Validation rules:
+// - Optional field (can be None or empty string)
+// - If provided, maximum 100 characters after trimming
+// - Leading/trailing whitespace trimmed
+// - Allows Unicode characters for international names
+// Returns: Result<()> with descriptive error messages
+```
+
+#### Session Token Validation (`validate_session_token`)
+```rust
+// Validation rules:
+// - Required field (cannot be empty)
+// - Must be a valid UUID v7 format
+// - Uses UUID parsing for format validation
+// - Used for session token format checking before database lookup
+// Returns: Result<()> with "Session token cannot be empty" or "Invalid session token format"
+```
+
+#### UUID Validation (`validate_uuid`)
+```rust
+// Validation rules:
+// - Required field (cannot be empty)
+// - Must be valid UUID format (any version)
+// - Returns parsed Uuid on success
+// - Used for validating UUID parameters in API endpoints
+// Returns: Result<Uuid> with "Invalid UUID format" error
+```
+
+### Utility Functions
+
+#### String Sanitization (`sanitize_string`)
+```rust
+// Functionality:
+// - Trims leading and trailing whitespace
+// - Removes internal multiple consecutive spaces
+// - Normalizes whitespace for consistent storage
+// - Preserves Unicode characters
+// Returns: String with cleaned whitespace
+```
+
+#### Required String Validation (`validate_required_string`)
+```rust
+// Functionality:
+// - Checks for empty or whitespace-only strings
+// - Applies trim() to remove whitespace
+// - Returns cleaned string on success
+// - Used for general string field validation
+// Parameters: (input: &str, field_name: &str)
+// Returns: Result<String> with "{field_name} cannot be empty" error
+```
+
+### Integration with Service Layer
+
+The validation functions are used throughout the service layer:
+
+```rust
+// Usage examples in services:
+use crate::validation::*;
+
+// User registration
+validate_email(&register_user.email)?;
+validate_password(&register_user.password)?;
+validate_full_name(&register_user.full_name)?;
+
+// Workspace creation
+validate_workspace_name(&request.name)?;
+
+// Session validation
+validate_session_token(session_token)?;
+validate_uuid(workspace_id_str)?;
+```
+
+### Error Handling
+
+All validation functions return `Result<()>` or `Result<T>` with descriptive error messages:
+
+```rust
+// Example error messages:
+- "Email cannot be empty"
+- "Invalid email format"
+- "Password must be at least 8 characters long"
+- "Workspace name must be less than 100 characters"
+- "Session token cannot be empty"
+- "Invalid session token format"
+- "Invalid UUID format"
+```
+
 ## Workspace Configuration
 
 ### Workspace Name Limits
