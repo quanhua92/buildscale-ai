@@ -18,4 +18,5 @@ tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "sync", "
 uuid = { version = "1.18.1", features = ["serde", "v7"] }
 
 [dev-dependencies]
+nanoid = "0.4.0"
 tokio-test = "0.4.4"

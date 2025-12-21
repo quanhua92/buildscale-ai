@@ -5,7 +5,11 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
-/// Initialize test database
+/// Initialize test database connection pool and run migrations.
+///
+/// This function sets up the database connection pool for tests and ensures
+/// the database schema is up to date by running migrations. Test data cleanup
+/// is handled by individual TestDb instances using their own prefixes.
 pub async fn init_test_db() -> PgPool {
     INIT.call_once(|| {
         dotenvy::dotenv().ok();
@@ -16,50 +20,13 @@ pub async fn init_test_db() -> PgPool {
         .await
         .expect("Failed to connect to database");
 
-    // Run migrations if they exist
+    // Run migrations (required for tests to work)
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .unwrap_or_else(|_| {
-            // If no migrations exist, create basic tables
-            tokio::spawn(create_test_tables(pool.clone()));
-        });
-
-    // Clean up any existing test data
-    cleanup_test_data(&pool).await;
+        .expect("Failed to run migrations");
 
     pool
-}
-
-/// Create basic test tables if migrations don't exist
-async fn create_test_tables(pool: PgPool) -> Result<(), sqlx::Error> {
-    let create_users_table = r#"
-        CREATE TABLE IF NOT EXISTS users (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email VARCHAR(255) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            full_name VARCHAR(255),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-    "#;
-
-    sqlx::query(create_users_table).execute(&pool).await?;
-    Ok(())
-}
-
-/// Clean up test data with hardcoded test prefix
-async fn cleanup_test_data(pool: &PgPool) {
-    // Delete test users with hardcoded test prefix
-    let cleanup_query = r#"
-        DELETE FROM users
-        WHERE email LIKE 'test_backend_%'
-    "#;
-
-    sqlx::query(cleanup_query)
-        .execute(pool)
-        .await
-        .expect("Failed to cleanup test data");
 }
 
 /// Test database wrapper for better test isolation
@@ -76,15 +43,15 @@ impl TestDb {
     ///
     /// # How it works:
     /// 1. Creates a database connection pool using the production config
-    /// 2. Generates a unique prefix: `"test_{test_name}"` (e.g., "test_user_registration_success")
+    /// 2. Generates a unique prefix using hash of test name for fixed length and guaranteed uniqueness
     /// 3. Automatically cleans up any existing data with this prefix (for test retries)
     /// 4. Returns a TestDb instance with this isolated namespace
     ///
     /// # Important Rules:
     /// - **ALWAYS use the test function name as `test_name`** - e.g., for `fn test_user_registration()`, use `"test_user_registration"`
     /// - This prevents conflicts when tests run in parallel
-    /// - Each test gets its own database namespace
-    /// - Easy debugging: database entries can be traced back to specific tests
+    /// - Each test gets its own database namespace with fixed-length unique identifier
+    /// - Easy debugging: can trace prefix back to original test name using hash
     ///
     /// # Example Usage:
     /// ```rust
@@ -96,13 +63,21 @@ impl TestDb {
     /// ```
     ///
     /// # Database Isolation:
-    /// - Test data is stored with emails like: `"test_user_registration_success_<uuid>@example.com"`
-    /// - `count_test_users()` only counts users with this test's prefix
-    /// - Automatic cleanup happens when TestDb is dropped
-    /// - No interference between parallel tests
+    /// - Test data is stored with emails like: `"test_<hash>_<nanoid>@example.com"`
+    /// - Hash ensures fixed length (16 chars) and uniqueness based on test name
+    /// - Cleanup uses the exact same hash prefix for proper isolation
     pub async fn new(test_name: &str) -> Self {
         let pool = init_test_db().await;
-        let test_prefix = format!("test_{}", test_name);
+
+        // Generate hash of test name for fixed-length unique identifier
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        test_name.hash(&mut hasher);
+        let hash = hasher.finish();
+        let test_hash = format!("{:016x}", hash); // 16 char hex hash
+
+        let test_prefix = format!("test_{}", test_hash);
 
         // Clean up any existing data with this specific prefix (handles test retries)
         Self::cleanup_prefix(&pool, &test_prefix).await;
@@ -127,6 +102,12 @@ impl TestDb {
         let pattern = format!("{}%", prefix);
 
         // Clean up in reverse order of dependencies
+        let cleanup_invitations = "DELETE FROM workspace_invitations WHERE workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)";
+        let _ = sqlx::query(cleanup_invitations)
+            .bind(&pattern)
+            .execute(pool)
+            .await;
+
         let cleanup_members = "DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1) OR workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)";
         let _ = sqlx::query(cleanup_members)
             .bind(&pattern)
@@ -141,6 +122,12 @@ impl TestDb {
 
         let cleanup_workspaces = "DELETE FROM workspaces WHERE name LIKE $1";
         let _ = sqlx::query(cleanup_workspaces)
+            .bind(&pattern)
+            .execute(pool)
+            .await;
+
+        let cleanup_sessions = "DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)";
+        let _ = sqlx::query(cleanup_sessions)
             .bind(&pattern)
             .execute(pool)
             .await;
@@ -187,9 +174,42 @@ impl Drop for TestDb {
         let pool = self.pool.clone();
         let prefix = self.test_prefix.clone();
         tokio::spawn(async move {
-            let cleanup_query = "DELETE FROM users WHERE email LIKE $1";
-            let _ = sqlx::query(cleanup_query)
-                .bind(format!("{}%", prefix))
+            let pattern = format!("{}%", prefix);
+
+            // Clean up in reverse order of dependencies
+            let cleanup_invitations = "DELETE FROM workspace_invitations WHERE workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)";
+            let _ = sqlx::query(cleanup_invitations)
+                .bind(&pattern)
+                .execute(&pool)
+                .await;
+
+            let cleanup_members = "DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1) OR workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)";
+            let _ = sqlx::query(cleanup_members)
+                .bind(&pattern)
+                .execute(&pool)
+                .await;
+
+            let cleanup_roles = "DELETE FROM roles WHERE name LIKE $1";
+            let _ = sqlx::query(cleanup_roles)
+                .bind(&pattern)
+                .execute(&pool)
+                .await;
+
+            let cleanup_workspaces = "DELETE FROM workspaces WHERE name LIKE $1";
+            let _ = sqlx::query(cleanup_workspaces)
+                .bind(&pattern)
+                .execute(&pool)
+                .await;
+
+            let cleanup_sessions = "DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)";
+            let _ = sqlx::query(cleanup_sessions)
+                .bind(&pattern)
+                .execute(&pool)
+                .await;
+
+            let cleanup_users = "DELETE FROM users WHERE email LIKE $1";
+            let _ = sqlx::query(cleanup_users)
+                .bind(&pattern)
                 .execute(&pool)
                 .await;
         });
@@ -283,12 +303,11 @@ impl TestApp {
 
     /// Generate a unique test email with proper prefix
     pub fn generate_test_email(&self) -> String {
-        // Generate a shorter unique identifier to stay within 64 character limit for local part
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let short_id = format!("{:x}", timestamp % 0xFFFFFFFF); // 8 hex characters
+        // Generate unique identifier using nanoid with lowercase only for case-insensitive emails
+        // 8 characters with 26 possibilities provides 26^8 combinations - collision-free for tests
+        let alphabet = "abcdefghijklmnopqrstuvwxyz0123456789".chars().collect::<Vec<_>>();
+        let short_id = nanoid::nanoid!(8, &alphabet);
+
         format!("{}{}@example.com", self.test_prefix(), short_id)
     }
 

@@ -363,11 +363,11 @@ async fn test_delete_expired_sessions() {
 
     // Create some expired sessions with unique tokens
     let expired_time = Utc::now() - Duration::hours(1);
-    let test_prefix = "test_delete_expired_sessions_unique";
+    let test_prefix = test_app.test_prefix();
     for i in 0..3 {
         let expired_session = NewUserSession {
             user_id: user.id,
-            token: format!("{}_expired_token_{}", test_prefix, i),
+            token: format!("{}_expired_token_{}_{}", test_prefix, i, Uuid::now_v7()),
             expires_at: expired_time,
         };
         create_session(&mut conn, expired_session).await.unwrap();
@@ -377,7 +377,7 @@ async fn test_delete_expired_sessions() {
     for i in 0..2 {
         let valid_session = NewUserSession {
             user_id: user.id,
-            token: format!("{}_valid_token_{}", test_prefix, i),
+            token: format!("{}_valid_token_{}_{}", test_prefix, i, Uuid::now_v7()),
             expires_at,
         };
         create_session(&mut conn, valid_session).await.unwrap();
