@@ -199,17 +199,17 @@ pub fn validate_session_token(token: &str) -> Result<()> {
 
     // Basic UUID format validation (simplified)
     if token.len() != 36 {
-        return Err(Error::Validation("Invalid session token format".to_string()));
+        return Err(Error::InvalidToken("Invalid or expired session token".to_string()));
     }
 
     // Check for UUID pattern with hyphens
     if token.matches('-').count() != 4 {
-        return Err(Error::Validation("Invalid session token format".to_string()));
+        return Err(Error::InvalidToken("Invalid or expired session token".to_string()));
     }
 
     // Try to parse as UUID to validate format
     uuid::Uuid::parse_str(token)
-        .map_err(|_| Error::Validation("Invalid session token format".to_string()))?;
+        .map_err(|_| Error::InvalidToken("Invalid or expired session token".to_string()))?;
 
     Ok(())
 }
