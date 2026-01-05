@@ -112,13 +112,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ User login successful:");
     println!("  User ID: {}", login_result.user.id);
     println!("  User Email: {}", login_result.user.email);
-    println!("  Session Token: {}...", &login_result.session_token[..8]);
-    println!("  Expires at: {}", login_result.expires_at);
+    println!("  Access Token (JWT): {}...", &login_result.access_token[..8]);
+    println!("  Access Token Expires at: {}", login_result.access_token_expires_at);
+    println!("  Refresh Token (Session): {}...", &login_result.refresh_token[..8]);
+    println!("  Refresh Token Expires at: {}", login_result.refresh_token_expires_at);
     println!();
 
     // Test session validation
     println!("Testing session validation...");
-    let validated_user = validate_session(&mut conn, &login_result.session_token).await?;
+    let validated_user = validate_session(&mut conn, &login_result.refresh_token).await?;
     println!("✓ Session validation successful:");
     println!("  Validated User ID: {}", validated_user.id);
     println!("  Validated User Email: {}", validated_user.email);
@@ -126,19 +128,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test session refresh
     println!("Testing session refresh...");
-    let refreshed_token = refresh_session(&mut conn, &login_result.session_token, 48).await?;
+    let refreshed_token = refresh_session(&mut conn, &login_result.refresh_token, 48).await?;
     println!("✓ Session refresh successful:");
-    println!("  New expires at: {}", login_result.expires_at + chrono::Duration::hours(48)); // Should be extended
-    println!("  Token unchanged: {}", refreshed_token == login_result.session_token);
+    println!("  New expires at: {}", login_result.refresh_token_expires_at + chrono::Duration::hours(48)); // Should be extended
+    println!("  Token unchanged: {}", refreshed_token == login_result.refresh_token);
     println!();
 
     // Test logout
     println!("Testing user logout...");
-    logout_user(&mut conn, &login_result.session_token).await?;
+    logout_user(&mut conn, &login_result.refresh_token).await?;
     println!("✓ User logout successful");
 
     // Verify session is no longer valid after logout
-    let validation_result = validate_session(&mut conn, &login_result.session_token).await;
+    let validation_result = validate_session(&mut conn, &login_result.refresh_token).await;
     match validation_result {
         Ok(_) => println!("✗ Session validation should have failed after logout"),
         Err(_) => println!("✓ Session correctly invalidated after logout"),
@@ -618,7 +620,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }).await?;
 
         // Get session info without validation
-        match get_session_info(&mut conn, &login_result.session_token).await? {
+        match get_session_info(&mut conn, &login_result.refresh_token).await? {
             Some(session_info) => {
                 println!("✓ Retrieved session info:");
                 println!("  Session ID: {}", session_info.id);
@@ -650,7 +652,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 password: "UPPERCASE123".to_string(),
             }).await {
                 Ok(login_result) => {
-                    session_tokens.push(login_result.session_token);
+                    session_tokens.push(login_result.refresh_token);
                     println!("✓ Created session {} for {}", i + 1, david_user.email);
                 }
                 Err(e) => {

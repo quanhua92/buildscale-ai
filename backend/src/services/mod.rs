@@ -1,4 +1,5 @@
 pub mod invitations;
+pub mod jwt;
 pub mod users;
 pub mod roles;
 pub mod workspaces;

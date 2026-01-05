@@ -29,9 +29,16 @@ async fn test_login_success() {
     // Verify login result
     assert_eq!(login_result.user.id, registered_user.id);
     assert_eq!(login_result.user.email, registered_user.email);
-    assert!(!login_result.session_token.is_empty());
-    assert!(login_result.expires_at > Utc::now());
-    assert!(login_result.expires_at <= Utc::now() + Duration::hours(721)); // Allow some margin (30 days + 1 hour)
+
+    // Verify access token (JWT, 15 minutes)
+    assert!(!login_result.access_token.is_empty());
+    assert!(login_result.access_token_expires_at > Utc::now());
+    assert!(login_result.access_token_expires_at <= Utc::now() + Duration::minutes(16)); // 15 min + 1 min margin
+
+    // Verify refresh token (Session, 30 days)
+    assert!(!login_result.refresh_token.is_empty());
+    assert!(login_result.refresh_token_expires_at > Utc::now());
+    assert!(login_result.refresh_token_expires_at <= Utc::now() + Duration::hours(721)); // 30 days + 1 hour margin
 }
 
 #[tokio::test]
@@ -130,7 +137,7 @@ async fn test_session_validation() {
     let login_result = login_user(&mut conn, login_user_data).await.unwrap();
 
     // Test valid session token
-    let validated_user = validate_session(&mut conn, &login_result.session_token).await.unwrap();
+    let validated_user = validate_session(&mut conn, &login_result.refresh_token).await.unwrap();
     assert_eq!(validated_user.id, login_result.user.id);
     assert_eq!(validated_user.email, login_result.user.email);
 }
@@ -183,10 +190,10 @@ async fn test_logout() {
     let login_result = login_user(&mut conn, login_user_data).await.unwrap();
 
     // Logout the user
-    logout_user(&mut conn, &login_result.session_token).await.unwrap();
+    logout_user(&mut conn, &login_result.refresh_token).await.unwrap();
 
     // Try to validate the session - should fail
-    let result = validate_session(&mut conn, &login_result.session_token).await;
+    let result = validate_session(&mut conn, &login_result.refresh_token).await;
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), backend::error::Error::InvalidToken(_)));
 }
@@ -222,10 +229,10 @@ async fn test_session_refresh() {
     let login_result = login_user(&mut conn, login_user_data).await.unwrap();
 
     // Refresh the session for 24 more hours
-    let refreshed_token = refresh_session(&mut conn, &login_result.session_token, 24).await.unwrap();
+    let refreshed_token = refresh_session(&mut conn, &login_result.refresh_token, 24).await.unwrap();
 
     // The refreshed token should be the same (we refresh the same session)
-    assert_eq!(refreshed_token, login_result.session_token);
+    assert_eq!(refreshed_token, login_result.refresh_token);
 
     // Verify the session is still valid
     let validated_user = validate_session(&mut conn, &refreshed_token).await.unwrap();
@@ -300,7 +307,7 @@ async fn test_cleanup_expired_sessions() {
     sqlx::query!(
         "UPDATE user_sessions SET expires_at = $1 WHERE token = $2",
         expired_time,
-        login_result.session_token
+        login_result.refresh_token
     )
     .execute(&mut *conn)
     .await
@@ -311,7 +318,7 @@ async fn test_cleanup_expired_sessions() {
     assert!(cleaned_count >= 1);
 
     // Try to validate the session - should fail
-    let result = validate_session(&mut conn, &login_result.session_token).await;
+    let result = validate_session(&mut conn, &login_result.refresh_token).await;
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), backend::error::Error::InvalidToken(_)));
 }

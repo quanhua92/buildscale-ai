@@ -230,6 +230,9 @@ get_session_info(&mut conn, session_token: &str) -> Result<Option<UserSession>>
 // User session management convenience methods
 get_user_active_sessions(&mut conn, user_id: Uuid) -> Result<Vec<UserSession>>
 revoke_all_user_sessions(&mut conn, user_id: Uuid) -> Result<u64>
+
+// JWT access token management
+refresh_access_token(&mut conn, refresh_token: &str) -> Result<RefreshTokenResult>
 ```
 
 ### Session Query Layer (Database Operations)
@@ -254,15 +257,17 @@ get_valid_session_by_token(&mut conn, token: &str) -> Result<Option<UserSession>
 ```
 
 ### Authentication and Session Management
-The authentication system provides secure user login with session-based authentication:
+The authentication system provides secure user login with dual-token authentication (JWT access tokens + session refresh tokens):
 
 #### Authentication Flow
 1. **User Registration**: Users register with email and password (hashed with Argon2)
 2. **Login**: Users authenticate with email/password credentials
-3. **Session Creation**: Successful login creates a session token (UUID v7) with configurable expiration (default: 30 days)
-4. **Session Validation**: Each API call validates the session token and returns user info
-5. **Session Refresh**: Sessions can be extended before expiration
-6. **Logout**: Sessions are invalidated on logout
+3. **Token Generation**: Successful login generates two tokens:
+   - **Access Token (JWT)**: Short-lived token (default: 15 minutes) used for API requests
+   - **Refresh Token (Session)**: Long-lived token (default: 30 days) used to get new access tokens
+4. **API Authentication**: Each API call uses the JWT access token (via `Authorization: Bearer <token>` header)
+5. **Token Refresh**: When access token expires, use refresh token to get a new access token
+6. **Logout**: Refresh token is invalidated on logout
 
 #### Authentication Models
 ```rust
@@ -272,11 +277,19 @@ pub struct LoginUser {
     pub password: String,
 }
 
-// Login response with session info
+// Login response with dual-token authentication
 pub struct LoginResult {
     pub user: User,
-    pub session_token: String,
-    pub expires_at: DateTime<Utc>,
+    pub access_token: String,              // JWT access token (15 minutes)
+    pub refresh_token: String,             // Session token (30 days)
+    pub access_token_expires_at: DateTime<Utc>,  // JWT expiration
+    pub refresh_token_expires_at: DateTime<Utc>,  // Session expiration
+}
+
+// Refresh token response
+pub struct RefreshTokenResult {
+    pub access_token: String,              // New JWT access token
+    pub expires_at: DateTime<Utc>,         // When the new access token expires
 }
 
 // User session entity
@@ -323,15 +336,49 @@ pub struct UpdateUser {
 }
 ```
 
+#### JWT Authentication Features
+- **JSON Web Tokens (JWT)**: Short-lived access tokens for API authentication (default: 15 minutes)
+- **Bearer Token Authentication**: Standard `Authorization: Bearer <token>` header format
+- **Automatic Token Expiration**: Access tokens expire quickly to enhance security
+- **Token Refresh**: Use refresh token to get new access tokens without re-login
+- **Configurable Expiration**: JWT expiration configurable via BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES
+- **Secure Token Storage**: JWT secret key stored in environment (BUILDSCALE__JWT__SECRET)
+
 #### Session Management Features
-- **UUID v7 Tokens**: Time-based sortable unique tokens
-- **Automatic Expiration**: Sessions expire after configured duration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
+- **UUID v7 Tokens**: Time-based sortable unique refresh tokens
+- **Automatic Expiration**: Refresh tokens expire after configured duration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 - **Session Refresh**: Extend session duration before expiration
 - **Cleanup Service**: Automatic removal of expired sessions
 - **Case-Insensitive Email**: Users can login with any email case variation
-- **Secure Logout**: Immediate session invalidation
+- **Secure Logout**: Immediate refresh token invalidation
 - **Advanced Session Control**: Revoke all user sessions, extend multiple sessions, active session monitoring
 - **Session Utilities**: Check for active sessions, retrieve user session list, token-based session revocation
+
+### JWT Service
+The JWT service module provides JSON Web Token generation and verification:
+
+```rust
+// Generate JWT access token
+generate_jwt(user_id: Uuid, secret: &str, expiration_minutes: i64) -> Result<String>
+
+// Verify JWT token and return claims
+verify_jwt(token: &str, secret: &str) -> Result<Claims>
+
+// Extract user_id from JWT token
+get_user_id_from_token(token: &str, secret: &str) -> Result<Uuid>
+
+// Authenticate JWT from Authorization header
+authenticate_jwt_token(auth_header: Option<&str>, secret: &str) -> Result<Uuid>
+```
+
+**JWT Claims Structure**:
+```rust
+pub struct Claims {
+    pub sub: String,  // user_id as string
+    pub exp: i64,     // expiration time as Unix timestamp
+    pub iat: i64,     // issued at time as Unix timestamp
+}
+```
 
 ### Workspace Management
 ```rust
@@ -365,6 +412,8 @@ Uses `BUILDSCALE__` prefix with double underscore separators:
 - `BUILDSCALE__DATABASE__DATABASE`: Database name
 - `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`: Session expiration time in hours (default: 720 = 30 days)
   - Used for both initial session expiration AND maximum extension time
+- `BUILDSCALE__JWT__SECRET`: Secret key for signing JWT tokens (minimum 32 characters recommended)
+- `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES`: JWT access token expiration in minutes (default: 15)
 
 ### Configuration Loading
 - Loads from `.env` file if present
@@ -391,10 +440,11 @@ pub enum Error {
 
 ### Validation Rules
 - **Users**: Email uniqueness, 8+ character passwords, password confirmation, case-insensitive email lookup
-- **Authentication**: Email and password required, session tokens must be valid and non-expired
+- **Authentication**: Email and password required, session tokens must be valid and non-expired, JWT tokens must be valid and non-expired
 - **Workspaces**: 1-100 character names, owner must exist
 - **Roles**: Unique names per workspace, 100 char name limit, 500 char description limit
 - **Sessions**: Unique tokens, required expiration time, automatic cleanup of expired sessions
+- **JWT**: Tokens must have valid signature, non-expired expiration time, valid UUID in sub field
 
 ## Testing Strategy
 

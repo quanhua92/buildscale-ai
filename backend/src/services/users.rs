@@ -2,11 +2,11 @@ use crate::{Config, DbConn};
 use crate::{
     error::{Error, Result},
     models::{
-        users::{LoginUser, LoginResult, NewUser, NewUserSession, RegisterUser, User},
+        users::{LoginUser, LoginResult, NewUser, NewUserSession, RefreshTokenResult, RegisterUser, User},
         requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest}
     },
     queries::{users, sessions},
-    services::workspaces,
+    services::{jwt, workspaces},
     validation::{validate_email, validate_password, validate_full_name, validate_session_token, validate_required_string},
 };
 use argon2::{
@@ -157,26 +157,36 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
         return Err(Error::Authentication("Invalid email or password".to_string()));
     }
 
-    // Generate secure session token
-    let session_token = generate_session_token()?;
-
-    // Set session expiration from config (default: 30 days)
+    // Load config
     let config = Config::load()?;
-    let expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);
 
-    // Create session
+    // Generate JWT access token (short-lived, 15 minutes by default)
+    let access_token = jwt::generate_jwt(
+        user.id,
+        &config.jwt.secret,
+        config.jwt.access_token_expiration_minutes,
+    )?;
+    let access_token_expires_at = Utc::now() + Duration::minutes(config.jwt.access_token_expiration_minutes);
+
+    // Generate refresh token (session token, long-lived, 30 days by default)
+    let refresh_token = generate_session_token()?;
+    let refresh_token_expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);
+
+    // Create session (for refresh token)
     let new_session = NewUserSession {
         user_id: user.id,
-        token: session_token.clone(),
-        expires_at,
+        token: refresh_token.clone(),
+        expires_at: refresh_token_expires_at,
     };
 
     let session = sessions::create_session(conn, new_session).await?;
 
     Ok(LoginResult {
         user,
-        session_token: session.token,
-        expires_at: session.expires_at,
+        access_token,
+        refresh_token: session.token,
+        access_token_expires_at,
+        refresh_token_expires_at: session.expires_at,
     })
 }
 
@@ -249,6 +259,47 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
     let updated_session = sessions::refresh_session(conn, session.id, new_expires_at).await?;
 
     Ok(updated_session.token)
+}
+
+/// Refreshes the access token using a valid refresh token (session)
+///
+/// This function validates the refresh token (session) and generates a new access token (JWT)
+/// without requiring the user to log in again with their credentials.
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `refresh_token` - The refresh token (session token)
+///
+/// # Returns
+/// A RefreshTokenResult containing the new access token and expiration time
+///
+/// # Errors
+/// Returns an error if the refresh token is invalid or expired
+pub async fn refresh_access_token(
+    conn: &mut DbConn,
+    refresh_token: &str,
+) -> Result<RefreshTokenResult> {
+    // Validate the refresh token (session) exists and is not expired
+    let session = sessions::get_valid_session_by_token(conn, refresh_token)
+        .await?
+        .ok_or_else(|| Error::InvalidToken("Invalid or expired refresh token".to_string()))?;
+
+    // Load config to get JWT secret and expiration
+    let config = Config::load()?;
+
+    // Generate new access token (JWT)
+    let access_token = jwt::generate_jwt(
+        session.user_id,
+        &config.jwt.secret,
+        config.jwt.access_token_expiration_minutes,
+    )?;
+
+    let expires_at = Utc::now() + Duration::minutes(config.jwt.access_token_expiration_minutes);
+
+    Ok(RefreshTokenResult {
+        access_token,
+        expires_at,
+    })
 }
 
 /// Generates a secure session token using UUID v7

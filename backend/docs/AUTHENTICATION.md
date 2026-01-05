@@ -1,6 +1,6 @@
 # Authentication & Security
 
-Session-based authentication with UUID v7 tokens, Argon2 password hashing, and configurable session expiration periods (default: 30 days via BUILDSCALE__SESSIONS__EXPIRATION_HOURS).
+Dual-token authentication system with JWT access tokens (short-lived, 15 minutes) and session refresh tokens (long-lived, 30 days), Argon2 password hashing, and configurable expiration periods.
 
 ## Authentication Flow
 
@@ -31,28 +31,41 @@ sequenceDiagram
     API->>Database: SELECT user WHERE email = ? (case-insensitive)
     Database-->>API: User record (if exists)
     API->>API: Verify password against hash
-    API->>API: Generate UUID v7 session token
+    API->>API: Generate JWT access token (15 min)
+    API->>API: Generate UUID v7 refresh token (30 days)
     API->>Database: INSERT INTO user_sessions (user_id, token, expires_at)
     Database-->>API: Session created
-    API-->>Client: 200 OK (session_token, expires_at, user_data)
-    Client->>Client: Store session token securely
+    API-->>Client: 200 OK (access_token, refresh_token, expires_at, user_data)
+    Client->>Client: Store tokens securely
 ```
 
-### Session Validation Flow
+### Session Validation Flow (JWT Access Token)
 ```mermaid
 sequenceDiagram
     participant Client
     participant API
     participant Database
 
-    Client->>API: Request with Authorization: Bearer <session_token>
-    API->>API: Extract and validate session token format
-    API->>Database: SELECT session WHERE token = ? AND expires_at > NOW()
-    Database-->>API: Session record (if valid)
-    API->>Database: SELECT user WHERE id = session.user_id
-    Database-->>API: User record
+    Client->>API: Request with Authorization: Bearer <access_token>
+    API->>API: Extract and validate JWT format
+    API->>API: Verify JWT signature and expiration
+    API->>API: Extract user_id from JWT claims
     API-->>API: User authenticated, proceed with request
     API-->>Client: Response with requested data
+```
+
+### JWT Access Token Refresh Flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+
+    Client->>API: POST /auth/refresh (refresh_token)
+    API->>Database: SELECT session WHERE token = ? AND expires_at > NOW()
+    Database-->>API: Valid session
+    API->>API: Generate new JWT access token
+    API-->>Client: 200 OK (new_access_token, expires_at)
 ```
 
 ### Session Refresh Flow
@@ -116,6 +129,9 @@ pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()>
 
 // Session extension
 pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_extend: i64) -> Result<String>
+
+// JWT access token refresh
+pub async fn refresh_access_token(conn: &mut DbConn, refresh_token: &str) -> Result<RefreshTokenResult>
 ```
 
 ### Session Management
@@ -145,15 +161,22 @@ pub struct LoginUser {
 }
 
 pub struct LoginResult {
-    pub user: User,                   // Authenticated user
-    pub session_token: String,          // UUID v7 token
-    pub expires_at: DateTime<Utc>,    // Session expiration (configurable duration)
+    pub user: User,                        // Authenticated user
+    pub access_token: String,              // JWT access token (15 minutes)
+    pub refresh_token: String,             // Session token (30 days)
+    pub access_token_expires_at: DateTime<Utc>,  // JWT expiration
+    pub refresh_token_expires_at: DateTime<Utc>,  // Session expiration
+}
+
+pub struct RefreshTokenResult {
+    pub access_token: String,              // New JWT access token
+    pub expires_at: DateTime<Utc>,         // When the new access token expires
 }
 
 pub struct UserSession {
     pub id: Uuid,                    // Session primary key
     pub user_id: Uuid,               // Session owner
-    pub token: String,               // Unique UUID v7 token
+    pub token: String,               // Unique UUID v7 token (refresh token)
     pub expires_at: DateTime<Utc>,   // Expiration time
     pub created_at: DateTime<Utc>,   // Creation time
     pub updated_at: DateTime<Utc>,   // Last update
@@ -162,7 +185,17 @@ pub struct UserSession {
 
 ## Security Features
 
+### JWT Access Token Security
+- **Short-Lived Tokens**: 15-minute expiration reduces window for token misuse
+- **Bearer Token Authentication**: Standard RFC 6750 compliant format
+- **Signature Verification**: HMAC-SHA256 signing prevents token tampering
+- **No Database Lookup**: JWT validation is stateless and fast
+- **Automatic Expiration**: Tokens expire quickly, forcing regular refresh
+
+### Session Refresh Token Security
 - **UUID v7 Tokens**: Time-based sortable unique session identifiers
+- **Long-Lived Tokens**: 30-day expiration for user convenience
+- **Database Storage**: Revocable tokens stored in database
 - **Argon2 Hashing**: Industry-standard password hashing with unique salts
 - **Configurable Expiration**: Default session duration with automatic cleanup
 - **Case-Insensitive Email**: User-friendly login experience
@@ -208,15 +241,22 @@ CREATE INDEX idx_user_sessions_expires_at ON user_sessions(expires_at);
 
 ## Usage Examples
 
-### Basic Authentication
+### Basic Authentication with JWT
 ```rust
+// Login and get both tokens
 let login_result = login_user(&mut conn, LoginUser {
     email: "user@example.com".to_string(),
     password: "securepassword".to_string(),
 }).await?;
 
-let user = validate_session(&mut conn, &login_result.session_token).await?;
-logout_user(&mut conn, &login_result.session_token).await?;
+// Use JWT access token for API requests (in Authorization header)
+// Authorization: Bearer <login_result.access_token>
+
+// When access token expires, refresh it using refresh token
+let new_token_result = refresh_access_token(&mut conn, &login_result.refresh_token).await?;
+
+// Logout (invalidates refresh token)
+logout_user(&mut conn, &login_result.refresh_token).await?;
 ```
 
 ### Session Management

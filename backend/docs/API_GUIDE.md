@@ -30,13 +30,16 @@ pub async fn register_user_with_workspace(
     request: UserWorkspaceRegistrationRequest
 ) -> Result<UserWorkspaceResult>
 
-// Authentication with session creation
+// Authentication with dual-token generation (JWT + session)
 pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<LoginResult>
 
 // Session validation and management
 pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User>
 pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()>
 pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_extend: i64) -> Result<String>
+
+// JWT access token refresh
+pub async fn refresh_access_token(conn: &mut DbConn, refresh_token: &str) -> Result<RefreshTokenResult>
 ```
 
 ### Workspace Management
@@ -312,8 +315,18 @@ let login_result = login_user(&mut conn, LoginUser {
     password: "securepassword123".to_string(),
 }).await?;
 
-// Validate session
-let user = validate_session(&mut conn, &login_result.session_token).await?;
+// Returns both JWT access token (15 min) and refresh token (30 days)
+// - Use login_result.access_token in API Authorization header
+// - Use login_result.refresh_token to get new access tokens
+
+// When access token expires, refresh it
+let new_token = refresh_access_token(&mut conn, &login_result.refresh_token).await?;
+
+// Validate session (uses refresh token)
+let user = validate_session(&mut conn, &login_result.refresh_token).await?;
+
+// Logout (invalidates refresh token)
+logout_user(&mut conn, &login_result.refresh_token).await?;
 ```
 
 ### Workspace Setup

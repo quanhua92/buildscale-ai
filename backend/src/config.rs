@@ -7,6 +7,7 @@ use std::fmt;
 pub struct Config {
     pub database: DatabaseConfig,
     pub sessions: SessionsConfig,
+    pub jwt: JwtConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -65,6 +66,23 @@ impl Default for SessionsConfig {
     fn default() -> Self {
         Self {
             expiration_hours: 720, // 30 days
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct JwtConfig {
+    /// Secret key for signing JWT tokens (minimum 32 characters recommended)
+    pub secret: String,
+    /// Access token expiration time in minutes (default: 15 minutes)
+    pub access_token_expiration_minutes: i64,
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self {
+            secret: "change-this-secret-in-production-min-32-chars".to_string(),
+            access_token_expiration_minutes: 15,
         }
     }
 }

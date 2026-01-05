@@ -212,11 +212,11 @@ async fn test_get_session_info_success() {
     let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
 
     // Get session info
-    let session_info = get_session_info(&mut conn, &login_result.session_token).await.unwrap();
+    let session_info = get_session_info(&mut conn, &login_result.refresh_token).await.unwrap();
     assert!(session_info.is_some());
 
     let session_info = session_info.unwrap();
-    assert_eq!(session_info.token, login_result.session_token);
+    assert_eq!(session_info.token, login_result.refresh_token);
     assert_eq!(session_info.user_id, login_result.user.id);
     assert!(session_info.expires_at > chrono::Utc::now());
 }
@@ -320,7 +320,7 @@ async fn test_get_user_active_sessions() {
         };
 
         let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
-        session_tokens.push(login_result.session_token);
+        session_tokens.push(login_result.refresh_token);
     }
 
     // Get active sessions
@@ -355,7 +355,7 @@ async fn test_revoke_all_user_sessions() {
         };
 
         let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
-        session_tokens.push(login_result.session_token);
+        session_tokens.push(login_result.refresh_token);
     }
 
     // Verify sessions are active before revocation
