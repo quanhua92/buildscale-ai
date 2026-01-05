@@ -1317,7 +1317,8 @@ pub async fn accept_invitation(
     }
 
     // 4. Verify email matches (get user and check)
-    let user = users::get_user_by_id(conn, user_id).await?;
+    let user = users::get_user_by_id(conn, user_id).await?
+        .ok_or_else(|| Error::NotFound("User not found".to_string()))?;
     if user.email.to_lowercase() != invitation.invited_email.to_lowercase() {
         return Err(Error::Forbidden("Email does not match invitation".to_string()));
     }

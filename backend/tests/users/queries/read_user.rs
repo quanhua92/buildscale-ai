@@ -20,7 +20,7 @@ async fn test_get_user_by_id_query() {
     let user_id = created_user.id;
 
     // Test getting user by ID
-    let found_user = get_user_by_id(&mut conn, user_id).await.unwrap();
+    let found_user = get_user_by_id(&mut conn, user_id).await.unwrap().unwrap();
 
     assert_eq!(found_user.id, user_id, "User ID should match");
     assert_eq!(
@@ -42,14 +42,7 @@ async fn test_get_user_by_id_not_found() {
 
     // Test with non-existent UUID
     let fake_id = uuid::Uuid::now_v7();
-    let result = get_user_by_id(&mut conn, fake_id).await;
+    let result = get_user_by_id(&mut conn, fake_id).await.unwrap();
 
-    assert!(result.is_err(), "Should return error for non-existent user");
-    let error = result.unwrap_err();
-    let error_message = error.to_string();
-    assert!(
-        error_message.contains("no rows") || error_message.contains("found"),
-        "Error should indicate user not found: {}",
-        error_message
-    );
+    assert!(result.is_none(), "Should return None for non-existent user");
 }

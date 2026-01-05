@@ -41,7 +41,7 @@ async fn test_query_error_handling() {
 
     // Test getting non-existent user by ID
     let fake_id = uuid::Uuid::now_v7();
-    let result = get_user_by_id(&mut conn, fake_id).await;
+    let result = get_user_by_id(&mut conn, fake_id).await.unwrap();
 
-    assert!(result.is_err(), "Non-existent user should cause error");
+    assert!(result.is_none(), "Non-existent user should return None");
 }

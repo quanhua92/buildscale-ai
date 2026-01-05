@@ -2,9 +2,9 @@ use backend::{
     load_config,
     models::users::{LoginUser, RegisterUser, UpdateUser},
     queries::users::{
-        create_user, delete_user, get_user_by_email, list_users, update_user,
+        create_user, delete_user, get_user_by_email, get_user_by_id, list_users, update_user,
     },
-    services::users::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash, get_user_by_id, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
+    services::users::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
 };
 use secrecy::ExposeSecret;
 use sqlx::PgPool;

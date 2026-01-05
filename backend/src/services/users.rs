@@ -187,7 +187,8 @@ pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<
         .ok_or_else(|| Error::InvalidToken("Invalid or expired session token".to_string()))?;
 
     // Get user by session user_id
-    let user = users::get_user_by_id(conn, session.user_id).await?;
+    let user = users::get_user_by_id(conn, session.user_id).await?
+        .ok_or_else(|| Error::InvalidToken("User not found".to_string()))?;
 
     Ok(user)
 }
@@ -245,16 +246,6 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
 pub fn generate_session_token() -> Result<String> {
     let token = Uuid::now_v7().to_string();
     Ok(token)
-}
-
-/// Gets a user by their ID, returns None if not found
-pub async fn get_user_by_id(conn: &mut DbConn, user_id: Uuid) -> Result<Option<User>> {
-    // Use existing query function
-    match users::get_user_by_id(conn, user_id).await {
-        Ok(user) => Ok(Some(user)),
-        Err(crate::error::Error::Sqlx(sqlx::Error::RowNotFound)) => Ok(None),
-        Err(e) => Err(e),
-    }
 }
 
 /// Updates a user's password with validation

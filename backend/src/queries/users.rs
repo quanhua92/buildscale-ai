@@ -26,8 +26,8 @@ pub async fn create_user(conn: &mut DbConn, new_user: NewUser) -> Result<User> {
     Ok(user)
 }
 
-/// Gets a single user by their ID. Expects the user to exist.
-pub async fn get_user_by_id(conn: &mut DbConn, id: Uuid) -> Result<User> {
+/// Gets a single user by their ID. The user may not exist.
+pub async fn get_user_by_id(conn: &mut DbConn, id: Uuid) -> Result<Option<User>> {
     let user = sqlx::query_as!(
         User,
         r#"
@@ -37,7 +37,7 @@ pub async fn get_user_by_id(conn: &mut DbConn, id: Uuid) -> Result<User> {
         "#,
         id,
     )
-    .fetch_one(conn)
+    .fetch_optional(conn)
     .await
     .map_err(Error::Sqlx)?;
 

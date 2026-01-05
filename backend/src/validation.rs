@@ -16,8 +16,11 @@ use crate::error::{Error, Result};
 ///
 /// # Examples
 /// ```
-/// validate_email("user@example.com")?; // Valid
-/// validate_email("invalid-email")?; // Returns Error
+/// use backend::validation::validate_email;
+/// use backend::error::Error;
+///
+/// validate_email("user@example.com").unwrap(); // Valid
+/// assert!(validate_email("invalid-email").is_err()); // Returns Error
 /// ```
 pub fn validate_email(email: &str) -> Result<()> {
     let email = email.trim();

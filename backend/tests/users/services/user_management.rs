@@ -1,6 +1,6 @@
 use backend::{
-    queries::users::list_users,
-    services::users::{register_user, verify_password, get_user_by_id, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
+    queries::users::{get_user_by_id, list_users},
+    services::users::{register_user, verify_password, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
     models::users::LoginUser,
 };
 use crate::common::database::TestApp;
