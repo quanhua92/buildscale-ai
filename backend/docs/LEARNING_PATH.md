@@ -716,7 +716,8 @@ pub async fn login_user(conn: &mut DbConn, login: LoginUser) -> Result<LoginResu
 
     // 4. Generate session token
     let session_token = Uuid::now_v7().to_string();
-    let expires_at = Utc::now() + Duration::hours(168);  // 7 days
+    let config = Config::load()?;
+    let expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);  // Default: 30 days
 
     // 5. Store session
     let session = sessions::create_session(conn, NewUserSession {
@@ -839,7 +840,7 @@ Server:
 > A: Prevents user enumeration attack. If "email not found" vs "wrong password" were different messages, attackers could discover which emails exist in the system.
 
 **Q4: How long should sessions last?**
-> A: Balance security vs convenience. BuildScale uses 7 days (168 hours). Shorter = more secure but users must re-login often. Sessions can be refreshed before expiration.
+> A: Balance security vs convenience. BuildScale uses 30 days by default (720 hours), configurable via BUILDSCALE__SESSIONS__EXPIRATION_HOURS. Shorter = more secure but users must re-login often. Sessions can be refreshed before expiration.
 
 **Q5: What happens to sessions when user changes password?**
 > A: In this implementation, existing sessions remain valid. For higher security, you could revoke all sessions on password change using `revoke_all_user_sessions()`.
@@ -1964,7 +1965,8 @@ pub async fn login_user(conn: &mut DbConn, login: LoginUser) -> Result<LoginResu
 
     // Generate session
     let session_token = Uuid::now_v7().to_string();  // Unique, time-ordered
-    let expires_at = Utc::now() + Duration::hours(168);  // 7 days
+    let config = Config::load()?;
+    let expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);  // Default: 30 days
 
     // Store session
     let session = sessions::create_session(conn, NewUserSession {
@@ -2021,10 +2023,12 @@ pub async fn refresh_session(
     session_token: &str,
     hours_to_extend: i64,
 ) -> Result<String> {
-    // Limit extension to 168 hours (7 days)
-    if hours_to_extend > 168 {
+    // Load config to get max extension time
+    let config = Config::load()?;
+    // Limit extension to configured expiration (same value for both)
+    if hours_to_extend > config.sessions.expiration_hours {
         return Err(Error::Validation(
-            "Cannot extend session by more than 168 hours".to_string()
+            format!("Cannot extend session by more than {} hours", config.sessions.expiration_hours)
         ));
     }
 

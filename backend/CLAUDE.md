@@ -148,7 +148,7 @@ Tests use a sophisticated isolation system:
 
 #### Session Security (Current Implementation)
 - UUID v7 session tokens for uniqueness and time-based ordering
-- Configurable session expiration (default 24 hours)
+- Configurable session expiration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 - Automatic session cleanup for expired tokens
 - Case-insensitive email lookup for user convenience
 - Session invalidation on logout
@@ -259,7 +259,7 @@ The authentication system provides secure user login with session-based authenti
 #### Authentication Flow
 1. **User Registration**: Users register with email and password (hashed with Argon2)
 2. **Login**: Users authenticate with email/password credentials
-3. **Session Creation**: Successful login creates a session token (UUID v7) with 24-hour expiration
+3. **Session Creation**: Successful login creates a session token (UUID v7) with configurable expiration (default: 30 days)
 4. **Session Validation**: Each API call validates the session token and returns user info
 5. **Session Refresh**: Sessions can be extended before expiration
 6. **Logout**: Sessions are invalidated on logout
@@ -325,7 +325,7 @@ pub struct UpdateUser {
 
 #### Session Management Features
 - **UUID v7 Tokens**: Time-based sortable unique tokens
-- **Automatic Expiration**: Sessions expire after 24 hours (configurable)
+- **Automatic Expiration**: Sessions expire after configured duration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 - **Session Refresh**: Extend session duration before expiration
 - **Cleanup Service**: Automatic removal of expired sessions
 - **Case-Insensitive Email**: Users can login with any email case variation
@@ -363,6 +363,8 @@ Uses `BUILDSCALE__` prefix with double underscore separators:
 - `BUILDSCALE__DATABASE__HOST`: Database host
 - `BUILDSCALE__DATABASE__PORT`: Database port
 - `BUILDSCALE__DATABASE__DATABASE`: Database name
+- `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`: Session expiration time in hours (default: 720 = 30 days)
+  - Used for both initial session expiration AND maximum extension time
 
 ### Configuration Loading
 - Loads from `.env` file if present

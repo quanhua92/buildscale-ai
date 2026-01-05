@@ -38,6 +38,10 @@ pub enum Error {
     /// An internal server error.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// A configuration error.
+    #[error("Configuration error: {0}")]
+    Config(#[from] config::ConfigError),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.

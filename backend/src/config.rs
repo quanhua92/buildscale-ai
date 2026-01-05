@@ -6,6 +6,7 @@ use std::fmt;
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Config {
     pub database: DatabaseConfig,
+    pub sessions: SessionsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -50,6 +51,21 @@ impl DatabaseConfig {
             self.port,
             self.database
         ))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SessionsConfig {
+    /// Session expiration time in hours (default: 720 hours = 30 days)
+    /// Used for both initial session expiration AND maximum extension time
+    pub expiration_hours: i64,
+}
+
+impl Default for SessionsConfig {
+    fn default() -> Self {
+        Self {
+            expiration_hours: 720, // 30 days
+        }
     }
 }
 

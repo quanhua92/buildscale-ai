@@ -31,7 +31,7 @@ async fn test_login_success() {
     assert_eq!(login_result.user.email, registered_user.email);
     assert!(!login_result.session_token.is_empty());
     assert!(login_result.expires_at > Utc::now());
-    assert!(login_result.expires_at <= Utc::now() + Duration::hours(169)); // Allow some margin (7 days + 1 hour)
+    assert!(login_result.expires_at <= Utc::now() + Duration::hours(721)); // Allow some margin (30 days + 1 hour)
 }
 
 #[tokio::test]

@@ -361,7 +361,7 @@ let invitation_result = create_invitation(&mut conn, CreateInvitationRequest {
     workspace_id: workspace.id,
     invited_email: "teammate@example.com".to_string(),
     role_name: "member".to_string(),
-    expires_in_hours: Some(168), // 7 days
+    expires_in_hours: Some(168), // 7 days (note: this is for invitations, not sessions)
 }, inviter.id).await?;
 
 // Accept invitation (creates membership automatically)
@@ -385,7 +385,7 @@ let invitation_results = bulk_create_invitations(
     emails,
     "member".to_string(),
     inviter.id,
-    Some(168), // 7 days
+    Some(168), // 7 days (note: this is for invitations, not sessions)
 ).await?;
 
 // Cleanup expired sessions/invitations

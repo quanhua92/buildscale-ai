@@ -252,7 +252,7 @@ CREATE INDEX idx_workspace_invitations_expires_at ON workspace_invitations(expir
 **Authentication**:
 - Session-based authentication with UUID v7 tokens
 - Argon2 password hashing with unique salts
-- 7-day session expiration with refresh capability
+- Configurable session expiration (default: 30 days) with refresh capability via BUILDSCALE__SESSIONS__EXPIRATION_HOURS
 
 **Authorization**:
 - Role-based access control with hardcoded permissions

@@ -1,4 +1,4 @@
-use crate::DbConn;
+use crate::{Config, DbConn};
 use crate::{
     error::{Error, Result},
     models::{
@@ -160,8 +160,9 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
     // Generate secure session token
     let session_token = generate_session_token()?;
 
-    // Set session expiration (7 days from now)
-    let expires_at = Utc::now() + Duration::hours(168);
+    // Set session expiration from config (default: 30 days)
+    let config = Config::load()?;
+    let expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);
 
     // Create session
     let new_session = NewUserSession {
@@ -222,8 +223,13 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
         return Err(Error::Validation("Hours to extend must be positive".to_string()));
     }
 
-    if hours_to_extend > 168 { // Max 7 days
-        return Err(Error::Validation("Cannot extend session by more than 168 hours (7 days)".to_string()));
+    // Load config to get max extension time
+    let config = Config::load()?;
+    if hours_to_extend > config.sessions.expiration_hours {
+        return Err(Error::Validation(format!(
+            "Cannot extend session by more than {} hours",
+            config.sessions.expiration_hours
+        )));
     }
 
     // Get current session

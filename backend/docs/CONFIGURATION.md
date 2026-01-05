@@ -14,13 +14,17 @@ if new_password.len() < 8 {
 
 ### Session Management
 ```rust
-// Session extension limits (hardcoded in services/users.rs)
-if hours_to_extend > 168 {
-    return Err(Error::Validation("Cannot extend session by more than 168 hours (7 days)".to_string()));
+// Session extension limits (from config)
+let config = Config::load()?;
+if hours_to_extend > config.sessions.expiration_hours {
+    return Err(Error::Validation(format!(
+        "Cannot extend session by more than {} hours",
+        config.sessions.expiration_hours
+    )));
 }
 
 // Session operations are handled in services/sessions.rs
-// No hardcoded constants for session duration - passed as parameters
+// Session duration is configurable via BUILDSCALE__SESSIONS__EXPIRATION_HOURS
 ```
 
 ## Input Validation System
@@ -237,8 +241,27 @@ BUILDSCALE__DATABASE__HOST=localhost
 BUILDSCALE__DATABASE__PORT=5432
 BUILDSCALE__DATABASE__DATABASE=buildscale
 
+# Session configuration
+BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720  # Default: 30 days
+
 # Optional: For sqlx CLI
 DATABASE_URL=postgresql://buildscale:your_password@localhost:5432/buildscale
+```
+
+### Session Configuration
+
+Session behavior is controlled by a single environment variable:
+
+- `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`: How long sessions remain valid (default: 720 = 30 days)
+  - This value is used for both initial session creation AND maximum extension time
+
+Example:
+```bash
+# Set session expiration to 7 days for testing
+BUILDSCALE__SESSIONS__EXPIRATION_HOURS=168
+
+# Set session expiration to 60 days for production
+BUILDSCALE__SESSIONS__EXPIRATION_HOURS=1440
 ```
 
 ### Logging Configuration

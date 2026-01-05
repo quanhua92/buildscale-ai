@@ -1,6 +1,6 @@
 # Authentication & Security
 
-Session-based authentication with UUID v7 tokens, Argon2 password hashing, and configurable session expiration periods.
+Session-based authentication with UUID v7 tokens, Argon2 password hashing, and configurable session expiration periods (default: 30 days via BUILDSCALE__SESSIONS__EXPIRATION_HOURS).
 
 ## Authentication Flow
 
