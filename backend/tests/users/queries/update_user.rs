@@ -12,7 +12,7 @@ async fn test_update_user_query() {
     // Create a user first
     let new_user = NewUser {
         email: format!("{}_update@example.com", test_db.test_prefix()),
-        password_hash: "old_hash".to_string(),
+        password_hash: Some("old_hash".to_string()),
         full_name: Some("Old Name".to_string()),
     };
 
@@ -26,7 +26,7 @@ async fn test_update_user_query() {
 
     // Update the user by modifying the created_user
     let mut user_to_update = created_user.clone();
-    user_to_update.password_hash = update_data.password_hash.clone().unwrap();
+    user_to_update.password_hash = update_data.password_hash.clone();
     user_to_update.full_name = update_data.full_name.clone();
 
     let updated_user = update_user(&mut conn, &user_to_update).await.unwrap();
@@ -34,7 +34,7 @@ async fn test_update_user_query() {
     assert_eq!(updated_user.id, created_user.id, "ID should not change");
     assert_eq!(updated_user.email, created_user.email, "Email should remain unchanged");
     assert_eq!(
-        updated_user.password_hash, "new_hash",
+        updated_user.password_hash, Some("new_hash".to_string()),
         "Password hash should be updated"
     );
     assert_eq!(
@@ -56,7 +56,7 @@ async fn test_update_user_partial() {
     // Create a user first
     let new_user = NewUser {
         email: format!("{}_partial_update@example.com", test_db.test_prefix()),
-        password_hash: "hash123".to_string(),
+        password_hash: Some("hash123".to_string()),
         full_name: Some("Original Name".to_string()),
     };
 
@@ -74,7 +74,7 @@ async fn test_update_user_partial() {
         "Email should remain unchanged"
     );
     assert_eq!(
-        updated_user.password_hash, "hash123",
+        updated_user.password_hash, Some("hash123".to_string()),
         "Password hash should remain unchanged"
     );
     assert_eq!(

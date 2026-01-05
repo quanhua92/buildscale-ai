@@ -39,7 +39,7 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
     // Create NewUser struct with sanitized email
     let new_user = NewUser {
         email: validate_required_string(&register_user.email, "Email")?.to_lowercase(),
-        password_hash,
+        password_hash: Some(password_hash),
         full_name: register_user.full_name.map(|name| validate_required_string(&name, "Full name")).transpose()?,
     };
 
@@ -149,7 +149,10 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
         .ok_or_else(|| Error::Authentication("Invalid email or password".to_string()))?;
 
     // Verify password
-    let is_valid = verify_password(&login_user.password, &user.password_hash)?;
+    let is_valid = match &user.password_hash {
+        Some(hash) => verify_password(&login_user.password, hash)?,
+        None => false, // OAuth-only users cannot login with password
+    };
     if !is_valid {
         return Err(Error::Authentication("Invalid email or password".to_string()));
     }

@@ -25,9 +25,12 @@ async fn test_user_registration_success() {
     );
     assert_eq!(created_user.email, user_email.to_lowercase(), "Email should be stored in lowercase");
     assert!(
-        !created_user.password_hash.is_empty(),
-        "Password hash should not be empty"
+        created_user.password_hash.is_some(),
+        "Password hash should exist"
     );
+    if let Some(hash) = &created_user.password_hash {
+        assert!(!hash.is_empty(), "Password hash should not be empty");
+    }
     assert!(
         created_user.full_name.is_none(),
         "Full name should be None by default"
@@ -160,9 +163,12 @@ async fn test_user_fields_are_populated() {
     );
     assert_eq!(created_user.email, email.to_lowercase(), "Email should be stored in lowercase");
     assert!(
-        !created_user.password_hash.is_empty(),
+        created_user.password_hash.is_some(),
         "Password hash should be populated"
     );
+    if let Some(hash) = &created_user.password_hash {
+        assert!(!hash.is_empty(), "Password hash should not be empty");
+    }
     assert!(
         created_user.full_name.is_none(),
         "Full name should be None by default"
@@ -179,12 +185,13 @@ async fn test_user_fields_are_populated() {
     );
 
     // Verify password hash format (should be Argon2 format)
+    let hash = created_user.password_hash.as_ref().unwrap();
     assert!(
-        created_user.password_hash.starts_with("$argon2"),
+        hash.starts_with("$argon2"),
         "Password hash should be Argon2 format"
     );
     assert!(
-        created_user.password_hash.len() > 50,
+        hash.len() > 50,
         "Password hash should be substantial length"
     );
 }

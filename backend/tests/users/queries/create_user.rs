@@ -14,7 +14,7 @@ async fn test_create_user_query() {
     // Create a NewUser manually (bypassing service layer)
     let new_user = NewUser {
         email: email.clone(),
-        password_hash: "test_hash_12345".to_string(),
+        password_hash: Some("test_hash_12345".to_string()),
         full_name: Some("Test User".to_string()),
     };
 
@@ -23,7 +23,7 @@ async fn test_create_user_query() {
 
     assert_eq!(created_user.email, email, "Email should match");
     assert_eq!(
-        created_user.password_hash, "test_hash_12345",
+        created_user.password_hash, Some("test_hash_12345".to_string()),
         "Password hash should match"
     );
     assert_eq!(

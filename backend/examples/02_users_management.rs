@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test password verification
     println!("Testing password verification...");
-    let is_valid = verify_password("testpassword123", &created_user.password_hash)?;
+    let is_valid = verify_password("testpassword123", created_user.password_hash.as_deref().unwrap())?;
     println!("✓ Password verification: {}", is_valid);
     println!();
 
@@ -236,7 +236,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Manually update using the query layer (bypassing service for demo)
     let mut bob_for_update = user2.clone();
-    bob_for_update.password_hash = update_data.password_hash.clone().unwrap();
+    bob_for_update.password_hash = update_data.password_hash.clone();
     bob_for_update.full_name = update_data.full_name.clone();
     // Note: email remains unchanged as emails cannot be updated
 
@@ -274,7 +274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (email, password) in test_passwords {
         if let Some(user) = get_user_by_email(&mut conn, &email).await? {
-            let is_valid = verify_password(password, &user.password_hash)?;
+            let is_valid = verify_password(password, user.password_hash.as_deref().unwrap())?;
             println!("✓ Password verification for {}: {}", email, is_valid);
         }
     }
@@ -403,7 +403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-        let is_valid = verify_password(password, &test_user.password_hash)?;
+        let is_valid = verify_password(password, test_user.password_hash.as_deref().unwrap())?;
         println!(
             "✓ Password length test {}: {} - Valid: {}",
             name,
@@ -474,7 +474,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         backend::models::users::NewUser {
             email: format!("{}_direct@{}", EXAMPLE_PREFIX, "example.com"),
-            password_hash: "direct_hash_12345".to_string(),
+            password_hash: Some("direct_hash_12345".to_string()),
             full_name: Some("Direct User".to_string()),
         },
     )

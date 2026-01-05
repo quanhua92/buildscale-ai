@@ -12,7 +12,7 @@ async fn test_get_user_by_id_query() {
     // Create a user first
     let new_user = NewUser {
         email: format!("{}_get_by_id@example.com", test_db.test_prefix()),
-        password_hash: "test_hash".to_string(),
+        password_hash: Some("test_hash".to_string()),
         full_name: Some("Test User".to_string()),
     };
 

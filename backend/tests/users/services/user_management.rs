@@ -68,7 +68,7 @@ async fn test_multiple_users_different_passwords() {
         user_ids.push(created_user.id);
 
         // Verify password works for each user
-        let is_valid = verify_password(password, &created_user.password_hash).unwrap();
+        let is_valid = verify_password(password, created_user.password_hash.as_deref().unwrap()).unwrap();
         assert!(
             is_valid,
             "Password should verify for user {}",
@@ -76,7 +76,7 @@ async fn test_multiple_users_different_passwords() {
         );
 
         // Verify passwords don't match each other
-        let is_different = !verify_password("wrongpassword", &created_user.password_hash).unwrap();
+        let is_different = !verify_password("wrongpassword", created_user.password_hash.as_deref().unwrap()).unwrap();
         assert!(is_different, "Wrong password should not verify");
     }
 

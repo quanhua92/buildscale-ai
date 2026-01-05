@@ -24,9 +24,12 @@ async fn test_list_users_empty() {
         );
         assert!(!user.email.is_empty(), "User email should not be empty");
         assert!(
-            !user.password_hash.is_empty(),
-            "Password hash should not be empty"
+            user.password_hash.is_some(),
+            "Password hash should exist"
         );
+        if let Some(hash) = &user.password_hash {
+            assert!(!hash.is_empty(), "Password hash should not be empty");
+        }
     }
 }
 
@@ -44,7 +47,7 @@ async fn test_list_users_with_multiple_users() {
     for i in 0..5 {
         let new_user = NewUser {
             email: format!("{}_list_test_{}@example.com", test_db.test_prefix(), i),
-            password_hash: format!("hash_{}", i),
+            password_hash: Some(format!("hash_{}", i)),
             full_name: Some(format!("User {}", i)),
         };
 

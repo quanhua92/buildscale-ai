@@ -90,7 +90,7 @@ pub async fn update_user(conn: &mut DbConn, user: &User) -> Result<User> {
         RETURNING id, email, password_hash, full_name, created_at, updated_at
         "#,
         &user.email,
-        &user.password_hash,
+        user.password_hash.as_deref(),
         user.full_name,
         user.id
     )

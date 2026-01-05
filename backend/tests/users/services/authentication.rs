@@ -16,15 +16,15 @@ async fn test_password_verification() {
     let created_user = register_user(&mut conn, register_user_data).await.unwrap();
 
     // Test correct password verification
-    let is_valid = verify_password(&password, &created_user.password_hash).unwrap();
+    let is_valid = verify_password(&password, created_user.password_hash.as_deref().unwrap()).unwrap();
     assert!(is_valid, "Correct password should verify successfully");
 
     // Test incorrect password verification
-    let is_invalid = verify_password("wrongpassword", &created_user.password_hash).unwrap();
+    let is_invalid = verify_password("wrongpassword", created_user.password_hash.as_deref().unwrap()).unwrap();
     assert!(!is_invalid, "Incorrect password should not verify");
 
     // Test empty password verification
-    let is_empty_invalid = verify_password("", &created_user.password_hash).unwrap();
+    let is_empty_invalid = verify_password("", created_user.password_hash.as_deref().unwrap()).unwrap();
     assert!(!is_empty_invalid, "Empty password should not verify");
 }
 

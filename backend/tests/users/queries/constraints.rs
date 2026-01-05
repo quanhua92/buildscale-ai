@@ -13,13 +13,13 @@ async fn test_user_field_constraints() {
     let email = format!("{}_constraint@example.com", test_db.test_prefix());
     let new_user1 = NewUser {
         email: email.clone(),
-        password_hash: "hash1".to_string(),
+        password_hash: Some("hash1".to_string()),
         full_name: None,
     };
 
     let new_user2 = NewUser {
         email: email.clone(),
-        password_hash: "hash2".to_string(),
+        password_hash: Some("hash2".to_string()),
         full_name: None,
     };
 

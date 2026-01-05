@@ -15,7 +15,7 @@ async fn test_delete_user_query() {
     // Create a user first
     let new_user = NewUser {
         email: test_email.to_string(),
-        password_hash: "delete_hash".to_string(),
+        password_hash: Some("delete_hash".to_string()),
         full_name: None,
     };
 
