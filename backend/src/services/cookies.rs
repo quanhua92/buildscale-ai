@@ -46,7 +46,7 @@ impl Default for CookieConfig {
             refresh_token_name: "refresh_token".to_string(),
             http_only: true,
             secure: false, // Set to true in production
-            same_site: SameSite::Strict,
+            same_site: SameSite::Lax,  // Allows top-level navigations from emails, Slack, OAuth, etc.
             path: "/".to_string(),
             domain: None,
         }
@@ -182,13 +182,13 @@ pub fn authenticate_jwt_token_multi_source(
 ///     refresh_token_name: "refresh_token".to_string(),
 ///     http_only: true,
 ///     secure: true,
-///     same_site: SameSite::Strict,
+///     same_site: SameSite::Lax,  // Default: allows links from emails, Slack, OAuth
 ///     path: "/".to_string(),
 ///     domain: None,
 /// };
 ///
 /// let cookie = build_access_token_cookie("my_token", &config);
-/// // Returns: "access_token=my_token; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900"
+/// // Returns: "access_token=my_token; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=900"
 /// ```
 pub fn build_access_token_cookie(token: &str, config: &CookieConfig) -> String {
     let same_site_str = match config.same_site {
@@ -221,9 +221,18 @@ pub fn build_access_token_cookie(token: &str, config: &CookieConfig) -> String {
 /// ```rust,no_run
 /// use backend::services::cookies::{build_refresh_token_cookie, CookieConfig, SameSite};
 ///
-/// let config = CookieConfig::default();
+/// let config = CookieConfig {
+///     access_token_name: "access_token".to_string(),
+///     refresh_token_name: "refresh_token".to_string(),
+///     http_only: true,
+///     secure: true,
+///     same_site: SameSite::Lax,  // Default: allows links from emails, Slack, OAuth
+///     path: "/".to_string(),
+///     domain: None,
+/// };
+///
 /// let cookie = build_refresh_token_cookie("my_refresh_token", &config);
-/// // Returns: "refresh_token=my_refresh_token; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000"
+/// // Returns: "refresh_token=my_refresh_token; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000"
 /// ```
 pub fn build_refresh_token_cookie(token: &str, config: &CookieConfig) -> String {
     let same_site_str = match config.same_site {
@@ -375,7 +384,7 @@ mod tests {
         let cookie = build_refresh_token_cookie("my-refresh-token", &config);
         assert!(cookie.contains("refresh_token=my-refresh-token"));
         assert!(cookie.contains("HttpOnly"));
-        assert!(cookie.contains("SameSite=Strict"));
+        assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Path=/"));
         assert!(cookie.contains("Max-Age=2592000"));
     }
@@ -397,7 +406,7 @@ mod tests {
         assert_eq!(config.refresh_token_name, "refresh_token");
         assert!(config.http_only);
         assert!(!config.secure);
-        assert!(matches!(config.same_site, SameSite::Strict));
+        assert!(matches!(config.same_site, SameSite::Lax));
         assert_eq!(config.path, "/");
         assert!(config.domain.is_none());
     }

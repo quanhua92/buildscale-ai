@@ -316,16 +316,18 @@ All cookies include security flags:
 pub struct CookieConfig {
     pub http_only: bool,        // true - Prevents JavaScript access (XSS protection)
     pub secure: bool,           // true - HTTPS only (production)
-    pub same_site: SameSite,    // Strict - CSRF protection
+    pub same_site: SameSite,    // Lax (default) - CSRF protection while allowing external links
     pub path: String,           // "/" - Apply to all paths
     pub domain: Option<String>,  // Optional - e.g., ".example.com"
 }
 ```
 
+**SameSite=Lax** (default): Allows users to click links from emails, Slack, or OAuth redirects while blocking CSRF attacks from embedded content (forms, AJAX, images).
+
 **Example Cookie Header**:
 ```http
-Set-Cookie: access_token=eyJhbGc...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900
-Set-Cookie: refresh_token=a1b2c3...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000
+Set-Cookie: access_token=eyJhbGc...; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=900
+Set-Cookie: refresh_token=a1b2c3...; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000
 ```
 
 ### Cookie Utilities
@@ -386,8 +388,8 @@ Content-Type: application/json
 ---
 
 HTTP/1.1 200 OK
-Set-Cookie: access_token=eyJhbGc...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900
-Set-Cookie: refresh_token=a1b2c3...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000
+Set-Cookie: access_token=eyJhbGc...; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=900
+Set-Cookie: refresh_token=a1b2c3...; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000
 Content-Type: application/json
 
 {
@@ -415,8 +417,8 @@ POST /logout HTTP/1.1
 ---
 
 HTTP/1.1 200 OK
-Set-Cookie: access_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0
-Set-Cookie: refresh_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0
+Set-Cookie: access_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0
+Set-Cookie: refresh_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0
 ```
 
 ### Configuration
@@ -439,7 +441,7 @@ CookieConfig {
     refresh_token_name: "refresh_token",
     http_only: true,           // XSS protection
     secure: false,              // Set to true in production
-    same_site: SameSite::Strict, // CSRF protection
+    same_site: SameSite::Lax,   // CSRF protection + allows email/OAuth links
     path: "/",
     domain: None,
 }

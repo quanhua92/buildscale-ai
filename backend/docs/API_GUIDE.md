@@ -380,7 +380,7 @@ response.append_header("Set-Cookie", clear_refresh);
 **Cookie Security Flags**:
 - `HttpOnly`: Prevents JavaScript access (XSS protection)
 - `Secure`: HTTPS-only (set to `true` in production)
-- `SameSite=Strict`: CSRF protection
+- `SameSite=Lax`: CSRF protection while allowing links from emails/OAuth
 - `Max-Age`: Automatic expiration (15 min for access, 30 days for refresh)
 
 ### Workspace Setup

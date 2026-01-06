@@ -421,10 +421,10 @@ let config = CookieConfig::default();
 
 // Build Set-Cookie headers
 let access_cookie = build_access_token_cookie(&token, &config);
-// Returns: "access_token=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900"
+// Returns: "access_token=<token>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=900"
 
 let refresh_cookie = build_refresh_token_cookie(&refresh_token, &config);
-// Returns: "refresh_token=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000"
+// Returns: "refresh_token=<token>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000"
 
 // Clear cookies (logout)
 let clear_access = build_clear_token_cookie("access_token");
@@ -438,11 +438,13 @@ pub struct CookieConfig {
     pub refresh_token_name: String,     // "refresh_token"
     pub http_only: bool,                // true (XSS protection)
     pub secure: bool,                   // true in production (HTTPS only)
-    pub same_site: SameSite,            // Strict (CSRF protection)
+    pub same_site: SameSite,            // Lax (default, allows links from emails/OAuth)
     pub path: String,                   // "/"
     pub domain: Option<String>,         // Optional (e.g., ".example.com")
 }
 ```
+
+**Default**: `SameSite::Lax` - Allows top-level navigations from external sites (emails, Slack, OAuth) while blocking CSRF attacks from embedded content (forms, AJAX, images).
 
 **Cookie Service Module** (`src/services/cookies.rs`):
 - `extract_jwt_token()`: Extract from header or cookie with priority
@@ -455,7 +457,7 @@ pub struct CookieConfig {
 
 **Token Storage Options**:
 - **Mobile/API clients**: Use `Authorization: Bearer <token>` header
-- **Browser clients**: Use cookies with `HttpOnly`, `Secure`, `SameSite=Strict` flags
+- **Browser clients**: Use cookies with `HttpOnly`, `Secure`, `SameSite=Lax` flags
 - **Priority**: Header takes precedence over cookie for backward compatibility
 
 
