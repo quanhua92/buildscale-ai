@@ -146,6 +146,43 @@ pub fn authenticate_jwt_token(auth_header: Option<&str>, secret: &str) -> Result
     get_user_id_from_token(&token, secret)
 }
 
+/// Validates JWT from header OR cookie and returns user_id
+///
+/// Convenience wrapper that delegates to `cookies::authenticate_jwt_token_multi_source`.
+/// This function supports both Authorization header (mobile/API clients) and
+/// cookie (browser clients) with priority given to the header.
+///
+/// # Arguments
+/// * `auth_header` - Optional Authorization header value
+/// * `cookie_value` - Optional cookie value (for access_token)
+/// * `secret` - JWT secret for verification
+///
+/// # Returns
+/// The user's UUID if the token is valid
+///
+/// # Example
+/// ```rust,no_run
+/// use backend::services::jwt::authenticate_jwt_token_from_anywhere;
+///
+/// let user_id = authenticate_jwt_token_from_anywhere(
+///     Some("Bearer eyJhbGc..."),
+///     Some("cookie_token"),
+///     "jwt_secret"
+/// )?;
+/// # Ok::<(), backend::error::Error>(())
+/// ```
+pub fn authenticate_jwt_token_from_anywhere(
+    auth_header: Option<&str>,
+    cookie_value: Option<&str>,
+    secret: &str,
+) -> Result<Uuid> {
+    crate::services::cookies::authenticate_jwt_token_multi_source(
+        auth_header,
+        cookie_value,
+        secret,
+    )
+}
+
 /// Extracts the Bearer token from the Authorization header
 ///
 /// # Arguments

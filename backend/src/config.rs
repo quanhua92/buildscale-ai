@@ -8,6 +8,7 @@ pub struct Config {
     pub database: DatabaseConfig,
     pub sessions: SessionsConfig,
     pub jwt: JwtConfig,
+    pub cookies: crate::services::cookies::CookieConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

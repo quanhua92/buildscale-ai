@@ -329,6 +329,60 @@ let user = validate_session(&mut conn, &login_result.refresh_token).await?;
 logout_user(&mut conn, &login_result.refresh_token).await?;
 ```
 
+### Cookie-Based Authentication (Browser Clients)
+
+For web browser clients, use cookie utilities for seamless authentication:
+
+```rust
+use backend::services::cookies::{
+    extract_jwt_token,
+    extract_refresh_token,
+    build_access_token_cookie,
+    build_refresh_token_cookie,
+    build_clear_token_cookie,
+    CookieConfig,
+};
+use backend::services::jwt::authenticate_jwt_token_from_anywhere;
+
+// Extract token from header or cookie (priority: header > cookie)
+let token = extract_jwt_token(
+    request.headers().get("authorization")
+        .and_then(|h| h.to_str().ok()),
+    request.cookies().get("access_token")
+        .and_then(|c| Some(c.value()))
+)?;
+
+// Authenticate with multi-source support
+let user_id = authenticate_jwt_token_from_anywhere(
+    request.headers().get("authorization")
+        .and_then(|h| h.to_str().ok()),
+    request.cookies().get("access_token")
+        .and_then(|c| Some(c.value())),
+    &config.jwt.secret,
+)?;
+
+// Build cookies for login response
+let config = CookieConfig::default();
+let access_cookie = build_access_token_cookie(&login_result.access_token, &config);
+let refresh_cookie = build_refresh_token_cookie(&login_result.refresh_token, &config);
+
+// Set cookies in response
+response.append_header("Set-Cookie", access_cookie);
+response.append_header("Set-Cookie", refresh_cookie);
+
+// Clear cookies for logout
+let clear_access = build_clear_token_cookie("access_token");
+let clear_refresh = build_clear_token_cookie("refresh_token");
+response.append_header("Set-Cookie", clear_access);
+response.append_header("Set-Cookie", clear_refresh);
+```
+
+**Cookie Security Flags**:
+- `HttpOnly`: Prevents JavaScript access (XSS protection)
+- `Secure`: HTTPS-only (set to `true` in production)
+- `SameSite=Strict`: CSRF protection
+- `Max-Age`: Automatic expiration (15 min for access, 30 days for refresh)
+
 ### Workspace Setup
 ```rust
 // Create workspace with automatic role setup

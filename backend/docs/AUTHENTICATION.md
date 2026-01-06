@@ -275,6 +275,184 @@ let revoked = revoke_all_user_sessions(&mut conn, user.id).await?;
 let cleaned = cleanup_expired_sessions(&mut conn).await?;
 ```
 
+## Cookie-Based Authentication
+
+For web browser clients, tokens can be stored in cookies for seamless authentication without manual header management.
+
+### Token Storage Options
+
+**Access Token (JWT, 15 minutes)**:
+- Authorization header: `Authorization: Bearer <token>` (mobile apps, SPAs)
+- Cookie: `access_token=<token>` (traditional web apps)
+
+**Refresh Token (HMAC-signed, 30 days)**:
+- Request body: POST /auth/refresh with token (API clients)
+- Cookie: `refresh_token=<token>` (automatic browser sending)
+
+### Multi-Source Token Extraction
+
+The authentication system supports both headers and cookies with priority:
+
+```rust
+use backend::services::jwt::authenticate_jwt_token_from_anywhere;
+
+// Works for both API and browser clients
+let user_id = authenticate_jwt_token_from_anywhere(
+    auth_header,           // Priority 1: Authorization header
+    cookie_value,          // Priority 2: Cookie fallback
+    &secret,
+)?;
+```
+
+**Priority Order**:
+1. Authorization header (API/mobile clients take precedence)
+2. Cookie (browser clients fallback)
+
+### Cookie Security
+
+All cookies include security flags:
+
+```rust
+pub struct CookieConfig {
+    pub http_only: bool,        // true - Prevents JavaScript access (XSS protection)
+    pub secure: bool,           // true - HTTPS only (production)
+    pub same_site: SameSite,    // Strict - CSRF protection
+    pub path: String,           // "/" - Apply to all paths
+    pub domain: Option<String>,  // Optional - e.g., ".example.com"
+}
+```
+
+**Example Cookie Header**:
+```http
+Set-Cookie: access_token=eyJhbGc...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900
+Set-Cookie: refresh_token=a1b2c3...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000
+```
+
+### Cookie Utilities
+
+**Extract tokens**:
+```rust
+use backend::services::cookies::{
+    extract_jwt_token,
+    extract_refresh_token,
+};
+
+// Extract access token from header or cookie
+let token = extract_jwt_token(
+    Some("Bearer eyJhbGc..."),
+    Some("cookie_value"),
+)?;
+
+// Extract refresh token from cookie
+let refresh_token = extract_refresh_token(
+    Some("cookie_value")
+)?;
+```
+
+**Build cookies**:
+```rust
+use backend::services::cookies::{
+    build_access_token_cookie,
+    build_refresh_token_cookie,
+    build_clear_token_cookie,
+    CookieConfig,
+};
+
+let config = CookieConfig::default();
+
+// Build Set-Cookie header for access token
+let access_cookie = build_access_token_cookie(&token, &config);
+
+// Build Set-Cookie header for refresh token
+let refresh_cookie = build_refresh_token_cookie(&refresh_token, &config);
+
+// Build cookie to clear token (logout)
+let clear_cookie = build_clear_token_cookie("access_token");
+```
+
+### Login Flow with Cookies
+
+For browser clients, the login endpoint sets cookies automatically:
+
+```http
+POST /login HTTP/1.1
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+
+---
+
+HTTP/1.1 200 OK
+Set-Cookie: access_token=eyJhbGc...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900
+Set-Cookie: refresh_token=a1b2c3...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000
+Content-Type: application/json
+
+{
+  "user": {...},
+  "access_token": "eyJhbGc...",
+  "refresh_token": "a1b2c3...",
+  "access_token_expires_at": "2025-01-06T10:30:00Z",
+  "refresh_token_expires_at": "2025-02-05T10:00:00Z"
+}
+```
+
+**Browser automatically includes cookies** in subsequent requests:
+```http
+GET /api/workspaces HTTP/1.1
+Cookie: access_token=eyJhbGc...; refresh_token=a1b2c3...
+```
+
+### Logout Flow with Cookies
+
+Logout clears cookies by setting Max-Age=0:
+
+```http
+POST /logout HTTP/1.1
+
+---
+
+HTTP/1.1 200 OK
+Set-Cookie: access_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0
+Set-Cookie: refresh_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0
+```
+
+### Configuration
+
+Cookie settings are configured in `src/config.rs`:
+
+```rust
+pub struct Config {
+    pub database: DatabaseConfig,
+    pub sessions: SessionsConfig,
+    pub jwt: JwtConfig,
+    pub cookies: CookieConfig,  // NEW
+}
+```
+
+**Default CookieConfig**:
+```rust
+CookieConfig {
+    access_token_name: "access_token",
+    refresh_token_name: "refresh_token",
+    http_only: true,           // XSS protection
+    secure: false,              // Set to true in production
+    same_site: SameSite::Strict, // CSRF protection
+    path: "/",
+    domain: None,
+}
+```
+
+**Environment Configuration** (future):
+```bash
+# Cookie settings (when env support is added)
+BUILDSCALE_COOKIES_SECURE=true
+BUILDSCALE_COOKIES_SAME_SITE=Strict
+BUILDSCALE_COOKIES_DOMAIN=.example.com
+```
+
 ## Related Documentation
 
 - **[Architecture Overview](./ARCHITECTURE.md)** - System design and database schema

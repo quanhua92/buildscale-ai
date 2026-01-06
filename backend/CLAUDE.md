@@ -382,6 +382,83 @@ pub struct Claims {
 }
 ```
 
+#### Cookie-Based Authentication (Browser Support)
+
+For web browser clients, the system supports cookie-based token storage and retrieval:
+
+**Multi-Source Token Extraction**:
+```rust
+use backend::services::cookies::{
+    extract_jwt_token,
+    extract_refresh_token,
+    CookieConfig,
+};
+use backend::services::jwt::authenticate_jwt_token_from_anywhere;
+
+// Extract JWT from header OR cookie (priority: header > cookie)
+let token = extract_jwt_token(
+    Some("Bearer eyJhbGc..."),  // Authorization header
+    Some("cookie_value"),        // Cookie fallback
+)?;
+
+// Authenticate from multiple sources
+let user_id = authenticate_jwt_token_from_anywhere(
+    auth_header,
+    cookie_value,
+    &secret,
+)?;
+```
+
+**Cookie Building**:
+```rust
+use backend::services::cookies::{
+    build_access_token_cookie,
+    build_refresh_token_cookie,
+    build_clear_token_cookie,
+};
+
+let config = CookieConfig::default();
+
+// Build Set-Cookie headers
+let access_cookie = build_access_token_cookie(&token, &config);
+// Returns: "access_token=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900"
+
+let refresh_cookie = build_refresh_token_cookie(&refresh_token, &config);
+// Returns: "refresh_token=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000"
+
+// Clear cookies (logout)
+let clear_access = build_clear_token_cookie("access_token");
+let clear_refresh = build_clear_token_cookie("refresh_token");
+```
+
+**Cookie Security Configuration**:
+```rust
+pub struct CookieConfig {
+    pub access_token_name: String,      // "access_token"
+    pub refresh_token_name: String,     // "refresh_token"
+    pub http_only: bool,                // true (XSS protection)
+    pub secure: bool,                   // true in production (HTTPS only)
+    pub same_site: SameSite,            // Strict (CSRF protection)
+    pub path: String,                   // "/"
+    pub domain: Option<String>,         // Optional (e.g., ".example.com")
+}
+```
+
+**Cookie Service Module** (`src/services/cookies.rs`):
+- `extract_jwt_token()`: Extract from header or cookie with priority
+- `extract_refresh_token()`: Extract refresh token from cookie
+- `authenticate_jwt_token_multi_source()`: Validate JWT from header or cookie
+- `build_access_token_cookie()`: Create Set-Cookie header for JWT
+- `build_refresh_token_cookie()`: Create Set-Cookie header for refresh token
+- `build_clear_token_cookie()`: Create Set-Cookie header to clear token
+- `CookieConfig`: Cookie security configuration
+
+**Token Storage Options**:
+- **Mobile/API clients**: Use `Authorization: Bearer <token>` header
+- **Browser clients**: Use cookies with `HttpOnly`, `Secure`, `SameSite=Strict` flags
+- **Priority**: Header takes precedence over cookie for backward compatibility
+
+
 ### Workspace Management
 ```rust
 // Simplified workspace creation with automatic setup
