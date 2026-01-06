@@ -218,22 +218,22 @@ where
         } else {
             CacheEntry::new(value)
         };
-        let _ = self.storage.insert(key.to_string(), entry.clone());
 
-        // If insert failed (key exists), update it
         if self.storage.read(key, |_, _| true).unwrap_or(false) {
             self.storage.update(key, |_, existing| *existing = entry);
+        } else {
+            let _ = self.storage.insert(key.to_string(), entry);
         }
     }
 
     /// Set a value with expiration in seconds.
     async fn set_ex(&self, key: &str, value: V, ttl_seconds: u64) {
         let entry = CacheEntry::with_expiration(value, ttl_seconds as i64);
-        let _ = self.storage.insert(key.to_string(), entry.clone());
 
-        // If insert failed (key exists), update it
         if self.storage.read(key, |_, _| true).unwrap_or(false) {
             self.storage.update(key, |_, existing| *existing = entry);
+        } else {
+            let _ = self.storage.insert(key.to_string(), entry);
         }
     }
 
@@ -367,11 +367,11 @@ where
             } else {
                 CacheEntry::new(value)
             };
-            let _ = self.storage.insert(key.to_string(), entry.clone());
 
-            // If insert failed (key exists), update it
             if self.storage.read(key, |_, _| true).unwrap_or(false) {
                 self.storage.update(key, |_, existing| *existing = entry);
+            } else {
+                let _ = self.storage.insert(key.to_string(), entry);
             }
         }
     }
