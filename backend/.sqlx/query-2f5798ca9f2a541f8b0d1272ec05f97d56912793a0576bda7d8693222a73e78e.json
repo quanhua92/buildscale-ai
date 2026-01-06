@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM workspace_invitations\n        WHERE invitation_token = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f5798ca9f2a541f8b0d1272ec05f97d56912793a0576bda7d8693222a73e78e"
+}

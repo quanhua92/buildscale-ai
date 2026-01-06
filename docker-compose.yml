@@ -1,0 +1,59 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18-alpine
+    container_name: buildscale-postgres
+    user: "${UID:-999}:${GID:-999}"
+    environment:
+      - POSTGRES_USER=buildscale
+      - POSTGRES_PASSWORD=PASSWORD
+      - POSTGRES_DB=buildscale
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # ports:
+    #   - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buildscale"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # BuildScale AI - Monorepo deployment
+  buildscale:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    build: .
+    container_name: buildscale
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount data directory for persistent storage
+      - ./data:/app/data
+    environment:
+      - RUST_LOG=info
+      - PORT=3000
+      # Database Configuration
+      - BUILDSCALE_DATABASE_USER=buildscale
+      - BUILDSCALE_DATABASE_PASSWORD=PASSWORD
+      - BUILDSCALE_DATABASE_HOST=postgres
+      - BUILDSCALE_DATABASE_PORT=5432
+      - BUILDSCALE_DATABASE_DATABASE=buildscale
+      # Session Configuration
+      - BUILDSCALE_SESSIONS_EXPIRATION_HOURS=720
+      # JWT Configuration
+      - BUILDSCALE_JWT_SECRET=your-secret-key-here-min-32-chars
+      - BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES=15
+      - BUILDSCALE_JWT_REFRESH_TOKEN_SECRET=your-refresh-token-secret-here-min-32-chars
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:

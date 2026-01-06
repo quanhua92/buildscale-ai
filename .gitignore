@@ -1,3 +1,5 @@
+# Docker
+data/
 # Environment Files
 .env
 .env.*

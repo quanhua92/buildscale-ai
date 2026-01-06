@@ -1,4 +1,4 @@
-use backend::{load_config, Cache, CacheConfig, run_api_server};
+use buildscale::{load_config, Cache, CacheConfig, run_api_server};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

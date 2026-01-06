@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Development files
+.env
+.env.*
+.vscode/
+.claude/
+.DS_Store
+
+# Frontend development
+frontend/admin/node_modules/
+frontend/web/node_modules/
+frontend/admin/dist/
+frontend/web/dist/
+frontend/admin/.tanstack/
+frontend/web/.tanstack/
+
+# Rust development
+backend/target/
+**/*.rs.bk
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Tests
+tests/
+examples/
+*.test
+
+# Misc
+*.log
+coverage/
