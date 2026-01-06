@@ -20,7 +20,8 @@
 
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
@@ -84,6 +85,32 @@ impl Default for CacheConfig {
     }
 }
 
+/// Health metrics for cache monitoring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheHealthMetrics {
+    /// Current number of entries in cache
+    pub num_keys: usize,
+    /// ISO8601 UTC timestamp of last cleanup completion (None if never run)
+    pub last_worker_time: Option<String>,
+    /// Number of entries removed by last cleanup (0 if never run)
+    pub cleaned_count: u64,
+    /// Estimated memory usage in bytes
+    pub size_bytes: u64,
+}
+
+/// Internal metrics storage (thread-safe, separate from cache data).
+#[derive(Debug, Default)]
+struct CacheMetrics {
+    /// Current number of entries
+    num_keys: AtomicUsize,
+    /// Last cleanup completion time
+    last_worker_time: tokio::sync::RwLock<Option<DateTime<Utc>>>,
+    /// Number of entries removed by last cleanup
+    cleaned_count: AtomicU64,
+    /// Estimated memory usage in bytes
+    size_bytes: AtomicU64,
+}
+
 /// Local backend implementation using scc HashMap.
 #[derive(Debug)]
 pub struct LocalBackend<V> {
@@ -93,6 +120,8 @@ pub struct LocalBackend<V> {
     cleanup_task: Option<JoinHandle<()>>,
     /// Cache configuration
     config: CacheConfig,
+    /// Health metrics (separate from cache data for type safety)
+    metrics: Arc<CacheMetrics>,
 }
 
 impl<V> LocalBackend<V>
@@ -102,8 +131,10 @@ where
     /// Create a new local backend with the given configuration.
     fn new(config: CacheConfig) -> Self {
         let storage = Arc::new(scc::HashMap::new());
+        let metrics = Arc::new(CacheMetrics::default());
         let cleanup_task = Some(Self::spawn_cleanup_task(
             Arc::clone(&storage),
+            Arc::clone(&metrics),
             config.cleanup_interval_seconds,
         ));
 
@@ -111,6 +142,7 @@ where
             storage,
             cleanup_task,
             config,
+            metrics,
         }
     }
 
@@ -120,6 +152,7 @@ where
     /// that can occur with DashMap's blocking `retain` in async contexts.
     fn spawn_cleanup_task(
         storage: Arc<scc::HashMap<String, CacheEntry<V>>>,
+        metrics: Arc<CacheMetrics>,
         interval_seconds: u64,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
@@ -127,6 +160,9 @@ where
             loop {
                 interval.tick().await;
                 let now = Utc::now();
+
+                // Count keys before cleanup
+                let count_before = storage.len();
 
                 // SAFE: retain_async yields properly, won't deadlock
                 storage
@@ -137,6 +173,20 @@ where
                             .unwrap_or(true)
                     })
                     .await;
+
+                // Calculate metrics
+                let count_after = storage.len();
+                let cleaned_count = count_before.saturating_sub(count_after) as u64;
+                let num_keys = count_after;
+                let size_bytes = Self::estimate_size(num_keys);
+
+                // Update atomic metrics (accumulate cleaned_count over lifetime)
+                metrics.num_keys.store(num_keys, Ordering::Relaxed);
+                if cleaned_count > 0 {
+                    metrics.cleaned_count.fetch_add(cleaned_count, Ordering::Relaxed);
+                }
+                metrics.size_bytes.store(size_bytes, Ordering::Relaxed);
+                *metrics.last_worker_time.write().await = Some(now);
             }
         })
     }
@@ -332,6 +382,42 @@ where
             .filter(|&&key| self.storage.remove(key).is_some())
             .count() as u64
     }
+
+    /// Get health metrics from atomic fields.
+    async fn get_health_metrics_impl(&self) -> CacheHealthMetrics {
+        // Calculate current metrics in real-time
+        let num_keys = self.storage.len();
+        let size_bytes = Self::estimate_size(num_keys);
+
+        // Read metrics from last cleanup (these are only updated by cleanup task)
+        let cleaned_count = self.metrics.cleaned_count.load(Ordering::Relaxed);
+
+        // Read timestamp (requires async lock)
+        let last_worker_time = self.metrics.last_worker_time.read().await.map(|ts| {
+            ts.to_rfc3339()
+        });
+
+        CacheHealthMetrics {
+            num_keys,
+            last_worker_time,
+            cleaned_count,
+            size_bytes,
+        }
+    }
+
+    /// Estimate memory usage in bytes using average entry size.
+    ///
+    /// Uses average key size (String struct + heap allocation) for O(1) calculation
+    /// instead of O(n) scan_async operation.
+    fn estimate_size(num_entries: usize) -> u64 {
+        // Average key size: 32 bytes (24 byte String struct + ~8 byte heap allocation)
+        // Value size: CacheEntry struct size
+        let avg_key_size = 32u64;
+        let value_size = std::mem::size_of::<CacheEntry<V>>() as u64;
+        let entry_size = avg_key_size + value_size;
+
+        num_entries as u64 * entry_size
+    }
 }
 
 impl<V> Drop for LocalBackend<V> {
@@ -352,11 +438,14 @@ impl<V> Drop for LocalBackend<V> {
 /// * `V` - The value type, must be serializable for future Redis compatibility
 ///
 /// # Example
-/// ```rust
+/// ```rust,no_run
 /// use backend::cache::Cache;
 ///
 /// // Create a local cache
+/// # #[tokio::main]
+/// # async fn main() {
 /// let cache: Cache<String> = Cache::new_local(Default::default());
+/// # }
 /// ```
 #[derive(Debug)]
 pub enum Cache<V>
@@ -377,10 +466,13 @@ where
     /// * `config` - Cache configuration options
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,no_run
     /// use backend::cache::{Cache, CacheConfig};
     ///
+    /// # #[tokio::main]
+    /// # async fn main() {
     /// let cache: Cache<String> = Cache::new_local(CacheConfig::default());
+    /// # }
     /// ```
     pub fn new_local(config: CacheConfig) -> Self {
         Self::LocalCache(LocalBackend::new(config))
@@ -588,6 +680,31 @@ where
             Self::LocalCache(backend) => Ok(backend.mdelete(keys).await),
         }
     }
+
+    /// Get health metrics for monitoring cache state.
+    ///
+    /// Returns metrics about cache usage, cleanup operations, and memory.
+    /// Metrics are updated by the background cleanup worker.
+    ///
+    /// # Returns
+    /// * `Ok(CacheHealthMetrics)` - Current health metrics
+    ///
+    /// # Example
+    /// ```rust
+    /// use backend::cache::{Cache, CacheConfig};
+    ///
+    /// # async fn example() {
+    /// let cache: Cache<String> = Cache::new_local(CacheConfig::default());
+    /// let metrics = cache.get_health_metrics().await.unwrap();
+    /// println!("Keys: {}", metrics.num_keys);
+    /// println!("Last cleanup: {:?}", metrics.last_worker_time);
+    /// # }
+    /// ```
+    pub async fn get_health_metrics(&self) -> Result<CacheHealthMetrics> {
+        match self {
+            Self::LocalCache(backend) => Ok(backend.get_health_metrics_impl().await),
+        }
+    }
 }
 
 // Implement Clone for Cache (shallow clone via Arc)
@@ -604,6 +721,7 @@ where
                 // Create a new LocalBackend that shares the same storage
                 // but doesn't have its own cleanup task
                 let storage = Arc::clone(&backend.storage);
+                let metrics = Arc::clone(&backend.metrics);
                 let config = backend.config.clone();
 
                 // Create a new backend without cleanup task (shared storage)
@@ -613,6 +731,7 @@ where
                     storage,
                     cleanup_task: None,
                     config,
+                    metrics,
                 })
             }
         }

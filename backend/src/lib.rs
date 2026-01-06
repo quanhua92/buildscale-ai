@@ -7,7 +7,7 @@ pub mod queries;
 pub mod services;
 pub mod validation;
 
-pub use cache::Cache;
+pub use cache::{Cache, CacheConfig, CacheHealthMetrics};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
 

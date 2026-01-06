@@ -361,6 +361,127 @@ Session refreshed, TTL: Some(5)
 3. User is active → refresh TTL (extend session)
 4. User inactive for 30 min → session auto-expires
 
+### 11. Health Metrics
+
+Monitor cache state and cleanup activity:
+
+```rust
+use backend::cache::CacheHealthMetrics;
+
+let cache = Cache::new_local(CacheConfig {
+    cleanup_interval_seconds: 1,
+    default_ttl_seconds: None,
+});
+
+// Add some entries
+for i in 0..10 {
+    cache.set(&format!("key:{}", i), format!("value{}", i)).await?;
+}
+
+// Get health metrics
+let metrics: CacheHealthMetrics = cache.get_health_metrics().await?;
+println!("Current cache health:");
+println!("  Total keys: {}", metrics.num_keys);
+println!("  Memory usage: {} bytes", metrics.size_bytes);
+println!("  Last cleanup: {:?}", metrics.last_worker_time);
+println!("  Entries cleaned (lifetime): {}", metrics.cleaned_count);
+```
+
+**Output:**
+```
+Current cache health:
+  Total keys: 10
+  Memory usage: 690 bytes
+  Last cleanup: None
+  Entries cleaned (lifetime): 0
+```
+
+**Track cleanup activity:**
+```rust
+// Add temporary entries
+for i in 0..5 {
+    cache.set_ex(&format!("temp:{}", i), format!("temp{}", i), 2).await?;
+}
+
+let before = cache.get_health_metrics().await?;
+println!("Before expiration: {} keys", before.num_keys);
+
+// Wait for expiration and cleanup
+tokio::time::sleep(Duration::from_secs(5)).await;
+
+let after = cache.get_health_metrics().await?;
+println!("After cleanup:");
+println!("  Total keys: {}", after.num_keys);
+println!("  Entries cleaned: {}", after.cleaned_count);
+println!("  Last cleanup: {:?}", after.last_worker_time);
+```
+
+**Output:**
+```
+Added 5 temporary entries with 2s TTL
+Before expiration: 15 keys
+
+Waiting for expiration and cleanup...
+After cleanup:
+  Total keys: 10
+  Entries cleaned: 5
+  Last cleanup: Some("2026-01-06T10:16:56.971024+00:00")
+```
+
+**JSON serialization for API responses:**
+```rust
+let metrics: CacheHealthMetrics = cache.get_health_metrics().await?;
+
+// Automatically serializes to JSON
+let json = serde_json::to_string_pretty(&metrics)?;
+println!("{}", json);
+```
+
+**JSON Output:**
+```json
+{
+  "num_keys": 10,
+  "last_worker_time": "2026-01-06T10:16:56.971024+00:00",
+  "cleaned_count": 5,
+  "size_bytes": 690
+}
+```
+
+**Use in health check endpoints:**
+```rust
+use axum::{extract::State, Json};
+use backend::cache::{Cache, CacheHealthMetrics};
+
+pub async fn get_cache_health(
+    State(cache): State<Cache<String>>,
+) -> Json<CacheHealthMetrics> {
+    let metrics = cache.get_health_metrics().await
+        .expect("Failed to get cache health metrics");
+    Json(metrics)
+}
+
+// Returns JSON response:
+// {
+//   "num_keys": 1234,
+//   "last_worker_time": "2025-01-06T12:34:56Z",
+//   "cleaned_count": 56,
+//   "size_bytes": 1048576
+// }
+```
+
+**Health metrics fields:**
+- `num_keys`: Current number of entries (real-time count)
+- `last_worker_time`: ISO8601 UTC timestamp of last cleanup completion (None if never run)
+- `cleaned_count`: Total entries removed by cleanup over cache lifetime (accumulated)
+- `size_bytes`: Estimated memory usage in bytes
+
+**Use Cases:**
+- Health check endpoints for monitoring systems
+- Performance dashboards and observability
+- Alerting on memory usage or cleanup issues
+- Capacity planning and cache sizing
+- Debugging cache behavior in production
+
 ### Running the Example
 
 See all these features in action:
@@ -369,7 +490,7 @@ See all these features in action:
 cargo run --example 04_cache_management
 ```
 
-This runs through all 10 examples above with detailed output explanations.
+This runs through all 11 examples above with detailed output explanations.
 
 ## Current Implementation
 

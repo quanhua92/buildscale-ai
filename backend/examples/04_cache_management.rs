@@ -9,6 +9,7 @@
 //! - Batch operations (mget, mset, mdelete)
 //! - Thread safety and concurrent access
 //! - Background cleanup
+//! - Health metrics monitoring
 
 use backend::cache::{Cache, CacheConfig};
 use serde::{Deserialize, Serialize};
@@ -310,6 +311,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Refresh session (user activity)
     session_cache.expire(session_id, 5).await?;
     println!("Session refreshed, TTL: {:?}", session_cache.ttl(session_id).await?);
+
+    println!();
+
+    // ============================================================================
+    // Health Metrics
+    // ============================================================================
+    println!("11. Health Metrics");
+    println!("-------------------");
+
+    use backend::cache::CacheHealthMetrics;
+
+    let cache = Cache::new_local(CacheConfig {
+        cleanup_interval_seconds: 1,
+        default_ttl_seconds: None,
+    });
+
+    // Add some entries
+    for i in 0..10 {
+        cache.set(&format!("key:{}", i), format!("value{}", i)).await?;
+    }
+
+    // Get health metrics
+    let metrics: CacheHealthMetrics = cache.get_health_metrics().await?;
+    println!("Current cache health:");
+    println!("  Total keys: {}", metrics.num_keys);
+    println!("  Memory usage: {} bytes", metrics.size_bytes);
+    println!("  Last cleanup: {:?}", metrics.last_worker_time);
+    println!("  Entries cleaned (lifetime): {}", metrics.cleaned_count);
+
+    // Add some temporary entries
+    for i in 0..5 {
+        cache
+            .set_ex(&format!("temp:{}", i), format!("temp{}", i), 2)
+            .await?;
+    }
+    println!("\nAdded 5 temporary entries with 2s TTL");
+
+    let before = cache.get_health_metrics().await?;
+    println!("Before expiration: {} keys", before.num_keys);
+
+    println!("\nWaiting for expiration and cleanup...");
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let after = cache.get_health_metrics().await?;
+    println!("After cleanup:");
+    println!("  Total keys: {}", after.num_keys);
+    println!("  Entries cleaned: {}", after.cleaned_count);
+    println!("  Last cleanup: {:?}", after.last_worker_time);
+
+    // JSON serialization example (for API responses)
+    let json = serde_json::to_string_pretty(&after)?;
+    println!("\nJSON output for API response:");
+    println!("{}", json);
 
     println!("\n=== Example Complete ===");
 

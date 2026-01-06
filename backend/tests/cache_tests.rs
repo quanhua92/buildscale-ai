@@ -10,6 +10,7 @@
 //! - Background cleanup
 
 use backend::cache::{Cache, CacheConfig};
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -645,4 +646,89 @@ async fn test_json_serialization_compatibility() {
     let json = serde_json::to_string(&user).unwrap();
     let deserialized: TestUser = serde_json::from_str(&json).unwrap();
     assert_eq!(user, deserialized);
+}
+
+// ============================================================================
+// Health Metrics Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_health_metrics_initial_state() {
+    let cache = create_test_cache();
+    let metrics = cache.get_health_metrics().await.unwrap();
+
+    // Fresh cache: 0 user keys, no cleanup yet
+    assert_eq!(metrics.num_keys, 0);
+    assert_eq!(metrics.last_worker_time, None);
+    assert_eq!(metrics.cleaned_count, 0);
+    assert_eq!(metrics.size_bytes, 0);  // Empty cache has no entries
+}
+
+#[tokio::test]
+async fn test_health_metrics_tracks_keys() {
+    let cache = create_test_cache();
+
+    cache.set("key1", "value1".to_string()).await.unwrap();
+    cache.set("key2", "value2".to_string()).await.unwrap();
+    cache.set("key3", "value3".to_string()).await.unwrap();
+
+    let metrics = cache.get_health_metrics().await.unwrap();
+    assert_eq!(metrics.num_keys, 3);
+}
+
+#[tokio::test]
+async fn test_health_metrics_after_cleanup() {
+    let cache = Cache::new_local(CacheConfig {
+        cleanup_interval_seconds: 1,
+        default_ttl_seconds: None,
+    });
+
+    // Add 5 entries with 2 second TTL
+    for i in 0..5 {
+        cache
+            .set_ex(&format!("temp{}", i), "value".to_string(), 2)
+            .await
+            .unwrap();
+    }
+
+    // Add 2 persistent entries
+    cache.set("perm1", "value1".to_string()).await.unwrap();
+    cache.set("perm2", "value2".to_string()).await.unwrap();
+
+    let before = cache.get_health_metrics().await.unwrap();
+    assert_eq!(before.num_keys, 7);
+
+    // Wait for expiration + cleanup (2s expire + multiple cleanup cycles)
+    tokio::time::sleep(Duration::from_secs(6)).await;
+
+    let after = cache.get_health_metrics().await.unwrap();
+
+    // Should have cleaned 5 temporary entries
+    assert_eq!(after.num_keys, 2);
+    assert_eq!(after.cleaned_count, 5);
+
+    // Last worker time should be set
+    assert!(after.last_worker_time.is_some());
+
+    // Verify valid ISO8601 timestamp
+    let timestamp = after.last_worker_time.unwrap();
+    assert!(DateTime::parse_from_rfc3339(&timestamp).is_ok());
+}
+
+#[tokio::test]
+async fn test_health_metrics_serialization() {
+    let cache = create_test_cache();
+    cache.set("key1", "value1".to_string()).await.unwrap();
+
+    let metrics = cache.get_health_metrics().await.unwrap();
+
+    // Verify JSON serialization for API responses
+    let json = serde_json::to_string(&metrics).unwrap();
+    assert!(json.contains("\"num_keys\":1"));
+    assert!(json.contains("\"cleaned_count\":0"));
+
+    // Verify deserialization
+    let deserialized: backend::CacheHealthMetrics =
+        serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.num_keys, metrics.num_keys);
 }
