@@ -24,7 +24,7 @@ if hours_to_extend > config.sessions.expiration_hours {
 }
 
 // Session operations are handled in services/sessions.rs
-// Session duration is configurable via BUILDSCALE__SESSIONS__EXPIRATION_HOURS
+// Session duration is configurable via BUILDSCALE_SESSIONS_EXPIRATION_HOURS
 ```
 
 ## Input Validation System
@@ -235,14 +235,14 @@ CREATE INDEX idx_workspace_invitations_token ON workspace_invitations(invitation
 ### Environment Variables
 ```bash
 # Database configuration (see .env.example)
-BUILDSCALE__DATABASE__USER=buildscale
-BUILDSCALE__DATABASE__PASSWORD=your_password
-BUILDSCALE__DATABASE__HOST=localhost
-BUILDSCALE__DATABASE__PORT=5432
-BUILDSCALE__DATABASE__DATABASE=buildscale
+BUILDSCALE_DATABASE_USER=buildscale
+BUILDSCALE_DATABASE_PASSWORD=your_password
+BUILDSCALE_DATABASE_HOST=localhost
+BUILDSCALE_DATABASE_PORT=5432
+BUILDSCALE_DATABASE_DATABASE=buildscale
 
 # Session configuration
-BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720  # Default: 30 days
+BUILDSCALE_SESSIONS_EXPIRATION_HOURS=720  # Default: 30 days
 
 # Optional: For sqlx CLI
 DATABASE_URL=postgresql://buildscale:your_password@localhost:5432/buildscale
@@ -252,16 +252,16 @@ DATABASE_URL=postgresql://buildscale:your_password@localhost:5432/buildscale
 
 Session behavior is controlled by a single environment variable:
 
-- `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`: How long sessions remain valid (default: 720 = 30 days)
+- `BUILDSCALE_SESSIONS_EXPIRATION_HOURS`: How long sessions remain valid (default: 720 = 30 days)
   - This value is used for both initial session creation AND maximum extension time
 
 Example:
 ```bash
 # Set session expiration to 7 days for testing
-BUILDSCALE__SESSIONS__EXPIRATION_HOURS=168
+BUILDSCALE_SESSIONS_EXPIRATION_HOURS=168
 
 # Set session expiration to 60 days for production
-BUILDSCALE__SESSIONS__EXPIRATION_HOURS=1440
+BUILDSCALE_SESSIONS_EXPIRATION_HOURS=1440
 ```
 
 ### Logging Configuration

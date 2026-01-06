@@ -68,11 +68,11 @@ nano .env
 **Required .env Configuration:**
 ```env
 # Database Configuration
-BUILDSCALE__DATABASE__USER=buildscale
-BUILDSCALE__DATABASE__PASSWORD=your_secure_password
-BUILDSCALE__DATABASE__HOST=localhost
-BUILDSCALE__DATABASE__PORT=5432
-BUILDSCALE__DATABASE__DATABASE=buildscale
+BUILDSCALE_DATABASE_USER=buildscale
+BUILDSCALE_DATABASE_PASSWORD=your_secure_password
+BUILDSCALE_DATABASE_HOST=localhost
+BUILDSCALE_DATABASE_PORT=5432
+BUILDSCALE_DATABASE_DATABASE=buildscale
 
 # For sqlx CLI operations
 DATABASE_URL=postgresql://buildscale:your_secure_password@localhost:5432/buildscale

@@ -19,7 +19,7 @@ Multi-tenant workspace-based RBAC architecture with clear separation of concerns
 src/
 ├── lib.rs           # Public exports and configuration loading
 ├── main.rs          # Application entry point
-├── config.rs        # Environment configuration with BUILDSCALE__ prefix
+├── config.rs        # Environment configuration with BUILDSCALE_ prefix
 ├── database.rs      # Database connection pooling
 ├── error.rs         # Comprehensive error handling
 ├── validation.rs    # Input validation utilities (email, password, workspace names, etc.)
@@ -252,7 +252,7 @@ CREATE INDEX idx_workspace_invitations_expires_at ON workspace_invitations(expir
 **Authentication**:
 - Session-based authentication with UUID v7 tokens
 - Argon2 password hashing with unique salts
-- Configurable session expiration (default: 30 days) with refresh capability via BUILDSCALE__SESSIONS__EXPIRATION_HOURS
+- Configurable session expiration (default: 30 days) with refresh capability via BUILDSCALE_SESSIONS_EXPIRATION_HOURS
 
 **Authorization**:
 - Role-based access control with hardcoded permissions

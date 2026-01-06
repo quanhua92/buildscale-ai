@@ -28,12 +28,12 @@ impl Config {
 
         let config = config::Config::builder()
             .add_source(config::Config::try_from(&Self::default())?)
-            // Override with environment variables using `BUILDSCALE__` prefix and `__` separator
-            // e.g., BUILDSCALE__DATABASE__USER="my_user"
+            // Override with environment variables using `BUILDSCALE_` prefix and `_` separator
+            // e.g., BUILDSCALE_DATABASE_USER="my_user"
             .add_source(
                 config::Environment::with_prefix("BUILDSCALE")
-                    .prefix_separator("__")
-                    .separator("__"),
+                    .prefix_separator("_")
+                    .separator("_"),
             )
             .build()?;
 
