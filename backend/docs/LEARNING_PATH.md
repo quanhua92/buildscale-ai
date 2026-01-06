@@ -689,7 +689,7 @@ $argon2id$v=19$m=65536,t=2,p=1$randomsalthere$hashoutputhere
 1. User sends: { email, password }
 2. Server finds user by email
 3. Server verifies password against stored hash
-4. Server generates UUID v7 session token
+4. Server generates random HMAC-signed session token
 5. Server stores session in database with expiration
 6. Server returns token to client
 ```
@@ -715,7 +715,7 @@ pub async fn login_user(conn: &mut DbConn, login: LoginUser) -> Result<LoginResu
     }
 
     // 4. Generate session token
-    let session_token = Uuid::now_v7().to_string();
+    let session_token = generate_session_token()?;
     let config = Config::load()?;
     let expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);  // Default: 30 days
 
@@ -806,7 +806,7 @@ Server:
 | Aspect | Implementation |
 |--------|----------------|
 | Password Storage | Argon2 with random salt per password |
-| Token Generation | UUID v7 (unpredictable, time-sortable) |
+| Token Generation | Random HMAC-signed (256-bit randomness, tamper-evident) |
 | Token Storage | Database with expiration |
 | Error Messages | Generic "Invalid email or password" (no user enumeration) |
 | Case Sensitivity | Emails are case-insensitive |
@@ -826,7 +826,7 @@ Server:
 - [ ] I understand the login flow (validate → hash check → generate token → store session)
 - [ ] I understand session validation (token lookup → expiration check → return user)
 - [ ] I understand why error messages are generic (prevent user enumeration)
-- [ ] I understand UUID v7 tokens are unpredictable and time-sortable
+- [ ] I understand random HMAC-signed tokens provide 256-bit randomness and tamper detection
 
 ### Q&A
 
@@ -1964,7 +1964,7 @@ pub async fn login_user(conn: &mut DbConn, login: LoginUser) -> Result<LoginResu
     // ... validate credentials ...
 
     // Generate session
-    let session_token = Uuid::now_v7().to_string();  // Unique, time-ordered
+    let session_token = generate_session_token()?;  // Random HMAC-signed
     let config = Config::load()?;
     let expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);  // Default: 30 days
 
@@ -2152,8 +2152,8 @@ pub async fn delete_expired_sessions(conn: &mut DbConn) -> Result<u64>
 **Q1: Why store sessions in database instead of memory?**
 > A: Database storage survives server restarts. Also enables load balancing (any server can validate any token). Memory is faster but loses sessions on restart.
 
-**Q2: Why UUID v7 instead of random UUID?**
-> A: UUID v7 is time-ordered, so newer sessions sort after older ones. Useful for debugging and cleanup. Also provides uniqueness like random UUIDs.
+**Q2: Why random HMAC-signed tokens instead of UUID?**
+> A: Random tokens provide 256-bit randomness (vs 128-bit UUID) making them unpredictable. HMAC signature provides tamper detection - any modification is immediately detected. UUID v7 is still used for primary keys (time-ordered for database performance).
 
 **Q3: Should I refresh sessions automatically?**
 > A: Common patterns:
@@ -2750,7 +2750,7 @@ CREATE TABLE workspace_invitations (
 | Area | Practice |
 |------|----------|
 | **Passwords** | Hash with Argon2, enforce minimum length |
-| **Sessions** | UUID v7 tokens, expiration, secure storage |
+| **Sessions** | Random HMAC-signed tokens, expiration, secure storage |
 | **Input** | Validate all input, use parameterized queries |
 | **Authorization** | Check permissions before every action |
 | **Errors** | Generic messages for sensitive operations |

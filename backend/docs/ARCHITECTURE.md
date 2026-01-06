@@ -250,7 +250,7 @@ CREATE INDEX idx_workspace_invitations_expires_at ON workspace_invitations(expir
 ## Security Architecture
 
 **Authentication**:
-- Session-based authentication with UUID v7 tokens
+- Session-based authentication with random HMAC-signed tokens (256-bit randomness)
 - Argon2 password hashing with unique salts
 - Configurable session expiration (default: 30 days) with refresh capability via BUILDSCALE_SESSIONS_EXPIRATION_HOURS
 
@@ -263,4 +263,4 @@ CREATE INDEX idx_workspace_invitations_expires_at ON workspace_invitations(expir
 - Input validation at model layer
 - Email format verification
 - Password strength requirements
-- Token format validation (UUID v7)
+- Token format validation (hex:hex format with HMAC signature)

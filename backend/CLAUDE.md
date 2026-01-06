@@ -147,16 +147,18 @@ Tests use a sophisticated isolation system:
 - Password confirmation required during registration
 
 #### Session Security (Current Implementation)
-- UUID v7 session tokens for uniqueness and time-based ordering
+- Cryptographically secure random session tokens (256-bit randomness)
+- HMAC-SHA256 signature for tamper detection and integrity verification
 - Configurable session expiration (default: 30 days, via BUILDSCALE_SESSIONS_EXPIRATION_HOURS)
 - Automatic session cleanup for expired tokens
 - Case-insensitive email lookup for user convenience
 - Session invalidation on logout
 - Session refresh functionality for extending sessions
+- Constant-time comparison prevents timing attacks on token verification
 
 #### Security Limitations and Considerations
 - **Session Storage**: Sessions stored in database (not in-memory) for persistence
-- **Token Security**: UUID tokens are generated securely but not encrypted
+- **Token Security**: Tokens use HMAC signature for integrity verification
 - **Session Hijacking**: Tokens should be transmitted over HTTPS only
 - **Concurrent Sessions**: Users can have multiple active sessions simultaneously
 - **No Session Revocation on Password Change**: Manual revocation required for security operations
@@ -345,7 +347,7 @@ pub struct UpdateUser {
 - **Secure Token Storage**: JWT secret key stored in environment (BUILDSCALE_JWT_SECRET)
 
 #### Session Management Features
-- **UUID v7 Tokens**: Time-based sortable unique refresh tokens
+- **Random HMAC-Signed Tokens**: 256-bit randomness with tamper-evident signature
 - **Automatic Expiration**: Refresh tokens expire after configured duration (default: 30 days, via BUILDSCALE_SESSIONS_EXPIRATION_HOURS)
 - **Session Refresh**: Extend session duration before expiration
 - **Cleanup Service**: Automatic removal of expired sessions

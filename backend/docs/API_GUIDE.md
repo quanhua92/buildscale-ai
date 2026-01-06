@@ -627,7 +627,7 @@ pub struct ApiError {
 - **RBAC System**: 4-tier roles (Admin > Editor > Member > Viewer)
 - **Comprehensive Permissions**: Fine-grained permissions across workspace, content, and member categories
 - **Multi-Tenant**: Complete workspace isolation with shared users
-- **Session-Based**: UUID v7 tokens with Argon2 password hashing
+- **Session-Based**: Random HMAC-signed tokens with Argon2 password hashing
 
 ## Environment Setup
 

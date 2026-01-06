@@ -179,7 +179,7 @@ cargo test test_name -- --exact --nocapture
 ### Core Components
 - **Workspace Isolation**: Complete data separation between tenants
 - **Four-Tier RBAC**: Admin > Editor > Member > Viewer hierarchy
-- **Session-Based Auth**: UUID v7 tokens with Argon2 password hashing
+- **Session-Based Auth**: Random HMAC-signed tokens with Argon2 password hashing
 - **Secure Invitations**: Token-based member onboarding with role assignments
 
 ### Module Structure
@@ -221,7 +221,7 @@ src/
 
 ## Key Features
 
-- **Secure Authentication**: UUID v7 session tokens, Argon2 password hashing
+- **Secure Authentication**: Random HMAC-signed session tokens, Argon2 password hashing
 - **Comprehensive Permission System**: Fine-grained permissions across workspace, content, and member management categories
 - **Workspace Isolation**: Complete data separation with shared user accounts
 - **Advanced Session Management**: Multi-device support, cleanup, monitoring

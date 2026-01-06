@@ -80,10 +80,11 @@ The system includes comprehensive input validation utilities in `src/validation.
 ```rust
 // Validation rules:
 // - Required field (cannot be empty)
-// - Must be a valid UUID v7 format
-// - Uses UUID parsing for format validation
+// - Must be in format: <64_hex_chars>:<64_hex_chars>
+// - Verifies both parts are valid hexadecimal strings
+// - Total length: 129 characters (64 + colon + 64)
 // - Used for session token format checking before database lookup
-// Returns: Result<()> with "Session token cannot be empty" or "Invalid session token format"
+// Returns: Result<()> with "Session token cannot be empty" or "Invalid token format"
 ```
 
 #### UUID Validation (`validate_uuid`)
@@ -151,7 +152,7 @@ All validation functions return `Result<()>` or `Result<T>` with descriptive err
 - "Password must be at least 8 characters long"
 - "Workspace name must be less than 100 characters"
 - "Session token cannot be empty"
-- "Invalid session token format"
+- "Invalid token format"
 - "Invalid UUID format"
 ```
 

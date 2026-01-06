@@ -32,7 +32,7 @@ sequenceDiagram
     Database-->>API: User record (if exists)
     API->>API: Verify password against hash
     API->>API: Generate JWT access token (15 min)
-    API->>API: Generate UUID v7 refresh token (30 days)
+    API->>API: Generate random HMAC-signed refresh token (30 days)
     API->>Database: INSERT INTO user_sessions (user_id, token, expires_at)
     Database-->>API: Session created
     API-->>Client: 200 OK (access_token, refresh_token, expires_at, user_data)
@@ -176,7 +176,7 @@ pub struct RefreshTokenResult {
 pub struct UserSession {
     pub id: Uuid,                    // Session primary key
     pub user_id: Uuid,               // Session owner
-    pub token: String,               // Unique UUID v7 token (refresh token)
+    pub token: String,               // Random HMAC-signed token (refresh token)
     pub expires_at: DateTime<Utc>,   // Expiration time
     pub created_at: DateTime<Utc>,   // Creation time
     pub updated_at: DateTime<Utc>,   // Last update
@@ -193,10 +193,11 @@ pub struct UserSession {
 - **Automatic Expiration**: Tokens expire quickly, forcing regular refresh
 
 ### Session Refresh Token Security
-- **UUID v7 Tokens**: Time-based sortable unique session identifiers
+- **Random HMAC-Signed Tokens**: 256-bit randomness with tamper-evident signature
 - **Long-Lived Tokens**: 30-day expiration for user convenience
 - **Database Storage**: Revocable tokens stored in database
-- **Argon2 Hashing**: Industry-standard password hashing with unique salts
+- **Integrity Verification**: HMAC-SHA256 signature prevents token tampering
+- **Constant-Time Comparison**: Prevents timing attacks on token verification
 - **Configurable Expiration**: Default session duration with automatic cleanup
 - **Case-Insensitive Email**: User-friendly login experience
 - **Multi-Device Support**: Users can maintain concurrent sessions
@@ -309,9 +310,9 @@ Session management settings are typically found in:
 - `src/services/users.rs`: Authentication logic
 
 ### Security Configuration
-- **Token Generation**: UUID v7 tokens generated in `src/services/users.rs`
+- **Token Generation**: Random HMAC-signed tokens generated in `src/services/refresh_tokens.rs`
 - **Password Hashing**: Argon2 configuration in password utility functions
-- **Session Validation**: Token format and expiration checking
+- **Session Validation**: Token format and HMAC signature verification
 
 ### Changing Security Settings
 1. Update constants in appropriate source files
