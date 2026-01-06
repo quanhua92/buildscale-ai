@@ -194,20 +194,22 @@ where
     /// Check if a key exists and is not expired.
     async fn exists(&self, key: &str) -> bool {
         self.storage
-            .read(key, |_, entry| !entry.is_expired())
+            .read_async(key, |_, entry| !entry.is_expired())
+            .await
             .unwrap_or(false)
     }
 
     /// Get a value by key (returns None if key doesn't exist or is expired).
     async fn get(&self, key: &str) -> Option<V> {
         self.storage
-            .read(key, |_, entry| {
+            .read_async(key, |_, entry| {
                 if !entry.is_expired() {
                     Some(entry.value.clone())
                 } else {
                     None
                 }
             })
+            .await
             .flatten()
     }
 
@@ -219,10 +221,10 @@ where
             CacheEntry::new(value)
         };
 
-        if self.storage.read(key, |_, _| true).unwrap_or(false) {
-            self.storage.update(key, |_, existing| *existing = entry);
+        if self.storage.read_async(key, |_, _| true).await.unwrap_or(false) {
+            self.storage.update_async(key, |_, existing| *existing = entry).await;
         } else {
-            let _ = self.storage.insert(key.to_string(), entry);
+            let _ = self.storage.insert_async(key.to_string(), entry).await;
         }
     }
 
@@ -230,42 +232,45 @@ where
     async fn set_ex(&self, key: &str, value: V, ttl_seconds: u64) {
         let entry = CacheEntry::with_expiration(value, ttl_seconds as i64);
 
-        if self.storage.read(key, |_, _| true).unwrap_or(false) {
-            self.storage.update(key, |_, existing| *existing = entry);
+        if self.storage.read_async(key, |_, _| true).await.unwrap_or(false) {
+            self.storage.update_async(key, |_, existing| *existing = entry).await;
         } else {
-            let _ = self.storage.insert(key.to_string(), entry);
+            let _ = self.storage.insert_async(key.to_string(), entry).await;
         }
     }
 
     /// Delete a key (returns true if key existed).
     async fn delete(&self, key: &str) -> bool {
-        self.storage.remove(key).is_some()
+        self.storage.remove_async(key).await.is_some()
     }
 
     /// Get the remaining TTL for a key (None if no expiration).
     async fn ttl(&self, key: &str) -> Option<i64> {
         self.storage
-            .read(key, |_, entry| entry.remaining_ttl())
+            .read_async(key, |_, entry| entry.remaining_ttl())
+            .await
             .flatten()
     }
 
     /// Set expiration on an existing key (returns true if key existed).
     async fn expire(&self, key: &str, ttl_seconds: u64) -> bool {
         self.storage
-            .update(key, |_, entry| {
+            .update_async(key, |_, entry| {
                 entry.expires_at = Some(Utc::now() + Duration::seconds(ttl_seconds as i64));
                 true
             })
+            .await
             .is_some()
     }
 
     /// Remove expiration from a key (returns true if key existed).
     async fn persist(&self, key: &str) -> bool {
         self.storage
-            .update(key, |_, entry| {
+            .update_async(key, |_, entry| {
                 entry.expires_at = None;
                 true
             })
+            .await
             .is_some()
     }
 
@@ -278,12 +283,12 @@ where
         };
 
         // Check if key exists first
-        if self.storage.read(key, |_, _| true).unwrap_or(false) {
+        if self.storage.read_async(key, |_, _| true).await.unwrap_or(false) {
             return false;
         }
 
         // Key doesn't exist, insert it
-        self.storage.insert(key.to_string(), entry).is_ok()
+        self.storage.insert_async(key.to_string(), entry).await.is_ok()
     }
 
     /// Get and set a value atomically (returns old value).
@@ -295,24 +300,24 @@ where
         };
 
         // Read old value first (returns None if key doesn't exist or is expired)
-        let old_value = self.storage.read(key, |_, entry| {
+        let old_value = self.storage.read_async(key, |_, entry| {
             if !entry.is_expired() {
                 Some(entry.value.clone())
             } else {
                 None
             }
-        }).flatten();
+        }).await.flatten();
 
         // Check if key exists (even if expired)
-        let key_exists = self.storage.read(key, |_, _| true).unwrap_or(false);
+        let key_exists = self.storage.read_async(key, |_, _| true).await.unwrap_or(false);
 
         // Insert or update
         if key_exists {
             // Key exists, update it
-            self.storage.update(key, |_, existing| *existing = entry);
+            self.storage.update_async(key, |_, existing| *existing = entry).await;
         } else {
             // Key doesn't exist, insert it
-            let _ = self.storage.insert(key.to_string(), entry);
+            let _ = self.storage.insert_async(key.to_string(), entry).await;
         }
 
         old_value
@@ -325,10 +330,12 @@ where
 
         // Scan all entries and collect non-expired keys
         self.storage
-            .scan_async(|key, entry| {
-                if entry.expires_at.map(|exp| exp > now).unwrap_or(true) {
+            .iter_async(|key, entry| {
+                let is_valid = entry.expires_at.map(|exp| exp > now).unwrap_or(true);
+                if is_valid {
                     keys.push(key.clone());
                 }
+                true // Return true to continue iterating
             })
             .await;
 
@@ -338,25 +345,27 @@ where
     /// Clear all entries (returns count of cleared entries).
     async fn clear(&self) -> usize {
         let count = self.storage.len();
-        self.storage.clear();
+        self.storage.clear_async().await;
         count
     }
 
     /// Get multiple keys.
     async fn mget(&self, keys: &[&str]) -> Vec<Option<V>> {
-        keys.iter()
-            .map(|&key| {
-                self.storage
-                    .read(key, |_, entry| {
-                        if !entry.is_expired() {
-                            Some(entry.value.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .flatten()
-            })
-            .collect()
+        let mut results = Vec::with_capacity(keys.len());
+        for &key in keys {
+            let value = self.storage
+                .read_async(key, |_, entry| {
+                    if !entry.is_expired() {
+                        Some(entry.value.clone())
+                    } else {
+                        None
+                    }
+                })
+                .await
+                .flatten();
+            results.push(value);
+        }
+        results
     }
 
     /// Set multiple keys.
@@ -368,19 +377,23 @@ where
                 CacheEntry::new(value)
             };
 
-            if self.storage.read(key, |_, _| true).unwrap_or(false) {
-                self.storage.update(key, |_, existing| *existing = entry);
+            if self.storage.read_async(key, |_, _| true).await.unwrap_or(false) {
+                self.storage.update_async(key, |_, existing| *existing = entry).await;
             } else {
-                let _ = self.storage.insert(key.to_string(), entry);
+                let _ = self.storage.insert_async(key.to_string(), entry).await;
             }
         }
     }
 
     /// Delete multiple keys (returns count of deleted keys).
     async fn mdelete(&self, keys: &[&str]) -> u64 {
-        keys.iter()
-            .filter(|&&key| self.storage.remove(key).is_some())
-            .count() as u64
+        let mut removed = 0;
+        for &key in keys {
+            if self.storage.remove_async(&key.to_string()).await.is_some() {
+                removed += 1;
+            }
+        }
+        removed
     }
 
     /// Get health metrics from atomic fields.

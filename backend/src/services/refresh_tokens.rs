@@ -25,7 +25,7 @@ use sha2::Sha256;
 /// ```
 pub fn generate_refresh_token(config: &Config) -> Result<String> {
     // Generate 32 random bytes (256 bits of entropy)
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut random_bytes = [0u8; 32];
     rng.fill(&mut random_bytes);
 
@@ -109,7 +109,7 @@ mod tests {
     fn test_generate_refresh_token_format() {
         // This test requires a Config with refresh_token_secret
         // For now, just test the structure without full config
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut random_bytes = [0u8; 32];
         rng.fill(&mut random_bytes);
         let random_hex = hex::encode(&random_bytes);
