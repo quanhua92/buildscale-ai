@@ -9,6 +9,7 @@ pub struct Config {
     pub sessions: SessionsConfig,
     pub jwt: JwtConfig,
     pub cookies: crate::services::cookies::CookieConfig,
+    pub server: ServerConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -79,6 +80,23 @@ pub struct JwtConfig {
     pub access_token_expiration_minutes: i64,
     /// Secret key for HMAC signing refresh tokens (minimum 32 characters recommended)
     pub refresh_token_secret: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ServerConfig {
+    /// Host address to bind to (default: "0.0.0.0")
+    pub host: String,
+    /// Port to listen on (default: 3000)
+    pub port: u16,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            host: "0.0.0.0".to_string(),
+            port: 3000,
+        }
+    }
 }
 
 impl Default for JwtConfig {

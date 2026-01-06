@@ -1,6 +1,7 @@
-use backend::load_config;
+use backend::{load_config, Cache, CacheConfig, run_api_server};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Hello from the binary!");
 
     // Load configuration using lib.rs method
@@ -9,6 +10,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print configuration using Display implementation
     println!("Loaded configuration:");
     println!("{}", config);
+
+    // Initialize cache
+    let cache: Cache<String> = Cache::new_local(CacheConfig {
+        cleanup_interval_seconds: 60,
+        default_ttl_seconds: Some(3600),
+    });
+
+    // Start API server (this will block)
+    run_api_server(&config, cache).await?;
 
     Ok(())
 }
