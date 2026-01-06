@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod config;
 pub mod database;
 pub mod error;
@@ -6,6 +7,7 @@ pub mod queries;
 pub mod services;
 pub mod validation;
 
+pub use cache::Cache;
 pub use config::Config;
 pub use database::{DbConn, DbPool};
 

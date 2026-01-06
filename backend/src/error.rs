@@ -42,6 +42,14 @@ pub enum Error {
     /// A configuration error.
     #[error("Configuration error: {0}")]
     Config(#[from] config::ConfigError),
+
+    /// A cache operation error.
+    #[error("Cache error: {0}")]
+    Cache(String),
+
+    /// A cache serialization error (for Redis compatibility).
+    #[error("Cache serialization error: {0}")]
+    CacheSerialization(String),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.

@@ -11,6 +11,7 @@ Multi-tenant Rust backend with workspace-based RBAC, complete user management, a
 | **User & Workspace Management** | [User, Workspace & Member Management](./USER_WORKSPACE_MANAGEMENT.md#user-management) |
 | **Roles & Permissions** | [Role-Based Access Control](./ROLE_MANAGEMENT.md#rbac-overview) |
 | **Invitation System** | [Workspace Invitations](./WORKSPACE_INVITATIONS.md#workspace-invitations-overview) |
+| **Caching** | [Cache Implementation & Usage](./CACHE.md#usage) |
 | **Developer API Reference** | [Complete API Guide](./API_GUIDE.md#service-layer-apis) |
 
 ## Installation & Setup
@@ -201,6 +202,7 @@ src/
 │   ├── invitations.rs  # Invitation system
 │   └── sessions.rs     # Session management
 ├── queries/            # Database operations (SQLx)
+├── cache.rs            # Generic async cache with TTL support
 ├── config.rs           # Environment configuration
 ├── database.rs         # Connection pooling
 ├── error.rs            # Error handling
@@ -216,6 +218,7 @@ src/
 | **User & Workspace** | [USER_WORKSPACE_MANAGEMENT.md](./USER_WORKSPACE_MANAGEMENT.md) | Users + workspaces + members |
 | **Roles & Permissions** | [ROLE_MANAGEMENT.md](./ROLE_MANAGEMENT.md) | RBAC system with comprehensive permissions |
 | **Invitations** | [WORKSPACE_INVITATIONS.md](./WORKSPACE_INVITATIONS.md) | Token-based invitation system |
+| **Caching** | [CACHE.md](./CACHE.md) | Generic async cache with TTL, Axum/Redis integration |
 | **Configuration** | [CONFIGURATION.md](./CONFIGURATION.md) | System settings and constraints |
 | **Developer API** | [API_GUIDE.md](./API_GUIDE.md) | Complete APIs + examples + practices |
 
@@ -225,6 +228,7 @@ src/
 - **Comprehensive Permission System**: Fine-grained permissions across workspace, content, and member management categories
 - **Workspace Isolation**: Complete data separation with shared user accounts
 - **Advanced Session Management**: Multi-device support, cleanup, monitoring
+- **Generic Cache System**: Async in-memory cache with TTL, Redis-ready architecture for production scaling
 - **Secure Invitation System**: UUID v7 tokens with configurable default expiration
 - **Comprehensive Validation**: Multi-layer input validation and error handling
 - **Database Design**: PostgreSQL with proper indexing and cascade constraints
