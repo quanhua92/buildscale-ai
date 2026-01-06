@@ -375,11 +375,41 @@ This runs through all 10 examples above with detailed output explanations.
 
 The cache module (`src/cache.rs`) provides:
 
-- **Local in-memory cache** using DashMap for concurrent access
+- **Local in-memory cache** using scc HashMap for async-safe concurrent access
 - **TTL (Time To Live)** with background cleanup task
 - **Redis-like API** with comprehensive operations
 - **Thread-safe** (Clone + Send + Sync) for async contexts
 - **Serialization support** (Serialize + Deserialize) for future Redis compatibility
+
+### Why scc HashMap?
+
+We use scc HashMap instead of DashMap for critical safety reasons in async contexts:
+
+**Deadlock Prevention:**
+- DashMap's blocking operations (like `retain()`) can deadlock when locks are held across `.await` points
+- scc's async methods (like `retain_async()`) properly yield, preventing deadlocks
+- See [Tobira PR #1141](https://github.com/elan-ev/tobira/pull/1141) for a real-world production deadlock caused by DashMap
+
+**Key Advantages:**
+- **Async-first design**: All operations have async variants that properly yield
+- **Lock-free resizing**: No blocking operations during container resize
+- **Safe background cleanup**: `retain_async` yields instead of blocking all buckets
+- **Fine-grained locking**: Bucket-level locks that decrease contention as map grows
+- **SIMD optimization**: AVX2 support for better performance (enabled automatically)
+
+**Example - Safe Background Cleanup:**
+
+```rust
+// ✅ SAFE: scc's retain_async yields properly
+storage.retain_async(|_, entry| {
+    entry.expires_at.map(|exp| exp > now).unwrap_or(true)
+}).await;
+
+// ❌ DANGEROUS: DashMap's retain blocks, can deadlock
+storage.retain(|_, entry| {
+    entry.expires_at.map(|exp| exp > now).unwrap_or(true)
+});
+```
 
 ### Architecture
 

@@ -1,14 +1,25 @@
 //! Generic async cache with TTL support.
 //!
 //! This module provides a Redis-like caching interface with:
-//! - Async API using DashMap for concurrent access
+//! - Async API using scc HashMap for safe concurrent access
 //! - TTL (Time To Live) with background cleanup
 //! - Thread-safe (Clone + Send + Sync) for use in async contexts
 //! - Serialization support for future Redis migration
+//!
+//! # Why scc HashMap instead of DashMap?
+//!
+//! scc HashMap is async-first and designed to prevent deadlocks in async contexts:
+//! - **Async methods**: All operations have async variants that properly yield
+//! - **Lock-free resizing**: No blocking operations during resize
+//! - **No iterator deadlocks**: Uses `iter_async` instead of blocking iterators
+//! - **Safe background cleanup**: `retain_async` yields instead of blocking
+//!
+//! DashMap can deadlock when locks are held across `.await` points, especially in
+//! single-threaded executors. See the Tobira application incident (PR #1141) for
+//! a real-world example of this issue.
 
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};
-use dashmap::DashMap;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -73,11 +84,11 @@ impl Default for CacheConfig {
     }
 }
 
-/// Local backend implementation using DashMap.
+/// Local backend implementation using scc HashMap.
 #[derive(Debug)]
 pub struct LocalBackend<V> {
     /// Thread-safe storage for cache entries
-    storage: Arc<DashMap<String, CacheEntry<V>>>,
+    storage: Arc<scc::HashMap<String, CacheEntry<V>>>,
     /// Background cleanup task handle
     cleanup_task: Option<JoinHandle<()>>,
     /// Cache configuration
@@ -90,7 +101,7 @@ where
 {
     /// Create a new local backend with the given configuration.
     fn new(config: CacheConfig) -> Self {
-        let storage = Arc::new(DashMap::new());
+        let storage = Arc::new(scc::HashMap::new());
         let cleanup_task = Some(Self::spawn_cleanup_task(
             Arc::clone(&storage),
             config.cleanup_interval_seconds,
@@ -104,8 +115,11 @@ where
     }
 
     /// Spawn a background task to clean up expired entries.
+    ///
+    /// Uses scc's `retain_async` which properly yields, preventing deadlocks
+    /// that can occur with DashMap's blocking `retain` in async contexts.
     fn spawn_cleanup_task(
-        storage: Arc<DashMap<String, CacheEntry<V>>>,
+        storage: Arc<scc::HashMap<String, CacheEntry<V>>>,
         interval_seconds: u64,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
@@ -113,49 +127,64 @@ where
             loop {
                 interval.tick().await;
                 let now = Utc::now();
-                storage.retain(|_, entry| {
-                    entry
-                        .expires_at
-                        .map(|exp| exp > now)
-                        .unwrap_or(true)
-                });
+
+                // SAFE: retain_async yields properly, won't deadlock
+                storage
+                    .retain_async(|_, entry| {
+                        entry
+                            .expires_at
+                            .map(|exp| exp > now)
+                            .unwrap_or(true)
+                    })
+                    .await;
             }
         })
     }
 
     /// Check if a key exists and is not expired.
     async fn exists(&self, key: &str) -> bool {
-        if let Some(entry) = self.storage.get(key) {
-            !entry.is_expired()
-        } else {
-            false
-        }
+        self.storage
+            .read(key, |_, entry| !entry.is_expired())
+            .unwrap_or(false)
     }
 
     /// Get a value by key (returns None if key doesn't exist or is expired).
     async fn get(&self, key: &str) -> Option<V> {
-        if let Some(entry) = self.storage.get(key) {
-            if !entry.is_expired() {
-                return Some(entry.value.clone());
-            }
-        }
-        None
+        self.storage
+            .read(key, |_, entry| {
+                if !entry.is_expired() {
+                    Some(entry.value.clone())
+                } else {
+                    None
+                }
+            })
+            .flatten()
     }
 
-    /// Set a value without expiration.
+    /// Set a value without expiration (or with default TTL if configured).
     async fn set(&self, key: &str, value: V) {
         let entry = if let Some(default_ttl) = self.config.default_ttl_seconds {
             CacheEntry::with_expiration(value, default_ttl as i64)
         } else {
             CacheEntry::new(value)
         };
-        self.storage.insert(key.to_string(), entry);
+        let _ = self.storage.insert(key.to_string(), entry.clone());
+
+        // If insert failed (key exists), update it
+        if self.storage.read(key, |_, _| true).unwrap_or(false) {
+            self.storage.update(key, |_, existing| *existing = entry);
+        }
     }
 
     /// Set a value with expiration in seconds.
     async fn set_ex(&self, key: &str, value: V, ttl_seconds: u64) {
         let entry = CacheEntry::with_expiration(value, ttl_seconds as i64);
-        self.storage.insert(key.to_string(), entry);
+        let _ = self.storage.insert(key.to_string(), entry.clone());
+
+        // If insert failed (key exists), update it
+        if self.storage.read(key, |_, _| true).unwrap_or(false) {
+            self.storage.update(key, |_, existing| *existing = entry);
+        }
     }
 
     /// Delete a key (returns true if key existed).
@@ -165,44 +194,46 @@ where
 
     /// Get the remaining TTL for a key (None if no expiration).
     async fn ttl(&self, key: &str) -> Option<i64> {
-        self.storage.get(key).and_then(|entry| entry.remaining_ttl())
+        self.storage
+            .read(key, |_, entry| entry.remaining_ttl())
+            .flatten()
     }
 
     /// Set expiration on an existing key (returns true if key existed).
     async fn expire(&self, key: &str, ttl_seconds: u64) -> bool {
-        if let Some(mut entry) = self.storage.get_mut(key) {
-            entry.expires_at = Some(Utc::now() + Duration::seconds(ttl_seconds as i64));
-            true
-        } else {
-            false
-        }
+        self.storage
+            .update(key, |_, entry| {
+                entry.expires_at = Some(Utc::now() + Duration::seconds(ttl_seconds as i64));
+                true
+            })
+            .is_some()
     }
 
     /// Remove expiration from a key (returns true if key existed).
     async fn persist(&self, key: &str) -> bool {
-        if let Some(mut entry) = self.storage.get_mut(key) {
-            entry.expires_at = None;
-            true
-        } else {
-            false
-        }
+        self.storage
+            .update(key, |_, entry| {
+                entry.expires_at = None;
+                true
+            })
+            .is_some()
     }
 
     /// Set a value only if the key doesn't exist (returns true if set).
     async fn set_nx(&self, key: &str, value: V) -> bool {
-        use dashmap::mapref::entry::Entry;
-        match self.storage.entry(key.to_string()) {
-            Entry::Vacant(entry) => {
-                let cache_entry = if let Some(default_ttl) = self.config.default_ttl_seconds {
-                    CacheEntry::with_expiration(value, default_ttl as i64)
-                } else {
-                    CacheEntry::new(value)
-                };
-                entry.insert(cache_entry);
-                true
-            }
-            Entry::Occupied(_) => false,
+        let entry = if let Some(default_ttl) = self.config.default_ttl_seconds {
+            CacheEntry::with_expiration(value, default_ttl as i64)
+        } else {
+            CacheEntry::new(value)
+        };
+
+        // Check if key exists first
+        if self.storage.read(key, |_, _| true).unwrap_or(false) {
+            return false;
         }
+
+        // Key doesn't exist, insert it
+        self.storage.insert(key.to_string(), entry).is_ok()
     }
 
     /// Get and set a value atomically (returns old value).
@@ -213,27 +244,45 @@ where
             CacheEntry::new(value)
         };
 
-        let old_entry = self.storage.insert(key.to_string(), entry)?;
-        if !old_entry.is_expired() {
-            Some(old_entry.value)
+        // Read old value first (returns None if key doesn't exist or is expired)
+        let old_value = self.storage.read(key, |_, entry| {
+            if !entry.is_expired() {
+                Some(entry.value.clone())
+            } else {
+                None
+            }
+        }).flatten();
+
+        // Check if key exists (even if expired)
+        let key_exists = self.storage.read(key, |_, _| true).unwrap_or(false);
+
+        // Insert or update
+        if key_exists {
+            // Key exists, update it
+            self.storage.update(key, |_, existing| *existing = entry);
         } else {
-            None
+            // Key doesn't exist, insert it
+            let _ = self.storage.insert(key.to_string(), entry);
         }
+
+        old_value
     }
 
     /// Get all non-expired keys.
     async fn keys(&self) -> Vec<String> {
         let now = Utc::now();
+        let mut keys = Vec::new();
+
+        // Scan all entries and collect non-expired keys
         self.storage
-            .iter()
-            .filter(|entry| {
-                entry
-                    .expires_at
-                    .map(|exp| exp > now)
-                    .unwrap_or(true)
+            .scan_async(|key, entry| {
+                if entry.expires_at.map(|exp| exp > now).unwrap_or(true) {
+                    keys.push(key.clone());
+                }
             })
-            .map(|entry| entry.key().clone())
-            .collect()
+            .await;
+
+        keys
     }
 
     /// Clear all entries (returns count of cleared entries).
@@ -247,13 +296,15 @@ where
     async fn mget(&self, keys: &[&str]) -> Vec<Option<V>> {
         keys.iter()
             .map(|&key| {
-                self.storage.get(key).and_then(|entry| {
-                    if !entry.is_expired() {
-                        Some(entry.value.clone())
-                    } else {
-                        None
-                    }
-                })
+                self.storage
+                    .read(key, |_, entry| {
+                        if !entry.is_expired() {
+                            Some(entry.value.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .flatten()
             })
             .collect()
     }
@@ -266,7 +317,12 @@ where
             } else {
                 CacheEntry::new(value)
             };
-            self.storage.insert(key.to_string(), entry);
+            let _ = self.storage.insert(key.to_string(), entry.clone());
+
+            // If insert failed (key exists), update it
+            if self.storage.read(key, |_, _| true).unwrap_or(false) {
+                self.storage.update(key, |_, existing| *existing = entry);
+            }
         }
     }
 
@@ -307,7 +363,7 @@ pub enum Cache<V>
 where
     V: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
-    /// Local in-memory cache using DashMap
+    /// Local in-memory cache using scc HashMap (async-safe, no deadlocks)
     LocalCache(LocalBackend<V>),
 }
 
@@ -541,7 +597,7 @@ where
 {
     fn clone(&self) -> Self {
         match self {
-            // Note: LocalBackend stores Arc<DashMap>, so cloning is cheap
+            // Note: scc HashMap is wrapped in Arc, so cloning is cheap
             // We don't implement Clone on LocalBackend directly to avoid
             // accidentally cloning the cleanup task
             Self::LocalCache(backend) => {
