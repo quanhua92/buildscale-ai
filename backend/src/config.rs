@@ -72,10 +72,12 @@ impl Default for SessionsConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct JwtConfig {
-    /// Secret key for signing JWT tokens (minimum 32 characters recommended)
+    /// Secret key for signing JWT access tokens (minimum 32 characters recommended)
     pub secret: String,
     /// Access token expiration time in minutes (default: 15 minutes)
     pub access_token_expiration_minutes: i64,
+    /// Secret key for HMAC signing refresh tokens (minimum 32 characters recommended)
+    pub refresh_token_secret: String,
 }
 
 impl Default for JwtConfig {
@@ -83,6 +85,7 @@ impl Default for JwtConfig {
         Self {
             secret: "change-this-secret-in-production-min-32-chars".to_string(),
             access_token_expiration_minutes: 15,
+            refresh_token_secret: "change-this-refresh-secret-in-production-min-32-chars".to_string(),
         }
     }
 }

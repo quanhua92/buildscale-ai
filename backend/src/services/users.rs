@@ -192,6 +192,10 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
 
 /// Validates a session token and returns the associated user
 pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User> {
+    // Verify HMAC signature first (fast fail before DB lookup)
+    let config = Config::load()?;
+    crate::services::refresh_tokens::verify_refresh_token(session_token, &config)?;
+
     // Validate session token format
     validate_session_token(session_token)?;
 
@@ -302,10 +306,10 @@ pub async fn refresh_access_token(
     })
 }
 
-/// Generates a secure session token using UUID v7
+/// Generates a secure refresh token using HMAC-signed random bytes
 pub fn generate_session_token() -> Result<String> {
-    let token = Uuid::now_v7().to_string();
-    Ok(token)
+    let config = Config::load()?;
+    crate::services::refresh_tokens::generate_refresh_token(&config)
 }
 
 /// Updates a user's password with validation

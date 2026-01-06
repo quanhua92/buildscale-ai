@@ -200,21 +200,29 @@ pub fn validate_session_token(token: &str) -> Result<()> {
         return Err(Error::Validation("Session token cannot be empty".to_string()));
     }
 
-    // Basic UUID format validation (simplified)
-    if token.len() != 36 {
-        return Err(Error::InvalidToken("Invalid or expired session token".to_string()));
+    // New format: hex:hex (approximately 129 chars: 64 + 1 + 64)
+    if token.contains(':') {
+        let parts: Vec<&str> = token.split(':').collect();
+        if parts.len() != 2 {
+            return Err(Error::Validation("Invalid token format".to_string()));
+        }
+
+        // Check hex encoding (64 chars for 32 bytes + 64 chars for 32 bytes signature)
+        if parts[0].len() != 64 || parts[1].len() != 64 {
+            return Err(Error::Validation("Invalid token length".to_string()));
+        }
+
+        // Verify both parts are valid hex
+        if !parts[0].chars().all(|c| c.is_ascii_hexdigit()) ||
+           !parts[1].chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(Error::Validation("Token must be hex-encoded".to_string()));
+        }
+
+        Ok(())
+    } else {
+        // Legacy UUID format no longer supported
+        Err(Error::Validation("Invalid token format".to_string()))
     }
-
-    // Check for UUID pattern with hyphens
-    if token.matches('-').count() != 4 {
-        return Err(Error::InvalidToken("Invalid or expired session token".to_string()));
-    }
-
-    // Try to parse as UUID to validate format
-    uuid::Uuid::parse_str(token)
-        .map_err(|_| Error::InvalidToken("Invalid or expired session token".to_string()))?;
-
-    Ok(())
 }
 
 /// Validates UUID format
