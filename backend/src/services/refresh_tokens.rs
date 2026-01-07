@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::Config;
 use hmac::{Hmac, Mac};
 use rand::Rng;
+use secrecy::ExposeSecret;
 use sha2::Sha256;
 
 /// Generates a secure refresh token with HMAC signature
@@ -16,12 +17,12 @@ use sha2::Sha256;
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::Config;
-/// use backend::services::refresh_tokens::generate_refresh_token;
+/// use buildscale::Config;
+/// use buildscale::services::refresh_tokens::generate_refresh_token;
 ///
 /// let config = Config::load()?;
 /// let token = generate_refresh_token(&config)?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn generate_refresh_token(config: &Config) -> Result<String> {
     // Generate 32 random bytes (256 bits of entropy)
@@ -29,8 +30,8 @@ pub fn generate_refresh_token(config: &Config) -> Result<String> {
     let mut random_bytes = [0u8; 32];
     rng.fill(&mut random_bytes);
 
-    // Create HMAC signature using refresh token secret (or fallback to main secret)
-    let secret = config.jwt.get_refresh_token_secret();
+    // Create HMAC signature using refresh token secret
+    let secret = config.jwt.refresh_token_secret.expose_secret();
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|e| Error::Internal(format!("Failed to create HMAC: {}", e)))?;
     mac.update(&random_bytes);
@@ -61,13 +62,13 @@ pub fn generate_refresh_token(config: &Config) -> Result<String> {
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::Config;
-/// use backend::services::refresh_tokens::{generate_refresh_token, verify_refresh_token};
+/// use buildscale::Config;
+/// use buildscale::services::refresh_tokens::{generate_refresh_token, verify_refresh_token};
 ///
 /// let config = Config::load()?;
 /// let token = generate_refresh_token(&config)?;
 /// let random_bytes = verify_refresh_token(&token, &config)?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn verify_refresh_token(token: &str, config: &Config) -> Result<Vec<u8>> {
     // Split token into random and signature parts
@@ -84,7 +85,7 @@ pub fn verify_refresh_token(token: &str, config: &Config) -> Result<Vec<u8>> {
         .map_err(|_| Error::InvalidToken("Invalid token encoding".to_string()))?;
 
     // Recompute HMAC signature
-    let secret = config.jwt.get_refresh_token_secret();
+    let secret = config.jwt.refresh_token_secret.expose_secret();
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|e| Error::Internal(format!("Failed to create HMAC: {}", e)))?;
     mac.update(&random_bytes);

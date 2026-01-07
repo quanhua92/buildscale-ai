@@ -385,7 +385,7 @@ where
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::cache::Cache;
+/// use buildscale::cache::Cache;
 ///
 /// // Create a local cache
 /// # #[tokio::main]
@@ -413,7 +413,7 @@ where
     ///
     /// # Example
     /// ```rust,no_run
-    /// use backend::cache::{Cache, CacheConfig};
+    /// use buildscale::cache::{Cache, CacheConfig};
     ///
     /// # #[tokio::main]
     /// # async fn main() {
@@ -637,7 +637,7 @@ where
     ///
     /// # Example
     /// ```rust
-    /// use backend::cache::{Cache, CacheConfig};
+    /// use buildscale::cache::{Cache, CacheConfig};
     ///
     /// # async fn example() {
     /// let cache: Cache<String> = Cache::new_local(CacheConfig::default());

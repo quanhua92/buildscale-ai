@@ -16,8 +16,8 @@ use crate::error::{Error, Result};
 ///
 /// # Examples
 /// ```
-/// use backend::validation::validate_email;
-/// use backend::error::Error;
+/// use buildscale::validation::validate_email;
+/// use buildscale::error::Error;
 ///
 /// validate_email("user@example.com").unwrap(); // Valid
 /// assert!(validate_email("invalid-email").is_err()); // Returns Error

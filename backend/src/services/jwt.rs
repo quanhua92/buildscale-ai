@@ -27,12 +27,12 @@ pub struct Claims {
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::services::jwt::generate_jwt;
+/// use buildscale::services::jwt::generate_jwt;
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
 /// let token = generate_jwt(user_id, "my-secret", 15)?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn generate_jwt(user_id: Uuid, secret: &str, expiration_minutes: i64) -> Result<String> {
     let now = Utc::now();
@@ -66,13 +66,13 @@ pub fn generate_jwt(user_id: Uuid, secret: &str, expiration_minutes: i64) -> Res
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::services::jwt::{generate_jwt, verify_jwt};
+/// use buildscale::services::jwt::{generate_jwt, verify_jwt};
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
 /// let token = generate_jwt(user_id, "my-secret", 15)?;
 /// let claims = verify_jwt(&token, "my-secret")?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims> {
     let token_data = decode::<Claims>(
@@ -106,13 +106,13 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims> {
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::services::jwt::{generate_jwt, get_user_id_from_token};
+/// use buildscale::services::jwt::{generate_jwt, get_user_id_from_token};
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
 /// let token = generate_jwt(user_id, "my-secret", 15)?;
 /// let extracted_id = get_user_id_from_token(&token, "my-secret")?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn get_user_id_from_token(token: &str, secret: &str) -> Result<Uuid> {
     let claims = verify_jwt(token, secret)?;
@@ -132,14 +132,14 @@ pub fn get_user_id_from_token(token: &str, secret: &str) -> Result<Uuid> {
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::services::jwt::{generate_jwt, authenticate_jwt_token};
+/// use buildscale::services::jwt::{generate_jwt, authenticate_jwt_token};
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
 /// let token = generate_jwt(user_id, "my-secret", 15)?;
 /// let auth_header = format!("Bearer {}", token);
 /// let extracted_id = authenticate_jwt_token(Some(&auth_header), "my-secret")?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn authenticate_jwt_token(auth_header: Option<&str>, secret: &str) -> Result<Uuid> {
     let token = extract_token_from_header(auth_header)?;
@@ -162,14 +162,14 @@ pub fn authenticate_jwt_token(auth_header: Option<&str>, secret: &str) -> Result
 ///
 /// # Example
 /// ```rust,no_run
-/// use backend::services::jwt::authenticate_jwt_token_from_anywhere;
+/// use buildscale::services::jwt::authenticate_jwt_token_from_anywhere;
 ///
 /// let user_id = authenticate_jwt_token_from_anywhere(
 ///     Some("Bearer eyJhbGc..."),
 ///     Some("cookie_token"),
 ///     "jwt_secret"
 /// )?;
-/// # Ok::<(), backend::error::Error>(())
+/// # Ok::<(), buildscale::error::Error>(())
 /// ```
 pub fn authenticate_jwt_token_from_anywhere(
     auth_header: Option<&str>,

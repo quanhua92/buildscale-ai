@@ -61,7 +61,17 @@ impl Config {
             ).into());
         }
 
-        // Check for default/weak patterns in main secret
+        // Validate JWT refresh token secret
+        let refresh_secret = self.jwt.refresh_token_secret.expose_secret();
+        if refresh_secret.len() < 32 {
+            return Err(format!(
+                "BUILDSCALE__JWT__REFRESH_TOKEN_SECRET must be at least 32 characters (got {} chars). \
+                 Set a strong secret in your .env file or environment.",
+                refresh_secret.len()
+            ).into());
+        }
+
+        // Check for default/weak patterns in both secrets
         let weak_patterns = vec![
             "change-this",
             "secret",
@@ -74,6 +84,12 @@ impl Config {
             if secret.to_lowercase().contains(pattern) {
                 return Err(format!(
                     "BUILDSCALE__JWT__SECRET contains weak pattern '{}'. Use a cryptographically random secret.",
+                    pattern
+                ).into());
+            }
+            if refresh_secret.to_lowercase().contains(pattern) {
+                return Err(format!(
+                    "BUILDSCALE__JWT__REFRESH_TOKEN_SECRET contains weak pattern '{}'. Use a cryptographically random secret.",
                     pattern
                 ).into());
             }
@@ -141,15 +157,6 @@ impl fmt::Debug for JwtConfig {
 impl JwtConfig {
     fn default_refresh_token_secret() -> SecretString {
         SecretString::from(String::new())
-    }
-
-    /// Get the refresh token secret, falling back to the main secret if not set
-    pub fn get_refresh_token_secret(&self) -> &str {
-        if self.refresh_token_secret.expose_secret().is_empty() {
-            self.secret.expose_secret()
-        } else {
-            self.refresh_token_secret.expose_secret()
-        }
     }
 }
 

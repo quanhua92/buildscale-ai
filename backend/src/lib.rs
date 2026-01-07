@@ -49,7 +49,7 @@ pub fn create_api_router() -> Router<AppState> {
 ///
 /// # Example
 /// ```no_run
-/// use backend::{Config, Cache, CacheConfig, run_api_server};
+/// use buildscale::{Config, Cache, CacheConfig, run_api_server};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
