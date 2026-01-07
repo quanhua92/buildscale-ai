@@ -8,7 +8,7 @@ This document serves as a central reference for all configurable values, constra
 ```rust
 // Hardcoded in services/users.rs (line with password validation)
 if new_password.len() < 8 {
-    return Err(Error::Validation("Password must be at least 8 characters long".to_string()));
+    return Err(Error::Validation("Password must be at least 12 characters long".to_string()));
 }
 ```
 
@@ -149,7 +149,7 @@ All validation functions return `Result<()>` or `Result<T>` with descriptive err
 // Example error messages:
 - "Email cannot be empty"
 - "Invalid email format"
-- "Password must be at least 8 characters long"
+- "Password must be at least 12 characters long"
 - "Workspace name must be less than 100 characters"
 - "Session token cannot be empty"
 - "Invalid token format"

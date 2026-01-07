@@ -12,7 +12,7 @@ sequenceDiagram
     participant Database
 
     Client->>API: POST /register (email, password, confirm_password)
-    API->>API: Validate input (email format, password length >= 8)
+    API->>API: Validate input (email format, password length >= 12)
     API->>API: Hash password with Argon2
     API->>Database: INSERT INTO users (email, password_hash, ...)
     Database-->>API: User created
@@ -467,7 +467,7 @@ BUILDSCALE__COOKIES__DOMAIN=.example.com
 
 ### Finding Current Configuration Values
 ```bash
-# Check password length requirements (hardcoded in services/users.rs)
+# Check password length requirements (hardcoded in src/validation.rs)
 grep -n "password.len() < 8" src/services/users.rs
 
 # Check session extension limits

@@ -1451,7 +1451,7 @@ pub fn validate_email(email: &str) -> Result<()> {
 pub fn validate_password(password: &str) -> Result<()> {
     if password.len() < 8 {
         return Err(Error::Validation(
-            "Password must be at least 8 characters long".to_string()
+            "Password must be at least 12 characters long".to_string()
         ));
     }
     if password.len() > 128 {
@@ -1614,7 +1614,7 @@ fn handle_error(error: Error) -> HttpResponse {
 | Principle | Bad | Good |
 |-----------|-----|------|
 | Be specific | "Invalid input" | "Email cannot be empty" |
-| Be actionable | "Error" | "Password must be at least 8 characters" |
+| Be actionable | "Error" | "Password must be at least 12 characters" |
 | Don't leak info | "User admin@x.com not found" | "Invalid email or password" |
 | User-friendly | "UNIQUE constraint violation" | "Email already registered" |
 

@@ -200,7 +200,7 @@ Content-Type: application/json
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `email` | string | Yes | User's email address (must be unique, valid email format) |
-| `password` | string | Yes | User's password (minimum 8 characters) |
+| `password` | string | Yes | User's password (minimum 12 characters) |
 | `confirm_password` | string | Yes | Password confirmation (must match `password`) |
 | `full_name` | string | No | User's full name (letters, spaces, hyphens, apostrophes, periods) |
 
@@ -242,7 +242,7 @@ Content-Type: application/json
 **400 Bad Request** - Validation Error
 ```json
 {
-  "error": "Password must be at least 8 characters long"
+  "error": "Password must be at least 12 characters long"
 }
 ```
 
@@ -687,7 +687,7 @@ All error responses follow a consistent format:
 | Error Message | Status | Cause |
 |---------------|--------|-------|
 | `"Email cannot be empty"` | 400 | Email field missing or empty |
-| `"Password must be at least 8 characters long"` | 400 | Password too short |
+| `"Password must be at least 12 characters long"` | 400 | Password too short |
 | `"Passwords do not match"` | 400 | Password and confirmation don't match |
 | `"Email 'user@example.com' already exists"` | 409 | Duplicate email registration |
 | `"Invalid email or password"` | 401 | Wrong login credentials |
