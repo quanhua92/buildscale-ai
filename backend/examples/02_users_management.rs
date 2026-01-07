@@ -82,8 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let register_user_data = RegisterUser {
         email: format!("{}_test@{}", EXAMPLE_PREFIX, "example.com"),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "TestSecurePass123!".to_string(),
+        confirm_password: "TestSecurePass123!".to_string(),
         full_name: None,
     };
 
@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test password verification
     println!("Testing password verification...");
-    let is_valid = verify_password("testpassword123", created_user.password_hash.as_deref().unwrap())?;
+    let is_valid = verify_password("TestSecurePass123!", created_user.password_hash.as_deref().unwrap())?;
     println!("✓ Password verification: {}", is_valid);
     println!();
 
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing user login...");
     let login_user_data = LoginUser {
         email: format!("{}_test@{}", EXAMPLE_PREFIX, "example.com"),
-        password: "testpassword123".to_string(),
+        password: "TestSecurePass123!".to_string(),
     };
 
     let login_result = login_user(&mut conn, login_user_data).await?;
@@ -174,8 +174,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "alicepassword123".to_string(),
-            confirm_password: "alicepassword123".to_string(),
+            password: "AliceSecurePass456!".to_string(),
+            confirm_password: "AliceSecurePass456!".to_string(),
             full_name: None,
         },
     )
@@ -187,8 +187,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_bob.smith@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "bobsecure456".to_string(),
-            confirm_password: "bobsecure456".to_string(),
+            password: "BobSecurePass789!".to_string(),
+            confirm_password: "BobSecurePass789!".to_string(),
             full_name: Some("Bob Smith".to_string()),
         },
     )
@@ -258,7 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_passwords = vec![
         (
             format!("{}_alice@{}", EXAMPLE_PREFIX, "example.com"),
-            "alicepassword123",
+            "AliceSecurePass456!",
         ),
         (
             format!("{}_bob.smith@{}", EXAMPLE_PREFIX, "example.com"),
@@ -512,8 +512,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut conn,
             RegisterUser {
                 email: alice_email.clone(),
-                password: "alicepassword123".to_string(),
-                confirm_password: "alicepassword123".to_string(),
+                password: "AliceSecurePass456!".to_string(),
+                confirm_password: "AliceSecurePass456!".to_string(),
                 full_name: None,
             },
         )
@@ -616,7 +616,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some((_, alice_user)) = created_users.iter().find(|(name, _)| name.contains("Alice")) {
         let login_result = login_user(&mut conn, LoginUser {
             email: alice_user.email.clone(),
-            password: "alicepassword123".to_string(),
+            password: "AliceSecurePass456!".to_string(),
         }).await?;
 
         // Get session info without validation
