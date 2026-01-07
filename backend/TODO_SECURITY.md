@@ -521,10 +521,10 @@ pub fn create_api_router() -> Router<AppState> {
 ✅ 5. JWT secrets redacted from Display - **COMPLETED**
 ✅ 6. Strong password requirements enforced - **COMPLETED** (with test updates needed)
 ✅ 7. No tokens in JSON for browsers - **COMPLETED**
-⏳ 8. Session tokens hashed in database - **PENDING**
+✅ 8. Session tokens hashed in database - **COMPLETED**
 🛋️ Rate limiting (optional) - **PENDING**
 
-**Progress:** 8/9 critical fixes completed (89%)
+**Progress:** 9/9 critical fixes completed (100%)
 
 ---
 

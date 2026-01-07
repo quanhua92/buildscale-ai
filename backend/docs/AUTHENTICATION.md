@@ -193,10 +193,11 @@ pub struct UserSession {
 - **Automatic Expiration**: Tokens expire quickly, forcing regular refresh
 
 ### Session Refresh Token Security
-- **Random HMAC-Signed Tokens**: 256-bit randomness with tamper-evident signature
+- **Random Tokens**: 256-bit cryptographic randomness
 - **Long-Lived Tokens**: 30-day expiration for user convenience
-- **Database Storage**: Revocable tokens stored in database
-- **Integrity Verification**: HMAC-SHA256 signature prevents token tampering
+- **SHA-256 Hashing**: Tokens hashed before database storage for security
+- **Database Storage**: Revocable token hashes stored in database (plaintext tokens never stored)
+- **Integrity Verification**: SHA-256 one-way hashing prevents token exposure in database backups
 - **Constant-Time Comparison**: Prevents timing attacks on token verification
 - **Configurable Expiration**: Default session duration with automatic cleanup
 - **Case-Insensitive Email**: User-friendly login experience

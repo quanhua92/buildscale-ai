@@ -105,10 +105,10 @@ Data access layer:
 - Direct database operations using SQLx
 - CRUD operations for all entities
 - `sessions.rs`: Session CRUD operations, validation, cleanup, user session queries
-  - `create_session()`, `get_session_by_token()`, `get_sessions_by_user()`
-  - `delete_session()`, `delete_session_by_token()`, `delete_sessions_by_user()`
-  - `delete_expired_sessions()`, `is_session_valid()`, `get_valid_session_by_token()`
-  - `refresh_session()` - all session database operations
+  - `create_session()`, `get_session_by_token_hash()`, `get_sessions_by_user()`
+  - `delete_session()`, `delete_session_by_token_hash()`, `delete_sessions_by_user()`
+  - `delete_expired_sessions()`, `is_session_valid()`, `get_valid_session_by_token_hash()`
+  - `refresh_session()`, `hash_session_token()` - all session database operations
 - Transaction handling for complex operations
 
 #### `/tests/`
@@ -148,7 +148,7 @@ Tests use a sophisticated isolation system:
 
 #### Session Security (Current Implementation)
 - Cryptographically secure random session tokens (256-bit randomness)
-- HMAC-SHA256 signature for tamper detection and integrity verification
+- **SHA-256 hashing** before database storage for security
 - Configurable session expiration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 - Automatic session cleanup for expired tokens
 - Case-insensitive email lookup for user convenience
@@ -157,8 +157,9 @@ Tests use a sophisticated isolation system:
 - Constant-time comparison prevents timing attacks on token verification
 
 #### Security Limitations and Considerations
-- **Session Storage**: Sessions stored in database (not in-memory) for persistence
-- **Token Security**: Tokens use HMAC signature for integrity verification
+- **Session Storage**: Sessions stored in database with SHA-256 hashed tokens
+- **Token Hashing**: Tokens are one-way hashed (SHA-256) before storage, preventing token exposure in database backups
+- **Token Security**: Plaintext tokens never stored in database, only transmitted securely to clients
 - **Session Hijacking**: Tokens should be transmitted over HTTPS only
 - **Concurrent Sessions**: Users can have multiple active sessions simultaneously
 - **No Session Revocation on Password Change**: Manual revocation required for security operations
@@ -171,13 +172,13 @@ Tests use a sophisticated isolation system:
 - `workspaces`: Workspace containers with single owner
 - `roles`: Workspace-scoped role definitions
 - `workspace_members`: Many-to-many user-workspace relationships with roles
-- `user_sessions`: Authentication session tokens with expiration tracking
+- `user_sessions`: Authentication session tokens (SHA-256 hashed) with expiration tracking
 
 ### Key Constraints
 - `users.email`: Globally unique
 - `roles(workspace_id, name)`: Unique role names per workspace
 - `workspace_members(workspace_id, user_id)`: One membership per user per workspace
-- `user_sessions.token`: Unique session tokens
+- `user_sessions.token_hash`: Unique SHA-256 hashed session tokens
 - Foreign key cascades: Deleting workspace deletes all roles and members; deleting user deletes all sessions
 
 ### Migration System
@@ -243,19 +244,22 @@ The query layer provides type-safe database operations for session management:
 ```rust
 // Core session CRUD operations
 create_session(&mut conn, NewUserSession) -> Result<UserSession>
-get_session_by_token(&mut conn, token: &str) -> Result<Option<UserSession>>
+get_session_by_token_hash(&mut conn, token_hash: &str) -> Result<Option<UserSession>>
 get_sessions_by_user(&mut conn, user_id: Uuid) -> Result<Vec<UserSession>>
 refresh_session(&mut conn, session_id: Uuid, new_expires_at: DateTime<Utc>) -> Result<UserSession>
 
 // Session deletion operations
 delete_session(&mut conn, session_id: Uuid) -> Result<u64>
-delete_session_by_token(&mut conn, token: &str) -> Result<u64>
+delete_session_by_token_hash(&mut conn, token_hash: &str) -> Result<u64>
 delete_sessions_by_user(&mut conn, user_id: Uuid) -> Result<u64>
 delete_expired_sessions(&mut conn) -> Result<u64>
 
 // Session validation operations
-is_session_valid(&mut conn, token: &str) -> Result<bool>
-get_valid_session_by_token(&mut conn, token: &str) -> Result<Option<UserSession>>
+is_session_valid(&mut conn, token_hash: &str) -> Result<bool>
+get_valid_session_by_token_hash(&mut conn, token_hash: &str) -> Result<Option<UserSession>>
+
+// Token hashing utility
+hash_session_token(token: &str) -> String  // SHA-256 hash
 ```
 
 ### Authentication and Session Management
@@ -267,9 +271,10 @@ The authentication system provides secure user login with dual-token authenticat
 3. **Token Generation**: Successful login generates two tokens:
    - **Access Token (JWT)**: Short-lived token (default: 15 minutes) used for API requests
    - **Refresh Token (Session)**: Long-lived token (default: 30 days) used to get new access tokens
-4. **API Authentication**: Each API call uses the JWT access token (via `Authorization: Bearer <token>` header)
-5. **Token Refresh**: When access token expires, use refresh token to get a new access token
-6. **Logout**: Refresh token is invalidated on logout
+4. **Token Storage**: Refresh token is hashed with SHA-256 before database storage for security
+5. **API Authentication**: Each API call uses the JWT access token (via `Authorization: Bearer <token>` header)
+6. **Token Refresh**: When access token expires, use refresh token to get a new access token
+7. **Logout**: Refresh token hash is invalidated on logout
 
 #### Authentication Models
 ```rust
@@ -298,7 +303,7 @@ pub struct RefreshTokenResult {
 pub struct UserSession {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub token: String,
+    pub token_hash: String,  // SHA-256 hashed session token
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -307,7 +312,7 @@ pub struct UserSession {
 // Session creation entity
 pub struct NewUserSession {
     pub user_id: Uuid,
-    pub token: String,
+    pub token_hash: String,  // SHA-256 hashed session token
     pub expires_at: DateTime<Utc>,
 }
 
