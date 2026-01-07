@@ -30,16 +30,55 @@ impl Config {
 
         let config = config::Config::builder()
             .add_source(config::Config::try_from(&Self::default())?)
-            // Override with environment variables using `BUILDSCALE_` prefix and `_` separator
-            // e.g., BUILDSCALE_DATABASE_USER="my_user"
+            // Override with environment variables using `BUILDSCALE` prefix and `__` separator
+            // e.g., BUILDSCALE__DATABASE__USER="my_user" or BUILDSCALE__JWT__REFRESH_TOKEN_SECRET
             .add_source(
                 config::Environment::with_prefix("BUILDSCALE")
-                    .prefix_separator("_")
-                    .separator("_"),
+                    .prefix_separator("__")
+                    .separator("__"),  // Use double underscore consistently for prefix and nesting
             )
             .build()?;
 
-        config.try_deserialize()
+        let config: Config = config.try_deserialize()?;
+
+        // Validate JWT secrets
+        config.validate().map_err(|e| {
+            config::ConfigError::Message(format!("Configuration validation failed: {}", e))
+        })?;
+
+        Ok(config)
+    }
+
+    /// Validates JWT secrets meet security requirements
+    pub fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Validate JWT access token secret
+        if self.jwt.secret.len() < 32 {
+            return Err(format!(
+                "BUILDSCALE__JWT__SECRET must be at least 32 characters (got {} chars). \
+                 Set a strong secret in your .env file or environment.",
+                self.jwt.secret.len()
+            ).into());
+        }
+
+        // Check for default/weak patterns in main secret
+        let weak_patterns = vec![
+            "change-this",
+            "secret",
+            "password",
+            "123456",
+            "example",
+        ];
+
+        for pattern in weak_patterns {
+            if self.jwt.secret.to_lowercase().contains(pattern) {
+                return Err(format!(
+                    "BUILDSCALE__JWT__SECRET contains weak pattern '{}'. Use a cryptographically random secret.",
+                    pattern
+                ).into());
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -75,11 +114,31 @@ impl Default for SessionsConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct JwtConfig {
     /// Secret key for signing JWT access tokens (minimum 32 characters recommended)
+    #[serde(skip_serializing)]
     pub secret: String,
     /// Access token expiration time in minutes (default: 15 minutes)
+    #[serde(alias = "accessTokenExpirationMinutes")]
     pub access_token_expiration_minutes: i64,
     /// Secret key for HMAC signing refresh tokens (minimum 32 characters recommended)
+    #[serde(skip_serializing)]
+    #[serde(alias = "refreshTokenSecret")]
+    #[serde(default = "JwtConfig::default_refresh_token_secret")]
     pub refresh_token_secret: String,
+}
+
+impl JwtConfig {
+    fn default_refresh_token_secret() -> String {
+        String::new()
+    }
+
+    /// Get the refresh token secret, falling back to the main secret if not set
+    pub fn get_refresh_token_secret(&self) -> &str {
+        if self.refresh_token_secret.is_empty() {
+            &self.secret
+        } else {
+            &self.refresh_token_secret
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -101,10 +160,11 @@ impl Default for ServerConfig {
 
 impl Default for JwtConfig {
     fn default() -> Self {
+        // Require explicit configuration - no weak defaults
         Self {
-            secret: "change-this-secret-in-production-min-32-chars".to_string(),
+            secret: String::new(),
             access_token_expiration_minutes: 15,
-            refresh_token_secret: "change-this-refresh-secret-in-production-min-32-chars".to_string(),
+            refresh_token_secret: String::new(),
         }
     }
 }
