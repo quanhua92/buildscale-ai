@@ -15,6 +15,7 @@ use argon2::{
 };
 use chrono::{Duration, Utc};
 use sqlx::Acquire;
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 /// Registers a new user with comprehensive validation and password hashing
@@ -22,8 +23,16 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
     // Validate email format
     validate_email(&register_user.email)?;
 
-    // Validate that password and confirm_password match
-    if register_user.password != register_user.confirm_password {
+    // Use constant-time comparison for password confirmation to prevent timing attacks
+    if register_user.password.len() != register_user.confirm_password.len() {
+        return Err(Error::Validation("Passwords do not match".to_string()));
+    }
+
+    let password_bytes = register_user.password.as_bytes();
+    let confirm_bytes = register_user.confirm_password.as_bytes();
+
+    // subtle's ct_eq returns Choice(1) if equal, Choice(0) if not equal
+    if password_bytes.ct_eq(confirm_bytes).unwrap_u8() == 0 {
         return Err(Error::Validation("Passwords do not match".to_string()));
     }
 
@@ -61,7 +70,16 @@ pub async fn register_user_with_workspace(conn: &mut DbConn, request: UserWorksp
     // Validate all input first before starting transaction
     validate_email(&request.email)?;
 
-    if request.password != request.confirm_password {
+    // Use constant-time comparison for password confirmation to prevent timing attacks
+    if request.password.len() != request.confirm_password.len() {
+        return Err(Error::Validation("Passwords do not match".to_string()));
+    }
+
+    let password_bytes = request.password.as_bytes();
+    let confirm_bytes = request.confirm_password.as_bytes();
+
+    // subtle's ct_eq returns Choice(1) if equal, Choice(0) if not equal
+    if password_bytes.ct_eq(confirm_bytes).unwrap_u8() == 0 {
         return Err(Error::Validation("Passwords do not match".to_string()));
     }
 
