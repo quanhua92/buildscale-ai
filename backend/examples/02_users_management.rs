@@ -419,7 +419,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing validation - password mismatch...");
     let invalid_register_user = RegisterUser {
         email: format!("{}_invalid@{}", EXAMPLE_PREFIX, "example.com"),
-        password: "password123".to_string(),
+        password: "SecurePass123!".to_string(),
         confirm_password: "different123".to_string(),
         full_name: None,
     };

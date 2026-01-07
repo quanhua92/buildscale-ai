@@ -314,7 +314,7 @@ async fn register_with_mismatched_passwords(
     let url = format!("{}/auth/register", base_url);
     let request_body = json!({
         "email": email,
-        "password": "password123",
+        "password": "SecurePass123!",
         "confirm_password": "different123",
         "full_name": generate_test_name()
     });
