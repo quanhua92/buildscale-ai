@@ -10,7 +10,12 @@ use crate::{
     error::Result,
     models::users::{LoginUser, RegisterUser},
     services::{
-        cookies::{build_access_token_cookie, build_refresh_token_cookie, CookieConfig},
+        cookies::{
+            build_access_token_cookie,
+            build_clear_token_cookie,
+            build_refresh_token_cookie,
+            CookieConfig,
+        },
         users,
     },
     state::AppState,
@@ -68,6 +73,34 @@ impl IntoResponse for RefreshResponse {
         Response::from_parts(parts, body)
     }
 }
+
+/// Custom response type for logout that clears both access and refresh token cookies
+pub struct LogoutResponse {
+    clear_access_cookie: String,
+    clear_refresh_cookie: String,
+}
+
+impl IntoResponse for LogoutResponse {
+    fn into_response(self) -> Response {
+        let json_response = Json(serde_json::json!({
+            "message": "Logout successful"
+        }))
+        .into_response();
+
+        let (mut parts, body) = json_response.into_parts();
+
+        // Clear both cookies by setting them with Max-Age=0
+        if let Ok(clear_access) = HeaderValue::from_str(&self.clear_access_cookie) {
+            parts.headers.append(SET_COOKIE, clear_access);
+        }
+        if let Ok(clear_refresh) = HeaderValue::from_str(&self.clear_refresh_cookie) {
+            parts.headers.append(SET_COOKIE, clear_refresh);
+        }
+
+        Response::from_parts(parts, body)
+    }
+}
+
 
 /// POST /api/v1/auth/register
 ///
@@ -223,6 +256,51 @@ pub async fn refresh(
         json_body,
         access_cookie,
         from_cookie,
+    })
+}
+
+/// POST /api/v1/auth/logout
+///
+/// Logs out a user by invalidating their refresh token session.
+///
+/// Accepts refresh token from:
+/// - Authorization header (API/mobile clients): `Bearer <token>`
+/// - Cookie (browser clients): `refresh_token=<token>`
+///
+/// Clears both access_token and refresh_token cookies.
+///
+/// # HTTP Status Codes
+/// - `200 OK`: Logout successful
+/// - `401 UNAUTHORIZED`: Invalid or expired refresh token
+/// - `500 INTERNAL_SERVER_ERROR`: Database error
+///
+/// # Client Compatibility
+/// - **Browser clients**: Cookies are cleared automatically via Set-Cookie headers
+/// - **API/Mobile clients**: Tokens remain in client storage but are invalidated server-side
+pub async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<LogoutResponse> {
+    // Extract refresh token from Authorization header or cookie
+    let (token, _from_cookie) = extract_refresh_token(&headers)?;
+
+    // Acquire database connection from pool
+    let mut conn = state.pool.acquire().await.map_err(|e| {
+        crate::error::Error::Internal(format!("Failed to acquire database connection: {}", e))
+    })?;
+
+    // Call service layer to logout user (invalidate session)
+    users::logout_user(&mut conn, &token).await?;
+
+    // Build clear cookie headers for both tokens
+    let config = CookieConfig::default();
+    let clear_access_cookie = build_clear_token_cookie(&config.access_token_name);
+    let clear_refresh_cookie = build_clear_token_cookie(&config.refresh_token_name);
+
+    // Return response that clears both cookies
+    Ok(LogoutResponse {
+        clear_access_cookie,
+        clear_refresh_cookie,
     })
 }
 

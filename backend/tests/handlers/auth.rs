@@ -383,12 +383,7 @@ fn extract_cookie_from_response(
         .iter()
         .filter_map(|header| header.to_str().ok())
         .find(|header| header.starts_with(&format!("{}=", cookie_name)))
-        .and_then(|header| {
-            header
-                .split('=')
-                .nth(1)
-                .map(|value| value.split(';').next().unwrap_or(value).to_string())
-        })
+        .map(|header| header.to_string())
         .unwrap_or_default()
 }
 
@@ -802,4 +797,392 @@ async fn test_refresh_endpoint_authorization_header_takes_priority_over_cookie()
     // Decode JWT and verify user_id matches first user
     // For now, just verify we got an access token
     assert!(!access_token.is_empty());
+}
+
+// ==================== LOGOUT TESTS ====================
+
+#[tokio::test]
+async fn test_logout_endpoint_returns_200_on_valid_refresh_token() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login to get refresh token
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Logout with Authorization header
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Authorization", format!("Bearer {}", refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+}
+
+#[tokio::test]
+async fn test_logout_endpoint_returns_400_on_invalid_token_format() {
+    let app = TestApp::new().await;
+
+    // Attempt to logout with invalid token format
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Authorization", "Bearer invalid_refresh_token")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+}
+
+#[tokio::test]
+async fn test_logout_endpoint_returns_401_on_nonexistent_refresh_token() {
+    let app = TestApp::new().await;
+
+    // Attempt to logout with valid format but nonexistent token (64 hex chars : 64 hex chars)
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Authorization", "Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
+}
+
+#[tokio::test]
+async fn test_logout_endpoint_returns_401_on_missing_refresh_token() {
+    let app = TestApp::new().await;
+
+    // Attempt to logout without Authorization header
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
+}
+
+#[tokio::test]
+async fn test_logout_endpoint_clears_cookies() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login to get refresh token
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Logout with Cookie (simulating browser client)
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Cookie", format!("refresh_token={}", refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    // Verify clear cookies are set (Max-Age=0)
+    let access_cookie = extract_cookie_from_response(&response, "access_token");
+    let refresh_cookie = extract_cookie_from_response(&response, "refresh_token");
+
+    assert!(
+        access_cookie.contains("Max-Age=0") || access_cookie.contains("expires=Thu, 01 Jan 1970"),
+        "Access token cookie should be cleared with Max-Age=0 or expired date"
+    );
+    assert!(
+        refresh_cookie.contains("Max-Age=0") || refresh_cookie.contains("expires=Thu, 01 Jan 1970"),
+        "Refresh token cookie should be cleared with Max-Age=0 or expired date"
+    );
+}
+
+#[tokio::test]
+async fn test_logout_invalidates_refresh_token() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login to get refresh token
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Logout
+    let logout_response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Authorization", format!("Bearer {}", refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(logout_response.status(), 200);
+
+    // Try to use the logged-out token for refresh (should fail)
+    let refresh_response = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(refresh_response.status(), 401);
+}
+
+#[tokio::test]
+async fn test_logout_with_authorization_header() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Logout with Authorization header (API/mobile client)
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Authorization", format!("Bearer {}", refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    // Verify response contains success message
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["message"], "Logout successful");
+}
+
+#[tokio::test]
+async fn test_logout_with_cookie() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Logout with Cookie (browser client)
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Cookie", format!("refresh_token={}", refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    // Verify response contains success message
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["message"], "Logout successful");
+}
+
+#[tokio::test]
+async fn test_logout_with_both_header_and_cookie_priority() {
+    let app = TestApp::new().await;
+
+    // Register first user to get refresh token
+    let email1 = generate_test_email();
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email1,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response1 = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email1,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body1: serde_json::Value = login_response1.json().await.unwrap();
+    let refresh_token1 = login_body1["refresh_token"].as_str().unwrap();
+
+    // Register second user to get different refresh token
+    let email2 = generate_test_email();
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email2,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response2 = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email2,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body2: serde_json::Value = login_response2.json().await.unwrap();
+    let refresh_token2 = login_body2["refresh_token"].as_str().unwrap();
+
+    // Logout with BOTH Authorization header and Cookie
+    // Authorization header should take priority (logout user1)
+    let response = app
+        .client
+        .post(&app.url("/api/v1/auth/logout"))
+        .header("Authorization", format!("Bearer {}", refresh_token1))
+        .header("Cookie", format!("refresh_token={}", refresh_token2))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    // Verify user1's token is invalidated (from Authorization header)
+    let refresh_response1 = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", refresh_token1))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_response1.status(), 401);
+
+    // Verify user2's token is still valid (not logged out)
+    let refresh_response2 = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", refresh_token2))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_response2.status(), 200);
 }

@@ -16,16 +16,18 @@
 /// ```
 ///
 /// **Prerequisites:**
-/// 1. Start the server: `cargo run --bin main`
+/// 1. Start the server: `cargo run` (from backend directory)
 /// 2. Ensure the database is running and migrations are applied
 ///
 /// **What this example demonstrates:**
 /// - User registration via POST /api/v1/auth/register
 /// - User login via POST /api/v1/auth/login
 /// - Refreshing access tokens via POST /api/v1/auth/refresh
+/// - User logout via POST /api/v1/auth/logout
 /// - Extracting access and refresh tokens from responses
 /// - Using Authorization header vs Cookie for token refresh
 /// - Understanding how cookies are set for browser clients
+/// - Verifying logged-out tokens cannot be reused
 /// - Error handling for various authentication scenarios
 ///
 /// **Note:** This is a client-side example that makes HTTP requests to the API.
@@ -75,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(()) => println!("✓ Server is running and healthy\n"),
         Err(e) => {
             println!("✗ Server health check failed: {}", e);
-            println!("\n💡 Make sure to start the server with: cargo run --bin main");
+            println!("\n💡 Make sure to start the server with: cargo run");
             return Err(e.into());
         }
     }
@@ -229,6 +231,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Test logout with Authorization header (API/mobile client)
+    println!("1️⃣1️⃣  Testing logout with Authorization header (API client)...");
+    let logout_email = generate_test_email();
+    let logout_password = "SecurePass123!";
+    // First register and login
+    match register_user(&client, &api_base_url, &logout_email, logout_password).await {
+        Ok(_) => {
+            match login_user(&client, &api_base_url, &logout_email, logout_password).await {
+                Ok(login_response) => {
+                    match logout_user_with_header(&client, &api_base_url, &login_response.refresh_token).await {
+                        Ok(_) => {
+                            println!("✓ Logout successful (Authorization header)!");
+                            println!();
+
+                            // Verify logged-out token cannot be used
+                            println!("1️⃣2️⃣  Verifying logged-out token cannot be used...");
+                            match refresh_token_with_header(&client, &api_base_url, &login_response.refresh_token).await {
+                                Ok(_) => {
+                                    println!("✗ Token refresh should have failed after logout");
+                                }
+                                Err(e) => {
+                                    println!("✓ Token refresh correctly failed after logout: {}", e);
+                                    println!();
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            println!("✗ Logout failed: {}", e);
+                            println!();
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("✗ Login failed: {}", e);
+                    println!();
+                }
+            }
+        }
+        Err(e) => {
+            println!("✗ Registration failed: {}", e);
+            println!();
+        }
+    }
+
     println!("================================");
     println!("✅ Authentication API example completed successfully!");
     println!("\n📝 Key Takeaways:");
@@ -236,8 +282,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • Login returns access token (15 min) and refresh token (30 days)");
     println!("  • Access token is used in Authorization: Bearer <token> header");
     println!("  • Refresh token can be used to get new access tokens without re-login");
+    println!("  • Logout invalidates the refresh token (session) server-side");
+    println!("  • Logged-out tokens cannot be used for refresh or authenticated requests");
     println!("  • Refresh via Authorization header (API/mobile clients): No cookie set");
     println!("  • Refresh via Cookie (browser clients): access_token cookie is set");
+    println!("  • Logout clears both access_token and refresh_token cookies");
     println!("  • Cookies are automatically set for browser clients");
     println!("  • All validation errors return clear error messages");
     println!();
@@ -593,4 +642,61 @@ async fn refresh_token_with_cookie(
         access_token: json["access_token"].as_str().unwrap_or("").to_string(),
         expires_at: json["expires_at"].as_str().unwrap_or("").to_string(),
     })
+}
+
+/// Logout user using Authorization header
+async fn logout_user_with_header(
+    client: &Client,
+    base_url: &str,
+    refresh_token: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let url = format!("{}/auth/logout", base_url);
+
+    let token_preview = if refresh_token.len() > 40 {
+        &refresh_token[..40]
+    } else {
+        refresh_token
+    };
+
+    println!("  📤 REQUEST:");
+    println!("     POST {}", url);
+    println!("     Headers:");
+    println!("       Authorization: Bearer {}...", token_preview);
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", refresh_token))
+        .send()
+        .await?;
+
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.text().await?;
+
+    println!("  📥 RESPONSE:");
+    println!("     Status: {}", status);
+    println!("     Headers:");
+    for (name, value) in headers.iter() {
+        println!("       {}: {}", name, value.to_str().unwrap_or(""));
+    }
+    println!("     Body: {}", body);
+
+    if !status.is_success() {
+        return Err(format!("Logout failed ({}): {}", status, body).into());
+    }
+
+    // Check if clear cookie headers were set
+    let clear_cookies = headers.get_all("set-cookie")
+        .iter()
+        .filter(|header| {
+            let header_str = header.to_str().unwrap_or("");
+            header_str.contains("Max-Age=0") || header_str.contains("expires=Thu, 01 Jan 1970")
+        })
+        .count();
+
+    if clear_cookies > 0 {
+        println!("  ✓ {} clear cookie(s) set (Max-Age=0)", clear_cookies);
+    }
+
+    Ok(())
 }
