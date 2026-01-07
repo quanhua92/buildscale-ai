@@ -1,7 +1,8 @@
-use axum::{Router, routing::get};
-use buildscale::{load_config, Cache, CacheConfig, AppState};
-use buildscale::handlers::health::health_check;
+use axum::{Router, routing::{get, post}};
+use buildscale::{load_config, Cache, CacheConfig, AppState, DbPool};
+use buildscale::handlers::{health::health_check, auth::{register, login}};
 use reqwest::{Client, redirect::Policy};
+use secrecy::ExposeSecret;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
@@ -55,12 +56,19 @@ impl TestApp {
             default_ttl_seconds: Some(3600),
         });
 
-        // Build application state
-        let app_state = AppState::new(cache.clone());
+        // Create database pool
+        let pool = DbPool::connect(config.database.connection_string().expose_secret())
+            .await
+            .expect("Failed to connect to database");
 
-        // Build API v1 routes
+        // Build application state with cache AND database pool
+        let app_state = AppState::new(cache.clone(), pool);
+
+        // Build API v1 routes with auth endpoints
         let api_routes = Router::new()
-            .route("/health", get(health_check));
+            .route("/health", get(health_check))
+            .route("/auth/register", post(register))
+            .route("/auth/login", post(login));
 
         // Build the main router with nested API routes
         let app = Router::new()

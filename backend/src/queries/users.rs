@@ -21,7 +21,19 @@ pub async fn create_user(conn: &mut DbConn, new_user: NewUser) -> Result<User> {
     )
     .fetch_one(conn)
     .await
-    .map_err(Error::Sqlx)?;
+    .map_err(|e| {
+        let error_msg = e.to_string().to_lowercase();
+
+        // Check for unique constraint violations
+        if error_msg.contains("unique")
+            || error_msg.contains("duplicate key")
+            || error_msg.contains("users_email_key") // PostgreSQL specific constraint name
+        {
+            Error::Conflict(format!("Email '{}' already exists", new_user.email))
+        } else {
+            Error::Sqlx(e)
+        }
+    })?;
 
     Ok(user)
 }

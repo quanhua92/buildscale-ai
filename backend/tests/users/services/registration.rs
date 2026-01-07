@@ -135,12 +135,11 @@ async fn test_duplicate_email_validation() {
 
     let error = result.unwrap_err();
     let error_message = error.to_string();
-    // Should be a database constraint error
+    // Should be a Conflict error (409), not a generic database error (500)
     assert!(
-        error_message.contains("SQLx")
-            || error_message.contains("duplicate")
-            || error_message.contains("unique"),
-        "Error should be related to database constraint: {}",
+        error_message.contains("Conflict")
+            || error_message.contains("already exists"),
+        "Error should be a Conflict error (409), not generic database error: {}",
         error_message
     );
 }

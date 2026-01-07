@@ -12,7 +12,7 @@ pub mod validation;
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
-pub use handlers::health::health_check;
+pub use handlers::{auth::login, auth::register, health::health_check};
 pub use state::AppState;
 
 /// Load configuration from environment variables
@@ -20,7 +20,7 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(Config::load()?)
 }
 
-use axum::{Router, routing::get};
+use axum::{Router, routing::{get, post}};
 use tokio::net::TcpListener;
 
 /// Start the Axum API server
@@ -48,12 +48,21 @@ pub async fn run_api_server(
     config: &Config,
     cache: Cache<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Build the application state
-    let app_state = AppState::new(cache);
+    use secrecy::ExposeSecret;
 
-    // Build API v1 routes
+    // Create database connection pool
+    let pool = DbPool::connect(config.database.connection_string().expose_secret())
+        .await
+        .map_err(|e| format!("Failed to connect to database: {}", e))?;
+
+    // Build the application state with cache AND database pool
+    let app_state = AppState::new(cache, pool);
+
+    // Build API v1 routes with auth endpoints
     let api_routes = Router::new()
-        .route("/health", get(health_check));
+        .route("/health", get(health_check))
+        .route("/auth/register", post(register))
+        .route("/auth/login", post(login));
 
     // Build the main router with nested API routes
     let app = Router::new()
