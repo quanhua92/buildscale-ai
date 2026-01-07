@@ -1,13 +1,14 @@
 # Security Fixes TODO
 
 **Priority:** Sorted by implementation difficulty (low-hanging fruits first)
-**Status:** ✅ 8/9 Completed | 1 Pending | 1 Optional (Rate Limiting)
+**Status:** ✅ 9/9 Completed | 🛋️ 1 Optional (Rate Limiting)
 
-**Last Updated:** 2025-01-07
+**Last Updated:** 2026-01-07
 **Commits:**
-- `4af8210` - 8 critical fixes implemented and tested
-- `9470963` - Test passwords updated + env var naming fixed (137/156 tests passing)
-- `25b546c` - Password validation refined + login always returns tokens (213/213 tests passing)
+- `94734df` - SHA-256 session token hashing implemented (all 271 tests passing)
+- `d0bab41` - JWT and password weak pattern documentation
+- `1821767` - Password requirements updated from 8 to 12 characters
+- `a99f008` - Example passwords updated to meet validation
 
 ---
 
@@ -340,29 +341,30 @@ fn is_browser_client(user_agent: &str) -> bool {
 
 ## Large Effort (1-2 hours)
 
-### 9. Hash Session Tokens in Database ⏱ 1-2 hours
+### ✅ 9. Hash Session Tokens in Database - **COMPLETED**
 **Severity:** CRITICAL
 **Files:** `migrations/`, `src/queries/sessions.rs`, `src/models/users.rs`, `src/services/users.rs`
 **Impact:** Database breach no longer exposes session tokens
+**Status:** ✅ **COMPLETED** - All 271 tests passing
 
-**Migration (3 phases):**
+**Implementation:** ✅ Done (commit `94734df`)
 
-**Phase 1: Add `token_hash` column**
+**Migration (Single phase - clean slate):**
 ```sql
--- migrations/<timestamp>_hash_session_tokens.up.sql
-ALTER TABLE user_sessions ADD COLUMN token_hash TEXT NOT NULL DEFAULT '';
+-- migrations/20251016221509_user_sessions.up.sql
+CREATE TABLE user_sessions (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT UNIQUE NOT NULL,  -- SHA-256 hashed token
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX idx_user_sessions_token_hash ON user_sessions(token_hash);
-
--- Hash existing tokens
-UPDATE user_sessions SET token_hash = encode(sha256(token::bytea), 'hex');
-
--- Add unique constraint
-ALTER TABLE user_sessions ADD CONSTRAINT user_sessions_token_hash_unique UNIQUE (token_hash);
-
--- Keep token column for now (remove in Phase 3)
 ```
 
-**Phase 2: Update code to use hash**
+**Code Changes:**
 ```rust
 // src/queries/sessions.rs
 use sha2::{Sha256, Digest};
@@ -374,47 +376,75 @@ pub fn hash_session_token(token: &str) -> String {
 }
 
 pub async fn create_session(
-    conn: &mut PgConnection,
+    conn: &mut DbConn,
     new_session: NewUserSession,
-) -> Result<UserSession, Error> {
-    let token_hash = hash_session_token(&new_session.token);
-
-    sqlx::query_as!(
+) -> Result<UserSession> {
+    let session = sqlx::query_as!(
         UserSession,
-        "INSERT INTO user_sessions (user_id, token, token_hash, expires_at) VALUES ($1, $2, $3, $4) ...",
+        r#"
+        INSERT INTO user_sessions (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        RETURNING id, user_id, token_hash, expires_at, created_at, updated_at
+        "#,
         new_session.user_id,
-        new_session.token,  // Keep for now
-        token_hash,
+        new_session.token_hash,  // SHA-256 hash already computed
         new_session.expires_at
     )
     .fetch_one(conn)
     .await
+    .map_err(Error::Sqlx)?;
+    Ok(session)
 }
 
 pub async fn get_session_by_token_hash(
-    conn: &mut PgConnection,
+    conn: &mut DbConn,
     token_hash: &str,
-) -> Result<Option<UserSession>, Error> {
-    // Update lookup to use token_hash
-    sqlx::query_as!(
+) -> Result<Option<UserSession>> {
+    let session = sqlx::query_as!(
         UserSession,
-        "SELECT ... FROM user_sessions WHERE token_hash = $1",
+        r#"
+        SELECT id, user_id, token_hash, expires_at, created_at, updated_at
+        FROM user_sessions
+        WHERE token_hash = $1
+        "#,
         token_hash
     )
     .fetch_optional(conn)
     .await
+    .map_err(Error::Sqlx)?;
+    Ok(session)
 }
 ```
 
-**Phase 3: Remove plaintext token column** (after 1 week of testing)
-```sql
-ALTER TABLE user_sessions DROP COLUMN token;
+**Service Layer Updates:**
+```rust
+// src/services/users.rs - login_user()
+let refresh_token = generate_session_token()?;
+let token_hash = sessions::hash_session_token(&refresh_token);
+
+let new_session = NewUserSession {
+    user_id: user.id,
+    token_hash,
+    expires_at: refresh_token_expires_at,
+};
+
+let session = sessions::create_session(conn, new_session).await?;
+
+Ok(LoginResult {
+    user,
+    access_token,
+    refresh_token,  // Plaintext token returned to client
+    access_token_expires_at,
+    refresh_token_expires_at: session.expires_at,
+})
 ```
 
-**Test:**
-- Create session → Verify `token_hash` is set
-- Look up session via hash → Should work
-- Look up session via plaintext → Should fail (after Phase 3)
+**Test Results:**
+- ✅ All 271 tests passing
+- ✅ Example 05 (Auth API) working with hashed tokens
+- ✅ Login/logout/refresh all working correctly
+- ✅ Database stores only SHA-256 hashes
+- ✅ Plaintext tokens never stored in database
 
 ---
 
@@ -487,9 +517,9 @@ pub fn create_api_router() -> Router<AppState> {
 **Unit Tests:** ✅ 57/57 passing
 **Integration Tests:** ⚠️ 148 failing (need password updates)
 
-### This Week (1-2 hours)
-- [ ] 9. Hash session tokens in database (1-2 hours)
-- [ ] Update 148 integration tests with strong passwords (follow-up)
+### This Week (COMPLETED ✅)
+- [x] 9. Hash session tokens in database (1-2 hours)
+- [x] Update 148 integration tests with strong passwords (follow-up)
 
 ### Later (Optional)
 - [ ] 10. Rate limiting (optional, 1 hour)
@@ -498,7 +528,7 @@ pub fn create_api_router() -> Router<AppState> {
 
 ## Testing Checklist
 
-### ✅ Completed (8 fixes + test updates + password validation refinement)
+### ✅ Completed (9 fixes + test updates + password validation refinement)
 - [x] Code compiles: `cargo build` ✅
 - [x] Unit tests pass: 57/57 ✅
 - [x] Integration tests: 156/156 passing ✅ (100% success rate!)
@@ -506,9 +536,7 @@ pub fn create_api_router() -> Router<AppState> {
 - [x] Test passwords updated to meet requirements ✅
 - [x] Password validation refined (12 chars, 2 of 4 types) ✅
 - [x] Login endpoint fixed to always return tokens in JSON ✅
-
-### Pending (1 fix)
-- [ ] Hash session tokens: migration + query updates + tests
+- [x] Hash session tokens: migration + query updates + tests ✅
 
 ---
 

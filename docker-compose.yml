@@ -35,6 +35,8 @@ services:
     environment:
       - RUST_LOG=info
       - PORT=3000
+      # Environment Configuration
+      - BUILDSCALE__ENV=development
       # Database Configuration
       - BUILDSCALE__DATABASE__USER=buildscale
       - BUILDSCALE__DATABASE__PASSWORD=PASSWORD
