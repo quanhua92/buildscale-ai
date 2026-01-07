@@ -95,7 +95,7 @@ async fn test_short_password_validation() {
     let error = result.unwrap_err();
     let error_message = error.to_string();
     assert!(
-        error_message.contains("8 characters"),
+        error_message.contains("12 characters"),
         "Error message should mention password length requirement: {}",
         error_message
     );
@@ -106,10 +106,10 @@ async fn test_minimum_valid_password_length() {
     let test_app = TestApp::new("test_minimum_valid_password_length").await;
     let mut conn = test_app.get_connection().await;
 
-    // Test exactly 8 characters (should succeed)
-    let register_user_data = test_app.generate_test_user_with_password("valid123");
+    // Test exactly 12 characters (should succeed)
+    let register_user_data = test_app.generate_test_user_with_password("ValidPass123!");
     let result = register_user(&mut conn, register_user_data).await;
-    assert!(result.is_ok(), "8-character password should be valid");
+    assert!(result.is_ok(), "12-character password should be valid");
 }
 
 #[tokio::test]
@@ -135,11 +135,11 @@ async fn test_duplicate_email_validation() {
 
     let error = result.unwrap_err();
     let error_message = error.to_string();
-    // Should be a Conflict error (409), not a generic database error (500)
+    // Should be a Validation error (generic message to prevent user enumeration)
     assert!(
-        error_message.contains("Conflict")
-            || error_message.contains("already exists"),
-        "Error should be a Conflict error (409), not generic database error: {}",
+        error_message.contains("Validation")
+            || error_message.contains("Registration failed"),
+        "Error should be a Validation error to prevent user enumeration: {}",
         error_message
     );
 }

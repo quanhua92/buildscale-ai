@@ -54,10 +54,10 @@ async fn test_multiple_users_different_passwords() {
 
     // Register users with different passwords
     let passwords = vec![
-        "password123",
-        "anotherpass456",
+        "SecurePass123!",
+        "AnotherPass456!",
         "complex!@#$%^789",
-        "veryveryverylongpassword123",
+        "VeryVeryVeryLongSecure123!",
     ];
 
     let mut user_ids = Vec::new();

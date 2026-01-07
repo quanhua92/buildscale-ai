@@ -19,8 +19,8 @@ async fn test_register_endpoint_returns_200_on_success() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": generate_test_email(),
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -38,8 +38,8 @@ async fn test_register_endpoint_returns_json_content_type() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": generate_test_email(),
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -60,8 +60,8 @@ async fn test_register_endpoint_returns_user_object() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": generate_test_email(),
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -84,7 +84,7 @@ async fn test_register_endpoint_returns_400_on_password_mismatch() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": generate_test_email(),
-            "password": "password123",
+            "password": "SecurePass123!",
             "confirm_password": "different"
         }))
         .send()
@@ -104,8 +104,8 @@ async fn test_login_endpoint_returns_200_on_valid_credentials() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -117,7 +117,7 @@ async fn test_login_endpoint_returns_200_on_valid_credentials() {
         .post(&app.url("/api/v1/auth/login"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -136,8 +136,8 @@ async fn test_login_endpoint_sets_access_token_cookie() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -149,7 +149,7 @@ async fn test_login_endpoint_sets_access_token_cookie() {
         .post(&app.url("/api/v1/auth/login"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -181,8 +181,8 @@ async fn test_login_endpoint_sets_refresh_token_cookie() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -194,7 +194,7 @@ async fn test_login_endpoint_sets_refresh_token_cookie() {
         .post(&app.url("/api/v1/auth/login"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -226,8 +226,8 @@ async fn test_login_endpoint_returns_tokens_in_json_body() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -239,7 +239,7 @@ async fn test_login_endpoint_returns_tokens_in_json_body() {
         .post(&app.url("/api/v1/auth/login"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -247,7 +247,7 @@ async fn test_login_endpoint_returns_tokens_in_json_body() {
 
     assert_eq!(response.status(), 200);
 
-    // Check JSON body contains tokens for API clients
+    // Check JSON body contains tokens (login always returns tokens)
     let body: serde_json::Value = response.json().await.unwrap();
 
     assert!(body["access_token"].is_string());
@@ -286,8 +286,8 @@ async fn test_cookies_have_http_only_flag() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -299,7 +299,7 @@ async fn test_cookies_have_http_only_flag() {
         .post(&app.url("/api/v1/auth/login"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -332,8 +332,8 @@ async fn test_cookies_have_same_site_lax_flag() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -345,7 +345,7 @@ async fn test_cookies_have_same_site_lax_flag() {
         .post(&app.url("/api/v1/auth/login"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -402,20 +402,21 @@ async fn test_refresh_endpoint_with_authorization_header_returns_200() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
         .unwrap();
 
-    // Login to get refresh token
+    // Login to get refresh token (as API client)
     let login_response = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -446,20 +447,21 @@ async fn test_refresh_endpoint_with_authorization_header_returns_json() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
         .unwrap();
 
-    // Login to get refresh token
+    // Login to get refresh token (as API client)
     let login_response = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -494,20 +496,21 @@ async fn test_refresh_endpoint_with_authorization_header_does_not_set_cookie() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
         .unwrap();
 
-    // Login to get refresh token
+    // Login to get refresh token (as API client)
     let login_response = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -545,20 +548,21 @@ async fn test_refresh_endpoint_with_cookie_returns_200() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
         .unwrap();
 
-    // Login to get refresh token
+    // Login to get refresh token (as API client to get tokens in JSON)
     let login_response = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -589,20 +593,21 @@ async fn test_refresh_endpoint_with_cookie_sets_access_token_cookie() {
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
         .unwrap();
 
-    // Login to get refresh token
+    // Login to get refresh token (as API client to get tokens in JSON)
     let login_response = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -720,8 +725,8 @@ async fn test_refresh_endpoint_authorization_header_takes_priority_over_cookie()
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -730,9 +735,10 @@ async fn test_refresh_endpoint_authorization_header_takes_priority_over_cookie()
     let login_response = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await
@@ -747,8 +753,8 @@ async fn test_refresh_endpoint_authorization_header_takes_priority_over_cookie()
         .post(&app.url("/api/v1/auth/register"))
         .json(&serde_json::json!({
             "email": email2,
-            "password": "password123",
-            "confirm_password": "password123"
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
         }))
         .send()
         .await
@@ -757,9 +763,10 @@ async fn test_refresh_endpoint_authorization_header_takes_priority_over_cookie()
     let login_response2 = app
         .client
         .post(&app.url("/api/v1/auth/login"))
+        
         .json(&serde_json::json!({
             "email": email2,
-            "password": "password123"
+            "password": "SecurePass123!"
         }))
         .send()
         .await

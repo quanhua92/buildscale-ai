@@ -243,8 +243,8 @@ impl TestApp {
         let email = self.generate_test_email();
         buildscale::models::users::RegisterUser {
             email,
-            password: "testpassword123".to_string(),
-            confirm_password: "testpassword123".to_string(),
+            password: "TestSecurePass123!".to_string(),
+            confirm_password: "TestSecurePass123!".to_string(),
             full_name: None,
         }
     }
@@ -317,8 +317,8 @@ impl TestApp {
 
         let user_data = buildscale::models::users::RegisterUser {
             email: email.to_string(),
-            password: "testpassword123".to_string(),
-            confirm_password: "testpassword123".to_string(),
+            password: "TestSecurePass123!".to_string(),
+            confirm_password: "TestSecurePass123!".to_string(),
             full_name: Some("Test User".to_string()),
         };
 

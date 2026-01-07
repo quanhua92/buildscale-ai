@@ -20,7 +20,7 @@ fn test_generate_password_hash_basic() {
 #[test]
 fn test_generate_password_hash_different_passwords() {
     // Test that different passwords produce different hashes
-    let password1 = "password123";
+    let password1 = "SecurePass123!";
     let password2 = "different456";
 
     let hash1 = generate_password_hash(password1).unwrap();

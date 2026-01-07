@@ -17,8 +17,8 @@ async fn test_user_registration_with_workspace_success() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User with Workspace".to_string()),
         workspace_name: format!("{}_workspace", test_app.test_prefix()),
     };
@@ -66,7 +66,7 @@ async fn test_user_registration_with_workspace_password_mismatch() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
         confirm_password: "differentpassword".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: format!("{}_workspace", test_app.test_prefix()),
@@ -103,7 +103,7 @@ async fn test_user_registration_with_workspace_short_password() {
     let error = result.unwrap_err();
     let error_message = error.to_string();
     assert!(
-        error_message.contains("8 characters"),
+        error_message.contains("12 characters"),
         "Error message should mention password length: {}",
         error_message
     );
@@ -116,8 +116,8 @@ async fn test_user_registration_with_workspace_empty_workspace_name() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: String::new(),
     };
@@ -141,8 +141,8 @@ async fn test_user_registration_with_workspace_long_workspace_name() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: "a".repeat(101), // Too long
     };
@@ -166,8 +166,8 @@ async fn test_user_registration_with_workspace_whitespace_workspace_name() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: "   ".to_string(),
     };
@@ -191,8 +191,8 @@ async fn test_user_registration_with_workspace_max_valid_workspace_name() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: "a".repeat(100), // Exactly 100 characters - should succeed
     };
@@ -211,8 +211,8 @@ async fn test_user_registration_with_workspace_default_roles_created() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: format!("{}_workspace", test_app.test_prefix()),
     };
@@ -250,8 +250,8 @@ async fn test_user_registration_with_workspace_workspace_accessible() {
 
     let registration_request = UserWorkspaceRegistrationRequest {
         email: test_app.generate_test_email(),
-        password: "testpassword123".to_string(),
-        confirm_password: "testpassword123".to_string(),
+        password: "SecurePass123!".to_string(),
+        confirm_password: "SecurePass123!".to_string(),
         full_name: Some("Test User".to_string()),
         workspace_name: format!("{}_workspace", test_app.test_prefix()),
     };
