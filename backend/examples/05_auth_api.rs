@@ -22,7 +22,9 @@
 /// **What this example demonstrates:**
 /// - User registration via POST /api/v1/auth/register
 /// - User login via POST /api/v1/auth/login
+/// - Refreshing access tokens via POST /api/v1/auth/refresh
 /// - Extracting access and refresh tokens from responses
+/// - Using Authorization header vs Cookie for token refresh
 /// - Understanding how cookies are set for browser clients
 /// - Error handling for various authentication scenarios
 ///
@@ -128,6 +130,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!();
                 }
             }
+
+            // Demonstrate token refresh using Authorization header (for API/mobile clients)
+            println!("5️⃣  Testing token refresh with Authorization header (API client)...");
+            match refresh_token_with_header(&client, &api_base_url, &login_response.refresh_token).await {
+                Ok(refresh_result) => {
+                    println!("✓ Token refresh successful (Authorization header)!");
+                    let new_token_preview = if refresh_result.access_token.len() > 40 {
+                        &refresh_result.access_token[..40]
+                    } else {
+                        &refresh_result.access_token
+                    };
+                    println!("  New Access Token (first 40 chars): {}...", new_token_preview);
+                    println!("  Expires At: {}", refresh_result.expires_at);
+                    println!("  Note: No cookie set for API clients using Authorization header");
+                    println!();
+                }
+                Err(e) => {
+                    println!("✗ Token refresh failed: {}", e);
+                    println!();
+                }
+            }
+
+            // Demonstrate token refresh using Cookie (for browser clients)
+            println!("6️⃣  Testing token refresh with Cookie (browser client)...");
+            match refresh_token_with_cookie(&client, &api_base_url, &login_response.refresh_token).await {
+                Ok(refresh_result) => {
+                    println!("✓ Token refresh successful (Cookie)!");
+                    let new_token_preview = if refresh_result.access_token.len() > 40 {
+                        &refresh_result.access_token[..40]
+                    } else {
+                        &refresh_result.access_token
+                    };
+                    println!("  New Access Token (first 40 chars): {}...", new_token_preview);
+                    println!("  Expires At: {}", refresh_result.expires_at);
+                    println!("  Note: access_token cookie was set by the server");
+                    println!();
+                }
+                Err(e) => {
+                    println!("✗ Token refresh failed: {}", e);
+                    println!();
+                }
+            }
         }
         Err(e) => {
             println!("✗ Login failed: {}", e);
@@ -136,7 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test login with incorrect password
-    println!("5️⃣  Testing login with incorrect password...");
+    println!("7️⃣  Testing login with incorrect password...");
     match login_user(&client, &api_base_url, &email, "WrongPassword123!").await {
         Ok(_) => {
             println!("✗ Login should have failed with wrong password");
@@ -148,7 +192,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test registration with duplicate email
-    println!("6️⃣  Testing registration with duplicate email...");
+    println!("8️⃣  Testing registration with duplicate email...");
     match register_user(&client, &api_base_url, &email, password).await {
         Ok(_) => {
             println!("✗ Registration should have failed with duplicate email");
@@ -160,7 +204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test registration with weak password
-    println!("7️⃣  Testing registration with weak password...");
+    println!("9️⃣  Testing registration with weak password...");
     let weak_email = generate_test_email();
     match register_user(&client, &api_base_url, &weak_email, "short").await {
         Ok(_) => {
@@ -173,7 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test registration with mismatched passwords
-    println!("8️⃣  Testing registration with mismatched passwords...");
+    println!("🔟 Testing registration with mismatched passwords...");
     let mismatch_email = generate_test_email();
     match register_with_mismatched_passwords(&client, &api_base_url, &mismatch_email).await {
         Ok(_) => {
@@ -191,6 +235,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • Registration creates a new user with email and password");
     println!("  • Login returns access token (15 min) and refresh token (30 days)");
     println!("  • Access token is used in Authorization: Bearer <token> header");
+    println!("  • Refresh token can be used to get new access tokens without re-login");
+    println!("  • Refresh via Authorization header (API/mobile clients): No cookie set");
+    println!("  • Refresh via Cookie (browser clients): access_token cookie is set");
     println!("  • Cookies are automatically set for browser clients");
     println!("  • All validation errors return clear error messages");
     println!();
@@ -416,4 +463,134 @@ async fn make_authenticated_request(
     } else {
         Err(format!("Authenticated request failed ({})", status).into())
     }
+}
+
+/// Refresh token response
+struct RefreshTokenResponse {
+    access_token: String,
+    expires_at: String,
+}
+
+/// Refresh access token using Authorization header (for API/mobile clients)
+async fn refresh_token_with_header(
+    client: &Client,
+    base_url: &str,
+    refresh_token: &str,
+) -> Result<RefreshTokenResponse, Box<dyn std::error::Error>> {
+    let url = format!("{}/auth/refresh", base_url);
+
+    let token_preview = if refresh_token.len() > 40 {
+        &refresh_token[..40]
+    } else {
+        refresh_token
+    };
+
+    println!("  📤 REQUEST:");
+    println!("     POST {}", url);
+    println!("     Headers:");
+    println!("       Authorization: Bearer {}...", token_preview);
+    println!("     Mode: API Client (Authorization header)");
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", refresh_token))
+        .send()
+        .await?;
+
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.text().await?;
+
+    println!("  📥 RESPONSE:");
+    println!("     Status: {}", status);
+    println!("     Headers:");
+    for (name, value) in headers.iter() {
+        println!("       {}: {}", name, value.to_str().unwrap_or(""));
+    }
+    println!("     Body: {}", body);
+
+    if !status.is_success() {
+        return Err(format!("Token refresh failed ({}): {}", status, body).into());
+    }
+
+    let json: serde_json::Value = serde_json::from_str(&body)?;
+
+    // Check if cookie was set (should NOT be set for Authorization header mode)
+    let has_cookie = headers.get_all("set-cookie")
+        .iter()
+        .any(|header| {
+            header.to_str().unwrap_or("").contains("access_token=")
+        });
+
+    if has_cookie {
+        println!("  ⚠️  Unexpected: access_token cookie was set (should not happen for Authorization header mode)");
+    }
+
+    Ok(RefreshTokenResponse {
+        access_token: json["access_token"].as_str().unwrap_or("").to_string(),
+        expires_at: json["expires_at"].as_str().unwrap_or("").to_string(),
+    })
+}
+
+/// Refresh access token using Cookie (for browser clients)
+async fn refresh_token_with_cookie(
+    client: &Client,
+    base_url: &str,
+    refresh_token: &str,
+) -> Result<RefreshTokenResponse, Box<dyn std::error::Error>> {
+    let url = format!("{}/auth/refresh", base_url);
+
+    let token_preview = if refresh_token.len() > 40 {
+        &refresh_token[..40]
+    } else {
+        refresh_token
+    };
+
+    println!("  📤 REQUEST:");
+    println!("     POST {}", url);
+    println!("     Headers:");
+    println!("       Cookie: refresh_token={}...", token_preview);
+    println!("     Mode: Browser Client (Cookie)");
+
+    let response = client
+        .post(&url)
+        .header("Cookie", format!("refresh_token={}", refresh_token))
+        .send()
+        .await?;
+
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.text().await?;
+
+    println!("  📥 RESPONSE:");
+    println!("     Status: {}", status);
+    println!("     Headers:");
+    for (name, value) in headers.iter() {
+        println!("       {}: {}", name, value.to_str().unwrap_or(""));
+    }
+    println!("     Body: {}", body);
+
+    if !status.is_success() {
+        return Err(format!("Token refresh failed ({}): {}", status, body).into());
+    }
+
+    let json: serde_json::Value = serde_json::from_str(&body)?;
+
+    // Check if cookie was set (SHOULD be set for Cookie mode)
+    let has_cookie = headers.get_all("set-cookie")
+        .iter()
+        .any(|header| {
+            header.to_str().unwrap_or("").contains("access_token=")
+        });
+
+    if has_cookie {
+        println!("  ✓ access_token cookie was set by server (expected for Cookie mode)");
+    } else {
+        println!("  ⚠️  access_token cookie was NOT set (unexpected for Cookie mode)");
+    }
+
+    Ok(RefreshTokenResponse {
+        access_token: json["access_token"].as_str().unwrap_or("").to_string(),
+        expires_at: json["expires_at"].as_str().unwrap_or("").to_string(),
+    })
 }

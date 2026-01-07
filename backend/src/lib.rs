@@ -12,7 +12,7 @@ pub mod validation;
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
-pub use handlers::{auth::login, auth::register, health::health_check};
+pub use handlers::{auth::login, auth::register, auth::refresh, health::health_check};
 pub use state::AppState;
 
 /// Load configuration from environment variables
@@ -62,7 +62,8 @@ pub async fn run_api_server(
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(register))
-        .route("/auth/login", post(login));
+        .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh));
 
     // Build the main router with nested API routes
     let app = Router::new()
