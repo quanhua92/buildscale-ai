@@ -29,8 +29,9 @@ pub fn generate_refresh_token(config: &Config) -> Result<String> {
     let mut random_bytes = [0u8; 32];
     rng.fill(&mut random_bytes);
 
-    // Create HMAC signature using refresh token secret
-    let mut mac = Hmac::<Sha256>::new_from_slice(config.jwt.refresh_token_secret.as_bytes())
+    // Create HMAC signature using refresh token secret (or fallback to main secret)
+    let secret = config.jwt.get_refresh_token_secret();
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|e| Error::Internal(format!("Failed to create HMAC: {}", e)))?;
     mac.update(&random_bytes);
     let signature = mac.finalize().into_bytes();
@@ -83,7 +84,8 @@ pub fn verify_refresh_token(token: &str, config: &Config) -> Result<Vec<u8>> {
         .map_err(|_| Error::InvalidToken("Invalid token encoding".to_string()))?;
 
     // Recompute HMAC signature
-    let mut mac = Hmac::<Sha256>::new_from_slice(config.jwt.refresh_token_secret.as_bytes())
+    let secret = config.jwt.get_refresh_token_secret();
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|e| Error::Internal(format!("Failed to create HMAC: {}", e)))?;
     mac.update(&random_bytes);
     let expected_signature = mac.finalize().into_bytes();

@@ -138,6 +138,7 @@ pub async fn register(
 /// - **API/Mobile clients**: Use tokens from JSON response in Authorization header
 pub async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<LoginUser>,
 ) -> Result<LoginResponse> {
     // Acquire database connection from pool
@@ -155,7 +156,8 @@ pub async fn login(
     let access_cookie = build_access_token_cookie(&login_result.access_token, &config);
     let refresh_cookie = build_refresh_token_cookie(&login_result.refresh_token, &config);
 
-    // Build JSON response body
+    // Build JSON response body - ALWAYS include tokens
+    // (Login is the initial token grant, so clients need the tokens)
     let json_body = serde_json::json!({
         "user": login_result.user,
         "access_token": login_result.access_token,
