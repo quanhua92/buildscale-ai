@@ -138,7 +138,6 @@ pub async fn register(
 /// - **API/Mobile clients**: Use tokens from JSON response in Authorization header
 pub async fn login(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Json(request): Json<LoginUser>,
 ) -> Result<LoginResponse> {
     // Acquire database connection from pool
