@@ -7,10 +7,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration using lib.rs method
     let config = load_config()?;
 
-    // Print configuration using Display implementation
-    println!("Loaded configuration:");
-    println!("{}", config);
-
     // Initialize cache
     let cache: Cache<String> = Cache::new_local(CacheConfig {
         cleanup_interval_seconds: 60,
