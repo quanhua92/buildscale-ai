@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE user_sessions\n        SET expires_at = $1, updated_at = now()\n        WHERE id = $2\n        RETURNING id, user_id, token, expires_at, created_at, updated_at\n        ",
+  "query": "\n        SELECT id, user_id, token_hash, expires_at, created_at, updated_at\n        FROM user_sessions\n        WHERE token_hash = $1 AND expires_at > NOW()\n        ",
   "describe": {
     "columns": [
       {
@@ -15,7 +15,7 @@
       },
       {
         "ordinal": 2,
-        "name": "token",
+        "name": "token_hash",
         "type_info": "Text"
       },
       {
@@ -36,8 +36,7 @@
     ],
     "parameters": {
       "Left": [
-        "Timestamptz",
-        "Uuid"
+        "Text"
       ]
     },
     "nullable": [
@@ -49,5 +48,5 @@
       false
     ]
   },
-  "hash": "a37cc50d4348d423035f8968bc24063f9ef49d7784cc1f0cae8bd25f54c060dd"
+  "hash": "735a8311914e387ee10e8230ce1ef7bb36fa397b8508c804499dac7d742e4162"
 }

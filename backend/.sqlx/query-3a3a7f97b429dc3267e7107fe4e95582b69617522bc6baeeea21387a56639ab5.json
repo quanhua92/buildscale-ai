@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT COUNT(*) as \"count!\"\n        FROM user_sessions\n        WHERE token = $1 AND expires_at > NOW()\n        ",
+  "query": "\n        SELECT COUNT(*) as \"count!\"\n        FROM user_sessions\n        WHERE token_hash = $1 AND expires_at > NOW()\n        ",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "9ecefe22806e199299ef2e44e04c17015590875f53d61049d49a4e2f512f7777"
+  "hash": "3a3a7f97b429dc3267e7107fe4e95582b69617522bc6baeeea21387a56639ab5"
 }

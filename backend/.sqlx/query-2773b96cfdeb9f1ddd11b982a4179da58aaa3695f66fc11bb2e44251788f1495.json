@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, user_id, token, expires_at, created_at, updated_at\n        FROM user_sessions\n        WHERE user_id = $1\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT id, user_id, token_hash, expires_at, created_at, updated_at\n        FROM user_sessions\n        WHERE user_id = $1\n        ORDER BY created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -15,7 +15,7 @@
       },
       {
         "ordinal": 2,
-        "name": "token",
+        "name": "token_hash",
         "type_info": "Text"
       },
       {
@@ -48,5 +48,5 @@
       false
     ]
   },
-  "hash": "b090a8e73be75aa3aa75d2449ac7a56559e2a6a9f7302d34e079d2528322ab87"
+  "hash": "2773b96cfdeb9f1ddd11b982a4179da58aaa3695f66fc11bb2e44251788f1495"
 }
