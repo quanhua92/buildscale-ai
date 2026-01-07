@@ -96,21 +96,59 @@ pub fn validate_email(email: &str) -> Result<()> {
 /// * `Ok(())` if the password meets requirements
 /// * `Err(Error)` with descriptive message if invalid
 pub fn validate_password(password: &str) -> Result<()> {
-    // Length validation
-    if password.len() < 8 {
-        return Err(Error::Validation("Password must be at least 8 characters long".to_string()));
+    // Minimum 12 characters (up from 8)
+    if password.len() < 12 {
+        return Err(Error::Validation("Password must be at least 12 characters long".to_string()));
     }
 
+    // Maximum 128 characters
     if password.len() > 128 {
         return Err(Error::Validation("Password is too long (max 128 characters)".to_string()));
     }
 
+    // Check for at least 2 of 4 character types
+    let has_upper = password.chars().any(|c| c.is_uppercase());
+    let has_lower = password.chars().any(|c| c.is_lowercase());
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
+    let has_special = password.chars().any(|c| !c.is_alphanumeric());
+
+    let variety_count = [has_upper, has_lower, has_digit, has_special]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+
+    if variety_count < 2 {
+        return Err(Error::Validation(
+            "Password must contain at least 2 of the following: uppercase letter, lowercase letter, digit, special character".to_string()
+        ));
+    }
+
     // Check for common weak patterns
-    if password.to_lowercase() == "password"
-        || password.to_lowercase() == "12345678"
-        || password.to_lowercase() == "qwerty123"
-        || password.to_lowercase() == "admin123" {
-        return Err(Error::Validation("Password is too common and weak".to_string()));
+    let common_patterns = vec![
+        "password", "123456", "qwerty", "abc123",
+        "monkey", "master", "dragon", "letmein",
+        "login", "admin", "welcome", "football",
+    ];
+
+    let password_lower = password.to_lowercase();
+    for pattern in common_patterns {
+        if password_lower.contains(pattern) {
+            return Err(Error::Validation(format!(
+                "Password contains common pattern '{}'. Choose a more secure password.",
+                pattern
+            )));
+        }
+    }
+
+    // Check for repetitive characters (e.g., "aaaaaaaa", "11111111")
+    // Check if any character repeats 5 or more times consecutively
+    let chars: Vec<char> = password.chars().collect();
+    for i in 0..chars.len().saturating_sub(4) {
+        if chars[i] == chars[i+1] && chars[i] == chars[i+2] && chars[i] == chars[i+3] && chars[i] == chars[i+4] {
+            return Err(Error::Validation(
+                "Password contains repetitive characters. Use more variation.".to_string()
+            ));
+        }
     }
 
     // Check for whitespace
@@ -300,19 +338,24 @@ mod tests {
 
     #[test]
     fn test_validate_password_valid() {
-        assert!(validate_password("validpassword123").is_ok());
-        assert!(validate_password("MySecureP@ssw0rd!").is_ok());
-        assert!(validate_password("eightchar").is_ok());
+        assert!(validate_password("MySecureP@ssw0rd!").is_ok()); // 12+ chars, all 4 varieties
+        assert!(validate_password("CorrectH0rseBattery!").is_ok()); // 12+ chars, 4 varieties
+        assert!(validate_password("Tr0ubador&Staple!").is_ok()); // 12+ chars, 4 varieties
     }
 
     #[test]
     fn test_validate_password_invalid() {
-        assert!(validate_password("").is_err());
-        assert!(validate_password("short").is_err());
-        assert!(validate_password("password").is_err());
-        assert!(validate_password("12345678").is_err());
-        assert!(validate_password("space in password").is_err());
-        assert!(validate_password("a".repeat(130).as_str()).is_err());
+        assert!(validate_password("").is_err()); // Too short
+        assert!(validate_password("short").is_err()); // Too short
+        assert!(validate_password("password").is_err()); // Too short
+        assert!(validate_password("12345678").is_err()); // Too short
+        assert!(validate_password("eightchar").is_err()); // Too short (8 chars)
+        assert!(validate_password("elevenchar").is_err()); // Too short (11 chars)
+        assert!(validate_password("space password").is_err()); // Has space
+        assert!(validate_password("aaaaaaaaaaaa").is_err()); // Repetitive
+        assert!(validate_password("password123").is_err()); // Common pattern
+        assert!(validate_password("a".repeat(130).as_str()).is_err()); // Too long
+        assert!(validate_password("onlylowercase").is_err()); // Only 1 variety
     }
 
     #[test]
