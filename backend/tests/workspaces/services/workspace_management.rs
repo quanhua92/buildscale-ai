@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     services::workspaces::{create_workspace, create_workspace_with_members, delete_workspace, get_workspace},
     models::requests::{CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest, WorkspaceMemberRequest},
     models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
@@ -173,9 +173,9 @@ async fn test_workspace_creation_with_members() {
     // Create users for the test
     let (owner_user, _) = test_app.create_test_workspace_with_user().await.unwrap();
     let member1_data = test_app.generate_test_user();
-    let member1_user = backend::services::users::register_user(&mut conn, member1_data).await.unwrap();
+    let member1_user = buildscale::services::users::register_user(&mut conn, member1_data).await.unwrap();
     let member2_data = test_app.generate_test_user();
-    let member2_user = backend::services::users::register_user(&mut conn, member2_data).await.unwrap();
+    let member2_user = buildscale::services::users::register_user(&mut conn, member2_data).await.unwrap();
 
     let workspace_request = CreateWorkspaceWithMembersRequest {
         name: format!("{}_workspace_with_members", test_app.test_prefix()),
@@ -289,7 +289,7 @@ async fn test_workspace_creation_with_duplicate_owner_as_member() {
     // Create users for the test
     let (owner_user, _) = test_app.create_test_workspace_with_user().await.unwrap();
     let member_data = test_app.generate_test_user();
-    let member_user = backend::services::users::register_user(&mut conn, member_data).await.unwrap();
+    let member_user = buildscale::services::users::register_user(&mut conn, member_data).await.unwrap();
 
     // Try to create workspace with owner also listed in members (should be handled gracefully)
     let workspace_request = CreateWorkspaceWithMembersRequest {

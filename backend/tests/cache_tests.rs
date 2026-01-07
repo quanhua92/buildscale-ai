@@ -9,7 +9,7 @@
 //! - Thread safety
 //! - Background cleanup
 
-use backend::cache::{Cache, CacheConfig};
+use buildscale::cache::{Cache, CacheConfig};
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -573,6 +573,12 @@ async fn test_background_cleanup_removes_expired_entries() {
         default_ttl_seconds: None,
     });
 
+    // Spawn cleanup worker manually
+    let cache_clone = cache.clone();
+    tokio::spawn(async move {
+        buildscale::run_cache_cleanup(cache_clone).await;
+    });
+
     // Set entries with 2 second TTL
     for i in 0..10 {
         cache
@@ -608,6 +614,12 @@ async fn test_background_cleanup_with_default_ttl() {
     let cache = Cache::new_local(CacheConfig {
         cleanup_interval_seconds: 1,
         default_ttl_seconds: Some(2),
+    });
+
+    // Spawn cleanup worker manually
+    let cache_clone = cache.clone();
+    tokio::spawn(async move {
+        buildscale::run_cache_cleanup(cache_clone).await;
     });
 
     // Set entries (will use default TTL of 2 seconds)
@@ -683,6 +695,12 @@ async fn test_health_metrics_after_cleanup() {
         default_ttl_seconds: None,
     });
 
+    // Spawn cleanup worker manually
+    let cache_clone = cache.clone();
+    tokio::spawn(async move {
+        buildscale::run_cache_cleanup(cache_clone).await;
+    });
+
     // Add 5 entries with 2 second TTL
     for i in 0..5 {
         cache
@@ -728,7 +746,7 @@ async fn test_health_metrics_serialization() {
     assert!(json.contains("\"cleaned_count\":0"));
 
     // Verify deserialization
-    let deserialized: backend::CacheHealthMetrics =
+    let deserialized: buildscale::CacheHealthMetrics =
         serde_json::from_str(&json).unwrap();
     assert_eq!(deserialized.num_keys, metrics.num_keys);
 }

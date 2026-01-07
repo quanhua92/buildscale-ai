@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     models::users::NewUser,
     queries::users::{create_user, get_user_by_id},
 };

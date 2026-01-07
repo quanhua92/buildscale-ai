@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     models::users::{NewUser, UpdateUser},
     queries::users::{create_user, update_user},
 };

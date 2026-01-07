@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     services::workspace_members::create_workspace_member,
 };
 use crate::common::database::TestApp;
@@ -13,7 +13,7 @@ async fn test_workspace_member_creation_success() {
 
     // Create a new user to add as member
     let user_data = test_app.generate_test_user();
-    let new_user = backend::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let new_user = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
 
     // Add the new user as a workspace member
     let member_data = test_app.generate_test_workspace_member(workspace.id, new_user.id, role.id);
@@ -69,11 +69,11 @@ async fn test_workspace_member_removal() {
 
     // Create a separate user to add as a member (not the owner)
     let user_data = test_app.generate_test_user();
-    let user = backend::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let user = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
 
     // Add the user as a workspace member
     let member_data = test_app.generate_test_workspace_member(workspace.id, user.id, role.id);
-    backend::services::workspace_members::create_workspace_member(&mut conn, member_data).await.unwrap();
+    buildscale::services::workspace_members::create_workspace_member(&mut conn, member_data).await.unwrap();
 
     // Verify member exists
     assert!(
@@ -82,7 +82,7 @@ async fn test_workspace_member_removal() {
     );
 
     // Remove the member (not the owner)
-    let result = backend::services::workspace_members::remove_workspace_member(
+    let result = buildscale::services::workspace_members::remove_workspace_member(
         &mut conn,
         workspace.id,
         user.id,

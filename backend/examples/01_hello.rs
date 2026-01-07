@@ -1,4 +1,4 @@
-use backend::load_config;
+use buildscale::load_config;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration using lib.rs method

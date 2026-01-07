@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     models::workspace_members::NewWorkspaceMember,
     queries::workspace_members::create_workspace_member,
 };
@@ -12,7 +12,7 @@ async fn test_create_workspace_member_query() {
     // Create workspace and role first (without creating the member)
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
     let role_data = test_app.generate_test_role(workspace.id);
-    let role = backend::queries::roles::create_role(&mut conn, role_data).await.unwrap();
+    let role = buildscale::queries::roles::create_role(&mut conn, role_data).await.unwrap();
 
     // Create a NewWorkspaceMember manually (bypassing service layer)
     let new_member = NewWorkspaceMember {

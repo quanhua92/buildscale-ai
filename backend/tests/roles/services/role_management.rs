@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     services::roles::create_single_role,
     queries::roles::{get_role_by_id, delete_role},
 };
@@ -228,7 +228,7 @@ async fn test_role_deletion_service() {
 
     // Create a role
     let role_data = test_app.generate_test_role(workspace.id);
-    let created_role = backend::services::roles::create_single_role(&mut conn, role_data).await.unwrap();
+    let created_role = buildscale::services::roles::create_single_role(&mut conn, role_data).await.unwrap();
 
     // Verify role exists
     assert!(

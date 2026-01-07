@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     services::users::register_user_with_workspace,
     models::requests::UserWorkspaceRegistrationRequest,
     services::workspaces::get_workspace,

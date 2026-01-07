@@ -11,7 +11,7 @@
 //! - Background cleanup
 //! - Health metrics monitoring
 
-use backend::cache::{Cache, CacheConfig};
+use buildscale::cache::{Cache, CacheConfig};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -320,7 +320,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("11. Health Metrics");
     println!("-------------------");
 
-    use backend::cache::CacheHealthMetrics;
+    use buildscale::cache::CacheHealthMetrics;
 
     let cache = Cache::new_local(CacheConfig {
         cleanup_interval_seconds: 1,

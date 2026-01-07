@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     queries::users::get_user_by_email,
     services::users::{register_user, verify_password},
 };

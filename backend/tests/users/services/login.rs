@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     services::users::{login_user, logout_user, validate_session, refresh_session, register_user},
     services::sessions::cleanup_expired_sessions,
     models::users::LoginUser,
@@ -56,7 +56,7 @@ async fn test_login_invalid_email() {
     assert!(result.is_err());
 
     match result.unwrap_err() {
-        backend::error::Error::Authentication(msg) => {
+        buildscale::error::Error::Authentication(msg) => {
             assert_eq!(msg, "Invalid email or password");
         }
         _ => panic!("Expected Authentication error"),
@@ -84,7 +84,7 @@ async fn test_login_invalid_password() {
     assert!(result.is_err());
 
     match result.unwrap_err() {
-        backend::error::Error::Authentication(msg) => {
+        buildscale::error::Error::Authentication(msg) => {
             assert_eq!(msg, "Invalid email or password");
         }
         _ => panic!("Expected Authentication error"),
@@ -104,7 +104,7 @@ async fn test_login_empty_credentials() {
 
     let result = login_user(&mut conn, login_user_data).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 
     // Test empty password
     let login_user_data = LoginUser {
@@ -114,7 +114,7 @@ async fn test_login_empty_credentials() {
 
     let result = login_user(&mut conn, login_user_data).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 }
 
 #[tokio::test]
@@ -152,7 +152,7 @@ async fn test_session_validation_invalid_token() {
     assert!(result.is_err());
 
     match result.unwrap_err() {
-        backend::error::Error::InvalidToken(msg) => {
+        buildscale::error::Error::InvalidToken(msg) => {
             assert!(msg.contains("Invalid token") || msg.contains("session"));
         }
         _ => panic!("Expected InvalidToken error"),
@@ -167,7 +167,7 @@ async fn test_session_validation_empty_token() {
     // Test empty session token
     let result = validate_session(&mut conn, "").await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::InvalidToken(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::InvalidToken(_)));
 }
 
 #[tokio::test]
@@ -195,7 +195,7 @@ async fn test_logout() {
     // Try to validate the session - should fail
     let result = validate_session(&mut conn, &login_result.refresh_token).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::InvalidToken(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::InvalidToken(_)));
 }
 
 #[tokio::test]
@@ -207,7 +207,7 @@ async fn test_logout_invalid_token() {
     let result = logout_user(&mut conn, "invalid_session_token").await;
     assert!(result.is_err());
     // Invalid format tokens return Validation error from validate_session_token
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 }
 
 #[tokio::test]
@@ -249,7 +249,7 @@ async fn test_session_refresh_invalid_token() {
     let result = refresh_session(&mut conn, "invalid_session_token", 24).await;
     assert!(result.is_err());
     // Invalid format tokens return Validation error from validate_session_token
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 }
 
 #[tokio::test]
@@ -260,7 +260,7 @@ async fn test_session_refresh_empty_token() {
     // Try to refresh with empty token
     let result = refresh_session(&mut conn, "", 24).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 }
 
 #[tokio::test]
@@ -322,5 +322,5 @@ async fn test_cleanup_expired_sessions() {
     // Try to validate the session - should fail
     let result = validate_session(&mut conn, &login_result.refresh_token).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::InvalidToken(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::InvalidToken(_)));
 }

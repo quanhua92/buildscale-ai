@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     load_config,
     models::users::{LoginUser, RegisterUser, UpdateUser},
     queries::users::{
@@ -474,7 +474,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create user directly using query layer
     let direct_user = create_user(
         &mut conn,
-        backend::models::users::NewUser {
+        buildscale::models::users::NewUser {
             email: format!("{}_direct@{}", EXAMPLE_PREFIX, "example.com"),
             password_hash: Some("direct_hash_12345".to_string()),
             full_name: Some("Direct User".to_string()),

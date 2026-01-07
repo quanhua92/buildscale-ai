@@ -1,4 +1,4 @@
-use backend::load_config;
+use buildscale::load_config;
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
 use std::sync::Once;
@@ -239,9 +239,9 @@ impl TestApp {
     }
 
     /// Generate a unique test user data with proper prefix
-    pub fn generate_test_user(&self) -> backend::models::users::RegisterUser {
+    pub fn generate_test_user(&self) -> buildscale::models::users::RegisterUser {
         let email = self.generate_test_email();
-        backend::models::users::RegisterUser {
+        buildscale::models::users::RegisterUser {
             email,
             password: "testpassword123".to_string(),
             confirm_password: "testpassword123".to_string(),
@@ -254,7 +254,7 @@ impl TestApp {
     pub fn generate_test_user_with_password(
         &self,
         password: &str,
-    ) -> backend::models::users::RegisterUser {
+    ) -> buildscale::models::users::RegisterUser {
         let mut user = self.generate_test_user();
         user.password = password.to_string();
         user.confirm_password = password.to_string();
@@ -266,7 +266,7 @@ impl TestApp {
     pub fn generate_test_user_with_email(
         &self,
         email: &str,
-    ) -> backend::models::users::RegisterUser {
+    ) -> buildscale::models::users::RegisterUser {
         let mut user = self.generate_test_user();
         user.email = email.to_string();
         user
@@ -277,7 +277,7 @@ impl TestApp {
     pub fn generate_list_test_users(
         &self,
         count: usize,
-    ) -> Vec<backend::models::users::RegisterUser> {
+    ) -> Vec<buildscale::models::users::RegisterUser> {
         (0..count)
             .map(|i| {
                 let mut user = self.generate_test_user();
@@ -289,7 +289,7 @@ impl TestApp {
 
     /// Generate test users for edge case email testing
     #[allow(dead_code)] // Actually used in user_services_tests.rs, clippy false positive
-    pub fn generate_edge_case_users(&self) -> Vec<backend::models::users::RegisterUser> {
+    pub fn generate_edge_case_users(&self) -> Vec<buildscale::models::users::RegisterUser> {
         vec![
             format!("{}_user+tag@example.com", self.test_prefix()),
             format!("{}_user.name@example.com", self.test_prefix()),
@@ -312,17 +312,17 @@ impl TestApp {
     }
 
     /// Create a test user
-    pub async fn create_test_user(&self, email: &str) -> Result<(backend::models::users::User, sqlx::PgPool), sqlx::Error> {
+    pub async fn create_test_user(&self, email: &str) -> Result<(buildscale::models::users::User, sqlx::PgPool), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
-        let user_data = backend::models::users::RegisterUser {
+        let user_data = buildscale::models::users::RegisterUser {
             email: email.to_string(),
             password: "testpassword123".to_string(),
             confirm_password: "testpassword123".to_string(),
             full_name: Some("Test User".to_string()),
         };
 
-        let user = backend::services::users::register_user(&mut conn, user_data).await
+        let user = buildscale::services::users::register_user(&mut conn, user_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
 
         Ok((user, self.test_db.pool.clone()))
@@ -349,20 +349,20 @@ impl TestApp {
     // Workspace helpers
 
     /// Create a test workspace with proper prefix and create the owner user
-    pub async fn create_test_workspace_with_user(&self) -> Result<(backend::models::users::User, backend::models::workspaces::Workspace), sqlx::Error> {
+    pub async fn create_test_workspace_with_user(&self) -> Result<(buildscale::models::users::User, buildscale::models::workspaces::Workspace), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create the owner user first
         let user_data = self.generate_test_user();
-        let user = backend::services::users::register_user(&mut conn, user_data).await
+        let user = buildscale::services::users::register_user(&mut conn, user_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
 
         // Create workspace with real user as owner
-        let workspace_data = backend::models::workspaces::NewWorkspace {
+        let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_test_workspace", self.test_prefix()),
             owner_id: user.id,
         };
-        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+        let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
 
         Ok((user, workspace))
@@ -372,9 +372,9 @@ impl TestApp {
     pub fn generate_test_workspace_with_owner_id(
         &self,
         owner_id: uuid::Uuid,
-    ) -> backend::models::workspaces::NewWorkspace {
+    ) -> buildscale::models::workspaces::NewWorkspace {
         let workspace_name = format!("{}_workspace", self.test_prefix());
-        backend::models::workspaces::NewWorkspace {
+        buildscale::models::workspaces::NewWorkspace {
             name: workspace_name,
             owner_id,
         }
@@ -384,15 +384,15 @@ impl TestApp {
     pub async fn create_workspace_with_user_owner(
         &self,
         owner_id: uuid::Uuid,
-    ) -> Result<backend::models::workspaces::Workspace, sqlx::Error> {
+    ) -> Result<buildscale::models::workspaces::Workspace, sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create workspace with real user as owner
-        let workspace_data = backend::models::workspaces::NewWorkspace {
+        let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_workspace", self.test_prefix()),
             owner_id,
         };
-        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+        let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
 
         Ok(workspace)
@@ -401,16 +401,16 @@ impl TestApp {
     /// Create a test workspace with existing user (returns both user and workspace)
     pub async fn create_test_workspace_with_existing_user(
         &self,
-        user: backend::models::users::User,
-    ) -> Result<(backend::models::users::User, backend::models::workspaces::Workspace), sqlx::Error> {
+        user: buildscale::models::users::User,
+    ) -> Result<(buildscale::models::users::User, buildscale::models::workspaces::Workspace), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create workspace with existing user as owner
-        let workspace_data = backend::models::workspaces::NewWorkspace {
+        let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_test_workspace", self.test_prefix()),
             owner_id: user.id,
         };
-        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+        let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
 
         Ok((user, workspace))
@@ -420,18 +420,18 @@ impl TestApp {
     pub fn generate_test_workspace_with_owner(
         &self,
         owner_id: uuid::Uuid,
-    ) -> backend::models::workspaces::NewWorkspace {
+    ) -> buildscale::models::workspaces::NewWorkspace {
         let workspace_name = format!("{}_workspace", self.test_prefix());
-        backend::models::workspaces::NewWorkspace {
+        buildscale::models::workspaces::NewWorkspace {
             name: workspace_name,
             owner_id,
         }
     }
 
     /// Generate a test role with proper prefix
-    pub fn generate_test_role(&self, workspace_id: uuid::Uuid) -> backend::models::roles::NewRole {
+    pub fn generate_test_role(&self, workspace_id: uuid::Uuid) -> buildscale::models::roles::NewRole {
         let role_name = format!("{}_role", self.test_prefix());
-        backend::models::roles::NewRole {
+        buildscale::models::roles::NewRole {
             workspace_id,
             name: role_name,
             description: Some("Test role description".to_string()),
@@ -443,8 +443,8 @@ impl TestApp {
         &self,
         workspace_id: uuid::Uuid,
         role_name: &str,
-    ) -> backend::models::roles::NewRole {
-        backend::models::roles::NewRole {
+    ) -> buildscale::models::roles::NewRole {
+        buildscale::models::roles::NewRole {
             workspace_id,
             name: role_name.to_string(),
             description: Some("Test role description".to_string()),
@@ -457,8 +457,8 @@ impl TestApp {
         workspace_id: uuid::Uuid,
         user_id: uuid::Uuid,
         role_id: uuid::Uuid,
-    ) -> backend::models::workspace_members::NewWorkspaceMember {
-        backend::models::workspace_members::NewWorkspaceMember {
+    ) -> buildscale::models::workspace_members::NewWorkspaceMember {
+        buildscale::models::workspace_members::NewWorkspaceMember {
             workspace_id,
             user_id,
             role_id,
@@ -537,38 +537,38 @@ impl TestApp {
     }
 
     /// Create a complete test scenario: user + workspace + role + member
-    pub async fn create_complete_test_scenario(&self) -> Result<(backend::models::users::User, backend::models::workspaces::Workspace, backend::models::roles::Role, backend::models::workspace_members::WorkspaceMember), sqlx::Error> {
+    pub async fn create_complete_test_scenario(&self) -> Result<(buildscale::models::users::User, buildscale::models::workspaces::Workspace, buildscale::models::roles::Role, buildscale::models::workspace_members::WorkspaceMember), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create user
         let user_data = self.generate_test_user();
-        let user = backend::services::users::register_user(&mut conn, user_data).await
+        let user = buildscale::services::users::register_user(&mut conn, user_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
 
         // Create workspace with user as owner
-        let workspace_data = backend::models::workspaces::NewWorkspace {
+        let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_test_workspace", self.test_prefix()),
             owner_id: user.id,
         };
-        let workspace = backend::queries::workspaces::create_workspace(&mut conn, workspace_data).await
+        let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
 
         // Create role in workspace
-        let role_data = backend::models::roles::NewRole {
+        let role_data = buildscale::models::roles::NewRole {
             workspace_id: workspace.id,
             name: format!("{}_role", self.test_prefix()),
             description: Some("Test role description".to_string()),
         };
-        let role = backend::queries::roles::create_role(&mut conn, role_data).await
+        let role = buildscale::queries::roles::create_role(&mut conn, role_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Role creation failed: {}", e)))?;
 
         // Add user as workspace member with the role
-        let member_data = backend::models::workspace_members::NewWorkspaceMember {
+        let member_data = buildscale::models::workspace_members::NewWorkspaceMember {
             workspace_id: workspace.id,
             user_id: user.id,
             role_id: role.id,
         };
-        let member = backend::queries::workspace_members::create_workspace_member(&mut conn, member_data).await
+        let member = buildscale::queries::workspace_members::create_workspace_member(&mut conn, member_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Member creation failed: {}", e)))?;
 
         Ok((user, workspace, role, member))

@@ -1,4 +1,4 @@
-use backend::services::users::{generate_password_hash, verify_password};
+use buildscale::services::users::{generate_password_hash, verify_password};
 
 #[test]
 fn test_generate_password_hash_basic() {

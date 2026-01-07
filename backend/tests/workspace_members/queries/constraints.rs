@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     models::workspace_members::NewWorkspaceMember,
     queries::workspace_members::create_workspace_member,
 };
@@ -41,7 +41,7 @@ async fn test_workspace_member_foreign_key_constraints() {
     let (_, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
     let role_data = test_app.generate_test_role(workspace.id);
-    let role = backend::queries::roles::create_role(&mut conn, role_data).await.unwrap();
+    let role = buildscale::queries::roles::create_role(&mut conn, role_data).await.unwrap();
 
     // Test creating member with non-existent user ID
     let fake_user_id = uuid::Uuid::now_v7();

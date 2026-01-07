@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     models::roles::UpdateRole,
     queries::roles::{create_role, update_role},
 };

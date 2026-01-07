@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     models::users::NewUserSession,
     queries::sessions::{
         create_session, get_session_by_token, get_sessions_by_user,

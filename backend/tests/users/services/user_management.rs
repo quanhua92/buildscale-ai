@@ -1,4 +1,4 @@
-use backend::{
+use buildscale::{
     queries::users::{get_user_by_id, list_users},
     services::users::{register_user, verify_password, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
     models::users::LoginUser,
@@ -151,7 +151,7 @@ async fn test_update_password_success() {
         password: new_password.to_string(),
     };
 
-    let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+    let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
     assert_eq!(login_result.user.id, registered_user.id);
 
     // Verify the old password no longer works
@@ -160,7 +160,7 @@ async fn test_update_password_success() {
         password: original_password,
     };
 
-    let result = backend::services::users::login_user(&mut conn, old_login_data).await;
+    let result = buildscale::services::users::login_user(&mut conn, old_login_data).await;
     assert!(result.is_err());
 }
 
@@ -176,7 +176,7 @@ async fn test_update_password_too_short() {
     // Try to update with too short password
     let result = update_password(&mut conn, registered_user.id, "short").await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 }
 
 #[tokio::test]
@@ -188,7 +188,7 @@ async fn test_update_password_non_existent_user() {
     let non_existent_id = uuid::Uuid::now_v7();
     let result = update_password(&mut conn, non_existent_id, "newpassword123").await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::NotFound(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::NotFound(_)));
 }
 
 // Tests for get_session_info service method
@@ -209,7 +209,7 @@ async fn test_get_session_info_success() {
         password,
     };
 
-    let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+    let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
 
     // Get session info
     let session_info = get_session_info(&mut conn, &login_result.refresh_token).await.unwrap();
@@ -239,7 +239,7 @@ async fn test_get_session_info_empty_token() {
     // Try to get info with empty token
     let result = get_session_info(&mut conn, "").await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+    assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
 }
 
 // Tests for is_email_available service method
@@ -294,7 +294,7 @@ async fn test_is_email_available_invalid_format() {
     for invalid_email in invalid_emails {
         let result = is_email_available(&mut conn, invalid_email).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), backend::error::Error::Validation(_)));
+        assert!(matches!(result.unwrap_err(), buildscale::error::Error::Validation(_)));
     }
 }
 
@@ -319,7 +319,7 @@ async fn test_get_user_active_sessions() {
             password: password.clone(),
         };
 
-        let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+        let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
         session_tokens.push(login_result.refresh_token);
     }
 
@@ -354,7 +354,7 @@ async fn test_revoke_all_user_sessions() {
             password: password.clone(),
         };
 
-        let login_result = backend::services::users::login_user(&mut conn, login_data).await.unwrap();
+        let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
         session_tokens.push(login_result.refresh_token);
     }
 
@@ -372,7 +372,7 @@ async fn test_revoke_all_user_sessions() {
 
     // Verify tokens are no longer valid
     for token in session_tokens {
-        let result = backend::services::users::validate_session(&mut conn, &token).await;
+        let result = buildscale::services::users::validate_session(&mut conn, &token).await;
         assert!(result.is_err());
     }
 }

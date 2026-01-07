@@ -9,7 +9,7 @@ pub mod services;
 pub mod state;
 pub mod validation;
 
-pub use cache::{Cache, CacheConfig, CacheHealthMetrics};
+pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use handlers::health::health_check;

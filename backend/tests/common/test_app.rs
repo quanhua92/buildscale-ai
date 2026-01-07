@@ -1,6 +1,6 @@
 use axum::{Router, routing::get};
-use backend::{load_config, Cache, CacheConfig, AppState};
-use backend::handlers::health::health_check;
+use buildscale::{load_config, Cache, CacheConfig, AppState};
+use buildscale::handlers::health::health_check;
 use reqwest::{Client, redirect::Policy};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -15,7 +15,7 @@ pub struct TestApp {
     /// HTTP client for making requests
     pub client: Client,
     /// Application config
-    pub config: backend::Config,
+    pub config: buildscale::Config,
     /// Cache instance
     pub cache: Cache<String>,
 }

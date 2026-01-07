@@ -21,9 +21,8 @@
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 
 /// A cache entry with optional expiration time.
 #[derive(Debug, Clone)]
@@ -101,14 +100,10 @@ pub struct CacheHealthMetrics {
 /// Internal metrics storage (thread-safe, separate from cache data).
 #[derive(Debug, Default)]
 struct CacheMetrics {
-    /// Current number of entries
-    num_keys: AtomicUsize,
     /// Last cleanup completion time
     last_worker_time: tokio::sync::RwLock<Option<DateTime<Utc>>>,
     /// Number of entries removed by last cleanup
     cleaned_count: AtomicU64,
-    /// Estimated memory usage in bytes
-    size_bytes: AtomicU64,
 }
 
 /// Local backend implementation using scc HashMap.
@@ -116,8 +111,6 @@ struct CacheMetrics {
 pub struct LocalBackend<V> {
     /// Thread-safe storage for cache entries
     storage: Arc<scc::HashMap<String, CacheEntry<V>>>,
-    /// Background cleanup task handle
-    cleanup_task: Option<JoinHandle<()>>,
     /// Cache configuration
     config: CacheConfig,
     /// Health metrics (separate from cache data for type safety)
@@ -132,63 +125,12 @@ where
     fn new(config: CacheConfig) -> Self {
         let storage = Arc::new(scc::HashMap::new());
         let metrics = Arc::new(CacheMetrics::default());
-        let cleanup_task = Some(Self::spawn_cleanup_task(
-            Arc::clone(&storage),
-            Arc::clone(&metrics),
-            config.cleanup_interval_seconds,
-        ));
 
         Self {
             storage,
-            cleanup_task,
             config,
             metrics,
         }
-    }
-
-    /// Spawn a background task to clean up expired entries.
-    ///
-    /// Uses scc's `retain_async` which properly yields, preventing deadlocks
-    /// that can occur with DashMap's blocking `retain` in async contexts.
-    fn spawn_cleanup_task(
-        storage: Arc<scc::HashMap<String, CacheEntry<V>>>,
-        metrics: Arc<CacheMetrics>,
-        interval_seconds: u64,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
-            loop {
-                interval.tick().await;
-                let now = Utc::now();
-
-                // Count keys before cleanup
-                let count_before = storage.len();
-
-                // SAFE: retain_async yields properly, won't deadlock
-                storage
-                    .retain_async(|_, entry| {
-                        entry
-                            .expires_at
-                            .map(|exp| exp > now)
-                            .unwrap_or(true)
-                    })
-                    .await;
-
-                // Calculate metrics
-                let count_after = storage.len();
-                let cleaned_count = count_before.saturating_sub(count_after) as u64;
-                let num_keys = count_after;
-                let size_bytes = Self::estimate_size(num_keys);
-
-                // Update atomic metrics (accumulate cleaned_count over lifetime)
-                metrics.num_keys.store(num_keys, Ordering::Relaxed);
-                if cleaned_count > 0 {
-                    metrics.cleaned_count.fetch_add(cleaned_count, Ordering::Relaxed);
-                }
-                metrics.size_bytes.store(size_bytes, Ordering::Relaxed);
-                *metrics.last_worker_time.write().await = Some(now);
-            }
-        })
     }
 
     /// Check if a key exists and is not expired.
@@ -430,15 +372,6 @@ where
         let entry_size = avg_key_size + value_size;
 
         num_entries as u64 * entry_size
-    }
-}
-
-impl<V> Drop for LocalBackend<V> {
-    fn drop(&mut self) {
-        // Abort the cleanup task when the backend is dropped
-        if let Some(task) = self.cleanup_task.take() {
-            task.abort();
-        }
     }
 }
 
@@ -720,6 +653,80 @@ where
     }
 }
 
+/// Run cache cleanup worker in a loop.
+///
+/// This function should be spawned as a background task from main.rs.
+/// It periodically removes expired entries from the cache and updates metrics.
+///
+/// # Arguments
+/// * `cache` - The cache instance to clean up
+///
+/// # Example
+/// ```rust
+/// use buildscale::cache::{Cache, CacheConfig, run_cache_cleanup};
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let cache: Cache<String> = Cache::new_local(CacheConfig::default());
+///
+///     // Spawn cleanup worker in background
+///     let cache_clone = cache.clone();
+///     tokio::spawn(async move {
+///         run_cache_cleanup(cache_clone).await;
+///     });
+///
+///     // Continue with application...
+/// }
+/// ```
+pub async fn run_cache_cleanup<V>(cache: Cache<V>)
+where
+    V: Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    // Extract interval and storage from cache
+    let (interval_seconds, storage, metrics) = match &cache {
+        Cache::LocalCache(backend) => {
+            (
+                backend.config.cleanup_interval_seconds,
+                Arc::clone(&backend.storage),
+                Arc::clone(&backend.metrics),
+            )
+        }
+    };
+
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
+
+    loop {
+        interval.tick().await;
+        let now = Utc::now();
+
+        // Remove expired entries using async-safe retain
+        let mut cleaned_count = 0u64;
+        storage
+            .retain_async(|_key, entry| {
+                let keep = !entry.is_expired();
+                if !keep {
+                    cleaned_count += 1;
+                }
+                keep
+            })
+            .await;
+
+        // Update metrics
+        metrics
+            .last_worker_time
+            .write()
+            .await
+            .replace(now.clone());
+        // Accumulate cleaned count (total entries cleaned since cache creation)
+        if cleaned_count > 0 {
+            metrics.cleaned_count.fetch_add(cleaned_count, Ordering::SeqCst);
+        }
+
+        // Yield to other tasks
+        tokio::task::yield_now().await;
+    }
+}
+
 // Implement Clone for Cache (shallow clone via Arc)
 impl<V> Clone for Cache<V>
 where
@@ -727,22 +734,13 @@ where
 {
     fn clone(&self) -> Self {
         match self {
-            // Note: scc HashMap is wrapped in Arc, so cloning is cheap
-            // We don't implement Clone on LocalBackend directly to avoid
-            // accidentally cloning the cleanup task
             Self::LocalCache(backend) => {
-                // Create a new LocalBackend that shares the same storage
-                // but doesn't have its own cleanup task
                 let storage = Arc::clone(&backend.storage);
                 let metrics = Arc::clone(&backend.metrics);
                 let config = backend.config.clone();
 
-                // Create a new backend without cleanup task (shared storage)
-                // This is safe because the original backend's cleanup task
-                // will clean up entries for all shared references
                 Self::LocalCache(LocalBackend {
                     storage,
-                    cleanup_task: None,
                     config,
                     metrics,
                 })
