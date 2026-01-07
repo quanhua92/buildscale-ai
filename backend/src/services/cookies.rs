@@ -41,11 +41,16 @@ pub enum SameSite {
 
 impl Default for CookieConfig {
     fn default() -> Self {
+        // Enable Secure flag in production automatically
+        let is_production = std::env::var("BUILDSCALE__ENV")
+            .unwrap_or_else(|_| "development".to_string())
+            == "production";
+
         Self {
             access_token_name: "access_token".to_string(),
             refresh_token_name: "refresh_token".to_string(),
             http_only: true,
-            secure: false, // Set to true in production
+            secure: is_production, // Auto-enable in production
             same_site: SameSite::Lax,  // Allows top-level navigations from emails, Slack, OAuth, etc.
             path: "/".to_string(),
             domain: None,
@@ -402,11 +407,12 @@ mod tests {
 
     #[test]
     fn test_cookie_config_default() {
+        // In development (default when BUILDSCALE__ENV not set)
         let config = CookieConfig::default();
         assert_eq!(config.access_token_name, "access_token");
         assert_eq!(config.refresh_token_name, "refresh_token");
         assert!(config.http_only);
-        assert!(!config.secure);
+        assert!(!config.secure); // Development mode: Secure = false
         assert!(matches!(config.same_site, SameSite::Lax));
         assert_eq!(config.path, "/");
         assert!(config.domain.is_none());
