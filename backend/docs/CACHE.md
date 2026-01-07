@@ -839,10 +839,10 @@ where
 
     /// Create a cache from environment variable.
     ///
-    /// If BUILDSCALE_CACHE_REDIS_URL is set, uses Redis backend.
+    /// If BUILDSCALE__CACHE__REDIS_URL is set, uses Redis backend.
     /// Otherwise, uses local cache.
     pub async fn from_env(config: CacheConfig) -> Result<Self, Error> {
-        if let Ok(redis_url) = std::env::var("BUILDSCALE_CACHE_REDIS_URL") {
+        if let Ok(redis_url) = std::env::var("BUILDSCALE__CACHE__REDIS_URL") {
             Self::new_redis(&redis_url, config).await
         } else {
             Ok(Self::new_local(config))
@@ -1069,17 +1069,17 @@ impl<V> MonitoredCache<V> {
 
 ```rust
 // .env
-BUILDSCALE_CACHE_REDIS_URL=redis://localhost:6379
-BUILDSCALE_CACHE_DEFAULT_TTL=3600
-BUILDSCALE_CACHE_CLEANUP_INTERVAL=60
+BUILDSCALE__CACHE__REDIS_URL=redis://localhost:6379
+BUILDSCALE__CACHE__DEFAULT_TTL=3600
+BUILDSCALE__CACHE__CLEANUP_INTERVAL=60
 
 // Load from environment
 let config = CacheConfig {
-    cleanup_interval_seconds: std::env::var("BUILDSCALE_CACHE_CLEANUP_INTERVAL")
+    cleanup_interval_seconds: std::env::var("BUILDSCALE__CACHE__CLEANUP_INTERVAL")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(60),
-    default_ttl_seconds: std::env::var("BUILDSCALE_CACHE_DEFAULT_TTL")
+    default_ttl_seconds: std::env::var("BUILDSCALE__CACHE__DEFAULT_TTL")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(None),

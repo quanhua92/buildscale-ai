@@ -687,11 +687,11 @@ pub struct ApiError {
 
 ```bash
 # Required environment variables
-BUILDSCALE_DATABASE_USER=your_db_user
-BUILDSCALE_DATABASE_PASSWORD=your_db_password
-BUILDSCALE_DATABASE_HOST=localhost
-BUILDSCALE_DATABASE_PORT=5432
-BUILDSCALE_DATABASE_DATABASE=your_db_name
+BUILDSCALE__DATABASE__USER=your_db_user
+BUILDSCALE__DATABASE__PASSWORD=your_db_password
+BUILDSCALE__DATABASE__HOST=localhost
+BUILDSCALE__DATABASE__PORT=5432
+BUILDSCALE__DATABASE__DATABASE=your_db_name
 
 # Development commands
 cargo build                    # Build project

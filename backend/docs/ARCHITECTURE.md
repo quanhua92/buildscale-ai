@@ -252,7 +252,7 @@ CREATE INDEX idx_workspace_invitations_expires_at ON workspace_invitations(expir
 **Authentication**:
 - Session-based authentication with random HMAC-signed tokens (256-bit randomness)
 - Argon2 password hashing with unique salts
-- Configurable session expiration (default: 30 days) with refresh capability via BUILDSCALE_SESSIONS_EXPIRATION_HOURS
+- Configurable session expiration (default: 30 days) with refresh capability via BUILDSCALE__SESSIONS__EXPIRATION_HOURS
 
 **Authorization**:
 - Role-based access control with hardcoded permissions

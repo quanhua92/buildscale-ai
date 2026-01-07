@@ -840,7 +840,7 @@ Server:
 > A: Prevents user enumeration attack. If "email not found" vs "wrong password" were different messages, attackers could discover which emails exist in the system.
 
 **Q4: How long should sessions last?**
-> A: Balance security vs convenience. BuildScale uses 30 days by default (720 hours), configurable via BUILDSCALE_SESSIONS_EXPIRATION_HOURS. Shorter = more secure but users must re-login often. Sessions can be refreshed before expiration.
+> A: Balance security vs convenience. BuildScale uses 30 days by default (720 hours), configurable via BUILDSCALE__SESSIONS__EXPIRATION_HOURS. Shorter = more secure but users must re-login often. Sessions can be refreshed before expiration.
 
 **Q5: What happens to sessions when user changes password?**
 > A: In this implementation, existing sessions remain valid. For higher security, you could revoke all sessions on password change using `revoke_all_user_sessions()`.
@@ -2199,11 +2199,11 @@ External config (GOOD):
 **Environment Variables with Prefix**:
 ```bash
 # Database configuration
-BUILDSCALE_DATABASE_USER=buildscale
-BUILDSCALE_DATABASE_PASSWORD=your_secure_password
-BUILDSCALE_DATABASE_HOST=localhost
-BUILDSCALE_DATABASE_PORT=5432
-BUILDSCALE_DATABASE_DATABASE=buildscale
+BUILDSCALE__DATABASE__USER=buildscale
+BUILDSCALE__DATABASE__PASSWORD=your_secure_password
+BUILDSCALE__DATABASE__HOST=localhost
+BUILDSCALE__DATABASE__PORT=5432
+BUILDSCALE__DATABASE__DATABASE=buildscale
 
 # For sqlx CLI
 DATABASE_URL=postgresql://buildscale:password@localhost:5432/buildscale
@@ -2260,18 +2260,18 @@ impl Config {
 
 ```bash
 # .env (development - gitignored)
-BUILDSCALE_DATABASE_USER=buildscale
-BUILDSCALE_DATABASE_PASSWORD=dev_password
-BUILDSCALE_DATABASE_HOST=localhost
-BUILDSCALE_DATABASE_PORT=5432
-BUILDSCALE_DATABASE_DATABASE=buildscale_dev
+BUILDSCALE__DATABASE__USER=buildscale
+BUILDSCALE__DATABASE__PASSWORD=dev_password
+BUILDSCALE__DATABASE__HOST=localhost
+BUILDSCALE__DATABASE__PORT=5432
+BUILDSCALE__DATABASE__DATABASE=buildscale_dev
 
 # .env.example (template - committed)
-BUILDSCALE_DATABASE_USER=your_user
-BUILDSCALE_DATABASE_PASSWORD=your_password
-BUILDSCALE_DATABASE_HOST=localhost
-BUILDSCALE_DATABASE_PORT=5432
-BUILDSCALE_DATABASE_DATABASE=your_database
+BUILDSCALE__DATABASE__USER=your_user
+BUILDSCALE__DATABASE__PASSWORD=your_password
+BUILDSCALE__DATABASE__HOST=localhost
+BUILDSCALE__DATABASE__PORT=5432
+BUILDSCALE__DATABASE__DATABASE=your_database
 ```
 
 ### Configuration Hierarchy
@@ -2319,7 +2319,7 @@ Example:
 
 ### Q&A
 
-**Q1: Why double underscore in BUILDSCALE_DATABASE_HOST?**
+**Q1: Why double underscore in BUILDSCALE__DATABASE__HOST?**
 > A: Convention for nested configuration. Maps to `{ buildscale: { database: { host: "..." } } }`. Double underscore distinguishes nesting from single words.
 
 **Q2: Should I commit .env file?**

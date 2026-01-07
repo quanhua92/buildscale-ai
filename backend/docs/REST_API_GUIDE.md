@@ -70,12 +70,12 @@ The API uses **dual-token authentication** for secure access:
 ### Token Types
 
 1. **JWT Access Token** (short-lived)
-   - Lifetime: 15 minutes (configurable via `BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES`)
+   - Lifetime: 15 minutes (configurable via `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES`)
    - Used in: `Authorization: Bearer <access_token>` header
    - Purpose: API requests requiring authentication
 
 2. **Session Refresh Token** (long-lived)
-   - Lifetime: 30 days (configurable via `BUILDSCALE_SESSIONS_EXPIRATION_HOURS`)
+   - Lifetime: 30 days (configurable via `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`)
    - Stored in: `refresh_token` cookie (or used via refresh endpoint)
    - Purpose: Get new access tokens without re-login
 
@@ -510,8 +510,8 @@ Set-Cookie: access_token=eyJ0eXAiOiJKV1QiLCJhbGc...; HttpOnly; SameSite=Lax; Pat
 
 #### Token Expiration
 
-- **Access Token**: 15 minutes (configurable via `BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES`)
-- **Refresh Token**: 30 days (configurable via `BUILDSCALE_SESSIONS_EXPIRATION_HOURS`)
+- **Access Token**: 15 minutes (configurable via `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES`)
+- **Refresh Token**: 30 days (configurable via `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`)
 
 #### Error Responses
 
@@ -779,27 +779,27 @@ The example demonstrates:
 
 ```bash
 # Database Configuration
-BUILDSCALE_DATABASE_USER=your_db_user
-BUILDSCALE_DATABASE_PASSWORD=your_db_password
-BUILDSCALE_DATABASE_HOST=localhost
-BUILDSCALE_DATABASE_PORT=5432
-BUILDSCALE_DATABASE_DATABASE=your_db_name
+BUILDSCALE__DATABASE__USER=your_db_user
+BUILDSCALE__DATABASE__PASSWORD=your_db_password
+BUILDSCALE__DATABASE__HOST=localhost
+BUILDSCALE__DATABASE__PORT=5432
+BUILDSCALE__DATABASE__DATABASE=your_db_name
 
 # JWT Configuration
-BUILDSCALE_JWT_SECRET=your-jwt-secret-min-32-chars
-BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES=15
+BUILDSCALE__JWT__SECRET=your-jwt-secret-min-32-chars
+BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES=15
 
 # Session Configuration
-BUILDSCALE_SESSIONS_EXPIRATION_HOURS=720
+BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720
 
 # Cookie Configuration
-BUILDSCALE_COOKIE_SECURE=true  # Enable for HTTPS (production)
+BUILDSCALE__COOKIE__SECURE=true  # Enable for HTTPS (production)
 ```
 
 ### Security Best Practices
 
 1. **Always use HTTPS in production**
-   - Set `BUILDSCALE_COOKIE_SECURE=true`
+   - Set `BUILDSCALE__COOKIE__SECURE=true`
    - Cookies will only be sent over HTTPS
 
 2. **Protect your JWT secret**

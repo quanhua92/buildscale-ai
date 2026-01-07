@@ -51,7 +51,7 @@ cargo install sqlx-cli --no-default-features --features rustls,postgres
 cp .env.example .env
 
 # Edit .env with your database configuration
-# Required: BUILDSCALE_DATABASE_USER, PASSWORD, HOST, PORT, DATABASE
+# Required: BUILDSCALE__DATABASE__USER, PASSWORD, HOST, PORT, DATABASE
 ```
 
 ## Architecture Overview
@@ -149,7 +149,7 @@ Tests use a sophisticated isolation system:
 #### Session Security (Current Implementation)
 - Cryptographically secure random session tokens (256-bit randomness)
 - HMAC-SHA256 signature for tamper detection and integrity verification
-- Configurable session expiration (default: 30 days, via BUILDSCALE_SESSIONS_EXPIRATION_HOURS)
+- Configurable session expiration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 - Automatic session cleanup for expired tokens
 - Case-insensitive email lookup for user convenience
 - Session invalidation on logout
@@ -343,12 +343,12 @@ pub struct UpdateUser {
 - **Bearer Token Authentication**: Standard `Authorization: Bearer <token>` header format
 - **Automatic Token Expiration**: Access tokens expire quickly to enhance security
 - **Token Refresh**: Use refresh token to get new access tokens without re-login
-- **Configurable Expiration**: JWT expiration configurable via BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES
-- **Secure Token Storage**: JWT secret key stored in environment (BUILDSCALE_JWT_SECRET)
+- **Configurable Expiration**: JWT expiration configurable via BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES
+- **Secure Token Storage**: JWT secret key stored in environment (BUILDSCALE__JWT__SECRET)
 
 #### Session Management Features
 - **Random HMAC-Signed Tokens**: 256-bit randomness with tamper-evident signature
-- **Automatic Expiration**: Refresh tokens expire after configured duration (default: 30 days, via BUILDSCALE_SESSIONS_EXPIRATION_HOURS)
+- **Automatic Expiration**: Refresh tokens expire after configured duration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 - **Session Refresh**: Extend session duration before expiration
 - **Cleanup Service**: Automatic removal of expired sessions
 - **Case-Insensitive Email**: Users can login with any email case variation
@@ -486,15 +486,15 @@ create_single_role(&mut conn, NewRole) -> Result<Role>
 
 ### Environment Variables
 Uses `BUILDSCALE_` prefix with double underscore separators:
-- `BUILDSCALE_DATABASE_USER`: Database username
-- `BUILDSCALE_DATABASE_PASSWORD`: Database password
-- `BUILDSCALE_DATABASE_HOST`: Database host
-- `BUILDSCALE_DATABASE_PORT`: Database port
-- `BUILDSCALE_DATABASE_DATABASE`: Database name
-- `BUILDSCALE_SESSIONS_EXPIRATION_HOURS`: Session expiration time in hours (default: 720 = 30 days)
+- `BUILDSCALE__DATABASE__USER`: Database username
+- `BUILDSCALE__DATABASE__PASSWORD`: Database password
+- `BUILDSCALE__DATABASE__HOST`: Database host
+- `BUILDSCALE__DATABASE__PORT`: Database port
+- `BUILDSCALE__DATABASE__DATABASE`: Database name
+- `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`: Session expiration time in hours (default: 720 = 30 days)
   - Used for both initial session expiration AND maximum extension time
-- `BUILDSCALE_JWT_SECRET`: Secret key for signing JWT tokens (minimum 32 characters recommended)
-- `BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES`: JWT access token expiration in minutes (default: 15)
+- `BUILDSCALE__JWT__SECRET`: Secret key for signing JWT tokens (minimum 32 characters recommended)
+- `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES`: JWT access token expiration in minutes (default: 15)
 
 ### Configuration Loading
 - Loads from `.env` file if present

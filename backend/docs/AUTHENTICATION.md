@@ -450,9 +450,9 @@ CookieConfig {
 **Environment Configuration** (future):
 ```bash
 # Cookie settings (when env support is added)
-BUILDSCALE_COOKIES_SECURE=true
-BUILDSCALE_COOKIES_SAME_SITE=Strict
-BUILDSCALE_COOKIES_DOMAIN=.example.com
+BUILDSCALE__COOKIES__SECURE=true
+BUILDSCALE__COOKIES__SAME_SITE=Strict
+BUILDSCALE__COOKIES__DOMAIN=.example.com
 ```
 
 ## Related Documentation
