@@ -1,7 +1,7 @@
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database with pgvector extension
   postgres:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:pg18-trixie
     container_name: buildscale-postgres
     user: "${UID:-999}:${GID:-999}"
     environment:
@@ -9,7 +9,7 @@ services:
       - POSTGRES_PASSWORD=PASSWORD
       - POSTGRES_DB=buildscale
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     # ports:
     #   - "5432:5432"
     restart: unless-stopped

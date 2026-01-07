@@ -154,6 +154,8 @@ COPY backend/Cargo.toml ./Cargo.toml
 COPY backend/src ./src
 # Copy .sqlx cache for offline builds
 COPY backend/.sqlx ./.sqlx/
+# Copy migrations directory
+COPY backend/migrations ./migrations
 
 # Build backend binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
