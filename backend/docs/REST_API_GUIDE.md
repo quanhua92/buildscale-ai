@@ -10,6 +10,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [Health Check](#health-check)
   - [User Registration](#user-registration)
   - [User Login](#user-login)
+  - [Refresh Access Token](#refresh-access-token)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 
@@ -22,6 +23,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/health` | GET | Health check with cache metrics | No |
 | `/api/v1/auth/register` | POST | Register new user | No |
 | `/api/v1/auth/login` | POST | Login and get tokens | No |
+| `/api/v1/auth/refresh` | POST | Refresh access token | No (uses refresh token) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -111,8 +113,14 @@ The API uses **dual-token authentication** for secure access:
    → Authorization: Bearer <access_token>
 
 4. When access_token expires (15 min)
-   → Use refresh_token to get new access_token
-   → Or login again
+   → POST /api/v1/auth/refresh
+   → API clients: Authorization header with refresh_token
+   → Browser clients: Cookie with refresh_token
+   → Returns new access_token
+   → Sets access_token cookie (browser clients only)
+
+5. Repeat step 3-4 until refresh_token expires (30 days)
+   → Then login again (step 2)
 ```
 
 ---
@@ -432,6 +440,223 @@ const apiResponse = await fetch('http://localhost:3000/api/v1/protected', {
   }
 });
 ```
+
+---
+
+### Refresh Access Token
+
+Refresh an expired access token using a valid refresh token. Supports both Authorization header (API clients) and Cookie (browser clients).
+
+**Endpoint**: `POST /api/v1/auth/refresh`
+
+**Authentication**: No (uses refresh token instead)
+
+#### How It Works
+
+The refresh endpoint accepts refresh tokens from two sources with **priority handling**:
+
+1. **Authorization header** (API/Mobile clients): `Authorization: Bearer <refresh_token>`
+2. **Cookie** (Browser clients): `refresh_token=<token>`
+
+**Priority**: Authorization header takes precedence if both are present.
+
+**Behavior differences by client type**:
+- **API/Mobile clients**: Returns JSON only, does NOT set cookie
+- **Browser clients**: Returns JSON AND sets `access_token` cookie
+
+#### Request (API/Mobile Client)
+
+**Headers**:
+```
+Content-Type: application/json
+Authorization: Bearer <refresh_token>
+```
+
+**Body**: None (token in Authorization header)
+
+#### Request (Browser Client)
+
+**Headers**:
+```
+Content-Type: application/json
+Cookie: refresh_token=<token>
+```
+
+**Body**: None (token in Cookie)
+
+#### Response (200 OK)
+
+**JSON Body** (both client types):
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "expires_at": "2026-01-07T09:15:00Z"
+}
+```
+
+**Cookie Set** (browser clients only):
+```
+Set-Cookie: access_token=eyJ0eXAiOiJKV1QiLCJhbGc...; HttpOnly; SameSite=Lax; Path=/; Max-Age=900
+```
+
+**No cookie** is set for API clients using Authorization header.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `access_token` | string (JWT) | New JWT access token (15 minute expiration) |
+| `expires_at` | string (ISO8601) | When the new access token expires |
+
+#### Token Expiration
+
+- **Access Token**: 15 minutes (configurable via `BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES`)
+- **Refresh Token**: 30 days (configurable via `BUILDSCALE_SESSIONS_EXPIRATION_HOURS`)
+
+#### Error Responses
+
+**401 Unauthorized** - Invalid or expired refresh token
+```json
+{
+  "error": "No valid refresh token found in Authorization header or cookie"
+}
+```
+
+**401 Unauthorized** - Session expired
+```json
+{
+  "error": "Session expired"
+}
+```
+
+#### Example Usage (API Client)
+
+```bash
+# Refresh using Authorization header
+curl -X POST http://localhost:3000/api/v1/auth/refresh \
+  -H "Authorization: Bearer <refresh_token>"
+
+# Response: JSON only, no cookie set
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "expires_at": "2026-01-07T10:30:00Z"
+}
+```
+
+#### Example Usage (Browser Client)
+
+```bash
+# Refresh using Cookie
+curl -X POST http://localhost:3000/api/v1/auth/refresh \
+  -H "Cookie: refresh_token=<token>" \
+  -c cookies.txt
+
+# Response: JSON + access_token cookie is set
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "expires_at": "2026-01-07T10:30:00Z"
+}
+
+# access_token cookie is automatically set
+# Can be used for subsequent requests
+curl http://localhost:3000/api/v1/protected-endpoint \
+  -b cookies.txt
+```
+
+#### JavaScript/TypeScript Example
+
+```javascript
+// Automatic token refresh for API clients
+let accessToken = localStorage.getItem('access_token');
+let refreshToken = localStorage.getItem('refresh_token');
+
+const refreshAccessToken = async () => {
+  const response = await fetch('http://localhost:3000/api/v1/auth/refresh', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${refreshToken}`
+    }
+  });
+
+  if (!response.ok) {
+    // Refresh token expired, need to login again
+    window.location.href = '/login';
+    return;
+  }
+
+  const data = await response.json();
+  accessToken = data.access_token;
+  localStorage.setItem('access_token', accessToken);
+  return accessToken;
+};
+
+// Use in API calls with automatic refresh
+const apiCall = async () => {
+  try {
+    let response = await fetch('http://localhost:3000/api/v1/protected', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    // If access token expired, refresh and retry
+    if (response.status === 401) {
+      accessToken = await refreshAccessToken();
+      response = await fetch('http://localhost:3000/api/v1/protected', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API call failed:', error);
+  }
+};
+```
+
+#### Browser Client with Automatic Cookie Management
+
+```javascript
+// Browser clients - cookies are handled automatically
+const refreshAccessToken = async () => {
+  const response = await fetch('http://localhost:3000/api/v1/auth/refresh', {
+    method: 'POST',
+    credentials: 'include' // Send and receive cookies automatically
+  });
+
+  if (!response.ok) {
+    // Refresh token expired, redirect to login
+    window.location.href = '/login';
+    return;
+  }
+
+  const data = await response.json();
+  // New access_token is automatically set in cookie by the server
+  return data.access_token;
+};
+
+// Subsequent requests automatically include the access_token cookie
+const apiCall = async () => {
+  const response = await fetch('http://localhost:3000/api/v1/protected', {
+    credentials: 'include' // Cookies sent automatically
+  });
+  return await response.json();
+};
+```
+
+#### When to Refresh
+
+Refresh the access token when:
+- API calls return `401 Unauthorized`
+- Access token expiration time is reached (15 minutes)
+- User resumes activity after extended period
+
+**Do NOT** refresh:
+- On every request (refresh only when needed)
+- If refresh token is expired (30 days) - user must login again
+- More frequently than necessary (reduces security)
 
 ---
 
