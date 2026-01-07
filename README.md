@@ -1,52 +1,86 @@
-# buildscale-ai
+# BuildScale AI
 
-## Directory Structure
+Monorepo with Rust backend and React frontends.
 
-The project is organized into the following top-level directories:
-
--   **/backend**: Contains the Rust API. This includes all the source code, dependencies (`Cargo.toml`), and examples for the server-side logic.
--   **/frontend**: Contains the TanStack Start (React) single-page application. This is where all the UI components, routing, and client-side logic reside.
--   **/docs**: A place for all project documentation. This includes setup guides, API specifications, and architectural diagrams in Markdown (`.md`) format.
--   **/scripts**: Holds various automation and utility scripts (`.sh`) to streamline common development tasks like building, testing, or deploying the applications.
-
-## Getting Started
-
-### Prerequisites
-
--   Rust and Cargo
--   Node.js and pnpm
-
-### Installation
-
-1.  **Clone the repository:**
-
-    ```bash
-    git clone https://github.com/quanhua92/buildscale-ai
-    cd buildscale-ai
-    ```
-
-2.  **Install frontend dependencies:**
-    ```bash
-    cd frontend
-    pnpm install
-    ```
-
-## Usage
-
-### Running the Backend
-
-From the `/backend` directory, you can run the API server:
+## Quick Start (Docker Compose)
 
 ```bash
+# 1. Generate SQLx cache (first time only)
 cd backend
-cargo run
+cargo sqlx prepare
+cd ..
+
+# 2. Start all services
+docker compose up -d
 ```
 
-### Running the Frontend
+- **Server**: http://localhost:3000
+- **Health check**: http://localhost:3000/api/v1/health
 
-From the `/frontend` directory, you can start the development server:
+## Project Structure
+
+```
+buildscale-ai/
+├── backend/          # Rust API (Axum + SQLx + PostgreSQL)
+├── frontend/
+│   ├── admin/        # Admin React app (port 5173)
+│   └── web/          # Public React app (port 5174)
+├── docker-compose.yml
+└── Dockerfile        # Multi-stage build
+```
+
+## Development
+
+### Local Development
 
 ```bash
-cd frontend
-pnpm run dev
+# Backend
+cd backend && cargo run
+
+# Admin frontend
+cd frontend/admin && pnpm dev
+
+# Web frontend
+cd frontend/web && pnpm dev
 ```
+
+### Docker Build
+
+```bash
+# Build image
+docker compose build
+
+# Start services
+docker compose up -d
+
+# View logs
+docker compose logs -f buildscale
+
+# Stop services
+docker compose down
+```
+
+## Configuration
+
+Environment variables in `docker-compose.yml`:
+
+- `BUILDSCALE_DATABASE_HOST` (default: `postgres`)
+- `BUILDSCALE_JWT_SECRET` (min 32 chars)
+- `BUILDSCALE_SESSIONS_EXPIRATION_HOURS` (default: `720`)
+
+See `backend/.env.example` for all options.
+
+## Database
+
+```bash
+# Run migrations
+cd backend
+sqlx migrate run
+```
+
+## Prerequisites
+
+- Rust + Cargo
+- Node.js 22 + pnpm
+- Docker + Docker Compose
+- PostgreSQL 18
