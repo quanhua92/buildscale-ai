@@ -12,7 +12,8 @@ Multi-tenant Rust backend with workspace-based RBAC, complete user management, a
 | **Roles & Permissions** | [Role-Based Access Control](./ROLE_MANAGEMENT.md#rbac-overview) |
 | **Invitation System** | [Workspace Invitations](./WORKSPACE_INVITATIONS.md#workspace-invitations-overview) |
 | **Caching** | [Cache Implementation & Usage](./CACHE.md#usage) |
-| **Developer API Reference** | [Complete API Guide](./API_GUIDE.md#service-layer-apis) |
+| **REST API Endpoints** | [HTTP REST API Guide](./REST_API_GUIDE.md#quick-reference) |
+| **Service Layer APIs** | [Services API Guide](./SERVICES_API_GUIDE.md#quick-api-reference) |
 
 ## Installation & Setup
 
@@ -220,7 +221,8 @@ src/
 | **Invitations** | [WORKSPACE_INVITATIONS.md](./WORKSPACE_INVITATIONS.md) | Token-based invitation system |
 | **Caching** | [CACHE.md](./CACHE.md) | Generic async cache with TTL, Axum/Redis integration |
 | **Configuration** | [CONFIGURATION.md](./CONFIGURATION.md) | System settings and constraints |
-| **Developer API** | [API_GUIDE.md](./API_GUIDE.md) | Complete APIs + examples + practices |
+| **REST API** | [REST_API_GUIDE.md](./REST_API_GUIDE.md) | HTTP endpoints + request/response formats |
+| **Service APIs** | [SERVICES_API_GUIDE.md](./SERVICES_API_GUIDE.md) | Internal service layer functions |
 
 ## Key Features
 
