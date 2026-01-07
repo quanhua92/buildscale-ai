@@ -1,6 +1,5 @@
 use axum::{Router, routing::{get, post}};
-use buildscale::{load_config, Cache, CacheConfig, AppState, DbPool};
-use buildscale::handlers::{health::health_check, auth::{register, login, refresh}};
+use buildscale::{load_config, Cache, CacheConfig, AppState, DbPool, create_api_router};
 use reqwest::{Client, redirect::Policy};
 use secrecy::ExposeSecret;
 use std::net::SocketAddr;
@@ -64,12 +63,8 @@ impl TestApp {
         // Build application state with cache AND database pool
         let app_state = AppState::new(cache.clone(), pool);
 
-        // Build API v1 routes with auth endpoints
-        let api_routes = Router::new()
-            .route("/health", get(health_check))
-            .route("/auth/register", post(register))
-            .route("/auth/login", post(login))
-            .route("/auth/refresh", post(refresh));
+        // Build API v1 routes using the shared router function
+        let api_routes = create_api_router();
 
         // Build the main router with nested API routes
         let app = Router::new()

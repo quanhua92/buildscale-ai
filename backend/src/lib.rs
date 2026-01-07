@@ -23,6 +23,21 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 use axum::{Router, routing::{get, post}};
 use tokio::net::TcpListener;
 
+/// Create API v1 routes
+///
+/// This function creates the API router with all endpoints.
+/// It's reused by both the main server and test apps to ensure consistency.
+///
+/// # Returns
+/// A configured Router with all API v1 routes
+pub fn create_api_router() -> Router<AppState> {
+    Router::new()
+        .route("/health", get(health_check))
+        .route("/auth/register", post(register))
+        .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh))
+}
+
 /// Start the Axum API server
 ///
 /// # Arguments
@@ -58,12 +73,8 @@ pub async fn run_api_server(
     // Build the application state with cache AND database pool
     let app_state = AppState::new(cache, pool);
 
-    // Build API v1 routes with auth endpoints
-    let api_routes = Router::new()
-        .route("/health", get(health_check))
-        .route("/auth/register", post(register))
-        .route("/auth/login", post(login))
-        .route("/auth/refresh", post(refresh));
+    // Build API v1 routes using the shared router function
+    let api_routes = create_api_router();
 
     // Build the main router with nested API routes
     let app = Router::new()
