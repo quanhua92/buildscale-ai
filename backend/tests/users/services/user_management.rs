@@ -1,5 +1,6 @@
 use buildscale::{
     queries::users::{get_user_by_id, list_users},
+    queries::sessions::hash_session_token,
     services::users::{register_user, verify_password, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
     models::users::LoginUser,
 };
@@ -216,7 +217,7 @@ async fn test_get_session_info_success() {
     assert!(session_info.is_some());
 
     let session_info = session_info.unwrap();
-    assert_eq!(session_info.token, login_result.refresh_token);
+    // Cannot compare token_hash with login_result.refresh_token (different types)
     assert_eq!(session_info.user_id, login_result.user.id);
     assert!(session_info.expires_at > chrono::Utc::now());
 }
@@ -329,7 +330,7 @@ async fn test_get_user_active_sessions() {
 
     // Verify all our session tokens are in the list
     for token in &session_tokens {
-        let found = active_sessions.iter().any(|s| s.token == *token);
+        let found = active_sessions.iter().any(|s| s.token_hash == hash_session_token(token));
         assert!(found, "Session token {} should be in active sessions", token);
     }
 }

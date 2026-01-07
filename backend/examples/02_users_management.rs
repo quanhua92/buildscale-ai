@@ -388,9 +388,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test different password lengths
     println!("Testing various valid password lengths...");
     let password_tests = vec![
-        ("valid8", "valid123"),
-        ("valid10", "validpass10"),
-        ("valid20", "validpassword20chars"),
+        ("valid12", "validpass1234"),
+        ("valid15", "validSecurePass15"),
+        ("valid20", "validSecurePass20Chars!!"),
     ];
 
     for (name, password) in password_tests {
@@ -625,7 +625,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("✓ Retrieved session info:");
                 println!("  Session ID: {}", session_info.id);
                 println!("  User ID: {}", session_info.user_id);
-                println!("  Token: {}...", &session_info.token[..8]);
+                println!("  Token Hash: {}...", &session_info.token_hash[..8]);
                 println!("  Expires at: {}", session_info.expires_at);
                 println!("  Created at: {}", session_info.created_at);
             },
@@ -712,11 +712,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Direct Database Operations");
     println!("✅ Error Handling & Validation");
     println!("✅ Re-run Safety (Auto-cleanup & Idempotent)");
-    println!("🆕 Email Availability Checking");
-    println!("🆕 Service Layer Password Updates");
-    println!("🆕 Session Information Access");
-    println!("🆕 User Session Management (Active Sessions & Revocation)");
-    println!("🆕 Safe User ID Lookups with Option Handling");
+    println!("✅ Email Availability Checking");
+    println!("✅ Service Layer Password Updates");
+    println!("✅ Session Information Access");
+    println!("✅ User Session Management (Active Sessions & Revocation)");
+    println!("✅ Safe User ID Lookups with Option Handling");
     println!();
     println!("💡 This example is re-run safe - it automatically cleans up previous data");
     println!("   and works with sqlx CLI migrations (no manual table creation).");

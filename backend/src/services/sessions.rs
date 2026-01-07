@@ -44,7 +44,9 @@ pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> 
         return Err(Error::Validation("Session token cannot be empty".to_string()));
     }
 
-    let rows_affected = sessions::delete_session_by_token(conn, session_token.trim()).await?;
+    // Hash the token for database lookup
+    let token_hash = sessions::hash_session_token(session_token.trim());
+    let rows_affected = sessions::delete_session_by_token_hash(conn, &token_hash).await?;
 
     if rows_affected == 0 {
         return Err(Error::InvalidToken("Session token not found".to_string()));

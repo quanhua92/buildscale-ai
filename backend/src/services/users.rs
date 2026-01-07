@@ -191,10 +191,13 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
     let refresh_token = generate_session_token()?;
     let refresh_token_expires_at = Utc::now() + Duration::hours(config.sessions.expiration_hours);
 
+    // Hash the token for database storage
+    let token_hash = sessions::hash_session_token(&refresh_token);
+
     // Create session (for refresh token)
     let new_session = NewUserSession {
         user_id: user.id,
-        token: refresh_token.clone(),
+        token_hash,
         expires_at: refresh_token_expires_at,
     };
 
@@ -203,7 +206,7 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
     Ok(LoginResult {
         user,
         access_token,
-        refresh_token: session.token,
+        refresh_token,  // Return unhashed token to client
         access_token_expires_at,
         refresh_token_expires_at: session.expires_at,
     })
@@ -218,9 +221,12 @@ pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<
     // Validate session token format
     validate_session_token(session_token)?;
 
-    // Get valid session by token
+    // Hash the token for database lookup
     let sanitized_token = validate_required_string(session_token, "Session token")?;
-    let session = sessions::get_valid_session_by_token(conn, &sanitized_token).await?
+    let token_hash = sessions::hash_session_token(&sanitized_token);
+
+    // Get valid session by token hash
+    let session = sessions::get_valid_session_by_token_hash(conn, &token_hash).await?
         .ok_or_else(|| Error::InvalidToken("Invalid or expired session token".to_string()))?;
 
     // Get user by session user_id
@@ -235,9 +241,10 @@ pub async fn logout_user(conn: &mut DbConn, session_token: &str) -> Result<()> {
     // Validate session token format
     validate_session_token(session_token)?;
 
-    // Delete session by token
+    // Delete session by token hash
     let sanitized_token = validate_required_string(session_token, "Session token")?;
-    let rows_affected = sessions::delete_session_by_token(conn, &sanitized_token).await?;
+    let token_hash = sessions::hash_session_token(&sanitized_token);
+    let rows_affected = sessions::delete_session_by_token_hash(conn, &token_hash).await?;
 
     if rows_affected == 0 {
         return Err(Error::InvalidToken("Invalid session token".to_string()));
@@ -265,9 +272,10 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
         )));
     }
 
-    // Get current session
+    // Get current session by hashing token
     let sanitized_token = validate_required_string(session_token, "Session token")?;
-    let session = sessions::get_session_by_token(conn, &sanitized_token).await?
+    let token_hash = sessions::hash_session_token(&sanitized_token);
+    let session = sessions::get_session_by_token_hash(conn, &token_hash).await?
         .ok_or_else(|| Error::InvalidToken("Invalid session token".to_string()))?;
 
     // Check if session is expired
@@ -279,9 +287,9 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
     let new_expires_at = Utc::now() + Duration::hours(hours_to_extend);
 
     // Update session
-    let updated_session = sessions::refresh_session(conn, session.id, new_expires_at).await?;
+    let _updated_session = sessions::refresh_session(conn, session.id, new_expires_at).await?;
 
-    Ok(updated_session.token)
+    Ok(session_token.to_string())  // Return original token
 }
 
 /// Refreshes the access token using a valid refresh token (session)
@@ -302,8 +310,11 @@ pub async fn refresh_access_token(
     conn: &mut DbConn,
     refresh_token: &str,
 ) -> Result<RefreshTokenResult> {
+    // Hash the token for database lookup
+    let token_hash = sessions::hash_session_token(refresh_token);
+
     // Validate the refresh token (session) exists and is not expired
-    let session = sessions::get_valid_session_by_token(conn, refresh_token)
+    let session = sessions::get_valid_session_by_token_hash(conn, &token_hash)
         .await?
         .ok_or_else(|| Error::InvalidToken("Invalid or expired refresh token".to_string()))?;
 
@@ -352,8 +363,11 @@ pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<
         return Err(Error::Validation("Session token cannot be empty".to_string()));
     }
 
+    // Hash the token for database lookup
+    let token_hash = sessions::hash_session_token(session_token.trim());
+
     // Use existing query function
-    sessions::get_session_by_token(conn, session_token.trim()).await
+    sessions::get_session_by_token_hash(conn, &token_hash).await
         .map_err(|e| e.into())
 }
 

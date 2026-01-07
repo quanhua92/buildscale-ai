@@ -3,21 +3,30 @@ use crate::{
     models::users::{NewUserSession, UpdateUserSession, UserSession},
 };
 use chrono::Utc;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::DbConn;
+
+/// Hash a session token using SHA-256 for secure storage
+pub fn hash_session_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let result = hasher.finalize();
+    hex::encode(result)
+}
 
 /// Creates a new user session in the database.
 pub async fn create_session(conn: &mut DbConn, new_session: NewUserSession) -> Result<UserSession> {
     let session = sqlx::query_as!(
         UserSession,
         r#"
-        INSERT INTO user_sessions (user_id, token, expires_at)
+        INSERT INTO user_sessions (user_id, token_hash, expires_at)
         VALUES ($1, $2, $3)
-        RETURNING id, user_id, token, expires_at, created_at, updated_at
+        RETURNING id, user_id, token_hash, expires_at, created_at, updated_at
         "#,
         new_session.user_id,
-        new_session.token,
+        new_session.token_hash,
         new_session.expires_at
     )
     .fetch_one(conn)
@@ -27,16 +36,16 @@ pub async fn create_session(conn: &mut DbConn, new_session: NewUserSession) -> R
     Ok(session)
 }
 
-/// Gets a single session by its token. The session may not exist.
-pub async fn get_session_by_token(conn: &mut DbConn, token: &str) -> Result<Option<UserSession>> {
+/// Gets a single session by its token hash. The session may not exist.
+pub async fn get_session_by_token_hash(conn: &mut DbConn, token_hash: &str) -> Result<Option<UserSession>> {
     let session = sqlx::query_as!(
         UserSession,
         r#"
-        SELECT id, user_id, token, expires_at, created_at, updated_at
+        SELECT id, user_id, token_hash, expires_at, created_at, updated_at
         FROM user_sessions
-        WHERE token = $1
+        WHERE token_hash = $1
         "#,
-        token
+        token_hash
     )
     .fetch_optional(conn)
     .await
@@ -50,7 +59,7 @@ pub async fn get_sessions_by_user(conn: &mut DbConn, user_id: Uuid) -> Result<Ve
     let sessions = sqlx::query_as!(
         UserSession,
         r#"
-        SELECT id, user_id, token, expires_at, created_at, updated_at
+        SELECT id, user_id, token_hash, expires_at, created_at, updated_at
         FROM user_sessions
         WHERE user_id = $1
         ORDER BY created_at DESC
@@ -72,7 +81,7 @@ pub async fn update_session(conn: &mut DbConn, session_id: Uuid, update: UpdateU
         UPDATE user_sessions
         SET expires_at = COALESCE($1, expires_at), updated_at = now()
         WHERE id = $2
-        RETURNING id, user_id, token, expires_at, created_at, updated_at
+        RETURNING id, user_id, token_hash, expires_at, created_at, updated_at
         "#,
         update.expires_at,
         session_id
@@ -101,15 +110,15 @@ pub async fn delete_session(conn: &mut DbConn, session_id: Uuid) -> Result<u64> 
     Ok(rows_affected)
 }
 
-/// Deletes a session by its token.
-pub async fn delete_session_by_token(conn: &mut DbConn, token: &str) -> Result<u64> {
+/// Deletes a session by its token hash.
+pub async fn delete_session_by_token_hash(conn: &mut DbConn, token_hash: &str) -> Result<u64> {
     let rows_affected = sqlx::query(
         r#"
         DELETE FROM user_sessions
-        WHERE token = $1
+        WHERE token_hash = $1
         "#,
     )
-    .bind(token)
+    .bind(token_hash)
     .execute(conn)
     .await
     .map_err(Error::Sqlx)?
@@ -152,14 +161,14 @@ pub async fn delete_expired_sessions(conn: &mut DbConn) -> Result<u64> {
 }
 
 /// Checks if a session is valid (exists and not expired).
-pub async fn is_session_valid(conn: &mut DbConn, token: &str) -> Result<bool> {
+pub async fn is_session_valid(conn: &mut DbConn, token_hash: &str) -> Result<bool> {
     let count = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*) as "count!"
         FROM user_sessions
-        WHERE token = $1 AND expires_at > NOW()
+        WHERE token_hash = $1 AND expires_at > NOW()
         "#,
-        token
+        token_hash
     )
     .fetch_one(conn)
     .await
@@ -168,16 +177,16 @@ pub async fn is_session_valid(conn: &mut DbConn, token: &str) -> Result<bool> {
     Ok(count > 0)
 }
 
-/// Gets a valid session (exists and not expired) by its token.
-pub async fn get_valid_session_by_token(conn: &mut DbConn, token: &str) -> Result<Option<UserSession>> {
+/// Gets a valid session (exists and not expired) by its token hash.
+pub async fn get_valid_session_by_token_hash(conn: &mut DbConn, token_hash: &str) -> Result<Option<UserSession>> {
     let session = sqlx::query_as!(
         UserSession,
         r#"
-        SELECT id, user_id, token, expires_at, created_at, updated_at
+        SELECT id, user_id, token_hash, expires_at, created_at, updated_at
         FROM user_sessions
-        WHERE token = $1 AND expires_at > NOW()
+        WHERE token_hash = $1 AND expires_at > NOW()
         "#,
-        token
+        token_hash
     )
     .fetch_optional(conn)
     .await
@@ -194,7 +203,7 @@ pub async fn refresh_session(conn: &mut DbConn, session_id: Uuid, new_expires_at
         UPDATE user_sessions
         SET expires_at = $1, updated_at = now()
         WHERE id = $2
-        RETURNING id, user_id, token, expires_at, created_at, updated_at
+        RETURNING id, user_id, token_hash, expires_at, created_at, updated_at
         "#,
         new_expires_at,
         session_id
