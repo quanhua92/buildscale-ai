@@ -14,6 +14,7 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
+use secrecy::ExposeSecret;
 use sqlx::Acquire;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -181,7 +182,7 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
     // Generate JWT access token (short-lived, 15 minutes by default)
     let access_token = jwt::generate_jwt(
         user.id,
-        &config.jwt.secret,
+        config.jwt.secret.expose_secret(),
         config.jwt.access_token_expiration_minutes,
     )?;
     let access_token_expires_at = Utc::now() + Duration::minutes(config.jwt.access_token_expiration_minutes);
@@ -312,7 +313,7 @@ pub async fn refresh_access_token(
     // Generate new access token (JWT)
     let access_token = jwt::generate_jwt(
         session.user_id,
-        &config.jwt.secret,
+        config.jwt.secret.expose_secret(),
         config.jwt.access_token_expiration_minutes,
     )?;
 

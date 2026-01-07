@@ -52,11 +52,12 @@ impl Config {
     /// Validates JWT secrets meet security requirements
     pub fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Validate JWT access token secret
-        if self.jwt.secret.len() < 32 {
+        let secret = self.jwt.secret.expose_secret();
+        if secret.len() < 32 {
             return Err(format!(
                 "BUILDSCALE__JWT__SECRET must be at least 32 characters (got {} chars). \
                  Set a strong secret in your .env file or environment.",
-                self.jwt.secret.len()
+                secret.len()
             ).into());
         }
 
@@ -70,7 +71,7 @@ impl Config {
         ];
 
         for pattern in weak_patterns {
-            if self.jwt.secret.to_lowercase().contains(pattern) {
+            if secret.to_lowercase().contains(pattern) {
                 return Err(format!(
                     "BUILDSCALE__JWT__SECRET contains weak pattern '{}'. Use a cryptographically random secret.",
                     pattern
@@ -111,11 +112,11 @@ impl Default for SessionsConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct JwtConfig {
     /// Secret key for signing JWT access tokens (minimum 32 characters recommended)
     #[serde(skip_serializing)]
-    pub secret: String,
+    pub secret: SecretString,
     /// Access token expiration time in minutes (default: 15 minutes)
     #[serde(alias = "accessTokenExpirationMinutes")]
     pub access_token_expiration_minutes: i64,
@@ -123,20 +124,31 @@ pub struct JwtConfig {
     #[serde(skip_serializing)]
     #[serde(alias = "refreshTokenSecret")]
     #[serde(default = "JwtConfig::default_refresh_token_secret")]
-    pub refresh_token_secret: String,
+    pub refresh_token_secret: SecretString,
+}
+
+// Custom Debug implementation to redact secrets
+impl fmt::Debug for JwtConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JwtConfig")
+            .field("secret", &"<REDACTED>")
+            .field("access_token_expiration_minutes", &self.access_token_expiration_minutes)
+            .field("refresh_token_secret", &"<REDACTED>")
+            .finish()
+    }
 }
 
 impl JwtConfig {
-    fn default_refresh_token_secret() -> String {
-        String::new()
+    fn default_refresh_token_secret() -> SecretString {
+        SecretString::from(String::new())
     }
 
     /// Get the refresh token secret, falling back to the main secret if not set
     pub fn get_refresh_token_secret(&self) -> &str {
-        if self.refresh_token_secret.is_empty() {
-            &self.secret
+        if self.refresh_token_secret.expose_secret().is_empty() {
+            self.secret.expose_secret()
         } else {
-            &self.refresh_token_secret
+            self.refresh_token_secret.expose_secret()
         }
     }
 }
@@ -162,9 +174,9 @@ impl Default for JwtConfig {
     fn default() -> Self {
         // Require explicit configuration - no weak defaults
         Self {
-            secret: String::new(),
+            secret: SecretString::from(String::new()),
             access_token_expiration_minutes: 15,
-            refresh_token_secret: String::new(),
+            refresh_token_secret: SecretString::from(String::new()),
         }
     }
 }
