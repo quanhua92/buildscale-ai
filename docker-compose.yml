@@ -36,17 +36,17 @@ services:
       - RUST_LOG=info
       - PORT=3000
       # Database Configuration
-      - BUILDSCALE_DATABASE_USER=buildscale
-      - BUILDSCALE_DATABASE_PASSWORD=PASSWORD
-      - BUILDSCALE_DATABASE_HOST=postgres
-      - BUILDSCALE_DATABASE_PORT=5432
-      - BUILDSCALE_DATABASE_DATABASE=buildscale
+      - BUILDSCALE__DATABASE__USER=buildscale
+      - BUILDSCALE__DATABASE__PASSWORD=PASSWORD
+      - BUILDSCALE__DATABASE__HOST=postgres
+      - BUILDSCALE__DATABASE__PORT=5432
+      - BUILDSCALE__DATABASE__DATABASE=buildscale
       # Session Configuration
-      - BUILDSCALE_SESSIONS_EXPIRATION_HOURS=720
+      - BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720
       # JWT Configuration
-      - BUILDSCALE_JWT_SECRET=your-secret-key-here-min-32-chars
-      - BUILDSCALE_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES=15
-      - BUILDSCALE_JWT_REFRESH_TOKEN_SECRET=your-refresh-token-secret-here-min-32-chars
+      - BUILDSCALE__JWT__SECRET=BuildScaleJWT2025SecureRandomKeyForAccessTokensStrong
+      - BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES=15
+      - BUILDSCALE__JWT__REFRESH_TOKEN_SECRET=BuildScaleRefresh2025SecureRandomKeyForTokensStrong
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
