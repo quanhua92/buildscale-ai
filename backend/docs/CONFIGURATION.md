@@ -27,6 +27,54 @@ if hours_to_extend > config.sessions.expiration_hours {
 // Session duration is configurable via BUILDSCALE__SESSIONS__EXPIRATION_HOURS
 ```
 
+### JWT Secret Configuration
+
+```rust
+// JWT secret validation (from config.rs)
+pub fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+    // Validate JWT access token secret
+    if self.jwt.secret.len() < 32 {
+        return Err(format!(
+            "BUILDSCALE__JWT__SECRET must be at least 32 characters (got {} chars)",
+            self.jwt.secret.len()
+        ).into());
+    }
+
+    // Validate JWT refresh token secret
+    if self.jwt.refresh_token_secret.len() < 32 {
+        return Err(format!(
+            "BUILDSCALE__JWT__REFRESH_TOKEN_SECRET must be at least 32 characters (got {} chars)",
+            self.jwt.refresh_token_secret.len()
+        ).into());
+    }
+
+    Ok(())
+}
+```
+
+**JWT Secret Requirements:**
+- **Minimum length**: 32 characters for both secrets
+- **No fallback**: Each secret must be explicitly configured (refresh token secret cannot fall back to access token secret)
+- **Weak pattern detection**: The following patterns are automatically rejected:
+  - `change-this`
+  - `secret`
+  - `password`
+  - `123456`
+  - `example`
+
+**Security Best Practices:**
+- Use cryptographically random secrets in production
+- Use different secrets for access tokens and refresh tokens
+- Rotate secrets periodically (every 90 days recommended)
+- Store secrets in environment variables, never in code
+- Never commit secrets to version control
+
+**Example strong secrets:**
+```bash
+BUILDSCALE__JWT__SECRET=BuildScaleJWTProdKeyForAccessTokens32Chars!
+BUILDSCALE__JWT__REFRESH_TOKEN_SECRET=BuildScaleRefreshTokenProdKey32Chars!!@
+```
+
 ## Input Validation System
 
 The system includes comprehensive input validation utilities in `src/validation.rs` to ensure data integrity and security across all operations.
@@ -49,12 +97,23 @@ The system includes comprehensive input validation utilities in `src/validation.
 #### Password Validation (`validate_password`)
 ```rust
 // Validation rules:
-// - Minimum 8 characters (configurable minimum length)
+// - Minimum 12 characters
+// - At least 2 of 4 character types: uppercase, lowercase, digit, special
 // - Cannot be empty
-// - No additional complexity requirements (only length-based)
+// - Rejects common weak patterns
+// - Rejects repetitive characters (e.g., "aaaaaaaa")
 // - Password hashing is handled separately with Argon2
-// Returns: Result<()> with "Password must be at least X characters long" error
+// Returns: Result<()> with descriptive error messages
 ```
+
+**Password Weak Patterns Rejected:**
+- Common passwords: `password`, `123456`, `qwerty`, `abc123`, `admin`, `welcome`
+- Repetitive characters: `aaaaaaaa`, `11111111`
+
+**Example strong passwords:**
+- `SecureP@ssw0rd` (14 chars, 4 types)
+- `TestPass123!` (12 chars, 3 types)
+- `MySecur3ity!` (12 chars, 3 types)
 
 #### Workspace Name Validation (`validate_workspace_name`)
 ```rust
