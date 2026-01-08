@@ -22,6 +22,30 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(Config::load()?)
 }
 
+/// Initialize tracing subscriber with environment filter
+///
+/// This function sets up the tracing subscriber for the application.
+/// It reads the RUST_LOG environment variable to set the log level.
+/// If RUST_LOG is not set, it defaults to "info" level.
+///
+/// # Example
+/// ```
+/// use buildscale::init_tracing;
+///
+/// fn main() {
+///     init_tracing();
+/// }
+/// ```
+pub fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+        )
+        .with_target(false)
+        .init();
+}
+
 use axum::{Router, routing::{get, post}};
 use tokio::net::TcpListener;
 
@@ -100,14 +124,14 @@ pub async fn run_api_server(
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = TcpListener::bind(&addr).await?;
 
-    println!("API server listening on http://{}", addr);
+    tracing::info!("API server listening on http://{}", addr);
 
     // Setup shutdown handler
     let shutdown_signal = async move {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to install CTRL+C handler");
-        println!("Shutdown signal received");
+        tracing::info!("Shutdown signal received");
         revoked_cleanup_shutdown_tx.send(()).ok();
     };
 

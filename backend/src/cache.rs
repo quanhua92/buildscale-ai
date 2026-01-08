@@ -642,8 +642,8 @@ where
     /// # async fn example() {
     /// let cache: Cache<String> = Cache::new_local(CacheConfig::default());
     /// let metrics = cache.get_health_metrics().await.unwrap();
-    /// println!("Keys: {}", metrics.num_keys);
-    /// println!("Last cleanup: {:?}", metrics.last_worker_time);
+    /// tracing::info!("Keys: {}", metrics.num_keys);
+    /// tracing::info!("Last cleanup: {:?}", metrics.last_worker_time);
     /// # }
     /// ```
     pub async fn get_health_metrics(&self) -> Result<CacheHealthMetrics> {
