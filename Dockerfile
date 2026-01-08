@@ -157,6 +157,9 @@ COPY backend/.sqlx ./.sqlx/
 # Copy migrations directory
 COPY backend/migrations ./migrations
 
+# Ensure migrations are readable during build
+RUN chmod -R 644 ./migrations/*.sql
+
 # Build backend binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
@@ -191,6 +194,9 @@ COPY --from=rust-builder /app/buildscale ./buildscale
 
 # Copy backend migrations
 COPY backend/migrations ./migrations
+
+# Ensure migrations are readable (fixes permission issues when copying from host)
+RUN chmod -R 644 ./migrations/*.sql
 
 # Copy admin frontend build artifacts
 COPY --from=admin-builder /app/admin/dist ./admin
