@@ -8,6 +8,7 @@ pub struct Config {
     pub database: DatabaseConfig,
     pub sessions: SessionsConfig,
     pub jwt: JwtConfig,
+    pub cache: CacheConfig,
     pub cookies: crate::services::cookies::CookieConfig,
     pub server: ServerConfig,
 }
@@ -130,6 +131,21 @@ impl Default for SessionsConfig {
         Self {
             expiration_hours: 720, // 30 days
             revoked_token_retention_minutes: 1440, // 1 day
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CacheConfig {
+    /// User cache TTL in seconds (default: 900 = 15 minutes)
+    /// Matches JWT access token expiration for consistency
+    pub user_cache_ttl_seconds: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            user_cache_ttl_seconds: 900, // 15 minutes
         }
     }
 }

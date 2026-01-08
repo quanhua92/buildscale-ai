@@ -21,7 +21,8 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 
 | Endpoint | Method | Description | Auth Required |
 |----------|--------|-------------|---------------|
-| `/api/v1/health` | GET | Health check with cache metrics | No |
+| `/api/v1/health` | GET | Health check - simple status | No |
+| `/api/v1/health/cache` | GET | Cache metrics | Yes (JWT) |
 | `/api/v1/auth/register` | POST | Register new user | No |
 | `/api/v1/auth/login` | POST | Login and get tokens | No |
 | `/api/v1/auth/refresh` | POST | Refresh access token | No (uses refresh token) |
@@ -136,34 +137,283 @@ The API uses **dual-token authentication** for secure access:
 
 ---
 
+## JWT Authentication Middleware
+
+The API provides a reusable JWT authentication middleware that can be applied to any protected endpoint.
+
+### Overview
+
+The middleware provides:
+- **JWT validation**: Verifies JWT signature and expiration
+- **User caching**: Reduces database queries by caching authenticated users
+- **Multi-source authentication**: Supports Authorization header (API clients) and Cookie (browser clients)
+- **Automatic user context**: Adds `AuthenticatedUser` to request extensions for handler access
+
+### How It Works
+
+1. **Request arrives** at protected endpoint
+2. **Middleware extracts JWT** from Authorization header OR Cookie (header takes priority)
+3. **Validates JWT** signature and expiration using secret
+4. **Extracts user_id** from JWT claims
+5. **Checks cache** for user data (key: `user:{user_id}`)
+6. **On cache hit**: Returns cached user data (no database query)
+7. **On cache miss**: Queries database, caches user with 15-minute TTL
+8. **Adds user** to request extensions as `AuthenticatedUser`
+9. **Calls handler** with user context available
+
+### Performance Benefits
+
+- **First request**: Validate JWT + Query DB + Cache user
+- **Subsequent requests**: Validate JWT + Cache hit (no DB query)
+- **Result**: Significantly reduced database load for authenticated requests
+
+### Configuration
+
+```bash
+# User cache TTL in seconds (default: 900 = 15 minutes)
+# Matches JWT access token expiration for consistency
+BUILDSCALE__CACHE__USER_CACHE_TTL_SECONDS=900
+```
+
+### Using Protected Endpoints
+
+#### API/Mobile Clients (Authorization Header)
+
+```bash
+# Get access token from login response
+ACCESS_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+# Access protected endpoint with Authorization header
+curl http://localhost:3000/api/v1/health/cache \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+#### Browser Clients (Cookie)
+
+```javascript
+// Cookies are set automatically by login endpoint
+// Access protected endpoint - cookie sent automatically
+fetch('/api/v1/health/cache')
+  .then(response => response.json())
+  .then(data => console.log(data));
+```
+
+### Creating Protected Endpoints
+
+#### Step 1: Add Route to Protected Router
+
+In `src/lib.rs`, add your route to the protected router:
+
+```rust
+Router::new()
+    .route("/health/cache", get(health_cache))
+    .route("/your-protected-endpoint", get(your_protected_handler))  // Add here
+    .route_layer(middleware::from_fn_with_state(
+        state.clone(),
+        jwt_auth_middleware,
+    ))
+```
+
+#### Step 2: Extract AuthenticatedUser in Handler
+
+```rust
+use axum::{Extension, State};
+use serde_json::Json;
+use crate::middleware::auth::AuthenticatedUser;
+use crate::state::AppState;
+
+pub async fn your_protected_handler(
+    Extension(user): Extension<AuthenticatedUser>,  // Extract from middleware
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, Error> {
+    // Access user data
+    let user_id = user.id;
+    let email = &user.email;
+    let full_name = &user.full_name;
+
+    // Your handler logic here
+    Ok(Json(json!({
+        "user_id": user_id,
+        "email": email,
+    })))
+}
+```
+
+### Available User Fields
+
+The `AuthenticatedUser` struct provides:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `Uuid` | User's unique identifier |
+| `email` | `String` | User's email address |
+| `full_name` | `Option<String>` | User's full name (optional) |
+
+### Error Handling
+
+#### 401 Unauthorized (Invalid JWT)
+
+```json
+{
+  "error": "No valid token found in Authorization header or cookie"
+}
+```
+
+**Causes**:
+- Missing Authorization header and Cookie
+- Invalid JWT signature
+- Expired JWT token
+- Malformed JWT token
+
+#### Solution
+
+1. **Check token is present**: Include Authorization header or Cookie
+2. **Verify token validity**: Ensure token is from a valid login
+3. **Refresh if expired**: Use `/api/v1/auth/refresh` to get new access token
+4. **Login if needed**: Use `/api/v1/auth/login` to get fresh tokens
+
+### Token Priority
+
+When both Authorization header and Cookie are present:
+1. **Authorization header takes priority**
+2. Cookie is used as fallback
+3. Prevents conflicts in multi-client scenarios
+
+### Security Features
+
+- **HMAC-signed tokens**: Prevents token tampering
+- **Automatic expiration**: Tokens expire after 15 minutes
+- **Secure caching**: User data cached separately from authentication tokens
+- **No sensitive data in public endpoints**: Commit hashes, build info not exposed
+- **Configurable TTL**: User cache expiration matches JWT expiration
+
+### Example: Complete Protected Endpoint
+
+```rust
+// In src/lib.rs - Add to protected router
+Router::new()
+    .route("/api/user/profile", get(get_user_profile))
+    .route_layer(middleware::from_fn_with_state(
+        state.clone(),
+        jwt_auth_middleware,
+    ))
+
+// In src/handlers/users.rs - Handler implementation
+use axum::{Extension, Json};
+use serde_json::json;
+
+pub async fn get_user_profile(
+    Extension(user): Extension<AuthenticatedUser>,
+) -> Result<Json<serde_json::Value>, Error> {
+    Ok(Json(json!({
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+    })))
+}
+```
+
+---
+
 ## API Endpoints
 
 ### Health Check
 
-Monitor server health and cache performance.
+Monitor server health and status. Two endpoints are available:
+
+- **Public Health Check** (`GET /api/v1/health`) - Simple status without authentication
+- **Cache Health Metrics** (`GET /api/v1/health/cache`) - Detailed cache metrics requiring JWT authentication
+
+---
+
+#### Public Health Check
+
+Simple health status for load balancers and health monitoring. No authentication required.
 
 **Endpoint**: `GET /api/v1/health`
 
 **Authentication**: Not required
 
-#### Request
+**Security**: No sensitive information exposed (no commit hashes, build timestamps, or cache metrics)
+
+##### Request
 
 ```bash
 curl http://localhost:3000/api/v1/health
 ```
 
-#### Response (200 OK)
+##### Response (200 OK)
+
+```json
+{
+  "status": "ok"
+}
+```
+
+##### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Status indicator (always "ok") |
+
+##### Use Cases
+
+- **Load balancer health checks**: Verify server is running
+- **Infrastructure monitoring**: Simple uptime monitoring
+- **Docker HEALTHCHECK**: Container health monitoring
+- **Kubernetes readiness probes**: Check if server is ready
+
+##### Security Note
+
+This endpoint does NOT expose:
+- Git commit hashes
+- Build timestamps
+- Version information
+- Cache metrics
+- Any other sensitive information
+
+Use the protected `/api/v1/health/cache` endpoint for detailed monitoring.
+
+---
+
+#### Cache Health Metrics
+
+Detailed cache performance metrics. Requires JWT authentication.
+
+**Endpoint**: `GET /api/v1/health/cache`
+
+**Authentication**: Required (JWT access token)
+
+**Token Sources**:
+- **Authorization header** (API/Mobile clients): `Authorization: Bearer <access_token>`
+- **Cookie** (Browser clients): `access_token=<token>` (automatically sent)
+
+##### Request
+
+**With Authorization header** (API clients):
+```bash
+curl http://localhost:3000/api/v1/health/cache \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**With Cookie** (browser clients):
+```bash
+curl http://localhost:3000/api/v1/health/cache \
+  -H "Cookie: access_token=<token>"
+```
+
+##### Response (200 OK)
 
 ```json
 {
   "num_keys": 42,
-  "last_worker_time": "2026-01-07T09:00:00Z",
+  "last_worker_time": "2026-01-08T10:00:00Z",
   "cleaned_count": 5,
   "size_bytes": 18432
 }
 ```
 
-#### Response Fields
+##### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -172,12 +422,40 @@ curl http://localhost:3000/api/v1/health
 | `cleaned_count` | integer | Number of entries removed by last cleanup |
 | `size_bytes` | integer | Estimated memory usage in bytes |
 
-#### Use Cases
+##### Error Responses
 
-- **Health monitoring**: Check if server is running
-- **Cache metrics**: Monitor cache performance
-- **Load testing**: Track cache growth during testing
-- **Debugging**: Verify cleanup worker is running
+**401 Unauthorized** (Invalid or missing JWT):
+```json
+{
+  "error": "No valid token found in Authorization header or cookie"
+}
+```
+
+##### Use Cases
+
+- **Cache monitoring**: Track cache performance and size
+- **Debugging**: Verify cleanup worker is functioning correctly
+- **Load testing**: Monitor cache growth during performance tests
+- **Performance analysis**: Identify cache bottlenecks
+
+##### Authentication & Caching
+
+This endpoint uses JWT authentication middleware with user caching:
+
+1. **JWT Validation**: Middleware validates JWT access token
+2. **User Cache Check**: Checks cache for user data (key: `user:{user_id}`)
+3. **Cache Miss**: Queries database and caches user with 15-minute TTL
+4. **Cache Hit**: Uses cached user data (no database query)
+5. **Handler Access**: User data available via `Extension<AuthenticatedUser>`
+
+**Configuration**:
+- User cache TTL: `BUILDSCALE__CACHE__USER_CACHE_TTL_SECONDS` (default: 900 seconds = 15 minutes)
+- Matches JWT access token expiration for consistency
+
+**Benefits**:
+- Reduces database queries for authenticated requests
+- Improves response time for subsequent requests
+- Scales better under high load
 
 ---
 

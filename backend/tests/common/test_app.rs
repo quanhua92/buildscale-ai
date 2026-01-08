@@ -4,6 +4,7 @@ use reqwest::{Client, redirect::Policy};
 use secrecy::ExposeSecret;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use buildscale::models::users::User;
 
 /// HTTP test application wrapper
 ///
@@ -55,16 +56,19 @@ impl TestApp {
             default_ttl_seconds: Some(3600),
         });
 
+        // Initialize user cache
+        let user_cache: Cache<User> = Cache::new_local(CacheConfig::default());
+
         // Create database pool
         let pool = DbPool::connect(config.database.connection_string().expose_secret())
             .await
             .expect("Failed to connect to database");
 
-        // Build application state with cache AND database pool
-        let app_state = AppState::new(cache.clone(), pool);
+        // Build application state with cache, user_cache, and database pool
+        let app_state = AppState::new(cache.clone(), user_cache, pool);
 
         // Build API v1 routes using the shared router function
-        let api_routes = create_api_router();
+        let api_routes = create_api_router(app_state.clone());
 
         // Build the main router with nested API routes
         let app = Router::new()

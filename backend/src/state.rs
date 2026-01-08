@@ -1,4 +1,4 @@
-use crate::{cache::Cache, database::DbPool};
+use crate::{cache::Cache, database::DbPool, models::users::User};
 
 /// Application state shared across all HTTP handlers
 ///
@@ -8,6 +8,8 @@ use crate::{cache::Cache, database::DbPool};
 pub struct AppState {
     /// Cache instance for storing and retrieving data
     pub cache: Cache<String>,
+    /// User cache instance for storing authenticated user data
+    pub user_cache: Cache<User>,
     /// Database connection pool for accessing the database
     pub pool: DbPool,
 }
@@ -17,8 +19,9 @@ impl AppState {
     ///
     /// # Arguments
     /// * `cache` - Cache instance to use
+    /// * `user_cache` - User cache instance to use
     /// * `pool` - Database connection pool
-    pub fn new(cache: Cache<String>, pool: DbPool) -> Self {
-        Self { cache, pool }
+    pub fn new(cache: Cache<String>, user_cache: Cache<User>, pool: DbPool) -> Self {
+        Self { cache, user_cache, pool }
     }
 }

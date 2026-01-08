@@ -3,6 +3,7 @@ pub mod config;
 pub mod database;
 pub mod error;
 pub mod handlers;
+pub mod middleware;
 pub mod models;
 pub mod queries;
 pub mod services;
@@ -13,7 +14,8 @@ pub mod workers;
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
-pub use handlers::{auth::login, auth::logout, auth::register, auth::refresh, health::health_check};
+pub use handlers::{auth::login, auth::logout, auth::register, auth::refresh, health::health_check, health::health_cache};
+pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
 pub use workers::revoked_token_cleanup_worker;
 
@@ -46,23 +48,35 @@ pub fn init_tracing() {
         .init();
 }
 
-use axum::{Router, routing::{get, post}};
+use axum::{Router, routing::{get, post}, middleware as axum_middleware};
 use tokio::net::TcpListener;
+use crate::middleware::auth::jwt_auth_middleware;
 
 /// Create API v1 routes
 ///
 /// This function creates the API router with all endpoints.
 /// It's reused by both the main server and test apps to ensure consistency.
 ///
+/// # Arguments
+/// * `state` - Application state containing cache, user_cache, and database pool
+///
 /// # Returns
 /// A configured Router with all API v1 routes
-pub fn create_api_router() -> Router<AppState> {
+pub fn create_api_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
         .route("/auth/refresh", post(refresh))
+        .merge(
+            Router::new()
+                .route("/health/cache", get(health_cache))
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    jwt_auth_middleware,
+                ))
+        )
 }
 
 /// Start the Axum API server
@@ -109,11 +123,14 @@ pub async fn run_api_server(
         ).await;
     });
 
-    // Build the application state with cache AND database pool
-    let app_state = AppState::new(cache, pool);
+    // Create user cache with configured TTL
+    let user_cache = Cache::new_local(CacheConfig::default());
+
+    // Build the application state with cache, user_cache, and database pool
+    let app_state = AppState::new(cache, user_cache, pool);
 
     // Build API v1 routes using the shared router function
-    let api_routes = create_api_router();
+    let api_routes = create_api_router(app_state.clone());
 
     // Build the main router with nested API routes
     let app = Router::new()
