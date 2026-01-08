@@ -30,6 +30,7 @@ tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "sync", "
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace"] }
 uuid = { version = "1.19.0", features = ["serde", "v7"] }
+tracing = "0.1.44"
 
 [dev-dependencies]
 nanoid = "0.4.0"

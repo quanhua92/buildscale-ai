@@ -118,12 +118,18 @@ pub struct SessionsConfig {
     /// Session expiration time in hours (default: 720 hours = 30 days)
     /// Used for both initial session expiration AND maximum extension time
     pub expiration_hours: i64,
+
+    /// How long to keep revoked tokens for theft detection (default: 1440 minutes = 1 day)
+    /// Tokens older than this are automatically cleaned up by the background worker
+    /// Recommended: 10 minutes (grace period + theft detection window) to 1 day
+    pub revoked_token_retention_minutes: i64,
 }
 
 impl Default for SessionsConfig {
     fn default() -> Self {
         Self {
             expiration_hours: 720, // 30 days
+            revoked_token_retention_minutes: 1440, // 1 day
         }
     }
 }

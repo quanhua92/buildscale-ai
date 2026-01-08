@@ -8,12 +8,14 @@ pub mod queries;
 pub mod services;
 pub mod state;
 pub mod validation;
+pub mod workers;
 
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use handlers::{auth::login, auth::logout, auth::register, auth::refresh, health::health_check};
 pub use state::AppState;
+pub use workers::revoked_token_cleanup_worker;
 
 /// Load configuration from environment variables
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
@@ -71,6 +73,18 @@ pub async fn run_api_server(
         .await
         .map_err(|e| format!("Failed to connect to database: {}", e))?;
 
+    // Spawn revoked token cleanup worker
+    let (revoked_cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);
+    let pool_clone = pool.clone();
+    let revoked_cleanup_shutdown_tx_clone = revoked_cleanup_shutdown_tx.clone();
+
+    tokio::spawn(async move {
+        revoked_token_cleanup_worker(
+            pool_clone,
+            revoked_cleanup_shutdown_tx_clone.subscribe(),
+        ).await;
+    });
+
     // Build the application state with cache AND database pool
     let app_state = AppState::new(cache, pool);
 
@@ -88,8 +102,19 @@ pub async fn run_api_server(
 
     println!("API server listening on http://{}", addr);
 
-    // Start server
-    axum::serve(listener, app).await?;
+    // Setup shutdown handler
+    let shutdown_signal = async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install CTRL+C handler");
+        println!("Shutdown signal received");
+        revoked_cleanup_shutdown_tx.send(()).ok();
+    };
+
+    // Start server with shutdown signal
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
 
     Ok(())
 }

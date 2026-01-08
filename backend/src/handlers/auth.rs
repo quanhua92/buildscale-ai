@@ -268,16 +268,18 @@ pub async fn refresh(
         None
     };
 
-    // Build refresh token cookie (only for browser clients)
+    // Build refresh token cookie (only for browser clients, if token exists)
     let refresh_cookie = if from_cookie {
-        Some(build_refresh_token_cookie(&refresh_result.refresh_token, &config))
+        refresh_result.refresh_token.as_ref().map(|token| {
+            build_refresh_token_cookie(token, &config)
+        })
     } else {
         None
     };
 
     let json_body = serde_json::json!({
         "access_token": refresh_result.access_token,
-        "refresh_token": refresh_result.refresh_token,  // NEW: Include in JSON
+        "refresh_token": refresh_result.refresh_token,  // None if within grace period
         "expires_at": refresh_result.expires_at
     });
 

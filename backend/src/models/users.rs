@@ -50,9 +50,9 @@ pub struct LoginResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenResult {
-    pub access_token: String,              // New JWT access token
-    pub refresh_token: String,             // New refresh token (rotated)
-    pub expires_at: DateTime<Utc>,         // When the new access token expires
+    pub access_token: String,                      // New JWT access token
+    pub refresh_token: Option<String>,             // New refresh token (rotated), None if within grace period
+    pub expires_at: DateTime<Utc>,                 // When the new access token expires
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,4 +75,14 @@ pub struct NewUserSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateUserSession {
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// Revoked refresh token for theft detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokedRefreshToken {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub token_hash: String,
+    pub revoked_at: DateTime<Utc>,
+    pub reason: String,
 }

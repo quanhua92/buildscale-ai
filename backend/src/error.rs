@@ -42,6 +42,10 @@ pub enum Error {
     #[error("Invalid session token: {0}")]
     InvalidToken(String),
 
+    /// Token theft detected (stolen refresh token used after rotation).
+    #[error("Token theft detected: {0}")]
+    TokenTheftDetected(String),
+
     /// An internal server error.
     #[error("Internal error: {0}")]
     Internal(String),
@@ -76,6 +80,7 @@ impl IntoResponse for Error {
             Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg),
             Error::InvalidToken(msg) => (StatusCode::UNAUTHORIZED, msg),
             Error::SessionExpired(msg) => (StatusCode::UNAUTHORIZED, msg),
+            Error::TokenTheftDetected(msg) => (StatusCode::FORBIDDEN, msg),
             Error::Sqlx(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string()),
             Error::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             Error::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Configuration error".to_string()),

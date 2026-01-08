@@ -169,8 +169,9 @@ pub struct LoginResult {
 }
 
 pub struct RefreshTokenResult {
-    pub access_token: String,              // New JWT access token
-    pub expires_at: DateTime<Utc>,         // When the new access token expires
+    pub access_token: String,                      // New JWT access token
+    pub refresh_token: Option<String>,             // New refresh token (rotated), None if within grace period
+    pub expires_at: DateTime<Utc>,                 // When the new access token expires
 }
 
 pub struct UserSession {

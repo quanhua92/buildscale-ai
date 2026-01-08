@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    models::users::{NewUserSession, UpdateUserSession, UserSession},
+    models::users::{NewUserSession, UpdateUserSession, UserSession, RevokedRefreshToken},
 };
 use chrono::Utc;
 use sha2::{Digest, Sha256};
@@ -251,4 +251,92 @@ pub async fn update_session_token_hash(
     .map_err(Error::Sqlx)?;
 
     Ok(updated_session)
+}
+// ============================================================================
+// REVOKED TOKEN MANAGEMENT (Stolen Token Detection)
+// ============================================================================
+
+/// Records a revoked refresh token for theft detection
+pub async fn create_revoked_token(
+    conn: &mut DbConn,
+    user_id: Uuid,
+    token_hash: &str,
+) -> Result<RevokedRefreshToken> {
+    let revoked_token = sqlx::query_as!(
+        RevokedRefreshToken,
+        r#"
+        INSERT INTO revoked_refresh_tokens (user_id, token_hash)
+        VALUES ($1, $2)
+        RETURNING id, user_id, token_hash, revoked_at, reason
+        "#,
+        user_id,
+        token_hash
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(revoked_token)
+}
+
+/// Checks if a token has been revoked (indicating potential theft)
+pub async fn get_revoked_token(
+    conn: &mut DbConn,
+    token_hash: &str,
+) -> Result<Option<RevokedRefreshToken>> {
+    let revoked_token = sqlx::query_as!(
+        RevokedRefreshToken,
+        r#"
+        SELECT id, user_id, token_hash, revoked_at, reason
+        FROM revoked_refresh_tokens
+        WHERE token_hash = $1
+        "#,
+        token_hash
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(revoked_token)
+}
+
+/// Deletes all revoked tokens for a specific user
+pub async fn delete_revoked_tokens_by_user(
+    conn: &mut DbConn,
+    user_id: Uuid,
+) -> Result<u64> {
+    let rows_affected = sqlx::query(
+        r#"
+        DELETE FROM revoked_refresh_tokens
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?
+    .rows_affected();
+
+    Ok(rows_affected)
+}
+
+/// Deletes expired revoked tokens (older than grace period)
+/// Should be called periodically to maintain table size
+pub async fn delete_expired_revoked_tokens(
+    conn: &mut DbConn,
+    grace_period_minutes: i64,
+) -> Result<u64> {
+    let rows_affected = sqlx::query(
+        r#"
+        DELETE FROM revoked_refresh_tokens
+        WHERE revoked_at < NOW() - (INTERVAL '1 minute' * $1)
+        "#,
+    )
+    .bind(grace_period_minutes)
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?
+    .rows_affected();
+
+    Ok(rows_affected)
 }

@@ -132,7 +132,7 @@ The API uses **dual-token authentication** for secure access:
    → User must login again to access protected resources
 ```
 
-**Token Rotation Security Benefit**: Each refresh generates a new refresh token and invalidates the old one. This limits token theft replay attacks (WARNING: race condition vulnerability exists - see TODO_SECURITY_REFRESH_TOKEN.md).
+**Token Rotation Security Benefit**: Each refresh generates a new refresh token and invalidates the old one. This limits token theft replay attacks with automatic stolen token detection (5-minute grace period for legitimate double-clicks, 403 error for token theft after grace period).
 
 ---
 
@@ -472,7 +472,7 @@ The refresh endpoint accepts refresh tokens from two sources with **priority han
 **Priority**: Authorization header takes precedence if both are present.
 
 **Token Rotation** (OAuth 2.0 Security Best Practice):
-Each refresh request generates a **NEW refresh token** and **invalidates the old one**. This limits token theft replay attacks (WARNING: race condition vulnerability exists - see TODO_SECURITY_REFRESH_TOKEN.md).
+Each refresh request generates a **NEW refresh token** and **invalidates the old one**. This limits token theft replay attacks with automatic stolen token detection (5-minute grace period for legitimate double-clicks).
 
 **Behavior differences by client type**:
 - **API/Mobile clients**: Returns JSON only (access_token + refresh_token), does NOT set cookies
@@ -522,7 +522,7 @@ Set-Cookie: refresh_token=a296d8b58edbc757f07670aa80...; HttpOnly; SameSite=Lax;
 | Field | Type | Description |
 |-------|------|-------------|
 | `access_token` | string (JWT) | New JWT access token (15 minute expiration) |
-| `refresh_token` | string | **NEW refresh token** (rotated, old token invalidated) |
+| `refresh_token` | string or null | **NEW refresh token** (rotated, old token invalidated), or `null` if within 5-minute grace period after token rotation |
 | `expires_at` | string (ISO8601) | When the new access token expires |
 
 #### Token Expiration
@@ -552,29 +552,48 @@ Set-Cookie: refresh_token=a296d8b58edbc757f07670aa80...; HttpOnly; SameSite=Lax;
 }
 ```
 
+**Grace period behavior** (token reused within 5 minutes):
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": null,
+  "expires_at": "2026-01-07T09:15:00Z"
+}
+```
+
 **Action Required**:
-1. Extract the new `refresh_token` from the response
-2. Replace the old refresh_token in storage with the new one
-3. Use the new refresh_token for subsequent refresh requests
+1. Extract the `refresh_token` from the response (may be `null`)
+2. If `refresh_token` is not `null`, replace the old refresh_token in storage with the new one
+3. If `refresh_token` is `null` (grace period), keep using your current token
+4. Use the refresh_token for subsequent refresh requests
 
 **Example migration**:
 ```javascript
-// OLD CODE (no longer works correctly)
+// NEW CODE (handles token rotation + grace period)
 const data = await response.json();
 accessToken = data.access_token;
-// Old client ignores refresh_token field
 
-// NEW CODE (correct implementation)
-const data = await response.json();
-accessToken = data.access_token;
-refreshToken = data.refresh_token; // NEW: Store the rotated token
+if (data.refresh_token) {
+  // Normal rotation: store new token
+  refreshToken = data.refresh_token;
+} else {
+  // Grace period: keep current token (transparent retry)
+  console.log('Token reused within grace period');
+}
 localStorage.setItem('access_token', accessToken);
-localStorage.setItem('refresh_token', refreshToken); // CRITICAL: Update stored token
+
+if (data.refresh_token) {
+  // Normal rotation: store new token
+  refreshToken = data.refresh_token;
+  localStorage.setItem('refresh_token', refreshToken);
+}
+// If refresh_token is null (grace period), keep current token
 ```
 
 **Why this is critical**:
-- Old refresh_token is **immediately invalidated** after rotation
-- Attempting to reuse old refresh_token will return `401 Unauthorized`
+- Old refresh_token is **invalidated** after rotation
+- Reusing old refresh_token within 5 minutes: Returns 200 with `refresh_token: null` (grace period)
+- Reusing old refresh_token after 5 minutes: Returns `403 Forbidden` (token theft detected)
 - Only the latest refresh_token from the most recent refresh is valid
 
 #### Error Responses
@@ -590,6 +609,48 @@ localStorage.setItem('refresh_token', refreshToken); // CRITICAL: Update stored 
 ```json
 {
   "error": "Session expired"
+}
+```
+
+**403 Forbidden** - Token theft detected
+```json
+{
+  "error": "Potential security breach detected. Your refresh token was used after rotation. All sessions have been revoked for your protection. Please login again and consider changing your password."
+}
+```
+
+**When this occurs**:
+- A refresh token that was previously rotated is used after the 5-minute grace period
+- This indicates potential token theft (stolen token used after rotation)
+- ALL user sessions are immediately revoked for security
+
+**Client action required**:
+1. Clear all stored tokens (access token and refresh token)
+2. Redirect user to login page
+3. Show security message explaining the situation
+4. Recommend user change their password
+5. Log security event for monitoring
+
+**Example client handling**:
+```javascript
+try {
+  const response = await fetch('/api/v1/auth/refresh', {
+    method: 'POST',
+    credentials: 'include' // Include cookies
+  });
+
+  if (response.status === 403) {
+    // Token theft detected - clear all tokens and redirect to login
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = '/login?security=token-theft-detected';
+    return;
+  }
+
+  const data = await response.json();
+  // Store new tokens...
+} catch (error) {
+  console.error('Token refresh failed:', error);
 }
 ```
 
@@ -732,7 +793,7 @@ Refresh the access token when:
 
 #### Security Benefits of Token Rotation
 
-**Token rotation** significantly improves security by preventing token theft replay attacks:
+**Token rotation with stolen token detection** significantly improves security by preventing token theft replay attacks:
 
 **Before rotation** (old behavior):
 - Stolen refresh token usable for 30 days
@@ -740,19 +801,28 @@ Refresh the access token when:
 - Security window: 30 days
 
 **After rotation** (current behavior):
-- Stolen refresh token usable for multiple requests (race condition vulnerability)
-- Attacker can win "refresh race" by using stolen token before legitimate user
-- Legitimate user gets 401 error, attacker maintains access
-- Security window: Potentially 30 days (see TODO_SECURITY_REFRESH_TOKEN.md for fix)
+- ✅ **MITIGATED**: Stolen token detection with automatic session revocation
+- Stolen refresh token only usable ONCE (if attacker wins the initial race)
+- After 5-minute grace period: Using old token triggers 403 error + revokes ALL sessions
+- Attacker blocked immediately on first use after grace period
+- Legitimate user protected by automatic session revocation
 
 **Attack Scenario**:
 ```
 1. Attacker steals refresh_token via XSS/network sniffing
-2. Attacker uses refresh_token → gets NEW refresh_token
-3. Old refresh_token is now invalid (server-side)
-4. Legitimate user tries to refresh → gets 401 Unauthorized
-5. User knows their token was stolen → can change password/logout all devices
+2. Attacker uses refresh_token → gets NEW refresh_token (attacker wins initial race)
+3. Old refresh_token is recorded as revoked in database
+4. Legitimate user tries to refresh within 5 minutes → gets 200 with access_token only (grace period)
+5. Legitimate user tries to refresh after 5 minutes → gets 403 Forbidden + all sessions revoked
+6. Attacker tries to use old token after 5 minutes → gets 403 Forbidden (theft detected)
+7. Both attacker and legitimate user must login again
 ```
+
+**Security Benefits**:
+- Attacker can only use stolen token ONCE (if they win the initial race)
+- Grace period (5 min) prevents false positives from double-clicks
+- After grace period, automatic theft detection blocks attacker
+- ALL user sessions revoked for security (prevents lateral movement)
 
 **Compliance**:
 - OAuth 2.0 Security Best Current Practice (RFC 6819 Section 5.2.2.1)
@@ -992,6 +1062,7 @@ All error responses follow a consistent format:
 | **200 OK** | Success | Request completed successfully |
 | **400 Bad Request** | Validation Error | Invalid email, weak password, missing fields |
 | **401 Unauthorized** | Authentication Failed | Wrong email/password, expired token |
+| **403 Forbidden** | Security Violation | Token theft detected |
 | **409 Conflict** | Resource Conflict | Email already exists |
 | **500 Internal Server Error** | Server Error | Database connection failed |
 
@@ -1005,6 +1076,7 @@ All error responses follow a consistent format:
 | `"Email 'user@example.com' already exists"` | 409 | Duplicate email registration |
 | `"Invalid email or password"` | 401 | Wrong login credentials |
 | `"Database error"` | 500 | Server-side database issue |
+| `"Potential security breach detected. Your refresh token was used after rotation. All sessions have been revoked for your protection. Please login again and consider changing your password."` | 403 | Token theft detected (stolen refresh token used after rotation) |
 
 ---
 

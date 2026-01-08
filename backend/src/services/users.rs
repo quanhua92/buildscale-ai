@@ -314,29 +314,104 @@ pub async fn refresh_access_token(
     conn: &mut DbConn,
     refresh_token: &str,
 ) -> Result<RefreshTokenResult> {
-    // Hash the token for database lookup
     let old_token_hash = sessions::hash_session_token(refresh_token);
 
-    // Validate the refresh token (session) exists and is not expired
+    // STEP 1: Check if token was revoked (THEFT DETECTION with grace period)
+    if let Some(revoked) = sessions::get_revoked_token(conn, &old_token_hash).await? {
+        // Calculate how long ago the token was revoked
+        let time_since_revocation = Utc::now() - revoked.revoked_at;
+
+        // Grace period: 5 minutes
+        // - Allows legitimate double-clicks/retries without error
+        // - Still detects theft after grace period expires
+        if time_since_revocation.num_minutes() >= 5 {
+            // TOKEN THEFT DETECTED: Old token used after grace period!
+            // Revoke ALL sessions for this user immediately
+            tracing::warn!(
+                user_id = %revoked.user_id,
+                security_event = "token_theft_detected",
+                "Potential security breach: Old refresh token used after rotation. Revoking all sessions."
+            );
+
+            let _ = sessions::delete_sessions_by_user(conn, revoked.user_id).await?;
+
+            // Clean up revoked token records
+            let _ = sessions::delete_revoked_tokens_by_user(conn, revoked.user_id).await?;
+
+            return Err(Error::TokenTheftDetected(
+                "Potential security breach detected. Your refresh token was used after rotation. All sessions have been revoked for your protection. Please login again and consider changing your password.".to_string()
+            ));
+        }
+
+        // Within grace period: This is likely a legitimate double-click or retry
+        // Generate new access token without rotating refresh token (transparent to client)
+        tracing::info!(
+            user_id = %revoked.user_id,
+            security_event = "token_reused_within_grace_period",
+            "Refresh token reused within grace period ({} minutes old), returning access token",
+            time_since_revocation.num_minutes()
+        );
+
+        // Load config and generate new access token
+        let config = Config::load()?;
+        let access_token = jwt::generate_jwt(
+            revoked.user_id,
+            config.jwt.secret.expose_secret(),
+            config.jwt.access_token_expiration_minutes,
+        )?;
+
+        let expires_at = Utc::now() + Duration::minutes(config.jwt.access_token_expiration_minutes);
+
+        // Return success with access token only (no refresh token rotation)
+        return Ok(RefreshTokenResult {
+            access_token,
+            refresh_token: None,  // None - client should keep using their current token
+            expires_at,
+        });
+    }
+
+    // STEP 2: Validate the refresh token (session) exists and is not expired
     let session = sessions::get_valid_session_by_token_hash(conn, &old_token_hash)
         .await?
         .ok_or_else(|| Error::InvalidToken("Invalid or expired refresh token".to_string()))?;
 
-    // Load config to get JWT secret and expiration
+    // Load config
     let config = Config::load()?;
 
-    // Generate NEW refresh token (rotation)
+    // STEP 3: Generate NEW refresh token (rotation)
     let new_refresh_token = generate_session_token()?;
     let new_token_hash = sessions::hash_session_token(&new_refresh_token);
 
-    // Update session with new token hash (invalidates old token)
+    // STEP 4: Start transaction for atomic token rotation
+    // CRITICAL: Recording revoked token + updating session must be atomic
+    let mut tx = conn.begin().await.map_err(|e| {
+        Error::Internal(format!("Failed to begin transaction: {}", e))
+    })?;
+
+    // STEP 5: Record old token as revoked BEFORE updating session
+    // CRITICAL: If two requests race, the second one will detect theft
+    let _ = sessions::create_revoked_token(&mut tx, session.user_id, &old_token_hash).await?;
+
+    // STEP 6: Update session with new token hash (invalidates old token)
     let _updated_session = sessions::update_session_token_hash(
-        conn,
+        &mut tx,
         session.id,
         &new_token_hash,
     ).await?;
 
-    // Generate new access token (JWT)
+    // STEP 7: Commit transaction (atomic operation complete)
+    tx.commit().await.map_err(|e| {
+        Error::Internal(format!("Failed to commit transaction: {}", e))
+    })?;
+
+    // Log successful token rotation (for audit trail)
+    tracing::info!(
+        user_id = %session.user_id,
+        security_event = "token_rotated",
+        "Refresh token rotated successfully"
+    );
+
+    // STEP 8: Generate new access token (JWT)
     let access_token = jwt::generate_jwt(
         session.user_id,
         config.jwt.secret.expose_secret(),
@@ -347,7 +422,7 @@ pub async fn refresh_access_token(
 
     Ok(RefreshTokenResult {
         access_token,
-        refresh_token: new_refresh_token,  // NEW: Return rotated refresh token
+        refresh_token: Some(new_refresh_token),  // Some during normal rotation
         expires_at,
     })
 }
