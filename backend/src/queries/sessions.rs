@@ -214,3 +214,41 @@ pub async fn refresh_session(conn: &mut DbConn, session_id: Uuid, new_expires_at
 
     Ok(updated_session)
 }
+
+/// Updates a session's token hash in the database.
+///
+/// This function supports refresh token rotation by replacing the old
+/// token hash with a new one, maintaining the session ID and expiration.
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `session_id` - ID of the session to update
+/// * `new_token_hash` - New SHA-256 hashed refresh token
+///
+/// # Returns
+/// Result containing the updated session or error
+///
+/// # Errors
+/// Returns error if session not found or database operation fails
+pub async fn update_session_token_hash(
+    conn: &mut DbConn,
+    session_id: Uuid,
+    new_token_hash: &str,
+) -> Result<UserSession> {
+    let updated_session = sqlx::query_as!(
+        UserSession,
+        r#"
+        UPDATE user_sessions
+        SET token_hash = $1, updated_at = now()
+        WHERE id = $2
+        RETURNING id, user_id, token_hash, expires_at, created_at, updated_at
+        "#,
+        new_token_hash,
+        session_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(updated_session)
+}

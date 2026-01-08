@@ -1186,3 +1186,208 @@ async fn test_logout_with_both_header_and_cookie_priority() {
         .unwrap();
     assert_eq!(refresh_response2.status(), 200);
 }
+
+// ============================================================================
+// REFRESH TOKEN ROTATION TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_refresh_endpoint_rotates_refresh_token_in_json() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let original_refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Refresh with Authorization header (API client)
+    let refresh_response = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", original_refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(refresh_response.status(), 200);
+
+    let refresh_body: serde_json::Value = refresh_response.json().await.unwrap();
+    let new_refresh_token = refresh_body["refresh_token"].as_str().unwrap();
+
+    // Verify new token is different from original (rotation occurred)
+    assert_ne!(
+        original_refresh_token,
+        new_refresh_token,
+        "Refresh token should be rotated (new token different from old)"
+    );
+
+    // Verify response includes both tokens
+    assert!(refresh_body["access_token"].is_string());
+    assert!(refresh_body["refresh_token"].is_string());
+    assert!(refresh_body["expires_at"].is_string());
+}
+
+#[tokio::test]
+async fn test_refresh_endpoint_invalidates_old_refresh_token() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let original_refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // First refresh - get new token
+    let refresh_response1 = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", original_refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    let refresh_body1: serde_json::Value = refresh_response1.json().await.unwrap();
+    let new_refresh_token = refresh_body1["refresh_token"].as_str().unwrap();
+
+    // Try to use old token again (should fail - token invalidated)
+    let refresh_response2 = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", original_refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        refresh_response2.status(),
+        401,
+        "Old refresh token should be invalidated after rotation"
+    );
+
+    // Verify new token still works
+    let refresh_response3 = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Authorization", format!("Bearer {}", new_refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        refresh_response3.status(),
+        200,
+        "New refresh token should work"
+    );
+}
+
+#[tokio::test]
+async fn test_refresh_endpoint_with_cookie_rotates_both_cookies() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let original_refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Refresh with Cookie (browser client)
+    let refresh_response = app
+        .client
+        .post(&app.url("/api/v1/auth/refresh"))
+        .header("Cookie", format!("refresh_token={}", original_refresh_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(refresh_response.status(), 200);
+
+    // Verify BOTH cookies are set
+    let cookies = refresh_response.headers().get_all("set-cookie");
+    let cookie_strs: Vec<&str> = cookies
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect();
+
+    let access_cookie = cookie_strs
+        .iter()
+        .find(|c| c.contains("access_token="))
+        .expect("access_token cookie should be set");
+
+    let refresh_cookie = cookie_strs
+        .iter()
+        .find(|c| c.contains("refresh_token="))
+        .expect("refresh_token cookie should be set");
+
+    // Verify cookies are NOT Max-Age=0 (not cleared)
+    assert!(!access_cookie.contains("Max-Age=0"));
+    assert!(!refresh_cookie.contains("Max-Age=0"));
+
+    // Verify new tokens in JSON response too
+    let refresh_body: serde_json::Value = refresh_response.json().await.unwrap();
+    assert!(refresh_body["access_token"].is_string());
+    assert!(refresh_body["refresh_token"].is_string());
+}

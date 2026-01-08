@@ -118,8 +118,10 @@ The API uses **dual-token authentication** for secure access:
    → POST /api/v1/auth/refresh
    → API clients: Authorization header with refresh_token
    → Browser clients: Cookie with refresh_token
-   → Returns new access_token
-   → Sets access_token cookie (browser clients only)
+   → Returns NEW access_token + NEW refresh_token (rotation)
+   → Old refresh_token is immediately invalidated
+   → IMPORTANT: Always use the NEW refresh_token from response
+   → Sets both access_token and refresh_token cookies (browser clients)
 
 5. Repeat step 3-4 until refresh_token expires (30 days)
    → Then login again (step 2)
@@ -129,6 +131,8 @@ The API uses **dual-token authentication** for secure access:
    → Clears both access_token and refresh_token cookies
    → User must login again to access protected resources
 ```
+
+**Token Rotation Security Benefit**: Each refresh generates a new refresh token and invalidates the old one. This limits token theft replay attacks (WARNING: race condition vulnerability exists - see TODO_SECURITY_REFRESH_TOKEN.md).
 
 ---
 
@@ -467,9 +471,12 @@ The refresh endpoint accepts refresh tokens from two sources with **priority han
 
 **Priority**: Authorization header takes precedence if both are present.
 
+**Token Rotation** (OAuth 2.0 Security Best Practice):
+Each refresh request generates a **NEW refresh token** and **invalidates the old one**. This limits token theft replay attacks (WARNING: race condition vulnerability exists - see TODO_SECURITY_REFRESH_TOKEN.md).
+
 **Behavior differences by client type**:
-- **API/Mobile clients**: Returns JSON only, does NOT set cookie
-- **Browser clients**: Returns JSON AND sets `access_token` cookie
+- **API/Mobile clients**: Returns JSON only (access_token + refresh_token), does NOT set cookies
+- **Browser clients**: Returns JSON AND sets both `access_token` and `refresh_token` cookies
 
 #### Request (API/Mobile Client)
 
@@ -497,28 +504,78 @@ Cookie: refresh_token=<token>
 ```json
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": "a296d8b58edbc757f07670aa8055e9727...",
   "expires_at": "2026-01-07T09:15:00Z"
 }
 ```
 
-**Cookie Set** (browser clients only):
+**Cookies Set** (browser clients only):
 ```
 Set-Cookie: access_token=eyJ0eXAiOiJKV1QiLCJhbGc...; HttpOnly; SameSite=Lax; Path=/; Max-Age=900
+Set-Cookie: refresh_token=a296d8b58edbc757f07670aa80...; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000
 ```
 
-**No cookie** is set for API clients using Authorization header.
+**No cookies** are set for API clients using Authorization header.
 
 #### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `access_token` | string (JWT) | New JWT access token (15 minute expiration) |
+| `refresh_token` | string | **NEW refresh token** (rotated, old token invalidated) |
 | `expires_at` | string (ISO8601) | When the new access token expires |
 
 #### Token Expiration
 
 - **Access Token**: 15 minutes (configurable via `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES`)
 - **Refresh Token**: 30 days (configurable via `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`)
+  - **Extended on each refresh**: Session expiration is extended to 30 days from each successful refresh
+
+#### Migration Guide for API Clients
+
+**⚠️ Breaking Change**: The refresh endpoint now returns `refresh_token` in the response.
+
+**Old behavior** (before rotation):
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "expires_at": "2026-01-07T09:15:00Z"
+}
+```
+
+**New behavior** (with rotation):
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": "a296d8b58edbc757f07670aa8055e9727...",
+  "expires_at": "2026-01-07T09:15:00Z"
+}
+```
+
+**Action Required**:
+1. Extract the new `refresh_token` from the response
+2. Replace the old refresh_token in storage with the new one
+3. Use the new refresh_token for subsequent refresh requests
+
+**Example migration**:
+```javascript
+// OLD CODE (no longer works correctly)
+const data = await response.json();
+accessToken = data.access_token;
+// Old client ignores refresh_token field
+
+// NEW CODE (correct implementation)
+const data = await response.json();
+accessToken = data.access_token;
+refreshToken = data.refresh_token; // NEW: Store the rotated token
+localStorage.setItem('access_token', accessToken);
+localStorage.setItem('refresh_token', refreshToken); // CRITICAL: Update stored token
+```
+
+**Why this is critical**:
+- Old refresh_token is **immediately invalidated** after rotation
+- Attempting to reuse old refresh_token will return `401 Unauthorized`
+- Only the latest refresh_token from the most recent refresh is valid
 
 #### Error Responses
 
@@ -546,8 +603,12 @@ curl -X POST http://localhost:3000/api/v1/auth/refresh \
 # Response: JSON only, no cookie set
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": "a296d8b58edbc757f07670aa8055e9727...",
   "expires_at": "2026-01-07T10:30:00Z"
 }
+
+# IMPORTANT: Store the new refresh_token for next refresh
+# Old refresh_token is now invalid
 ```
 
 #### Example Usage (Browser Client)
@@ -558,13 +619,14 @@ curl -X POST http://localhost:3000/api/v1/auth/refresh \
   -H "Cookie: refresh_token=<token>" \
   -c cookies.txt
 
-# Response: JSON + access_token cookie is set
+# Response: JSON + both cookies are set
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": "a296d8b58edbc757f07670aa8055e9727...",
   "expires_at": "2026-01-07T10:30:00Z"
 }
 
-# access_token cookie is automatically set
+# Both access_token and refresh_token cookies are automatically set
 # Can be used for subsequent requests
 curl http://localhost:3000/api/v1/protected-endpoint \
   -b cookies.txt
@@ -593,7 +655,9 @@ const refreshAccessToken = async () => {
 
   const data = await response.json();
   accessToken = data.access_token;
+  refreshToken = data.refresh_token; // CRITICAL: Store the new refresh token
   localStorage.setItem('access_token', accessToken);
+  localStorage.setItem('refresh_token', refreshToken); // CRITICAL: Update stored token
   return accessToken;
 };
 
@@ -640,11 +704,12 @@ const refreshAccessToken = async () => {
   }
 
   const data = await response.json();
-  // New access_token is automatically set in cookie by the server
+  // Both access_token and refresh_token cookies are automatically set by the server
+  // No need to manually update localStorage
   return data.access_token;
 };
 
-// Subsequent requests automatically include the access_token cookie
+// Subsequent requests automatically include both cookies
 const apiCall = async () => {
   const response = await fetch('http://localhost:3000/api/v1/protected', {
     credentials: 'include' // Cookies sent automatically
@@ -664,6 +729,35 @@ Refresh the access token when:
 - On every request (refresh only when needed)
 - If refresh token is expired (30 days) - user must login again
 - More frequently than necessary (reduces security)
+
+#### Security Benefits of Token Rotation
+
+**Token rotation** significantly improves security by preventing token theft replay attacks:
+
+**Before rotation** (old behavior):
+- Stolen refresh token usable for 30 days
+- Attacker can access API until token expires
+- Security window: 30 days
+
+**After rotation** (current behavior):
+- Stolen refresh token usable for multiple requests (race condition vulnerability)
+- Attacker can win "refresh race" by using stolen token before legitimate user
+- Legitimate user gets 401 error, attacker maintains access
+- Security window: Potentially 30 days (see TODO_SECURITY_REFRESH_TOKEN.md for fix)
+
+**Attack Scenario**:
+```
+1. Attacker steals refresh_token via XSS/network sniffing
+2. Attacker uses refresh_token → gets NEW refresh_token
+3. Old refresh_token is now invalid (server-side)
+4. Legitimate user tries to refresh → gets 401 Unauthorized
+5. User knows their token was stolen → can change password/logout all devices
+```
+
+**Compliance**:
+- OAuth 2.0 Security Best Current Practice (RFC 6819 Section 5.2.2.1)
+- Recommended for all public-facing applications
+- Industry standard for mobile/web applications
 
 ---
 

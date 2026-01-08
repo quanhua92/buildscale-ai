@@ -23,11 +23,13 @@
 /// - User registration via POST /api/v1/auth/register
 /// - User login via POST /api/v1/auth/login
 /// - Refreshing access tokens via POST /api/v1/auth/refresh
+/// - **Token rotation**: Each refresh generates a new refresh_token and invalidates the old one
 /// - User logout via POST /api/v1/auth/logout
 /// - Extracting access and refresh tokens from responses
 /// - Using Authorization header vs Cookie for token refresh
 /// - Understanding how cookies are set for browser clients
 /// - Verifying logged-out tokens cannot be reused
+/// - Verifying old refresh_token fails after rotation (security feature)
 /// - Error handling for various authentication scenarios
 ///
 /// **Note:** This is a client-side example that makes HTTP requests to the API.
@@ -135,6 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Demonstrate token refresh using Authorization header (for API/mobile clients)
             println!("5️⃣  Testing token refresh with Authorization header (API client)...");
+            let original_refresh_token = login_response.refresh_token.clone();
             match refresh_token_with_header(&client, &api_base_url, &login_response.refresh_token).await {
                 Ok(refresh_result) => {
                     println!("✓ Token refresh successful (Authorization header)!");
@@ -144,9 +147,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &refresh_result.access_token
                     };
                     println!("  New Access Token (first 40 chars): {}...", new_token_preview);
+                    let new_refresh_preview = if refresh_result.refresh_token.len() > 40 {
+                        &refresh_result.refresh_token[..40]
+                    } else {
+                        &refresh_result.refresh_token
+                    };
+                    println!("  New Refresh Token (first 40 chars): {}...", new_refresh_preview);
                     println!("  Expires At: {}", refresh_result.expires_at);
                     println!("  Note: No cookie set for API clients using Authorization header");
                     println!();
+
+                    // Demonstrate token rotation: old refresh_token should now fail
+                    println!("5️⃣.a️⃣  Verifying token rotation (old token should fail)...");
+                    match refresh_token_with_header(&client, &api_base_url, &original_refresh_token).await {
+                        Ok(_) => {
+                            println!("✗ Old refresh token should have been invalidated after rotation");
+                        }
+                        Err(e) => {
+                            println!("✓ Old refresh token correctly failed (rotation confirmed): {}", e);
+                            println!("  This proves token rotation is working - old tokens are invalidated");
+                            println!();
+                        }
+                    }
                 }
                 Err(e) => {
                     println!("✗ Token refresh failed: {}", e);
@@ -165,8 +187,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &refresh_result.access_token
                     };
                     println!("  New Access Token (first 40 chars): {}...", new_token_preview);
+                    let new_refresh_preview = if refresh_result.refresh_token.len() > 40 {
+                        &refresh_result.refresh_token[..40]
+                    } else {
+                        &refresh_result.refresh_token
+                    };
+                    println!("  New Refresh Token (first 40 chars): {}...", new_refresh_preview);
                     println!("  Expires At: {}", refresh_result.expires_at);
-                    println!("  Note: access_token cookie was set by the server");
+                    println!("  Note: Both access_token and refresh_token cookies were set by the server");
                     println!();
                 }
                 Err(e) => {
@@ -281,13 +309,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • Registration creates a new user with email and password");
     println!("  • Login returns access token (15 min) and refresh token (30 days)");
     println!("  • Access token is used in Authorization: Bearer <token> header");
-    println!("  • Refresh token can be used to get new access tokens without re-login");
+    println!("  • Refresh token ROTATES on each refresh (new token issued, old invalidated)");
+    println!("  • API clients must extract and store the new refresh_token from response");
+    println!("  • Browser clients automatically receive both cookies (access_token + refresh_token)");
     println!("  • Logout invalidates the refresh token (session) server-side");
     println!("  • Logged-out tokens cannot be used for refresh or authenticated requests");
-    println!("  • Refresh via Authorization header (API/mobile clients): No cookie set");
-    println!("  • Refresh via Cookie (browser clients): access_token cookie is set");
+    println!("  • Refresh via Authorization header (API/mobile clients): No cookies set");
+    println!("  • Refresh via Cookie (browser clients): Both cookies set (rotated)");
     println!("  • Logout clears both access_token and refresh_token cookies");
-    println!("  • Cookies are automatically set for browser clients");
+    println!("  • Token rotation limits replay attacks (WARNING: race condition vulnerability exists - see TODO_SECURITY_REFRESH_TOKEN.md)");
     println!("  • All validation errors return clear error messages");
     println!();
 
@@ -517,6 +547,7 @@ async fn make_authenticated_request(
 /// Refresh token response
 struct RefreshTokenResponse {
     access_token: String,
+    refresh_token: String,  // NEW: Rotated refresh token
     expires_at: String,
 }
 
@@ -577,6 +608,7 @@ async fn refresh_token_with_header(
 
     Ok(RefreshTokenResponse {
         access_token: json["access_token"].as_str().unwrap_or("").to_string(),
+        refresh_token: json["refresh_token"].as_str().unwrap_or("").to_string(),  // NEW: Extract rotated refresh token
         expires_at: json["expires_at"].as_str().unwrap_or("").to_string(),
     })
 }
@@ -625,21 +657,31 @@ async fn refresh_token_with_cookie(
 
     let json: serde_json::Value = serde_json::from_str(&body)?;
 
-    // Check if cookie was set (SHOULD be set for Cookie mode)
-    let has_cookie = headers.get_all("set-cookie")
+    // Check if cookies were set (SHOULD be set for Cookie mode)
+    let cookies_set: Vec<_> = headers.get_all("set-cookie")
         .iter()
-        .any(|header| {
-            header.to_str().unwrap_or("").contains("access_token=")
-        });
+        .filter_map(|header| {
+            let header_str = header.to_str().unwrap_or("");
+            if header_str.contains("access_token=") {
+                Some("access_token")
+            } else if header_str.contains("refresh_token=") {
+                Some("refresh_token")
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    if has_cookie {
+    if cookies_set.contains(&"access_token") {
         println!("  ✓ access_token cookie was set by server (expected for Cookie mode)");
-    } else {
-        println!("  ⚠️  access_token cookie was NOT set (unexpected for Cookie mode)");
+    }
+    if cookies_set.contains(&"refresh_token") {
+        println!("  ✓ refresh_token cookie was set by server (expected for Cookie mode)");
     }
 
     Ok(RefreshTokenResponse {
         access_token: json["access_token"].as_str().unwrap_or("").to_string(),
+        refresh_token: json["refresh_token"].as_str().unwrap_or("").to_string(),  // NEW: Extract rotated refresh token
         expires_at: json["expires_at"].as_str().unwrap_or("").to_string(),
     })
 }

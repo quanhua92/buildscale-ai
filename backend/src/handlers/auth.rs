@@ -49,10 +49,11 @@ impl IntoResponse for LoginResponse {
     }
 }
 
-/// Custom response type for refresh that optionally sets access_token cookie
+/// Custom response type for refresh that optionally sets access_token AND refresh_token cookies
 pub struct RefreshResponse {
     json_body: serde_json::Value,
     access_cookie: Option<String>,
+    refresh_cookie: Option<String>,  // NEW: Support refresh token cookie
     from_cookie: bool,
 }
 
@@ -61,10 +62,17 @@ impl IntoResponse for RefreshResponse {
         let json_response = Json(self.json_body.clone()).into_response();
         let (mut parts, body) = json_response.into_parts();
 
-        // Only set cookie if refresh token came from cookie (browser client)
+        // Only set cookies if refresh token came from cookie (browser client)
         if self.from_cookie {
+            // Set access_token cookie
             if let Some(access_cookie) = self.access_cookie {
                 if let Ok(cookie) = HeaderValue::from_str(&access_cookie) {
+                    parts.headers.append(SET_COOKIE, cookie);
+                }
+            }
+            // Set refresh_token cookie (rotation)
+            if let Some(refresh_cookie) = self.refresh_cookie {
+                if let Ok(cookie) = HeaderValue::from_str(&refresh_cookie) {
                     parts.headers.append(SET_COOKIE, cookie);
                 }
             }
@@ -214,7 +222,17 @@ pub async fn login(
 /// - Authorization header (API/mobile clients): `Bearer <token>`
 /// - Cookie (browser clients): `refresh_token=<token>`
 ///
-/// Returns new JWT access token and optionally sets cookie for browser clients.
+/// Returns new JWT access token and rotated refresh token.
+///
+/// Accepts refresh token from:
+/// - Authorization header (API/mobile clients): `Bearer <token>`
+/// - Cookie (Browser clients): `refresh_token=<token>`
+///
+/// **Token Rotation**: Each refresh generates a NEW refresh token and invalidates the old one.
+/// This is an OAuth 2.0 security best practice that prevents token theft replay attacks.
+///
+/// Returns new JWT access token and new refresh token.
+/// Browser clients receive both as cookies; API clients receive both in JSON.
 ///
 /// # HTTP Status Codes
 /// - `200 OK`: Token refreshed successfully
@@ -222,8 +240,11 @@ pub async fn login(
 /// - `500 INTERNAL_SERVER_ERROR`: Database error
 ///
 /// # Client Compatibility
-/// - **Browser clients**: Receives new access_token in cookie automatically
-/// - **API/Mobile clients**: Extract new access_token from JSON response
+/// - **Browser clients**: Receives new access_token and refresh_token in cookies automatically
+/// - **API/Mobile clients**: Extract new access_token and refresh_token from JSON response
+///
+/// # Breaking Change from Previous Version
+/// The response now includes `refresh_token` field. API clients must update to store the new token.
 pub async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -236,10 +257,10 @@ pub async fn refresh(
         crate::error::Error::Internal(format!("Failed to acquire database connection: {}", e))
     })?;
 
-    // Call service layer to refresh access token
+    // Call service layer to refresh access token with rotation
     let refresh_result = users::refresh_access_token(&mut conn, &token).await?;
 
-    // Build response (only set cookie if request came from cookie)
+    // Build response (only set cookies if request came from cookie)
     let config = CookieConfig::default();
     let access_cookie = if from_cookie {
         Some(build_access_token_cookie(&refresh_result.access_token, &config))
@@ -247,14 +268,23 @@ pub async fn refresh(
         None
     };
 
+    // Build refresh token cookie (only for browser clients)
+    let refresh_cookie = if from_cookie {
+        Some(build_refresh_token_cookie(&refresh_result.refresh_token, &config))
+    } else {
+        None
+    };
+
     let json_body = serde_json::json!({
         "access_token": refresh_result.access_token,
+        "refresh_token": refresh_result.refresh_token,  // NEW: Include in JSON
         "expires_at": refresh_result.expires_at
     });
 
     Ok(RefreshResponse {
         json_body,
         access_cookie,
+        refresh_cookie,  // NEW: Pass refresh cookie
         from_cookie,
     })
 }

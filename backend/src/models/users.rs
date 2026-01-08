@@ -51,6 +51,7 @@ pub struct LoginResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenResult {
     pub access_token: String,              // New JWT access token
+    pub refresh_token: String,             // New refresh token (rotated)
     pub expires_at: DateTime<Utc>,         // When the new access token expires
 }
 

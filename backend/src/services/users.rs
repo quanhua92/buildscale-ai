@@ -302,7 +302,11 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
 /// * `refresh_token` - The refresh token (session token)
 ///
 /// # Returns
-/// A RefreshTokenResult containing the new access token and expiration time
+/// A RefreshTokenResult containing the new access token, rotated refresh token, and expiration time
+///
+/// # Token Rotation
+/// Each refresh request generates a NEW refresh token and invalidates the old one.
+/// This is an OAuth 2.0 security best practice that prevents token theft replay attacks.
 ///
 /// # Errors
 /// Returns an error if the refresh token is invalid or expired
@@ -311,15 +315,26 @@ pub async fn refresh_access_token(
     refresh_token: &str,
 ) -> Result<RefreshTokenResult> {
     // Hash the token for database lookup
-    let token_hash = sessions::hash_session_token(refresh_token);
+    let old_token_hash = sessions::hash_session_token(refresh_token);
 
     // Validate the refresh token (session) exists and is not expired
-    let session = sessions::get_valid_session_by_token_hash(conn, &token_hash)
+    let session = sessions::get_valid_session_by_token_hash(conn, &old_token_hash)
         .await?
         .ok_or_else(|| Error::InvalidToken("Invalid or expired refresh token".to_string()))?;
 
     // Load config to get JWT secret and expiration
     let config = Config::load()?;
+
+    // Generate NEW refresh token (rotation)
+    let new_refresh_token = generate_session_token()?;
+    let new_token_hash = sessions::hash_session_token(&new_refresh_token);
+
+    // Update session with new token hash (invalidates old token)
+    let _updated_session = sessions::update_session_token_hash(
+        conn,
+        session.id,
+        &new_token_hash,
+    ).await?;
 
     // Generate new access token (JWT)
     let access_token = jwt::generate_jwt(
@@ -332,6 +347,7 @@ pub async fn refresh_access_token(
 
     Ok(RefreshTokenResult {
         access_token,
+        refresh_token: new_refresh_token,  // NEW: Return rotated refresh token
         expires_at,
     })
 }
