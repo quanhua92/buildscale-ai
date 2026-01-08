@@ -11,6 +11,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Registration](#user-registration)
   - [User Login](#user-login)
   - [Refresh Access Token](#refresh-access-token)
+  - [User Logout](#user-logout)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 
@@ -24,6 +25,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/auth/register` | POST | Register new user | No |
 | `/api/v1/auth/login` | POST | Login and get tokens | No |
 | `/api/v1/auth/refresh` | POST | Refresh access token | No (uses refresh token) |
+| `/api/v1/auth/logout` | POST | Logout and invalidate session | No (uses refresh token) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -121,6 +123,11 @@ The API uses **dual-token authentication** for secure access:
 
 5. Repeat step 3-4 until refresh_token expires (30 days)
    → Then login again (step 2)
+
+6. POST /api/v1/auth/logout (optional - logout before expiration)
+   → Invalidates refresh_token server-side
+   → Clears both access_token and refresh_token cookies
+   → User must login again to access protected resources
 ```
 
 ---
@@ -660,6 +667,218 @@ Refresh the access token when:
 
 ---
 
+### User Logout
+
+Logout the current user by invalidating their refresh token session. Supports both Authorization header (API clients) and Cookie (browser clients).
+
+**Endpoint**: `POST /api/v1/auth/logout`
+
+**Authentication**: No (uses refresh token instead)
+
+#### How It Works
+
+The logout endpoint accepts refresh tokens from two sources with **priority handling**:
+
+1. **Authorization header** (API/Mobile clients): `Authorization: Bearer <refresh_token>`
+2. **Cookie** (Browser clients): `refresh_token=<token>`
+
+**Priority**: Authorization header takes precedence if both are present.
+
+**What happens on logout**:
+- **Session invalidated**: Refresh token is deleted from database (cannot be used again)
+- **Cookies cleared**: Both `access_token` and `refresh_token` cookies are cleared with `Max-Age=0`
+- **Tokens revoked**: Both access and refresh tokens become invalid immediately
+
+#### Request (API/Mobile Client)
+
+**Headers**:
+```
+Content-Type: application/json
+Authorization: Bearer <refresh_token>
+```
+
+**Body**: None (token in Authorization header)
+
+#### Request (Browser Client)
+
+**Headers**:
+```
+Content-Type: application/json
+Cookie: refresh_token=<token>
+```
+
+**Body**: None (token in Cookie)
+
+#### Response (200 OK)
+
+**JSON Body** (both client types):
+```json
+{
+  "message": "Logout successful"
+}
+```
+
+**Cookies Cleared** (both client types):
+```
+Set-Cookie: access_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0
+Set-Cookie: refresh_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0
+```
+
+Both cookies are set with `Max-Age=0` to instruct the browser to immediately delete them.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | string | Confirmation message |
+
+#### Security Behavior
+
+After logout:
+- ✅ **Refresh token** is deleted from database (cannot be reused)
+- ✅ **Access token** remains valid until expiration (15 minutes)
+- ✅ **Both cookies** are cleared immediately (browser clients)
+- ✅ **API clients** should delete stored tokens from secure storage
+- ⚠️ **Access tokens** cannot be immediately revoked (JWT limitation)
+  - Best practice: Implement token blacklist for immediate revocation
+  - Alternative: Use short expiration times (15 minutes)
+
+#### Error Responses
+
+**400 Bad Request** - Invalid token format
+```json
+{
+  "error": "No valid refresh token found in Authorization header or cookie"
+}
+```
+
+**401 Unauthorized** - Token not found or already logged out
+```json
+{
+  "error": "Invalid refresh token"
+}
+```
+
+**401 Unauthorized** - Session expired
+```json
+{
+  "error": "Session expired"
+}
+```
+
+#### Example Usage (API Client)
+
+```bash
+# Logout using Authorization header
+curl -X POST http://localhost:3000/api/v1/auth/logout \
+  -H "Authorization: Bearer <refresh_token>"
+
+# Response: JSON + clear cookie headers
+{
+  "message": "Logout successful"
+}
+
+# Set-Cookie headers clear both tokens
+# (API clients should delete tokens from local storage)
+```
+
+#### Example Usage (Browser Client)
+
+```bash
+# Logout using Cookie
+curl -X POST http://localhost:3000/api/v1/auth/logout \
+  -H "Cookie: refresh_token=<token>" \
+  -c cookies.txt
+
+# Response: JSON + clear cookie headers
+{
+  "message": "Logout successful"
+}
+
+# Both cookies are automatically cleared by browser
+# Set-Cookie headers with Max-Age=0 instruct browser to delete cookies
+```
+
+#### JavaScript/TypeScript Example
+
+**API Client Logout**:
+```javascript
+const logout = async () => {
+  const response = await fetch('http://localhost:3000/api/v1/auth/logout', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${refreshToken}`
+    }
+  });
+
+  if (!response.ok) {
+    console.error('Logout failed');
+    return;
+  }
+
+  // Clear tokens from local storage
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+
+  // Redirect to login
+  window.location.href = '/login';
+};
+```
+
+**Browser Client Logout**:
+```javascript
+const logout = async () => {
+  const response = await fetch('http://localhost:3000/api/v1/auth/logout', {
+    method: 'POST',
+    credentials: 'include' // Send cookies automatically
+  });
+
+  if (!response.ok) {
+    console.error('Logout failed');
+    return;
+  }
+
+  // Cookies are automatically cleared by server
+  // No need to manually clear localStorage
+
+  // Redirect to login
+  window.location.href = '/login';
+};
+```
+
+#### Best Practices
+
+1. **Always call logout on user logout action**
+   - Don't just clear local storage
+   - Invalidate server-side session for security
+
+2. **Handle logout errors gracefully**
+   - Show user-friendly error message
+   - Allow retry or continue with local cleanup
+
+3. **Clear local token storage**
+   - API clients: Delete tokens from localStorage/keychain
+   - Browser clients: Cookies cleared automatically by server
+
+4. **Redirect to login after logout**
+   - Prevent access to protected resources
+   - Clear any application state
+
+5. **Handle concurrent sessions**
+   - Logout invalidates only the specific refresh token used
+   - User may have other active sessions (different devices)
+   - Consider "logout all devices" functionality for security
+
+#### When to Logout
+
+- **User initiates logout**: Explicit logout button/action
+- **Security event**: Suspicious activity detected
+- **Password change**: Optional - revoke all sessions on password reset
+- **Account deletion**: Invalidate all user sessions
+- **Admin action**: Force logout specific user (admin functionality)
+
+---
+
 ## Error Responses
 
 All error responses follow a consistent format:
@@ -729,6 +948,15 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
     "password": "newpass123",
     "confirm_password": "newpass123"
   }'
+
+# 5. Logout with Authorization header (API client)
+# Note: Replace <refresh_token> with actual token from login response
+curl -X POST http://localhost:3000/api/v1/auth/logout \
+  -H "Authorization: Bearer <refresh_token>"
+
+# 6. Logout with Cookie (browser client)
+curl -X POST http://localhost:3000/api/v1/auth/logout \
+  -H "Cookie: refresh_token=<token>"
 ```
 
 ### Using the Provided Example
@@ -748,6 +976,9 @@ The example demonstrates:
 - ✅ User login with dual-token support
 - ✅ Cookie handling for browser clients
 - ✅ Authorization header for API clients
+- ✅ Token refresh with both header and cookie modes
+- ✅ User logout with cookie clearing
+- ✅ Verification that logged-out tokens cannot be reused
 - ✅ Error handling (wrong password, duplicate email, weak password)
 - ✅ Full request/response logging with headers
 
