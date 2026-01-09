@@ -171,15 +171,36 @@ In this mode:
 
 ### Directory Structure
 
-**Local Development:**
+**Local Development (Build in Place):**
+```
+frontend/
+├── admin/
+│   ├── src/
+│   ├── dist/            # Build output (served by backend)
+│   │   ├── index.html
+│   │   └── assets/
+│   │       ├── main.js
+│   │       └── main.css
+│   └── vite.config.ts
+└── web/
+    ├── src/
+    ├── dist/            # Build output (served by backend)
+    │   ├── index.html
+    │   └── assets/
+    │       ├── main.js
+    │       └── main.css
+    └── vite.config.ts
+```
+
+**Local Development (Copy to Backend):**
 ```
 backend/
-├── admin/               # Frontend build output
+├── admin/               # Copied from frontend/admin/dist
 │   ├── index.html
 │   └── assets/
 │       ├── main.js
 │       └── main.css
-└── web/                 # Frontend build output
+└── web/                 # Copied from frontend/web/dist
     ├── index.html
     └── assets/
         ├── main.js
@@ -203,6 +224,35 @@ backend/
 
 ### Setup
 
+There are two approaches for local development:
+
+**Option 1: Build in Place (Recommended)**
+
+1. **Use the build script:**
+   ```bash
+   # From project root
+   ./frontend-build.sh
+   ```
+
+   This builds both frontends in their original directories.
+
+2. **Configure .env:**
+   ```bash
+   cd backend
+   cp .env.example .env
+   # Edit .env to use absolute paths:
+   # BUILDSCALE__SERVER__ADMIN_BUILD_PATH=/Volumes/data/workspace/buildscale-ai/frontend/admin/dist
+   # BUILDSCALE__SERVER__WEB_BUILD_PATH=/Volumes/data/workspace/buildscale-ai/frontend/web/dist
+   ```
+
+3. **Run Backend:**
+   ```bash
+   cd backend
+   cargo run
+   ```
+
+**Option 2: Copy to Backend**
+
 1. **Build Frontends:**
    ```bash
    cd frontend/admin && pnpm build
@@ -220,7 +270,7 @@ backend/
    ```bash
    cd backend
    cp .env.example .env
-   # Edit .env if needed (defaults should work)
+   # Use relative paths (defaults in .env.example work)
    ```
 
 4. **Run Backend:**
@@ -256,8 +306,20 @@ curl http://localhost:3000/workspace/123
 
 ### Development Tips
 
-**Watching for Changes:**
-During active frontend development, rebuild and copy after each change:
+**Build Script Workflow:**
+The recommended approach is to build in place using the provided script:
+```bash
+# Build both frontends
+./frontend-build.sh
+
+# Make changes to frontend code
+
+# Rebuild after changes
+./frontend-build.sh
+```
+
+**Watch Mode (Optional):**
+For faster development iteration, use watch mode in separate terminals:
 ```bash
 # Terminal 1: Watch and rebuild admin
 cd frontend/admin
@@ -267,24 +329,14 @@ pnpm build --watch
 cd frontend/web
 pnpm build --watch
 
-# After each build, copy to backend
-cp -r frontend/admin/dist backend/admin
-cp -r frontend/web/dist backend/web
+# Backend will serve the updated builds automatically
 ```
 
-**Symbolic Links (Alternative):**
-For faster development, use symbolic links:
-```bash
-# Create symlinks (run from backend directory)
-ln -sf ../frontend/admin/dist admin
-ln -sf ../frontend/web/dist web
-
-# Now just rebuild frontends, no need to copy
-cd frontend/admin && pnpm build
-cd ../web && pnpm build
-```
-
-**Note:** Symlinks work on Linux/macOS. For Windows, use copy commands or WSL.
+**Benefits of Build-in-Place Approach:**
+- No need to copy files after each build
+- Faster development iteration
+- Less disk space usage
+- Simpler workflow
 
 ## Docker Deployment
 
@@ -760,21 +812,21 @@ Static file health can be added:
 
 1. **Development Workflow:**
    ```bash
-   # 1. Make frontend changes
-   # 2. Build frontends
+   # Option 1: Use build script (recommended)
+   ./frontend-build.sh
+   cd backend && cargo run
+
+   # Option 2: Manual build
    cd frontend/admin && pnpm build
    cd ../web && pnpm build
-   # 3. Copy to backend
-   cp -r frontend/admin/dist ../backend/admin
-   cp -r frontend/web/dist ../backend/web
-   # 4. Restart backend
-   cd ../backend && cargo run
+   cd ../../backend && cargo run
    ```
 
 2. **Git Repository:**
-   - Add `backend/admin/` and `backend/web/` to `.gitignore`
+   - Add `frontend/admin/dist/` and `frontend/web/dist/` to `.gitignore`
    - These are build artifacts, not source code
    - Only commit `frontend/` source files
+   - The `frontend-build.sh` script should be committed for convenience
 
 3. **Docker Development:**
    - Use `docker-compose up --build` for full rebuilds
