@@ -672,3 +672,54 @@ git commit -m "Commit message describing the completed feature"
 - Workspace data isolation
 - Role-based access control
 - Input validation and sanitization
+
+## Frontend Development Guidelines
+
+### Component Architecture Pattern
+When building React components for the frontend, **prefer the Compound Component Pattern** for complex, interactive components.
+
+**Why this pattern?**
+- **Declarative API**: More intuitive and flexible component composition
+- **Less prop drilling**: Child components automatically access parent state via Context
+- **Better composability**: Users can arrange and combine child components as needed
+- **Cleaner usage**: More readable component code
+
+**When to use it:**
+- Components with multiple related parts (Tabs, Modals, Dropdowns, Cards)
+- Components with shared state (Toggle, Listbox, Select, Forms)
+- Complex UI components that need flexible composition
+
+**Basic example structure:**
+```jsx
+// Parent manages state
+function Card({ children }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <CardContext.Provider value={{ isOpen, setIsOpen }}>
+      {children}
+    </CardContext.Provider>
+  );
+}
+
+// Children consume state
+Card.Header = function CardHeader({ children }) {
+  return <div className="card-header">{children}</div>;
+};
+
+Card.Body = function CardBody({ children }) {
+  return <div className="card-body">{children}</div>;
+};
+
+Card.Footer = function CardFooter({ children }) {
+  return <div className="card-footer">{children}</div>;
+};
+
+// Usage
+<Card>
+  <Card.Header>Title</Card.Header>
+  <Card.Body>Content goes here</Card.Body>
+  <Card.Footer>
+    <button>Action</button>
+  </Card.Footer>
+</Card>
+```
