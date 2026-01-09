@@ -188,6 +188,14 @@ pub struct ServerConfig {
     pub host: String,
     /// Port to listen on (default: 3000)
     pub port: u16,
+    /// Path to admin frontend build directory (default: "./admin")
+    /// Set to "/app/admin" in Docker, "./admin" for local development
+    /// Empty string disables admin frontend serving (security feature)
+    pub admin_build_path: String,
+    /// Path to web frontend build directory (default: "./web")
+    /// Set to "/app/web" in Docker, "./web" for local development
+    /// Empty string disables web frontend serving (security feature)
+    pub web_build_path: String,
 }
 
 impl Default for ServerConfig {
@@ -195,6 +203,8 @@ impl Default for ServerConfig {
         Self {
             host: "0.0.0.0".to_string(),
             port: 3000,
+            admin_build_path: "./admin".to_string(),
+            web_build_path: "./web".to_string(),
         }
     }
 }

@@ -189,6 +189,10 @@ ENV BUILD_DATE="${BUILD_DATE}"
 ENV GIT_COMMIT="${GIT_COMMIT}"
 ENV PORT=3000
 
+# Set default environment variables for static file serving
+ENV BUILDSCALE__SERVER__ADMIN_BUILD_PATH="/app/admin"
+ENV BUILDSCALE__SERVER__WEB_BUILD_PATH="/app/web"
+
 # Copy compiled binary from rust-builder
 COPY --from=rust-builder /app/buildscale ./buildscale
 

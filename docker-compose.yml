@@ -41,6 +41,9 @@ services:
       - PORT=3000
       # Environment Configuration
       - BUILDSCALE__ENV=development
+      # Static File Serving Configuration
+      - BUILDSCALE__SERVER__ADMIN_BUILD_PATH=/app/admin
+      - BUILDSCALE__SERVER__WEB_BUILD_PATH=/app/web
       # Database Configuration
       - BUILDSCALE__DATABASE__USER=buildscale
       - BUILDSCALE__DATABASE__PASSWORD=PASSWORD

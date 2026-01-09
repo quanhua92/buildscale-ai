@@ -96,6 +96,8 @@ use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::services::{ServeDir, ServeFile};
+use std::path::Path;
 use axum::middleware::Next;
 use uuid::Uuid;
 use crate::middleware::auth::jwt_auth_middleware;
@@ -207,58 +209,103 @@ pub async fn run_api_server(
 
     let api_routes = create_api_router(app_state.clone());
 
-    let app = Router::new()
-        .nest("/api/v1", api_routes)
-        .layer(
-            ServiceBuilder::new()
-                .layer(axum_middleware::from_fn(request_id_middleware))
-                .layer(
-                    TraceLayer::new_for_http()
-                        .make_span_with(|request: &Request<_>| {
-                            let request_id = request
-                                .headers()
-                                .get("x-request-id")
-                                .and_then(|v| v.to_str().ok())
-                                .unwrap_or("unknown");
+    // Start with API routes
+    let mut app = Router::new()
+        .nest("/api/v1", api_routes);
 
-                            tracing::info_span!(
-                                "http_request",
-                                method = %request.method(),
-                                path = %request.uri().path(),
-                                request_id = %request_id,
-                                status = tracing::field::Empty,
-                                latency = tracing::field::Empty,
-                            )
-                        })
-                        .on_request(
-                            tower_http::trace::DefaultOnRequest::new()
-                                .level(tracing::Level::DEBUG)
+    // Add admin frontend at /admin (only if path is configured and not empty)
+    let admin_build_path = &config.server.admin_build_path;
+    if !admin_build_path.is_empty() {
+        tracing::info!("Admin frontend serving enabled at path: '{}'", admin_build_path);
+
+        if !Path::new(admin_build_path).is_dir() {
+            tracing::warn!(
+                "Admin build directory not found at '{}'. Admin frontend will fail to serve.",
+                admin_build_path
+            );
+        }
+
+        let admin_index_path = Path::new(admin_build_path).join("index.html");
+        let admin_static_service = ServeDir::new(admin_build_path)
+            .not_found_service(ServeFile::new(admin_index_path));
+
+        app = app.nest_service("/admin", admin_static_service);
+    } else {
+        tracing::info!("Admin frontend serving disabled (admin_build_path is empty)");
+    }
+
+    // Add web frontend fallback at root / (only if path is configured and not empty)
+    let web_build_path = &config.server.web_build_path;
+    if !web_build_path.is_empty() {
+        tracing::info!("Web frontend serving enabled at path: '{}'", web_build_path);
+
+        if !Path::new(web_build_path).is_dir() {
+            tracing::warn!(
+                "Web build directory not found at '{}'. Web frontend will fail to serve.",
+                web_build_path
+            );
+        }
+
+        let web_index_path = Path::new(web_build_path).join("index.html");
+        let web_static_service = ServeDir::new(web_build_path)
+            .not_found_service(ServeFile::new(web_index_path));
+
+        app = app.fallback_service(web_static_service);
+    } else {
+        tracing::info!("Web frontend serving disabled (web_build_path is empty)");
+    }
+
+    // Apply middleware layers to the combined app
+    let app = app.layer(
+        ServiceBuilder::new()
+            .layer(axum_middleware::from_fn(request_id_middleware))
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(|request: &Request<_>| {
+                        let request_id = request
+                            .headers()
+                            .get("x-request-id")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("unknown");
+
+                        tracing::info_span!(
+                            "http_request",
+                            method = %request.method(),
+                            path = %request.uri().path(),
+                            request_id = %request_id,
+                            status = tracing::field::Empty,
+                            latency = tracing::field::Empty,
                         )
-                        .on_response(
-                            tower_http::trace::DefaultOnResponse::new()
-                                .level(tracing::Level::DEBUG)
-                        ),
-                )
-                .layer(
-                    SetResponseHeaderLayer::if_not_present(
-                        axum::http::header::X_CONTENT_TYPE_OPTIONS,
-                        axum::http::HeaderValue::from_static("nosniff"),
+                    })
+                    .on_request(
+                        tower_http::trace::DefaultOnRequest::new()
+                            .level(tracing::Level::DEBUG)
+                    )
+                    .on_response(
+                        tower_http::trace::DefaultOnResponse::new()
+                            .level(tracing::Level::DEBUG)
                     ),
-                )
-                .layer(
-                    SetResponseHeaderLayer::if_not_present(
-                        axum::http::header::X_FRAME_OPTIONS,
-                        axum::http::HeaderValue::from_static("DENY"),
-                    ),
-                )
-                .layer(
-                    CorsLayer::new()
-                        .allow_origin(Any)
-                        .allow_methods(Any)
-                        .allow_headers(Any),
+            )
+            .layer(
+                SetResponseHeaderLayer::if_not_present(
+                    axum::http::header::X_CONTENT_TYPE_OPTIONS,
+                    axum::http::HeaderValue::from_static("nosniff"),
                 ),
-        )
-        .with_state(app_state);
+            )
+            .layer(
+                SetResponseHeaderLayer::if_not_present(
+                    axum::http::header::X_FRAME_OPTIONS,
+                    axum::http::HeaderValue::from_static("DENY"),
+                ),
+            )
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods(Any)
+                    .allow_headers(Any),
+            ),
+    )
+    .with_state(app_state);
 
     // Bind to address
     let addr = format!("{}:{}", config.server.host, config.server.port);
