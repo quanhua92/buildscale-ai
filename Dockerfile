@@ -173,15 +173,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM alpine:3.22 AS final
 WORKDIR /app
 
-# Accept build arguments
-ARG BUILD_DATE
-ARG GIT_COMMIT
-
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates curl
 
 # Create non-root user for security
 RUN addgroup -S appgroup && adduser -S -G appgroup appuser
+
+# Accept build arguments
+ARG BUILD_DATE
+ARG GIT_COMMIT
 
 # Set default environment variables
 ENV RUST_LOG="info"
