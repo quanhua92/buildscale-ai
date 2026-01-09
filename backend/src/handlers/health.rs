@@ -40,6 +40,7 @@ pub struct HealthCheckResponse {
 pub async fn health_check(
     State(_state): State<AppState>,
 ) -> Json<HealthCheckResponse> {
+    tracing::info!("Health check requested - system operational");
     Json(HealthCheckResponse {
         status: "ok".to_string(),
     })

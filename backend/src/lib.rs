@@ -90,9 +90,43 @@ fn get_build_date() -> String {
     "unknown".to_string()
 }
 
-use axum::{Router, routing::{get, post}, middleware as axum_middleware};
+use axum::{Router, routing::{get, post}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
 use tokio::net::TcpListener;
+use tower::ServiceBuilder;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
+use axum::middleware::Next;
+use uuid::Uuid;
 use crate::middleware::auth::jwt_auth_middleware;
+
+/// Middleware to add request ID to response headers
+async fn request_id_middleware(
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            let id = Uuid::now_v7().to_string();
+            req.headers_mut().insert(
+                HeaderName::from_static("x-request-id"),
+                id.parse().unwrap()
+            );
+            id
+        });
+
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        HeaderName::from_static("x-request-id"),
+        request_id.parse().unwrap(),
+    );
+
+    response
+}
 
 /// Create API v1 routes
 ///
@@ -171,12 +205,59 @@ pub async fn run_api_server(
     // Build the application state with cache, user_cache, and database pool
     let app_state = AppState::new(cache, user_cache, pool);
 
-    // Build API v1 routes using the shared router function
     let api_routes = create_api_router(app_state.clone());
 
-    // Build the main router with nested API routes
     let app = Router::new()
         .nest("/api/v1", api_routes)
+        .layer(
+            ServiceBuilder::new()
+                .layer(axum_middleware::from_fn(request_id_middleware))
+                .layer(
+                    TraceLayer::new_for_http()
+                        .make_span_with(|request: &Request<_>| {
+                            let request_id = request
+                                .headers()
+                                .get("x-request-id")
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or("unknown");
+
+                            tracing::info_span!(
+                                "http_request",
+                                method = %request.method(),
+                                path = %request.uri().path(),
+                                request_id = %request_id,
+                                status = tracing::field::Empty,
+                                latency = tracing::field::Empty,
+                            )
+                        })
+                        .on_request(
+                            tower_http::trace::DefaultOnRequest::new()
+                                .level(tracing::Level::DEBUG)
+                        )
+                        .on_response(
+                            tower_http::trace::DefaultOnResponse::new()
+                                .level(tracing::Level::DEBUG)
+                        ),
+                )
+                .layer(
+                    SetResponseHeaderLayer::if_not_present(
+                        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+                        axum::http::HeaderValue::from_static("nosniff"),
+                    ),
+                )
+                .layer(
+                    SetResponseHeaderLayer::if_not_present(
+                        axum::http::header::X_FRAME_OPTIONS,
+                        axum::http::HeaderValue::from_static("DENY"),
+                    ),
+                )
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin(Any)
+                        .allow_methods(Any)
+                        .allow_headers(Any),
+                ),
+        )
         .with_state(app_state);
 
     // Bind to address
