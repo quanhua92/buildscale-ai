@@ -1,37 +1,27 @@
 /**
- * AuthCard - Container component for auth forms
+ * AuthCard - Container component for auth forms using shadcn Card
  */
 
-import { cn } from '../../utils'
+import type { ReactNode } from 'react'
+import { Card as ShadcnCard, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 
-interface CardProps {
-  children: React.ReactNode
+interface AuthCardProps {
+  children: ReactNode
   className?: string
   title?: string
   description?: string
 }
 
-export function Card({ children, className, title, description }: CardProps) {
+export function Card({ children, className, title, description }: AuthCardProps) {
   return (
-    <div
-      className={cn(
-        'w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md',
-        className
-      )}
-    >
+    <ShadcnCard className={className}>
       {(title || description) && (
-        <div className="text-center">
-          {title && (
-            <h2 className="text-3xl font-bold tracking-tight text-gray-900">
-              {title}
-            </h2>
-          )}
-          {description && (
-            <p className="mt-2 text-sm text-gray-600">{description}</p>
-          )}
-        </div>
+        <CardHeader>
+          {title && <CardTitle>{title}</CardTitle>}
+          {description && <CardDescription>{description}</CardDescription>}
+        </CardHeader>
       )}
-      {children}
-    </div>
+      <CardContent>{children}</CardContent>
+    </ShadcnCard>
   )
 }

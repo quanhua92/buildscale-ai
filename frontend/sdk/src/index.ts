@@ -6,6 +6,7 @@
  * - Auth context and hooks
  * - Pre-built Login and Register components
  * - Fully composable auth UI components
+ * - shadcn/ui components for consistent styling
  */
 
 // Context and hooks
@@ -17,6 +18,12 @@ export { useAuth as useAuthHook, useProtectedRoute } from './hooks'
 
 // Components
 export { default as Auth } from './components/auth'
+
+// shadcn/ui components (re-export for convenience)
+export { Button } from './components/ui/button'
+export { Input } from './components/ui/input'
+export { Label } from './components/ui/label'
+export { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 
 // API client
 export { ApiClient } from './api'

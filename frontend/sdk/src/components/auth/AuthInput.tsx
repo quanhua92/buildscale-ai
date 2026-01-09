@@ -1,40 +1,26 @@
 /**
- * AuthInput - Form input component with error handling
+ * AuthInput - Input component with label using shadcn components
  */
 
+import { Input as ShadcnInput } from '../ui/input'
+import { Label } from '../ui/label'
 import { cn } from '../../utils'
 
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  name: string
+interface AuthInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string
   error?: string
 }
 
-export function Input({ name, label, error, className, ...props }: InputProps) {
+export function Input({ label, error, className, id, ...props }: AuthInputProps) {
   return (
-    <div>
-      {label && (
-        <label
-          htmlFor={name}
-          className="mb-2 block text-sm font-medium text-gray-700"
-        >
-          {label}
-        </label>
-      )}
-      <input
-        id={name}
-        name={name}
-        className={cn(
-          'w-full rounded-lg border border-gray-300 px-3 py-2',
-          'focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500',
-          error && 'border-red-500 focus:border-red-500 focus:ring-red-500',
-          className
-        )}
+    <div className="space-y-2">
+      {label && <Label htmlFor={id}>{label}</Label>}
+      <ShadcnInput
+        id={id}
+        className={cn(error && 'border-destructive focus-visible:ring-destructive', className)}
         {...props}
       />
-      {error && (
-        <p className="mt-1 text-sm text-red-600">{error}</p>
-      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }
