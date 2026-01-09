@@ -1,12 +1,16 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
+import { AuthProvider } from '@buildscale/sdk'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
 
 import './styles.css'
 import reportWebVitals from './reportWebVitals.ts'
+
+// API base URL from environment
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1'
 
 // Create a new router instance
 const router = createRouter({
@@ -33,7 +37,9 @@ if (rootElement && !rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <StrictMode>
-      <RouterProvider router={router} />
+      <AuthProvider apiBaseUrl={apiBaseUrl}>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </StrictMode>,
   )
 }
