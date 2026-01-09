@@ -2,6 +2,7 @@
 # Multi-Stage Production Dockerfile for BuildScale AI Monorepo
 # =============================================================================
 # This Dockerfile builds:
+# - SDK shared package (TypeScript + tsup)
 # - Admin React frontend (Vite + pnpm)
 # - Web React frontend (Vite + pnpm)
 # - Rust backend (cargo-chef optimized)
@@ -17,71 +18,69 @@ WORKDIR /app
 RUN npm install -g pnpm
 
 # -----------------------------------------------------------------------------
-# Stage 2: Admin Frontend Dependencies
+# Stage 2: Frontend Dependencies Base (includes built SDK)
 # -----------------------------------------------------------------------------
-FROM pnpm-base AS admin-deps
-WORKDIR /app/admin
+FROM pnpm-base AS frontend-base
+WORKDIR /app
+
+# Copy workspace configuration
+COPY frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./
+
+# Copy SDK package files and source
+COPY frontend/sdk/package.json ./sdk/
+COPY frontend/sdk/tsconfig.json ./sdk/
+COPY frontend/sdk/tsup.config.ts ./sdk/
+COPY frontend/sdk/src ./sdk/src/
 
 # Copy admin package files
-COPY frontend/admin/package.json frontend/admin/pnpm-lock.yaml ./
+COPY frontend/admin/package.json ./admin/
 
-# Install admin dependencies for better caching
+# Copy web package files
+COPY frontend/web/package.json ./web/
+
+# Set API base URL for production builds (relative path for same-origin)
+ENV VITE_API_BASE_URL=/api/v1
+
+# Install all dependencies (workspace protocol links SDK)
 RUN pnpm install --frozen-lockfile
+
+# Build SDK
+RUN pnpm --filter @buildscale/sdk build
 
 # -----------------------------------------------------------------------------
 # Stage 3: Build Admin Frontend
 # -----------------------------------------------------------------------------
-FROM pnpm-base AS admin-builder
-WORKDIR /app/admin
-
-# Copy admin dependencies from previous stage
-COPY --from=admin-deps /app/admin/node_modules ./node_modules
+FROM frontend-base AS admin-builder
+WORKDIR /app
 
 # Copy admin source code
-COPY frontend/admin/package.json ./
-COPY frontend/admin/src ./src
-COPY frontend/admin/public ./public
-COPY frontend/admin/index.html ./
-COPY frontend/admin/vite.config.ts ./
-COPY frontend/admin/tsconfig.json ./
+COPY frontend/admin/src ./admin/src
+COPY frontend/admin/public ./admin/public
+COPY frontend/admin/index.html ./admin/
+COPY frontend/admin/vite.config.ts ./admin/
+COPY frontend/admin/tsconfig.json ./admin/
 
 # Build admin application
-RUN pnpm build
+RUN pnpm --filter admin build
 
 # -----------------------------------------------------------------------------
-# Stage 4: Web Frontend Dependencies
+# Stage 4: Build Web Frontend
 # -----------------------------------------------------------------------------
-FROM pnpm-base AS web-deps
-WORKDIR /app/web
-
-# Copy web package files
-COPY frontend/web/package.json frontend/web/pnpm-lock.yaml ./
-
-# Install web dependencies for better caching
-RUN pnpm install --frozen-lockfile
-
-# -----------------------------------------------------------------------------
-# Stage 5: Build Web Frontend
-# -----------------------------------------------------------------------------
-FROM pnpm-base AS web-builder
-WORKDIR /app/web
-
-# Copy web dependencies from previous stage
-COPY --from=web-deps /app/web/node_modules ./node_modules
+FROM frontend-base AS web-builder
+WORKDIR /app
 
 # Copy web source code
-COPY frontend/web/package.json ./
-COPY frontend/web/src ./src
-COPY frontend/web/public ./public
-COPY frontend/web/index.html ./
-COPY frontend/web/vite.config.ts ./
-COPY frontend/web/tsconfig.json ./
+COPY frontend/web/src ./web/src
+COPY frontend/web/public ./web/public
+COPY frontend/web/index.html ./web/
+COPY frontend/web/vite.config.ts ./web/
+COPY frontend/web/tsconfig.json ./web/
 
 # Build web application
-RUN pnpm build
+RUN pnpm --filter web build
 
 # -----------------------------------------------------------------------------
-# Stage 6: Rust Build Planner for cargo-chef
+# Stage 5: Rust Build Planner for cargo-chef
 # -----------------------------------------------------------------------------
 FROM rust:1.91-alpine AS chef
 USER root
@@ -110,7 +109,7 @@ RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 RUN cargo chef prepare --recipe-path recipe.json
 
 # -----------------------------------------------------------------------------
-# Stage 7: Cache Rust Dependencies
+# Stage 6: Cache Rust Dependencies
 # -----------------------------------------------------------------------------
 FROM chef AS rust-cacher
 WORKDIR /app
@@ -133,7 +132,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo chef cook --release --recipe-path recipe.json
 
 # -----------------------------------------------------------------------------
-# Stage 8: Build Rust Backend
+# Stage 7: Build Rust Backend
 # -----------------------------------------------------------------------------
 FROM chef AS rust-builder
 WORKDIR /app
@@ -168,7 +167,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp target/release/buildscale /app/buildscale
 
 # -----------------------------------------------------------------------------
-# Stage 9: Final Production Image
+# Stage 8: Final Production Image
 # -----------------------------------------------------------------------------
 FROM alpine:3.22 AS final
 WORKDIR /app
