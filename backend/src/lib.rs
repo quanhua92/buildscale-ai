@@ -97,6 +97,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::compression::CompressionLayer;
 use std::path::Path;
 use axum::middleware::Next;
 use uuid::Uuid;
@@ -303,7 +304,8 @@ pub async fn run_api_server(
                     .allow_origin(Any)
                     .allow_methods(Any)
                     .allow_headers(Any),
-            ),
+            )
+            .layer(CompressionLayer::new()),
     )
     .with_state(app_state);
 

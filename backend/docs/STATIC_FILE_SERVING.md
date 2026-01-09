@@ -108,16 +108,17 @@ This enables:
 
 ### Dependencies
 
-Static file serving requires the `fs` feature in `Cargo.toml`:
+Static file serving requires the `fs` and `compression-gzip` features in `Cargo.toml`:
 
 ```toml
 # backend/Cargo.toml
-tower-http = { version = "0.6", features = ["trace", "cors", "set-header", "request-id", "fs"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "set-header", "request-id", "fs", "compression-gzip"] }
 ```
 
-The `fs` feature provides:
+These features provide:
 - `ServeDir` - Directory serving with SPA fallback support
 - `ServeFile` - Individual file serving
+- `CompressionLayer` - Gzip compression for responses
 - Automatic MIME type detection
 - Path traversal protection
 
@@ -674,6 +675,31 @@ Currently, no cache headers are set for static files. This is intentional for de
 
 In production, consider adding cache headers for immutable assets like JS/CSS files with content hashes in their filenames.
 
+### Response Compression
+
+The server automatically compresses all responses using Gzip compression:
+
+**What gets compressed:**
+- HTML files (up to 70% size reduction)
+- CSS files (up to 80% size reduction)
+- JavaScript files (up to 70% size reduction)
+- JSON API responses (up to 60% size reduction)
+- Plain text files
+
+**How it works:**
+- Compression layer is applied globally to all responses
+- Clients request compression via `Accept-Encoding: gzip` header
+- Server automatically compresses and sets `Content-Encoding: gzip` response header
+- Compression is transparent to the application code
+
+**Benefits:**
+- Reduced bandwidth usage (up to 70% for text files)
+- Faster page loads
+- Lower bandwidth costs
+- Better user experience on slow connections
+
+**Note:** Binary files (images, fonts, videos) are not compressed as they're already compressed.
+
 ## Monitoring and Logging
 
 ### Log Messages
@@ -764,6 +790,8 @@ Static file health can be added:
 5. **Performance Monitoring:**
    - Monitor static file response times
    - Check for 404 errors (indicates missing assets)
+   - Verify compression is working (check `Content-Encoding: gzip` response header)
+   - Monitor compression ratios in production
 
 6. **Security Hardening:**
    - Keep `admin_build_path` and `web_build_path` non-empty in production
