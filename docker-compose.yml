@@ -24,7 +24,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    build: .
+    build:
+      context: .
+      args:
+        - BUILD_DATE=${BUILD_DATE:-unknown}
+        - GIT_COMMIT=${GIT_COMMIT:-unknown}
     container_name: buildscale
     user: "${UID:-1000}:${GID:-1000}"
     ports:
