@@ -48,6 +48,48 @@ pub fn init_tracing() {
         .init();
 }
 
+/// Get the current git commit hash
+///
+/// Returns the commit hash from the GIT_COMMIT environment variable if set
+/// (e.g., in Docker builds), or falls back to running git command.
+fn get_git_commit_hash() -> String {
+    // Check environment variable first (set in Docker builds)
+    if let Ok(commit) = std::env::var("GIT_COMMIT") {
+        if !commit.is_empty() {
+            return commit;
+        }
+    }
+
+    // Fallback: try to get the short commit hash from git
+    use std::process::Command;
+    if let Ok(output) = Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(hash) = String::from_utf8(output.stdout) {
+                return hash.trim().to_string();
+            }
+        }
+    }
+
+    // Final fallback if git is not available or not in a git repo
+    "unknown".to_string()
+}
+
+/// Get the build timestamp
+///
+/// Returns the build date from the BUILD_DATE environment variable if set
+/// (e.g., in Docker builds), or "unknown".
+fn get_build_date() -> String {
+    if let Ok(date) = std::env::var("BUILD_DATE") {
+        if !date.is_empty() {
+            return date;
+        }
+    }
+    "unknown".to_string()
+}
+
 use axum::{Router, routing::{get, post}, middleware as axum_middleware};
 use tokio::net::TcpListener;
 use crate::middleware::auth::jwt_auth_middleware;
@@ -141,7 +183,13 @@ pub async fn run_api_server(
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = TcpListener::bind(&addr).await?;
 
-    tracing::info!("API server listening on http://{}", addr);
+    // Log server startup with build information
+    let commit_hash = get_git_commit_hash();
+    let build_date = get_build_date();
+    tracing::info!(
+        "API server listening on http://{} (commit: {}, built: {})",
+        addr, commit_hash, build_date
+    );
 
     // Setup shutdown handler
     let shutdown_signal = async move {
