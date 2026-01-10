@@ -1,66 +1,61 @@
 /**
- * Token storage abstraction for different client types
+ * Storage abstraction for different client types
+ * Split into token-specific and generic storage interfaces
  */
 
-export interface TokenStorage {
-  getAccessToken(): string | null
-  getRefreshToken(): string | null
-  setTokens(accessToken: string, refreshToken: string): void
-  clearTokens(): void
+// Token-specific methods (for ApiClient)
+export interface TokenCallbacks {
+  getAccessToken: () => string | null | Promise<string | null>
+  getRefreshToken: () => string | null | Promise<string | null>
+  setTokens: (accessToken: string, refreshToken: string) => void | Promise<void>
+  clearTokens: () => void | Promise<void>
 }
 
-/**
- * Browser storage using localStorage
- * For API clients, mobile apps, or manual token management
- */
-export class BrowserTokenStorage implements TokenStorage {
-  private ACCESS_TOKEN_KEY = 'buildscale_access_token'
-  private REFRESH_TOKEN_KEY = 'buildscale_refresh_token'
+// Generic storage methods (for app data)
+export interface StorageCallbacks {
+  getItem: (key: string) => string | null | Promise<string | null>
+  setItem: (key: string, value: string) => void | Promise<void>
+  removeItem: (key: string) => void | Promise<void>
+}
 
+// Combined for non-browser clients
+export interface FullStorageCallbacks extends TokenCallbacks, StorageCallbacks {}
+
+/**
+ * Default storage for browser clients
+ * - Implements TokenCallbacks: No-ops (HttpOnly cookies handled by backend)
+ * - Implements StorageCallbacks: localStorage for app data
+ */
+export class BrowserStorage implements TokenCallbacks, StorageCallbacks {
+  // Token methods - no-ops (backend handles HttpOnly cookies)
   getAccessToken(): string | null {
-    return localStorage.getItem(this.ACCESS_TOKEN_KEY)
+    return null // HttpOnly cookies - can't access
   }
 
   getRefreshToken(): string | null {
-    return localStorage.getItem(this.REFRESH_TOKEN_KEY)
-  }
-
-  setTokens(accessToken: string, refreshToken: string): void {
-    localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken)
-    localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken)
-  }
-
-  clearTokens(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY)
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY)
-  }
-}
-
-/**
- * Cookie storage placeholder
- * Note: Actual cookies are HttpOnly and managed by the backend
- * This class tracks cookie state for the client
- */
-export class CookieTokenStorage implements TokenStorage {
-  // Cookies are HttpOnly, managed by browser
-  // This provides a consistent interface for the API client
-
-  getAccessToken(): string | null {
-    // Token is in HttpOnly cookie, managed by backend
-    return null // Backend handles cookie-based auth
-  }
-
-  getRefreshToken(): string | null {
-    return null // Backend handles cookie-based auth
+    return null // HttpOnly cookies - can't access
   }
 
   setTokens(): void {
-    // Cookies are set by backend via Set-Cookie header
-    // No-op here
+    // Backend sets cookies via Set-Cookie headers
+    // No-op for browser clients
   }
 
   clearTokens(): void {
-    // Cookies are cleared by backend via Set-Cookie header
-    // No-op here
+    // Backend clears cookies via logout endpoint
+    // No-op for browser clients
+  }
+
+  // Generic storage methods - use localStorage
+  getItem(key: string): string | null {
+    return localStorage.getItem(key)
+  }
+
+  setItem(key: string, value: string): void {
+    localStorage.setItem(key, value)
+  }
+
+  removeItem(key: string): void {
+    localStorage.removeItem(key)
   }
 }
