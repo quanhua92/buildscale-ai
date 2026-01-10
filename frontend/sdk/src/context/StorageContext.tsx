@@ -5,6 +5,7 @@
 
 import { createContext, useContext, type ReactNode } from 'react'
 import type { FullStorageCallbacks } from '../utils/storage'
+import { BrowserStorage } from '../utils/storage'
 
 interface StorageContextType {
   // Token callbacks - for ApiClient
@@ -27,13 +28,7 @@ export interface StorageProviderProps {
   storage?: FullStorageCallbacks // Defaults to BrowserStorage
 }
 
-export function StorageProvider({ children, storage }: StorageProviderProps) {
-  // If no storage provided, we'll need to handle this in the implementation
-  // For now, this will be set when AuthProvider consumes it
-  if (!storage) {
-    throw new Error('StorageProvider requires a storage implementation')
-  }
-
+export function StorageProvider({ children, storage = new BrowserStorage() }: StorageProviderProps) {
   const value: StorageContextType = {
     // Token callbacks
     getAccessToken: () => {

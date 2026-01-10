@@ -128,8 +128,8 @@ class ApiClient {
 
   private refreshAccessToken(): Promise<string | null> {
     // Prevent multiple refresh attempts by returning the existing promise
-    if (this.isRefreshing) {
-      return this.refreshPromise ?? Promise.resolve(null)
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise
     }
 
     const storedRefreshToken = this.getRefreshToken()
@@ -139,11 +139,11 @@ class ApiClient {
       return this.performRefresh(null).then(r => r.access_token)
     }
 
-    this.isRefreshing = true
-
-    // Create and assign promise immediately (before async operations)
-    // This ensures concurrent callers get the same promise and wait for the result
+    // Assign promise synchronously before setting isRefreshing flag
+    // This prevents race condition where concurrent calls see isRefreshing=true
+    // but refreshPromise is still null
     this.refreshPromise = (async () => {
+      this.isRefreshing = true
       try {
         const token = await storedRefreshToken
         const result = await this.performRefresh(token)

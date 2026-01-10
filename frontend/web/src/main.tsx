@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { AuthProvider, StorageProvider, BrowserStorage } from '@buildscale/sdk'
+import { AuthProvider, StorageProvider } from '@buildscale/sdk'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
