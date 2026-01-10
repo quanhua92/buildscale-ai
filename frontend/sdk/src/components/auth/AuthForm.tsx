@@ -32,14 +32,7 @@ export function Form({ children, className, onSubmit }: FormProps) {
     const formData = new FormData(e.currentTarget)
     const data = Object.fromEntries(formData.entries()) as Record<string, string>
 
-    try {
-      await onSubmit(data)
-    } catch (err) {
-      // Handle validation errors from API
-      if (err instanceof Error) {
-        setErrors({ form: err.message })
-      }
-    }
+    await onSubmit(data)
   }
 
   return (
