@@ -97,6 +97,11 @@ pub enum Error {
 /// A type alias for `Result<T, Error>` to simplify function signatures.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Helper function to create standardized error response bodies
+fn create_error_body(msg: String, code: &str) -> serde_json::Value {
+    serde_json::json!({ "error": msg, "code": code })
+}
+
 /// Convert custom Error to HTTP response
 ///
 /// This implementation maps each error variant to an appropriate HTTP status code
@@ -125,97 +130,19 @@ impl IntoResponse for Error {
                 };
                 (body, StatusCode::BAD_REQUEST)
             }
-            Error::NotFound(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "NOT_FOUND"
-                });
-                (body, StatusCode::NOT_FOUND)
-            }
-            Error::Forbidden(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "FORBIDDEN"
-                });
-                (body, StatusCode::FORBIDDEN)
-            }
-            Error::Conflict(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "CONFLICT"
-                });
-                (body, StatusCode::CONFLICT)
-            }
-            Error::Authentication(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "AUTHENTICATION_FAILED"
-                });
-                (body, StatusCode::UNAUTHORIZED)
-            }
-            Error::InvalidToken(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "INVALID_TOKEN"
-                });
-                (body, StatusCode::UNAUTHORIZED)
-            }
-            Error::SessionExpired(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "SESSION_EXPIRED"
-                });
-                (body, StatusCode::UNAUTHORIZED)
-            }
-            Error::TokenTheftDetected(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "TOKEN_THEFT"
-                });
-                (body, StatusCode::FORBIDDEN)
-            }
-            Error::Sqlx(_) => {
-                let body = serde_json::json!({
-                    "error": "Database error",
-                    "code": "INTERNAL_ERROR"
-                });
-                (body, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            Error::Internal(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "INTERNAL_ERROR"
-                });
-                (body, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            Error::Config(_) => {
-                let body = serde_json::json!({
-                    "error": "Configuration error",
-                    "code": "CONFIG_ERROR"
-                });
-                (body, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            Error::Cache(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "CACHE_ERROR"
-                });
-                (body, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            Error::CacheSerialization(msg) => {
-                let body = serde_json::json!({
-                    "error": msg,
-                    "code": "CACHE_ERROR"
-                });
-                (body, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            Error::Io(_) => {
-                let body = serde_json::json!({
-                    "error": "IO error",
-                    "code": "INTERNAL_ERROR"
-                });
-                (body, StatusCode::INTERNAL_SERVER_ERROR)
-            }
+            Error::NotFound(msg) => (create_error_body(msg, "NOT_FOUND"), StatusCode::NOT_FOUND),
+            Error::Forbidden(msg) => (create_error_body(msg, "FORBIDDEN"), StatusCode::FORBIDDEN),
+            Error::Conflict(msg) => (create_error_body(msg, "CONFLICT"), StatusCode::CONFLICT),
+            Error::Authentication(msg) => (create_error_body(msg, "AUTHENTICATION_FAILED"), StatusCode::UNAUTHORIZED),
+            Error::InvalidToken(msg) => (create_error_body(msg, "INVALID_TOKEN"), StatusCode::UNAUTHORIZED),
+            Error::SessionExpired(msg) => (create_error_body(msg, "SESSION_EXPIRED"), StatusCode::UNAUTHORIZED),
+            Error::TokenTheftDetected(msg) => (create_error_body(msg, "TOKEN_THEFT"), StatusCode::FORBIDDEN),
+            Error::Sqlx(_) => (create_error_body("Database error".to_string(), "INTERNAL_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
+            Error::Internal(msg) => (create_error_body(msg, "INTERNAL_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
+            Error::Config(_) => (create_error_body("Configuration error".to_string(), "CONFIG_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
+            Error::Cache(msg) => (create_error_body(msg, "CACHE_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
+            Error::CacheSerialization(msg) => (create_error_body(msg, "CACHE_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
+            Error::Io(_) => (create_error_body("IO error".to_string(), "INTERNAL_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
         };
 
         (status, Json(body)).into_response()
