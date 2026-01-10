@@ -4,6 +4,7 @@
  * Compound Component Pattern authentication system with:
  * - API client with automatic token refresh
  * - Auth context and hooks
+ * - Storage context for token and app data management
  * - Pre-built Login and Register components
  * - Fully composable auth UI components
  * - shadcn/ui components for consistent styling
@@ -12,6 +13,9 @@
 // Context and hooks
 export { AuthProvider, useAuth } from './context'
 export type { AuthProviderProps } from './context'
+
+// Storage context
+export { StorageProvider, useStorage } from './context/StorageContext'
 
 // Hooks
 export { useProtectedRoute } from './hooks'
@@ -27,8 +31,13 @@ export { Card, CardContent, CardDescription, CardHeader, CardTitle } from './com
 
 // API client
 export { ApiClient } from './api'
-export { BrowserTokenStorage, CookieTokenStorage } from './utils/storage'
-export type { TokenStorage } from './utils/storage'
+
+// Storage types and implementation
+export type { TokenCallbacks, StorageCallbacks, FullStorageCallbacks } from './utils/storage'
+export { BrowserStorage } from './utils/storage'
+
+// Constants
+export { STORAGE_KEYS } from './utils/constants'
 
 // Types
 export type {
