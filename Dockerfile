@@ -26,11 +26,10 @@ WORKDIR /app
 # Copy workspace configuration
 COPY frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./
 
-# Copy SDK package files and source
+# Copy SDK package files
 COPY frontend/sdk/package.json ./sdk/
 COPY frontend/sdk/tsconfig.json ./sdk/
 COPY frontend/sdk/tsup.config.ts ./sdk/
-COPY frontend/sdk/src ./sdk/src/
 
 # Copy admin package files
 COPY frontend/admin/package.json ./admin/
@@ -43,6 +42,9 @@ ENV VITE_API_BASE_URL=/api/v1
 
 # Install all dependencies (workspace protocol links SDK)
 RUN pnpm install --frozen-lockfile
+
+# Copy SDK source (after dependencies for better layer caching)
+COPY frontend/sdk/src ./sdk/src/
 
 # Build SDK
 RUN pnpm --filter @buildscale/sdk build
