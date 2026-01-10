@@ -1402,3 +1402,304 @@ async fn test_refresh_endpoint_with_cookie_rotates_both_cookies() {
     assert!(refresh_body["access_token"].is_string());
     assert!(refresh_body["refresh_token"].is_string());
 }
+
+// ============================================================================
+// /me ENDPOINT TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_me_endpoint_returns_200_with_valid_access_token() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login to get access token
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let access_token = login_body["access_token"].as_str().unwrap();
+
+    // Call /me endpoint with access token
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+}
+
+#[tokio::test]
+async fn test_me_endpoint_returns_user_object_with_valid_token() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let access_token = login_body["access_token"].as_str().unwrap();
+    let expected_email = login_body["user"]["email"].as_str().unwrap();
+    let expected_user_id = login_body["user"]["id"].as_str().unwrap();
+
+    // Call /me endpoint
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["user"].is_object());
+    assert_eq!(body["user"]["email"], expected_email);
+    assert_eq!(body["user"]["id"], expected_user_id);
+    assert!(body["user"]["full_name"].is_string() || body["user"]["full_name"].is_null());
+}
+
+#[tokio::test]
+async fn test_me_endpoint_returns_401_without_token() {
+    let app = TestApp::new().await;
+
+    // Call /me endpoint without any token
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["error"].is_string() || body["message"].is_string());
+}
+
+#[tokio::test]
+async fn test_me_endpoint_returns_401_with_invalid_token() {
+    let app = TestApp::new().await;
+
+    // Call /me endpoint with invalid token
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", "Bearer invalid_token_12345")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["error"].is_string() || body["message"].is_string());
+}
+
+#[tokio::test]
+async fn test_me_endpoint_returns_401_with_expired_token_format() {
+    let app = TestApp::new().await;
+
+    // Call /me endpoint with malformed/expired token
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", "Bearer expired_token_format:invalid_signature")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["error"].is_string() || body["message"].is_string());
+}
+
+#[tokio::test]
+async fn test_me_endpoint_works_with_cookie_based_auth() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login (as browser client to get cookies)
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Extract access_token cookie from login response
+    let cookies = login_response.headers().get_all("set-cookie");
+    let access_cookie = cookies
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|c| c.starts_with("access_token="))
+        .expect("access_token cookie should be set");
+
+    // Extract just the token value (before the first semicolon)
+    let token_value = access_cookie
+        .split(';')
+        .next()
+        .unwrap()
+        .trim_start_matches("access_token=");
+
+    // Call /me endpoint with cookie
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Cookie", format!("access_token={}", token_value))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["user"].is_object());
+    assert_eq!(body["user"]["email"], email);
+}
+
+#[tokio::test]
+async fn test_me_endpoint_authorization_header_priority_over_cookie() {
+    let app = TestApp::new().await;
+
+    // Register first user
+    let email1 = generate_test_email();
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email1,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response1 = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email1,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body1: serde_json::Value = login_response1.json().await.unwrap();
+    let access_token1 = login_body1["access_token"].as_str().unwrap();
+    let user_id1 = login_body1["user"]["id"].as_str().unwrap();
+
+    // Register second user
+    let email2 = generate_test_email();
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email2,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response2 = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email2,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Extract access_token cookie from second user's login
+    let cookies = login_response2.headers().get_all("set-cookie");
+    let access_cookie = cookies
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|c| c.starts_with("access_token="))
+        .expect("access_token cookie should be set");
+
+    let token_value = access_cookie
+        .split(';')
+        .next()
+        .unwrap()
+        .trim_start_matches("access_token=");
+
+    // Call /me with BOTH Authorization header (user1) and Cookie (user2)
+    // Authorization header should take priority
+    let response = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {}", access_token1))
+        .header("Cookie", format!("access_token={}", token_value))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    // Should return user1's data (from Authorization header)
+    assert_eq!(body["user"]["id"], user_id1);
+}
