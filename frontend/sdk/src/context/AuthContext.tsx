@@ -2,7 +2,7 @@
  * Authentication context provider for managing user auth state
  */
 
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { User } from '../api/types'
 import ApiClient from '../api/client'
@@ -36,8 +36,11 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const storage = new BrowserTokenStorage()
-  const apiClient = new ApiClient({ baseURL: apiBaseUrl }, storage)
+  const storage = useMemo(() => new BrowserTokenStorage(), [])
+  const apiClient = useMemo(
+    () => new ApiClient({ baseURL: apiBaseUrl }, storage),
+    [apiBaseUrl, storage]
+  )
 
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true)
