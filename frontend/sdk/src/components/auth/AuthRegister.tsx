@@ -52,7 +52,7 @@ export function Register() {
           label="Password"
           required
           placeholder="••••••••"
-          minLength={8}
+          minLength={12}
         />
         <Input
           name="confirm_password"
@@ -60,7 +60,7 @@ export function Register() {
           label="Confirm Password"
           required
           placeholder="••••••••"
-          minLength={8}
+          minLength={12}
         />
         {error && !error.fields && (
           <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
