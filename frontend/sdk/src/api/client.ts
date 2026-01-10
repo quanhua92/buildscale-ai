@@ -232,59 +232,35 @@ class ApiClient {
 
   async logout(): Promise<{ message: string }> {
     const refreshToken = await this.getRefreshToken()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
-    if (refreshToken) {
-      // API/Mobile: send refresh token in header
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
 
-      try {
-        const response = await fetch(`${this.baseURL}/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${refreshToken}`,
-          },
-          signal: controller.signal,
-        })
-
-        if (!response.ok) {
-          const data = await response.json()
-          throw new ApiError(data.message || 'Logout failed', response.status)
-        }
-
-        return await response.json()
-      } finally {
-        clearTimeout(timeoutId)
+      // Add Authorization header if token exists (API/Mobile clients)
+      if (refreshToken) {
+        headers['Authorization'] = `Bearer ${refreshToken}`
       }
-    } else {
-      // Cookie storage: browser sends cookie automatically
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
-      try {
-        const response = await fetch(`${this.baseURL}/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          signal: controller.signal,
-        })
+      const response = await fetch(`${this.baseURL}/auth/logout`, {
+        method: 'POST',
+        headers,
+        credentials: 'include', // Always include for cookie-based auth
+        signal: controller.signal,
+      })
 
-        if (!response.ok) {
-          const data = await response.json()
-          throw new ApiError(data.message || 'Logout failed', response.status)
-        }
-
-        return await response.json()
-      } finally {
-        clearTimeout(timeoutId)
+      if (!response.ok) {
+        const data = await response.json()
+        throw new ApiError(data.message || 'Logout failed', response.status)
       }
+
+      return await response.json()
+    } finally {
+      clearTimeout(timeoutId)
+      // Always clear local tokens, regardless of API call success
+      await this.clearTokens()
     }
-
-    // Always clear local storage (no-op for HttpOnly cookies)
-    await this.clearTokens()
   }
 
   async refreshToken(): Promise<RefreshTokenResponse> {
