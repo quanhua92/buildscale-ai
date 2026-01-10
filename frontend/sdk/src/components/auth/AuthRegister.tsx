@@ -13,11 +13,11 @@ export function Register() {
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
-    await register(data as {
-      email: string
-      password: string
-      confirm_password: string
-      full_name?: string
+    await register({
+      email: data.email,
+      password: data.password,
+      confirm_password: data.confirm_password,
+      full_name: data.full_name,
     })
   }
 
