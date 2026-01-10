@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Frontend Build Script for BuildScale AI
-# This script builds both admin and web frontends in place
+# This script builds SDK, admin, and web frontends in place
 
 set -e  # Exit on error
 
@@ -13,13 +13,25 @@ NC='\033[0m' # No Color
 
 # Get the script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SDK_DIR="$SCRIPT_DIR/frontend/sdk"
 ADMIN_DIR="$SCRIPT_DIR/frontend/admin"
 WEB_DIR="$SCRIPT_DIR/frontend/web"
 
 echo -e "${YELLOW}=== BuildScale AI Frontend Build Script ===${NC}\n"
 
+# Build SDK (must be built first as it's a dependency)
+echo -e "${YELLOW}[1/3] Building SDK...${NC}"
+cd "$SDK_DIR"
+if pnpm build; then
+    echo -e "${GREEN}✓ SDK built successfully${NC}"
+    echo -e "  Location: ${GREEN}$SDK_DIR/dist${NC}\n"
+else
+    echo -e "${RED}✗ SDK build failed${NC}"
+    exit 1
+fi
+
 # Build Admin Frontend
-echo -e "${YELLOW}[1/2] Building Admin Frontend...${NC}"
+echo -e "${YELLOW}[2/3] Building Admin Frontend...${NC}"
 cd "$ADMIN_DIR"
 if pnpm build; then
     echo -e "${GREEN}✓ Admin frontend built successfully${NC}"
@@ -30,7 +42,7 @@ else
 fi
 
 # Build Web Frontend
-echo -e "${YELLOW}[2/2] Building Web Frontend...${NC}"
+echo -e "${YELLOW}[3/3] Building Web Frontend...${NC}"
 cd "$WEB_DIR"
 if pnpm build; then
     echo -e "${GREEN}✓ Web frontend built successfully${NC}"
@@ -42,8 +54,9 @@ fi
 
 # Summary
 echo -e "${GREEN}=== Build Complete ===${NC}"
-echo -e "Admin frontend: ${GREEN}$ADMIN_DIR/dist${NC}"
-echo -e "Web frontend:   ${GREEN}$WEB_DIR/dist${NC}"
+echo -e "SDK:             ${GREEN}$SDK_DIR/dist${NC}"
+echo -e "Admin frontend:  ${GREEN}$ADMIN_DIR/dist${NC}"
+echo -e "Web frontend:    ${GREEN}$WEB_DIR/dist${NC}"
 echo ""
 echo -e "${YELLOW}Note: Backend .env is configured to serve from these directories${NC}"
 echo -e "${YELLOW}Next steps:${NC}"
