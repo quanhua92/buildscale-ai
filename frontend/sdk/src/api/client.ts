@@ -53,12 +53,7 @@ class ApiClient {
         }
       }
 
-      const response = await fetch(url, {
-        ...options,
-        headers,
-        signal: controller.signal,
-        credentials: 'include', // Include cookies for browser clients
-      })
+      const response = await this.fetchWithAuth(url, options, headers, controller.signal)
 
       clearTimeout(timeoutId)
 
@@ -67,16 +62,11 @@ class ApiClient {
         const newToken = await this.refreshAccessToken()
         if (newToken) {
           // Retry original request with new token
-          headers = {
+          const retryHeaders = {
             ...headers,
             Authorization: `Bearer ${newToken}`,
           }
-          const retryResponse = await fetch(url, {
-            ...options,
-            headers,
-            signal: controller.signal,
-            credentials: 'include',
-          })
+          const retryResponse = await this.fetchWithAuth(url, options, retryHeaders, controller.signal)
           return this.handleResponse<T>(retryResponse)
         }
       }
@@ -90,6 +80,20 @@ class ApiClient {
       }
       throw error
     }
+  }
+
+  private async fetchWithAuth(
+    url: string,
+    options: RequestInit,
+    headers: HeadersInit,
+    signal: AbortSignal
+  ): Promise<Response> {
+    return fetch(url, {
+      ...options,
+      headers,
+      signal,
+      credentials: 'include', // Include cookies for browser clients
+    })
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {
