@@ -6,7 +6,8 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect } 
 import type { ReactNode } from 'react'
 import type { User } from '../api/types'
 import ApiClient from '../api/client'
-import { BrowserTokenStorage } from '../utils/storage'
+import { useStorage } from './StorageContext'
+import { STORAGE_KEYS } from '../utils/constants'
 
 interface AuthContextType {
   user: User | null
@@ -36,10 +37,28 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const storage = useMemo(() => new BrowserTokenStorage(), [])
+  // Get ALL storage callbacks from context
+  const {
+    // Token callbacks - for ApiClient
+    getAccessToken,
+    getRefreshToken,
+    setTokens,
+    clearTokens,
+    // Generic storage - for app data
+    setItem,
+    removeItem
+  } = useStorage()
+
+  // ApiClient gets token callbacks from context
   const apiClient = useMemo(
-    () => new ApiClient({ baseURL: apiBaseUrl }, storage),
-    [apiBaseUrl, storage]
+    () => new ApiClient({
+      baseURL: apiBaseUrl,
+      getAccessToken,
+      getRefreshToken,
+      setTokens,
+      clearTokens
+    }),
+    [apiBaseUrl, getAccessToken, getRefreshToken, setTokens, clearTokens]
   )
 
   const login = useCallback(async (email: string, password: string) => {
@@ -48,15 +67,15 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       const response = await apiClient.login({ email, password })
       setUser(response.user)
-      // Store tokens
-      storage.setTokens(response.access_token, response.refresh_token)
+      // Store user ID in localStorage (tokens are HttpOnly cookies)
+      setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed'
       setError(message)
     } finally {
       setIsLoading(false)
     }
-  }, [apiClient, storage])
+  }, [apiClient, setItem])
 
   const register = useCallback(async (data: {
     email: string
@@ -69,15 +88,15 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       const response = await apiClient.register(data)
       setUser(response.user)
-      // Store tokens
-      storage.setTokens(response.access_token, response.refresh_token)
+      // Store user ID in localStorage (tokens are HttpOnly cookies)
+      setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed'
       setError(message)
     } finally {
       setIsLoading(false)
     }
-  }, [apiClient, storage])
+  }, [apiClient, setItem])
 
   const logout = useCallback(async () => {
     setIsLoading(true)
@@ -85,13 +104,15 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       await apiClient.logout()
       setUser(null)
+      // Clear user ID from localStorage
+      removeItem(STORAGE_KEYS.USER_ID)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Logout failed'
       setError(message)
     } finally {
       setIsLoading(false)
     }
-  }, [apiClient])
+  }, [apiClient, removeItem])
 
   const clearError = useCallback(() => {
     setError(null)
@@ -100,25 +121,20 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   // Restore session on mount
   useEffect(() => {
     const restoreSession = async () => {
-      const token = storage.getAccessToken()
-      if (token) {
-        try {
-          const { user: profileUser } = await apiClient.getProfile()
-          setUser(profileUser)
-        } catch (error) {
-          // Invalid or expired token - clear tokens and stay logged out
-          storage.clearTokens()
-        } finally {
-          setIsLoading(false)
-        }
-      } else {
-        // No token found - not logged in
+      // Try to get user profile - backend will validate HttpOnly cookies
+      try {
+        const { user: profileUser } = await apiClient.getProfile()
+        setUser(profileUser)
+      } catch (error) {
+        // Invalid or expired token - not logged in
+        // No need to clear tokens (HttpOnly cookies handled by backend)
+      } finally {
         setIsLoading(false)
       }
     }
 
     restoreSession()
-  }, [apiClient, storage])
+  }, [apiClient])
 
   const value: AuthContextType = {
     user,
