@@ -26,7 +26,7 @@ export function Register() {
       email: data.email,
       password: data.password,
       confirm_password: data.confirm_password,
-      full_name: data.full_name,
+      full_name: data.full_name || undefined,
     })
   }
 
