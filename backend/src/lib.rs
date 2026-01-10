@@ -14,13 +14,14 @@ pub mod workers;
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
+pub use error::{Error, Result, ValidationErrors};
 pub use handlers::{auth::login, auth::logout, auth::me, auth::register, auth::refresh, health::health_check, health::health_cache};
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
 pub use workers::revoked_token_cleanup_worker;
 
 /// Load configuration from environment variables
-pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+pub fn load_config() -> Result<Config> {
     Ok(Config::load()?)
 }
 
@@ -183,7 +184,7 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 pub async fn run_api_server(
     config: &Config,
     cache: Cache<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     use secrecy::ExposeSecret;
 
     // Create database connection pool
