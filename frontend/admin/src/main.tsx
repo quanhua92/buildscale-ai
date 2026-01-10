@@ -9,8 +9,8 @@ import { routeTree } from './routeTree.gen'
 import './styles.css'
 import reportWebVitals from './reportWebVitals.ts'
 
-// API base URL from environment
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1'
+// API base URL from environment (relative path for Vite proxy)
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 // Create a new router instance
 const router = createRouter({
