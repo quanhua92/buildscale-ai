@@ -151,35 +151,43 @@ class ApiClient {
   private async performRefresh(
     refreshToken: string
   ): Promise<RefreshTokenResponse> {
-    const response = await fetch(`${this.baseURL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
-    const data = await response.json()
+    try {
+      const response = await fetch(`${this.baseURL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        signal: controller.signal,
+      })
 
-    if (!response.ok) {
-      // Token theft detected
-      if (response.status === 403) {
-        throw new TokenTheftError(data.message || 'Token theft detected')
+      const data = await response.json()
+
+      if (!response.ok) {
+        // Token theft detected
+        if (response.status === 403) {
+          throw new TokenTheftError(data.message || 'Token theft detected')
+        }
+        throw new ApiError(data.message || 'Refresh failed', response.status)
       }
-      throw new ApiError(data.message || 'Refresh failed', response.status)
-    }
 
-    // Update tokens in storage (rotation)
-    if (data.refresh_token) {
-      // New refresh token provided (normal rotation)
-      this.storage.setTokens(data.access_token, data.refresh_token)
-    } else {
-      // Only access token refreshed (within 5-minute grace period)
-      this.storage.setTokens(data.access_token, refreshToken)
-    }
+      // Update tokens in storage (rotation)
+      if (data.refresh_token) {
+        // New refresh token provided (normal rotation)
+        this.storage.setTokens(data.access_token, data.refresh_token)
+      } else {
+        // Only access token refreshed (within 5-minute grace period)
+        this.storage.setTokens(data.access_token, refreshToken)
+      }
 
-    return data
+      return data
+    } finally {
+      clearTimeout(timeoutId)
+    }
   }
 
   // ============================================================================
