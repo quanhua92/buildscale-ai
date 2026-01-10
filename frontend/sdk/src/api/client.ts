@@ -119,7 +119,7 @@ class ApiClient {
   private refreshAccessToken(): Promise<string | null> {
     // Prevent multiple refresh attempts by returning the existing promise
     if (this.isRefreshing) {
-      return this.refreshPromise
+      return this.refreshPromise ?? Promise.resolve(null)
     }
 
     const refreshToken = this.storage.getRefreshToken()
