@@ -2,14 +2,23 @@
  * Auth.Login - Pre-built login form component
  */
 
+import { useEffect } from 'react'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
-import { Form } from './AuthForm'
+import { Form, useFormErrors } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
 export function Login() {
   const { login, isLoading, error, clearError } = useAuth()
+  const { setErrors } = useFormErrors()
+
+  // Update form errors when auth error changes
+  useEffect(() => {
+    if (error?.fields) {
+      setErrors(error.fields)
+    }
+  }, [error, setErrors])
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
@@ -33,7 +42,7 @@ export function Login() {
           required
           placeholder="••••••••"
         />
-        {error && (
+        {error && !error.fields && (
           <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
             {error.message}
           </div>
