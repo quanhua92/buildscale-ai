@@ -53,7 +53,6 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed'
       setError(message)
-      throw err
     } finally {
       setIsLoading(false)
     }
@@ -75,7 +74,6 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed'
       setError(message)
-      throw err
     } finally {
       setIsLoading(false)
     }
