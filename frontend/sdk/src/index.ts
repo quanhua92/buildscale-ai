@@ -37,7 +37,7 @@ export type { TokenCallbacks, StorageCallbacks, FullStorageCallbacks } from './u
 export { BrowserStorage } from './utils/storage'
 
 // Constants
-export { STORAGE_KEYS } from './utils/constants'
+export { STORAGE_KEYS, STORAGE_PREFIX } from './utils/constants'
 
 // Types
 export type {

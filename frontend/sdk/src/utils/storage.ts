@@ -3,6 +3,8 @@
  * Split into token-specific and generic storage interfaces
  */
 
+import { STORAGE_PREFIX } from './constants'
+
 // Token-specific methods (for ApiClient)
 export interface TokenCallbacks {
   getAccessToken: () => string | null | Promise<string | null>
@@ -16,6 +18,7 @@ export interface StorageCallbacks {
   getItem: (key: string) => string | null | Promise<string | null>
   setItem: (key: string, value: string) => void | Promise<void>
   removeItem: (key: string) => void | Promise<void>
+  clearAuthData: () => void | Promise<void>
 }
 
 // Combined for non-browser clients
@@ -57,5 +60,15 @@ export class BrowserStorage implements TokenCallbacks, StorageCallbacks {
 
   removeItem(key: string): void {
     localStorage.removeItem(key)
+  }
+
+  clearAuthData(): void {
+    // Clear all app data with our prefix from localStorage
+    const keys = Object.keys(localStorage)
+    keys.forEach(key => {
+      if (key.startsWith(STORAGE_PREFIX)) {
+        localStorage.removeItem(key)
+      }
+    })
   }
 }

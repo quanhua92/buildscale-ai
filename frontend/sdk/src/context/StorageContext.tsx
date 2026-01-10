@@ -17,6 +17,7 @@ interface StorageContextType {
   getItem: (key: string) => string | null | Promise<string | null>
   setItem: (key: string, value: string) => void | Promise<void>
   removeItem: (key: string) => void | Promise<void>
+  clearAuthData: () => void | Promise<void>
 }
 
 const StorageContext = createContext<StorageContextType | undefined>(undefined)
@@ -53,6 +54,7 @@ export function StorageProvider({ children, storage }: StorageProviderProps) {
     },
     setItem: (key: string, value: string) => storage.setItem(key, value),
     removeItem: (key: string) => storage.removeItem(key),
+    clearAuthData: () => storage.clearAuthData(),
   }
 
   return <StorageContext.Provider value={value}>{children}</StorageContext.Provider>

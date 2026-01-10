@@ -18,3 +18,6 @@ export const STORAGE_KEYS = {
   SIDEBAR_COLLAPSED: 'buildscale_sidebar_collapsed',
   ONBOARDING_COMPLETED: 'buildscale_onboarding_completed',
 } as const
+
+// Prefix used for all app data - enables clearing all on logout
+export const STORAGE_PREFIX = 'buildscale_'

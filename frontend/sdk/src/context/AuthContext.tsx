@@ -53,7 +53,7 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     clearTokens,
     // Generic storage - for app data
     setItem,
-    removeItem
+    clearAuthData
   } = useStorage()
 
   // ApiClient gets token callbacks from context
@@ -115,7 +115,7 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       await apiClient.logout()
       setUser(null)
-      removeItem(STORAGE_KEYS.USER_ID)
+      clearAuthData()
     } catch (err) {
       if (err instanceof ApiError) {
         setError({ message: err.message, code: err.code, status: err.status })
@@ -125,7 +125,7 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [apiClient, removeItem])
+  }, [apiClient, clearAuthData])
 
   const clearError = useCallback(() => {
     setError(null)
