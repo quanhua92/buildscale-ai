@@ -6,14 +6,21 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect } 
 import type { ReactNode } from 'react'
 import type { User } from '../api/types'
 import ApiClient from '../api/client'
+import { ApiError } from '../api/errors'
 import { useStorage } from './StorageContext'
 import { STORAGE_KEYS } from '../utils/constants'
+
+export interface AuthError {
+  message: string
+  code?: string
+  status?: number
+}
 
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  error: string | null
+  error: AuthError | null
   login: (email: string, password: string) => Promise<void>
   register: (data: {
     email: string
@@ -35,7 +42,7 @@ export interface AuthProviderProps {
 export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<AuthError | null>(null)
 
   // Get ALL storage callbacks from context
   const {
@@ -67,11 +74,13 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       const response = await apiClient.login({ email, password })
       setUser(response.user)
-      // Store user ID in localStorage (tokens are HttpOnly cookies)
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed'
-      setError(message)
+      if (err instanceof ApiError) {
+        setError({ message: err.message, code: err.code, status: err.status })
+      } else {
+        setError({ message: err instanceof Error ? err.message : 'Login failed' })
+      }
     } finally {
       setIsLoading(false)
     }
@@ -88,11 +97,13 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       const response = await apiClient.register(data)
       setUser(response.user)
-      // Store user ID in localStorage (tokens are HttpOnly cookies)
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Registration failed'
-      setError(message)
+      if (err instanceof ApiError) {
+        setError({ message: err.message, code: err.code, status: err.status })
+      } else {
+        setError({ message: err instanceof Error ? err.message : 'Registration failed' })
+      }
     } finally {
       setIsLoading(false)
     }
@@ -104,11 +115,13 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     try {
       await apiClient.logout()
       setUser(null)
-      // Clear user ID from localStorage
       removeItem(STORAGE_KEYS.USER_ID)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Logout failed'
-      setError(message)
+      if (err instanceof ApiError) {
+        setError({ message: err.message, code: err.code, status: err.status })
+      } else {
+        setError({ message: err instanceof Error ? err.message : 'Logout failed' })
+      }
     } finally {
       setIsLoading(false)
     }

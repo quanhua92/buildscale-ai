@@ -3,4 +3,4 @@
  */
 
 export { AuthProvider, useAuth } from './AuthContext'
-export type { AuthProviderProps } from './AuthContext'
+export type { AuthProviderProps, AuthError } from './AuthContext'

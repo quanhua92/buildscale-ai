@@ -35,7 +35,7 @@ export function Login() {
         />
         {error && (
           <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
-            {error}
+            {error.message}
           </div>
         )}
         <Button isLoading={isLoading}>Sign In</Button>

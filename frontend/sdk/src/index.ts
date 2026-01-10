@@ -12,7 +12,7 @@
 
 // Context and hooks
 export { AuthProvider, useAuth } from './context'
-export type { AuthProviderProps } from './context'
+export type { AuthProviderProps, AuthError } from './context'
 
 // Storage context
 export { StorageProvider, useStorage } from './context/StorageContext'
