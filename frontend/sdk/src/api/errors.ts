@@ -6,7 +6,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public code?: string
+    public code?: string,
+    public fields?: Record<string, string>  // Field-specific errors from backend
   ) {
     super(message)
     this.name = 'ApiError'

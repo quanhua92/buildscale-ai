@@ -14,42 +14,7 @@ export interface AuthError {
   message: string
   code?: string
   status?: number
-  fields?: Record<string, string>  // Field-specific errors
-}
-
-// Helper function to parse error messages and extract field names
-function parseErrorFields(message: string): Record<string, string> | undefined {
-  const fields: Record<string, string> = {}
-  const lowerMessage = message.toLowerCase()
-
-  // Common field error patterns
-  if (lowerMessage.includes('email')) {
-    if (lowerMessage.includes('already') || lowerMessage.includes('exists') || lowerMessage.includes('taken')) {
-      fields.email = message
-    } else if (lowerMessage.includes('invalid') || lowerMessage.includes('format')) {
-      fields.email = message
-    }
-  }
-
-  if (lowerMessage.includes('password')) {
-    if (lowerMessage.includes('short') || lowerMessage.includes('length')) {
-      fields.password = message
-    } else if (lowerMessage.includes('match')) {
-      fields.confirm_password = message
-    } else if (lowerMessage.includes('weak') || lowerMessage.includes('requirements')) {
-      fields.password = message
-    }
-  }
-
-  if (lowerMessage.includes('confirm') || lowerMessage.includes("don't match")) {
-    fields.confirm_password = message
-  }
-
-  if (lowerMessage.includes('name')) {
-    fields.full_name = message
-  }
-
-  return Object.keys(fields).length > 0 ? fields : undefined
+  fields?: Record<string, string>  // Field-specific errors from backend
 }
 
 interface AuthContextType {
@@ -113,16 +78,15 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
     } catch (err) {
       if (err instanceof ApiError) {
-        const message = err.message
         setError({
-          message,
+          message: err.message,
           code: err.code,
           status: err.status,
-          fields: parseErrorFields(message)
+          fields: err.fields  // Use fields directly from backend error
         })
       } else {
         const message = err instanceof Error ? err.message : 'Login failed'
-        setError({ message, fields: parseErrorFields(message) })
+        setError({ message })
       }
     } finally {
       setIsLoading(false)
@@ -143,16 +107,15 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
     } catch (err) {
       if (err instanceof ApiError) {
-        const message = err.message
         setError({
-          message,
+          message: err.message,
           code: err.code,
           status: err.status,
-          fields: parseErrorFields(message)
+          fields: err.fields  // Use fields directly from backend error
         })
       } else {
         const message = err instanceof Error ? err.message : 'Registration failed'
-        setError({ message, fields: parseErrorFields(message) })
+        setError({ message })
       }
     } finally {
       setIsLoading(false)

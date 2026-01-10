@@ -120,7 +120,8 @@ class ApiClient {
       throw new ApiError(
         data.error || data.message || 'Request failed',
         response.status,
-        data.code
+        data.code,
+        data.fields  // Extract field-specific errors from backend
       )
     }
 
