@@ -108,7 +108,8 @@ class ApiClient {
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {
-    const data = await response.json()
+    const text = await response.text()
+    const data = text ? JSON.parse(text) : {}
 
     if (!response.ok) {
       // Handle token theft detection (403 from refresh endpoint)

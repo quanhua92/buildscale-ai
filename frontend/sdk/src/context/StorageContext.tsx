@@ -3,7 +3,7 @@
  * Provides BOTH token callbacks (for ApiClient) and generic storage callbacks (for app data)
  */
 
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { FullStorageCallbacks } from '../utils/storage'
 import { BrowserStorage } from '../utils/storage'
 
@@ -29,7 +29,7 @@ export interface StorageProviderProps {
 }
 
 export function StorageProvider({ children, storage = new BrowserStorage() }: StorageProviderProps) {
-  const value: StorageContextType = {
+  const value: StorageContextType = useMemo(() => ({
     // Token callbacks
     getAccessToken: () => {
       const result = storage.getAccessToken()
@@ -50,7 +50,7 @@ export function StorageProvider({ children, storage = new BrowserStorage() }: St
     setItem: (key: string, value: string) => storage.setItem(key, value),
     removeItem: (key: string) => storage.removeItem(key),
     clearAuthData: () => storage.clearAuthData(),
-  }
+  }), [storage])
 
   return <StorageContext.Provider value={value}>{children}</StorageContext.Provider>
 }
