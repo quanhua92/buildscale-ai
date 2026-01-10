@@ -2,7 +2,7 @@
  * Authentication context provider for managing user auth state
  */
 
-import { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import type { User } from '../api/types'
 import ApiClient from '../api/client'
@@ -98,6 +98,30 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const clearError = useCallback(() => {
     setError(null)
   }, [])
+
+  // Restore session on mount
+  useEffect(() => {
+    const restoreSession = async () => {
+      const token = storage.getAccessToken()
+      if (token) {
+        try {
+          setIsLoading(true)
+          const { user: profileUser } = await apiClient.getProfile()
+          setUser(profileUser)
+        } catch (error) {
+          // Invalid or expired token - clear tokens and stay logged out
+          storage.clearTokens()
+        } finally {
+          setIsLoading(false)
+        }
+      } else {
+        // No token found - not logged in
+        setIsLoading(false)
+      }
+    }
+
+    restoreSession()
+  }, [apiClient, storage])
 
   const value: AuthContextType = {
     user,

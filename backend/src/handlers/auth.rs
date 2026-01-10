@@ -5,9 +5,11 @@ use axum::{
         HeaderMap, HeaderValue,
     },
     response::{IntoResponse, Json, Response},
+    Extension,
 };
 use crate::{
     error::Result,
+    middleware::auth::AuthenticatedUser,
     models::users::{LoginUser, RegisterUser},
     services::{
         cookies::{
@@ -375,4 +377,28 @@ fn extract_refresh_token(headers: &HeaderMap) -> Result<(String, bool)> {
     Err(crate::error::Error::Authentication(
         "No valid refresh token found in Authorization header or cookie".to_string()
     ))
+}
+
+/// GET /api/v1/auth/me
+///
+/// Returns the currently authenticated user's profile.
+///
+/// This endpoint requires a valid JWT access token via:
+/// - Authorization header (API/mobile clients): `Bearer <token>`
+/// - Cookie (browser clients): `access_token=<token>`
+///
+/// # Returns
+/// JSON response containing the authenticated user object.
+///
+/// # HTTP Status Codes
+/// - `200 OK`: Successfully retrieved user profile
+/// - `401 UNAUTHORIZED`: Invalid or expired JWT token
+pub async fn me(
+    Extension(auth_user): Extension<AuthenticatedUser>,
+) -> Result<Json<serde_json::Value>> {
+    // Return the authenticated user from the middleware
+    // (already cached and validated)
+    Ok(Json(serde_json::json!({
+        "user": auth_user
+    })))
 }

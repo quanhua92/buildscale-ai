@@ -14,7 +14,7 @@ pub mod workers;
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
-pub use handlers::{auth::login, auth::logout, auth::register, auth::refresh, health::health_check, health::health_cache};
+pub use handlers::{auth::login, auth::logout, auth::me, auth::register, auth::refresh, health::health_check, health::health_cache};
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
 pub use workers::revoked_token_cleanup_worker;
@@ -151,6 +151,7 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
         .merge(
             Router::new()
                 .route("/health/cache", get(health_cache))
+                .route("/auth/me", get(me))
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     jwt_auth_middleware,

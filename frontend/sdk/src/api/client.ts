@@ -8,6 +8,7 @@ import type {
   LoginRequest,
   AuthResponse,
   RefreshTokenResponse,
+  User,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 import type { TokenStorage } from '../utils/storage'
@@ -210,6 +211,10 @@ class ApiClient {
       throw new ApiError('No refresh token available', 401)
     }
     return this.performRefresh(refreshToken)
+  }
+
+  async getProfile(): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/me')
   }
 
   // Generic methods for other API calls
