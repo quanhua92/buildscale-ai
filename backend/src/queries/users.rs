@@ -30,7 +30,10 @@ pub async fn create_user(conn: &mut DbConn, new_user: NewUser) -> Result<User> {
             || error_msg.contains("duplicate key")
             || error_msg.contains("users_email_key") // PostgreSQL specific constraint name
         {
-            Error::Validation("Registration failed. Please try again.".to_string())
+            Error::Validation(ValidationErrors::Single {
+                field: "email".to_string(),
+                message: "Registration failed. Please try again.".to_string(),
+            })
         } else {
             Error::Sqlx(e)
         }
