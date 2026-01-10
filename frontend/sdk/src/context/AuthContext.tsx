@@ -33,7 +33,7 @@ export interface AuthProviderProps {
 
 export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const storage = useMemo(() => new BrowserTokenStorage(), [])
@@ -105,7 +105,6 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
       const token = storage.getAccessToken()
       if (token) {
         try {
-          setIsLoading(true)
           const { user: profileUser } = await apiClient.getProfile()
           setUser(profileUser)
         } catch (error) {
