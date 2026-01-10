@@ -1,5 +1,5 @@
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     models::users::{NewUser, User},
 };
 use uuid::Uuid;

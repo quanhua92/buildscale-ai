@@ -17,12 +17,33 @@ pub enum ValidationErrors {
     Multiple { fields: HashMap<String, String> },
 }
 
+impl std::fmt::Display for ValidationErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationErrors::Single { field, message } => {
+                write!(f, "{}: {}", field, message)
+            }
+            ValidationErrors::Multiple { fields } => {
+                let errors: Vec<String> = fields
+                    .iter()
+                    .map(|(field, message)| format!("{}: {}", field, message))
+                    .collect();
+                write!(f, "Validation errors: {}", errors.join(", "))
+            }
+        }
+    }
+}
+
 /// The custom error type for the application.
 #[derive(Debug, Error)]
 pub enum Error {
     /// An error originating from the sqlx library.
     #[error("SQLx error: {0}")]
     Sqlx(#[from] sqlx::Error),
+
+    /// An error originating from IO operations.
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 
     /// A validation error with field-level details.
     #[error("Validation error: {0}")]
@@ -82,9 +103,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// and returns a JSON response with an error message and error code.
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        let body = match self {
+        let (body, status) = match self {
             Error::Validation(errors) => {
-                match errors {
+                let body = match errors {
                     ValidationErrors::Single { field, message } => {
                         serde_json::json!({
                             "error": "Validation failed",
@@ -101,96 +122,100 @@ impl IntoResponse for Error {
                             "fields": fields
                         })
                     }
-                }
+                };
+                (body, StatusCode::BAD_REQUEST)
             }
             Error::NotFound(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "NOT_FOUND"
-                })
+                });
+                (body, StatusCode::NOT_FOUND)
             }
             Error::Forbidden(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "FORBIDDEN"
-                })
+                });
+                (body, StatusCode::FORBIDDEN)
             }
             Error::Conflict(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "CONFLICT"
-                })
+                });
+                (body, StatusCode::CONFLICT)
             }
             Error::Authentication(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "AUTHENTICATION_FAILED"
-                })
+                });
+                (body, StatusCode::UNAUTHORIZED)
             }
             Error::InvalidToken(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "INVALID_TOKEN"
-                })
+                });
+                (body, StatusCode::UNAUTHORIZED)
             }
             Error::SessionExpired(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "SESSION_EXPIRED"
-                })
+                });
+                (body, StatusCode::UNAUTHORIZED)
             }
             Error::TokenTheftDetected(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "TOKEN_THEFT"
-                })
+                });
+                (body, StatusCode::FORBIDDEN)
             }
             Error::Sqlx(_) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": "Database error",
                     "code": "INTERNAL_ERROR"
-                })
+                });
+                (body, StatusCode::INTERNAL_SERVER_ERROR)
             }
             Error::Internal(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "INTERNAL_ERROR"
-                })
+                });
+                (body, StatusCode::INTERNAL_SERVER_ERROR)
             }
             Error::Config(_) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": "Configuration error",
                     "code": "CONFIG_ERROR"
-                })
+                });
+                (body, StatusCode::INTERNAL_SERVER_ERROR)
             }
             Error::Cache(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "CACHE_ERROR"
-                })
+                });
+                (body, StatusCode::INTERNAL_SERVER_ERROR)
             }
             Error::CacheSerialization(msg) => {
-                serde_json::json!({
+                let body = serde_json::json!({
                     "error": msg,
                     "code": "CACHE_ERROR"
-                })
+                });
+                (body, StatusCode::INTERNAL_SERVER_ERROR)
             }
-        };
-
-        let status = match self {
-            Error::Validation(_) => StatusCode::BAD_REQUEST,
-            Error::NotFound(_) => StatusCode::NOT_FOUND,
-            Error::Forbidden(_) => StatusCode::FORBIDDEN,
-            Error::Conflict(_) => StatusCode::CONFLICT,
-            Error::Authentication(_) => StatusCode::UNAUTHORIZED,
-            Error::InvalidToken(_) => StatusCode::UNAUTHORIZED,
-            Error::SessionExpired(_) => StatusCode::UNAUTHORIZED,
-            Error::TokenTheftDetected(_) => StatusCode::FORBIDDEN,
-            Error::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::Cache(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::CacheSerialization(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::Io(_) => {
+                let body = serde_json::json!({
+                    "error": "IO error",
+                    "code": "INTERNAL_ERROR"
+                });
+                (body, StatusCode::INTERNAL_SERVER_ERROR)
+            }
         };
 
         (status, Json(body)).into_response()

@@ -190,7 +190,7 @@ pub async fn run_api_server(
     // Create database connection pool
     let pool = DbPool::connect(config.database.connection_string().expose_secret())
         .await
-        .map_err(|e| format!("Failed to connect to database: {}", e))?;
+        .map_err(|e| Error::Internal(format!("Failed to connect to database: {}", e)))?;
 
     // Spawn revoked token cleanup worker
     let (revoked_cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);

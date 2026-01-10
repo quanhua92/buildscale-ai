@@ -1,6 +1,6 @@
 use crate::DbConn;
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     models::roles::{NewRole, Role, DEFAULT_ROLES, descriptions},
     queries::roles,
 };
@@ -29,14 +29,18 @@ pub async fn create_default_roles(conn: &mut DbConn, workspace_id: Uuid) -> Resu
 pub async fn create_single_role(conn: &mut DbConn, new_role: NewRole) -> Result<Role> {
     // Validate role name is not empty
     if new_role.name.trim().is_empty() {
-        return Err(Error::Validation("Role name cannot be empty".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "name".to_string(),
+            message: "Role name cannot be empty".to_string(),
+        }));
     }
 
     // Validate role name length (maximum 100 characters)
     if new_role.name.len() > 100 {
-        return Err(Error::Validation(
-            "Role name must be less than 100 characters".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "name".to_string(),
+            message: "Role name must be less than 100 characters".to_string(),
+        }));
     }
 
     // Check if role with same name already exists in the workspace
@@ -57,9 +61,10 @@ pub async fn create_single_role(conn: &mut DbConn, new_role: NewRole) -> Result<
     // Validate description length if provided (maximum 500 characters)
     if let Some(ref description) = new_role.description {
         if description.len() > 500 {
-            return Err(Error::Validation(
-                "Role description must be less than 500 characters".to_string(),
-            ));
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "description".to_string(),
+                message: "Role description must be less than 500 characters".to_string(),
+            }));
         }
     }
 

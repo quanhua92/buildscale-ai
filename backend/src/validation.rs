@@ -3,7 +3,7 @@
 //! This module provides comprehensive validation functions for user input,
 //! ensuring data integrity and security across all service operations.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, ValidationErrors};
 
 /// Validates email format using comprehensive checks
 ///
