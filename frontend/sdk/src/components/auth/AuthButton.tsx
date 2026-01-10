@@ -3,7 +3,7 @@
  */
 
 import { Button as ShadcnButton } from '../ui/button'
-import { cn } from '../../utils'
+import { cn } from '@/utils'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean

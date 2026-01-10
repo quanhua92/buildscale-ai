@@ -4,7 +4,7 @@
 
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
-import { cn } from '../../utils'
+import { cn } from '@/utils'
 
 interface FormContextType {
   errors: Record<string, string>

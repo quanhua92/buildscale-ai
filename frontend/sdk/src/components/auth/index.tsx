@@ -3,7 +3,7 @@
  * Provides namespace for all auth sub-components
  */
 
-import { cn } from '../../utils'
+import { cn } from '@/utils'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
 import { Input } from './AuthInput'

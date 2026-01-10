@@ -4,7 +4,7 @@
 
 import { Input as ShadcnInput } from '../ui/input'
 import { Label } from '../ui/label'
-import { cn } from '../../utils'
+import { cn } from '@/utils'
 import { useFormErrors } from './AuthForm'
 
 interface AuthInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
