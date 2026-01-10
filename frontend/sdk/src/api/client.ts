@@ -11,24 +11,34 @@ import type {
   User,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
-import type { TokenStorage } from '../utils/storage'
 
 interface ApiClientConfig {
   baseURL: string
   timeout?: number
+  // Token callbacks - passed directly from useStorage()
+  getAccessToken: () => string | null | Promise<string | null>
+  getRefreshToken: () => string | null | Promise<string | null>
+  setTokens: (accessToken: string, refreshToken: string) => void | Promise<void>
+  clearTokens: () => void | Promise<void>
 }
 
 class ApiClient {
   private baseURL: string
   private timeout: number
-  private storage: TokenStorage
+  private getAccessToken: () => string | null | Promise<string | null>
+  private getRefreshToken: () => string | null | Promise<string | null>
+  private setTokens: (access: string, refresh: string) => void | Promise<void>
+  private clearTokens: () => void | Promise<void>
   private isRefreshing = false
   private refreshPromise: Promise<string | null> | null = null
 
-  constructor(config: ApiClientConfig, storage: TokenStorage) {
+  constructor(config: ApiClientConfig) {
     this.baseURL = config.baseURL
     this.timeout = config.timeout || 10000
-    this.storage = storage
+    this.getAccessToken = config.getAccessToken
+    this.getRefreshToken = config.getRefreshToken
+    this.setTokens = config.setTokens
+    this.clearTokens = config.clearTokens
   }
 
   private async request<T>(
@@ -46,7 +56,7 @@ class ApiClient {
       }
 
       // Add authorization header if access token exists
-      const accessToken = this.storage.getAccessToken()
+      const accessToken = await this.getAccessToken()
       if (accessToken) {
         headers = {
           ...headers,
@@ -122,9 +132,11 @@ class ApiClient {
       return this.refreshPromise ?? Promise.resolve(null)
     }
 
-    const refreshToken = this.storage.getRefreshToken()
-    if (!refreshToken) {
-      return Promise.resolve(null)
+    const storedRefreshToken = this.getRefreshToken()
+    if (!storedRefreshToken) {
+      // For cookie-based auth, proceed without token
+      // Browser will send refresh_token cookie automatically
+      return this.performRefresh(null).then(r => r.access_token)
     }
 
     this.isRefreshing = true
@@ -133,11 +145,12 @@ class ApiClient {
     // This ensures concurrent callers get the same promise and wait for the result
     this.refreshPromise = (async () => {
       try {
-        const result = await this.performRefresh(refreshToken)
+        const token = await storedRefreshToken
+        const result = await this.performRefresh(token)
         return result.access_token
       } catch (error) {
         // Clear tokens on refresh failure
-        this.storage.clearTokens()
+        await this.clearTokens()
         throw error
       } finally {
         this.isRefreshing = false
@@ -149,19 +162,25 @@ class ApiClient {
   }
 
   private async performRefresh(
-    refreshToken: string
+    refreshToken: string | null
   ): Promise<RefreshTokenResponse> {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
     try {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+
+      // Add Authorization header only if we have a token (API/Mobile clients)
+      if (refreshToken) {
+        headers['Authorization'] = `Bearer ${refreshToken}`
+      }
+
       const response = await fetch(`${this.baseURL}/auth/refresh`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        headers,
+        credentials: 'include', // Browser sends cookies automatically
         signal: controller.signal,
       })
 
@@ -175,13 +194,16 @@ class ApiClient {
         throw new ApiError(data.message || 'Refresh failed', response.status)
       }
 
-      // Update tokens in storage (rotation)
+      // Token rotation: store new refresh token
       if (data.refresh_token) {
         // New refresh token provided (normal rotation)
-        this.storage.setTokens(data.access_token, data.refresh_token)
+        await this.setTokens(data.access_token, data.refresh_token)
+      } else if (refreshToken) {
+        // Grace period: keep existing refresh token
+        await this.setTokens(data.access_token, refreshToken)
       } else {
-        // Only access token refreshed (within 5-minute grace period)
-        this.storage.setTokens(data.access_token, refreshToken)
+        // Cookie auth: backend handles storage via HttpOnly cookies
+        // Frontend can't access HttpOnly cookies
       }
 
       return data
@@ -209,17 +231,64 @@ class ApiClient {
   }
 
   async logout(): Promise<{ message: string }> {
-    try {
-      return this.request<{ message: string }>('/auth/logout', {
-        method: 'POST',
-      })
-    } finally {
-      this.storage.clearTokens()
+    const refreshToken = await this.getRefreshToken()
+
+    if (refreshToken) {
+      // API/Mobile: send refresh token in header
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+      try {
+        const response = await fetch(`${this.baseURL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${refreshToken}`,
+          },
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new ApiError(data.message || 'Logout failed', response.status)
+        }
+
+        return await response.json()
+      } finally {
+        clearTimeout(timeoutId)
+      }
+    } else {
+      // Cookie storage: browser sends cookie automatically
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+      try {
+        const response = await fetch(`${this.baseURL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new ApiError(data.message || 'Logout failed', response.status)
+        }
+
+        return await response.json()
+      } finally {
+        clearTimeout(timeoutId)
+      }
     }
+
+    // Always clear local storage (no-op for HttpOnly cookies)
+    await this.clearTokens()
   }
 
   async refreshToken(): Promise<RefreshTokenResponse> {
-    const refreshToken = this.storage.getRefreshToken()
+    const refreshToken = await this.getRefreshToken()
     if (!refreshToken) {
       throw new ApiError('No refresh token available', 401)
     }
