@@ -14,7 +14,7 @@ export { AuthProvider, useAuth } from './context'
 export type { AuthProviderProps } from './context'
 
 // Hooks
-export { useAuth as useAuthHook, useProtectedRoute } from './hooks'
+export { useProtectedRoute } from './hooks'
 
 // Components
 export { default as Auth } from './components/auth'
