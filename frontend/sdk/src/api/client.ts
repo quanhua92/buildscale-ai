@@ -116,31 +116,36 @@ class ApiClient {
     return data as T
   }
 
-  private async refreshAccessToken(): Promise<string | null> {
-    // Prevent multiple refresh attempts
+  private refreshAccessToken(): Promise<string | null> {
+    // Prevent multiple refresh attempts by returning the existing promise
     if (this.isRefreshing) {
-      return this.refreshPromise ?? null
+      return this.refreshPromise
     }
 
     const refreshToken = this.storage.getRefreshToken()
     if (!refreshToken) {
-      return null
+      return Promise.resolve(null)
     }
 
     this.isRefreshing = true
 
-    try {
-      const result = await this.performRefresh(refreshToken)
-      this.refreshPromise = Promise.resolve(result.access_token)
-      return result.access_token
-    } catch (error) {
-      // Clear tokens on refresh failure
-      this.storage.clearTokens()
-      throw error
-    } finally {
-      this.isRefreshing = false
-      this.refreshPromise = null
-    }
+    // Create and assign promise immediately (before async operations)
+    // This ensures concurrent callers get the same promise and wait for the result
+    this.refreshPromise = (async () => {
+      try {
+        const result = await this.performRefresh(refreshToken)
+        return result.access_token
+      } catch (error) {
+        // Clear tokens on refresh failure
+        this.storage.clearTokens()
+        throw error
+      } finally {
+        this.isRefreshing = false
+        this.refreshPromise = null
+      }
+    })()
+
+    return this.refreshPromise
   }
 
   private async performRefresh(
