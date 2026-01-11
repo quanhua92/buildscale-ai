@@ -2,7 +2,7 @@
  * AuthForm - Form with validation context
  */
 
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { cn } from '@/utils'
 
@@ -18,12 +18,20 @@ interface FormProps {
   children: ReactNode
   className?: string
   onSubmit: (data: Record<string, string>) => unknown
+  externalError?: { fields?: Record<string, string> } | null
 }
 
-export function Form({ children, className, onSubmit }: FormProps) {
+export function Form({ children, className, onSubmit, externalError }: FormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const clearErrors = () => setErrors({})
+
+  // Sync external auth errors into form errors
+  useEffect(() => {
+    if (externalError?.fields) {
+      setErrors(externalError.fields)
+    }
+  }, [externalError])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()

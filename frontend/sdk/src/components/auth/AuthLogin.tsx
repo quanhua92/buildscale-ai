@@ -2,23 +2,14 @@
  * Auth.Login - Pre-built login form component
  */
 
-import { useEffect } from 'react'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
-import { Form, useFormErrors } from './AuthForm'
+import { Form } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
 export function Login() {
   const { login, isLoading, error, clearError } = useAuth()
-  const { setErrors } = useFormErrors()
-
-  // Update form errors when auth error changes
-  useEffect(() => {
-    if (error?.fields) {
-      setErrors(error.fields)
-    }
-  }, [error, setErrors])
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
@@ -27,7 +18,7 @@ export function Login() {
 
   return (
     <Card title="Sign In" description="Enter your credentials to access your account">
-      <Form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit} externalError={error}>
         <Input
           name="email"
           type="email"

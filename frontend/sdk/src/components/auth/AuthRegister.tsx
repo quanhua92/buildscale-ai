@@ -2,23 +2,14 @@
  * Auth.Register - Pre-built register form component
  */
 
-import { useEffect } from 'react'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
-import { Form, useFormErrors } from './AuthForm'
+import { Form } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
 export function Register() {
   const { register, isLoading, error, clearError } = useAuth()
-  const { setErrors } = useFormErrors()
-
-  // Update form errors when auth error changes
-  useEffect(() => {
-    if (error?.fields) {
-      setErrors(error.fields)
-    }
-  }, [error, setErrors])
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
@@ -32,7 +23,7 @@ export function Register() {
 
   return (
     <Card title="Create Account" description="Sign up to get started">
-      <Form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit} externalError={error}>
         <Input
           name="full_name"
           type="text"
