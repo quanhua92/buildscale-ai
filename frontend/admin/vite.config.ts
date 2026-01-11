@@ -23,6 +23,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  optimizeDeps: {
+    exclude: ['@buildscale/sdk'],
+  },
   server: {
     proxy: {
       '/api/v1': {
@@ -30,6 +33,9 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+    },
+    watch: {
+      ignored: ['!**/node_modules/@buildscale/sdk/dist/**'],
     },
   },
 })

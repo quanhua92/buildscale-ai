@@ -1,0 +1,13 @@
+{
+  "name": "@buildscale/frontend-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:admin": "pnpm --filter ./admin run dev",
+    "dev:web": "pnpm --filter ./web run dev",
+    "build": "pnpm -r run build",
+    "build:admin": "pnpm --filter ./admin run build",
+    "build:web": "pnpm --filter ./web run build"
+  }
+}
