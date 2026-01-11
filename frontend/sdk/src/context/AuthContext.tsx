@@ -44,6 +44,8 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<AuthError | null>(null)
+  // Track if we've already attempted to restore session (prevent multiple attempts)
+  const [restoreAttempted, setRestoreAttempted] = useState(false)
 
   // Get ALL storage callbacks from context
   const {
@@ -144,9 +146,14 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     setError(null)
   }, [])
 
-  // Restore session on mount
+  // Restore session on mount (only once)
   useEffect(() => {
+    if (restoreAttempted) {
+      return  // Already attempted restoration, skip
+    }
+
     const restoreSession = async () => {
+      setRestoreAttempted(true)  // Mark as attempted
       // Try to get user profile - backend will validate HttpOnly cookies
       try {
         const { user: profileUser } = await apiClient.getProfile()
@@ -160,7 +167,7 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     }
 
     restoreSession()
-  }, [apiClient])
+  }, [apiClient, restoreAttempted])
 
   const value: AuthContextType = {
     user,
