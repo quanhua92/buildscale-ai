@@ -134,13 +134,35 @@ pub async fn register(
     State(state): State<AppState>,
     Json(request): Json<RegisterUser>,
 ) -> Result<Json<serde_json::Value>> {
+    tracing::info!(operation = "register", "User registration initiated");
+
+    #[cfg(debug_assertions)]
+    tracing::debug!(
+        email_provided = !request.email.is_empty(),
+        password_length = request.password.len(),
+        has_full_name = request.full_name.is_some(),
+        "Request payload details",
+    );
+
     // Acquire database connection from pool
     let mut conn = state.pool.acquire().await.map_err(|e| {
+        tracing::error!(
+            operation = "register",
+            error_code = "DATABASE_ACQUISITION_FAILED",
+            error = %e,
+            "Failed to acquire database connection",
+        );
         crate::error::Error::Internal(format!("Failed to acquire database connection: {}", e))
     })?;
 
     // Call service layer to register user
     let user = users::register_user(&mut conn, request).await?;
+
+    tracing::info!(
+        operation = "register",
+        user_id = %user.id,
+        "User registered successfully",
+    );
 
     // Return user data as JSON
     Ok(Json(serde_json::json!({
@@ -183,13 +205,35 @@ pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginUser>,
 ) -> Result<LoginResponse> {
+    tracing::info!(operation = "login", "User login initiated");
+
+    #[cfg(debug_assertions)]
+    tracing::debug!(
+        password_length = request.password.len(),
+        "Login request details",
+    );
+
     // Acquire database connection from pool
     let mut conn = state.pool.acquire().await.map_err(|e| {
+        tracing::error!(
+            operation = "login",
+            error_code = "DATABASE_ACQUISITION_FAILED",
+            error = %e,
+            "Failed to acquire database connection",
+        );
         crate::error::Error::Internal(format!("Failed to acquire database connection: {}", e))
     })?;
 
     // Call service layer to authenticate user
     let login_result = users::login_user(&mut conn, request).await?;
+
+    tracing::info!(
+        operation = "login",
+        user_id = %login_result.user.id,
+        access_expires_at = %login_result.access_token_expires_at,
+        refresh_expires_at = %login_result.refresh_token_expires_at,
+        "User login successful",
+    );
 
     // Build cookie configuration with security settings
     let config = CookieConfig::default();
@@ -254,13 +298,34 @@ pub async fn refresh(
     // Extract refresh token from Authorization header or cookie
     let (token, from_cookie) = extract_refresh_token(&headers)?;
 
+    let token_source = if from_cookie { "cookie" } else { "header" };
+    tracing::info!(
+        operation = "refresh",
+        token_source = token_source,
+        "Token refresh initiated",
+    );
+
     // Acquire database connection from pool
     let mut conn = state.pool.acquire().await.map_err(|e| {
+        tracing::error!(
+            operation = "refresh",
+            error_code = "DATABASE_ACQUISITION_FAILED",
+            error = %e,
+            "Failed to acquire database connection",
+        );
         crate::error::Error::Internal(format!("Failed to acquire database connection: {}", e))
     })?;
 
     // Call service layer to refresh access token with rotation
     let refresh_result = users::refresh_access_token(&mut conn, &token).await?;
+
+    let token_rotated = refresh_result.refresh_token.is_some();
+    tracing::info!(
+        operation = "refresh",
+        token_rotated = token_rotated,
+        expires_at = %refresh_result.expires_at,
+        "Token refresh successful",
+    );
 
     // Build response (only set cookies if request came from cookie)
     let config = CookieConfig::default();
@@ -315,16 +380,36 @@ pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<LogoutResponse> {
+    tracing::info!(operation = "logout", "User logout initiated");
+
     // Extract refresh token from Authorization header or cookie
-    let (token, _from_cookie) = extract_refresh_token(&headers)?;
+    let (token, _from_cookie) = match extract_refresh_token(&headers) {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::warn!(
+                operation = "logout",
+                error = "invalid_token",
+                "Logout attempted with invalid or missing token",
+            );
+            return Err(e);
+        }
+    };
 
     // Acquire database connection from pool
     let mut conn = state.pool.acquire().await.map_err(|e| {
+        tracing::error!(
+            operation = "logout",
+            error_code = "DATABASE_ACQUISITION_FAILED",
+            error = %e,
+            "Failed to acquire database connection",
+        );
         crate::error::Error::Internal(format!("Failed to acquire database connection: {}", e))
     })?;
 
     // Call service layer to logout user (invalidate session)
     users::logout_user(&mut conn, &token).await?;
+
+    tracing::info!(operation = "logout", "User logout successful");
 
     // Build clear cookie headers for both tokens
     let config = CookieConfig::default();
@@ -396,6 +481,13 @@ fn extract_refresh_token(headers: &HeaderMap) -> Result<(String, bool)> {
 pub async fn me(
     Extension(auth_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<serde_json::Value>> {
+    #[cfg(debug_assertions)]
+    tracing::debug!(
+        operation = "me",
+        user_id = %auth_user.id,
+        "User profile requested",
+    );
+
     // Return the authenticated user from the middleware
     // (already cached and validated)
     Ok(Json(serde_json::json!({
