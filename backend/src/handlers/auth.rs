@@ -553,15 +553,6 @@ fn extract_refresh_token(headers: &HeaderMap) -> Result<(String, bool)> {
 pub async fn me(
     Extension(auth_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<serde_json::Value>> {
-    #[cfg(debug_assertions)]
-    tracing::debug!(
-        operation = "me",
-        user_id = %auth_user.id,
-        "User profile requested",
-    );
-
-    // Return the authenticated user from the middleware
-    // (already cached and validated)
     Ok(Json(serde_json::json!({
         "user": auth_user
     })))
