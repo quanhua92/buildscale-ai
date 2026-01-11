@@ -25,14 +25,14 @@ pub async fn create_user(conn: &mut DbConn, new_user: NewUser) -> Result<User> {
         let error_msg = e.to_string().to_lowercase();
 
         // Check for unique constraint violations
-        // Generic error message to prevent user enumeration
+        // Email already exists - clear error message for better UX
         if error_msg.contains("unique")
             || error_msg.contains("duplicate key")
             || error_msg.contains("users_email_key") // PostgreSQL specific constraint name
         {
             Error::Validation(ValidationErrors::Single {
                 field: "email".to_string(),
-                message: "Registration failed. Please try again.".to_string(),
+                message: "Email already exists".to_string(),
             })
         } else {
             Error::Sqlx(e)
