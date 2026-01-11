@@ -31,6 +31,12 @@ class ApiClient {
   private clearTokens: () => void | Promise<void>
   private isRefreshing = false
   private refreshPromise: Promise<string | null> | null = null
+  private noRefreshEndpoints: string[] = [
+    '/auth/login',
+    '/auth/register',
+    '/auth/logout',
+    '/auth/refresh',
+  ]
 
   constructor(config: ApiClientConfig) {
     this.baseURL = config.baseURL
@@ -68,8 +74,8 @@ class ApiClient {
 
       clearTimeout(timeoutId)
 
-      // Handle 401 - try token refresh (except for refresh endpoint itself)
-      if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
+      // Handle 401 - try token refresh (except for auth endpoints)
+      if (response.status === 401 && !this.shouldSkipRefresh(endpoint)) {
         const newToken = await this.refreshAccessToken()
         if (newToken) {
           // Retry original request with new token
@@ -105,6 +111,10 @@ class ApiClient {
       signal,
       credentials: 'include', // Include cookies for browser clients
     })
+  }
+
+  private shouldSkipRefresh(endpoint: string): boolean {
+    return this.noRefreshEndpoints.some(path => endpoint.includes(path))
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {

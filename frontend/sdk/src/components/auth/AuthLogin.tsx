@@ -9,7 +9,7 @@ import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
 export function Login() {
-  const { login, isLoading, error, clearError } = useAuth()
+  const { login, isLoading, error, clearError, success } = useAuth()
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
@@ -47,6 +47,23 @@ export function Login() {
                 <div className="flex-1">
                   <p className="text-sm font-medium text-destructive">Authentication Error</p>
                   <p className="text-sm text-destructive/80 mt-1">{error.message}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {success && (
+          <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">
+            <div className="rounded-lg border border-green-500/50 bg-green-500/10 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-green-500/20 p-1">
+                  <svg className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-green-600">Login Successful</p>
+                  <p className="text-sm text-green-600/80 mt-1">Redirecting you now...</p>
                 </div>
               </div>
             </div>

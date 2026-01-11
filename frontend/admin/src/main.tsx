@@ -38,7 +38,7 @@ if (rootElement && !rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <StorageProvider>
-        <AuthProvider apiBaseUrl={apiBaseUrl}>
+        <AuthProvider apiBaseUrl={apiBaseUrl} redirectTarget="/">
           <RouterProvider router={router} />
         </AuthProvider>
       </StorageProvider>

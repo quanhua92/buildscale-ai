@@ -22,6 +22,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   error: AuthError | null
+  success: boolean
+  redirectTarget: string
   login: (email: string, password: string) => Promise<void>
   register: (data: {
     email: string
@@ -38,12 +40,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export interface AuthProviderProps {
   children: ReactNode
   apiBaseUrl: string
+  redirectTarget?: string  // Frontend URL to redirect to after successful auth
 }
 
-export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
+export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTargetProp = '/' }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<AuthError | null>(null)
+  const [success, setSuccess] = useState(false)
   // Track if we've already attempted to restore session (prevent multiple attempts)
   const [restoreAttempted, setRestoreAttempted] = useState(false)
 
@@ -74,10 +78,12 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true)
     setError(null)
+    setSuccess(false)
     try {
       const response = await apiClient.login({ email, password })
       setUser(response.user)
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
+      setSuccess(true)
     } catch (err) {
       if (err instanceof ApiError) {
         setError({
@@ -103,10 +109,12 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
   }) => {
     setIsLoading(true)
     setError(null)
+    setSuccess(false)
     try {
       const response = await apiClient.register(data)
       setUser(response.user)
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
+      setSuccess(true)
     } catch (err) {
       if (err instanceof ApiError) {
         setError({
@@ -174,6 +182,8 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     isAuthenticated: !!user,
     isLoading,
     error,
+    success,
+    redirectTarget: redirectTargetProp,
     login,
     register,
     logout,
