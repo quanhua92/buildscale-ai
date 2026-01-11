@@ -1,12 +1,16 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
+import { AuthProvider, StorageProvider, ThemeProvider } from '@buildscale/sdk'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
 
 import './styles.css'
 import reportWebVitals from './reportWebVitals.ts'
+
+// API base URL from environment (relative path for Vite proxy)
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 // Create a new router instance
 const router = createRouter({
@@ -33,7 +37,13 @@ if (rootElement && !rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <StrictMode>
-      <RouterProvider router={router} />
+      <StorageProvider>
+        <ThemeProvider>
+          <AuthProvider apiBaseUrl={apiBaseUrl} redirectTarget="/">
+            <RouterProvider router={router} />
+          </AuthProvider>
+        </ThemeProvider>
+      </StorageProvider>
     </StrictMode>,
   )
 }

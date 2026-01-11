@@ -98,10 +98,25 @@ pub async fn jwt_auth_middleware(
 
     // 2. Check cache for user details
     let cache_key = format!("user:{}", user_id);
-    if let Some(cached_user) = state.user_cache.get(&cache_key).await? {
-        // Cache hit - add to extensions and continue
-        request.extensions_mut().insert(cached_user);
-        return Ok(next.run(request).await);
+
+    match state.user_cache.get(&cache_key).await {
+        Ok(Some(cached_user)) => {
+            // Cache hit - convert to AuthenticatedUser and add to extensions
+            let authenticated_user: AuthenticatedUser = cached_user.into();
+            request.extensions_mut().insert(authenticated_user);
+            return Ok(next.run(request).await);
+        }
+        Ok(None) => {
+            // Cache miss - continue to DB
+        }
+        Err(e) => {
+            // Cache error - log and continue to DB (don't fail entire request)
+            tracing::warn!(
+                user_id = %user_id,
+                error = %e,
+                "Cache error, falling back to database"
+            );
+        }
     }
 
     // 3. Cache miss - query database for user info
@@ -112,14 +127,22 @@ pub async fn jwt_auth_middleware(
 
     // 4. Cache user details with configurable TTL from config (cache the User object)
     let authenticated_user: AuthenticatedUser = user.clone().into();
-    state
+    if let Err(e) = state
         .user_cache
         .set_ex(
             &cache_key,
             user.clone(),
             config.cache.user_cache_ttl_seconds,
         )
-        .await?;
+        .await
+    {
+        // Cache set failed - log but don't fail the request
+        tracing::warn!(
+            user_id = %user_id,
+            error = %e,
+            "Failed to cache user, proceeding without cache"
+        );
+    }
 
     // 5. Add to extensions and continue
     request.extensions_mut().insert(authenticated_user);

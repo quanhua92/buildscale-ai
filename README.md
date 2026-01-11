@@ -37,12 +37,39 @@ buildscale-ai/
 # Backend
 cd backend && cargo run
 
-# Admin frontend
+# Frontend (all services with SDK watch mode)
+cd frontend && pnpm dev
+
+# Admin frontend (standalone)
 cd frontend/admin && pnpm dev
 
-# Web frontend
+# Web frontend (standalone)
 cd frontend/web && pnpm dev
 ```
+
+**Frontend Development:**
+
+Running `pnpm dev` from the `frontend/` directory starts all services in parallel:
+- **SDK watch mode** - Automatically rebuilds on changes
+- **Admin**: `http://localhost:5173/admin` (with TanStack devtools)
+- **Web**: `http://localhost:5174` (devtools disabled - focusing on admin)
+
+This enables seamless development where SDK changes automatically propagate to both admin and web applications without manual rebuilding.
+
+**Important - SDK Styling:**
+
+The SDK uses Tailwind CSS v4 for styling. Consumer apps (admin/web) must include the `@source` directive in their `styles.css` to tell Tailwind to scan SDK source files:
+
+```css
+/* In frontend/admin/src/styles.css and frontend/web/src/styles.css */
+@import 'tailwindcss';
+
+@source '../../sdk/src/**/*.{ts,tsx}';  /* Required: Scan SDK for Tailwind classes */
+
+@import 'tw-animate-css';
+```
+
+This is the official Tailwind v4 solution for component libraries in monorepos ([docs](https://tailwindcss.com/docs/detecting-classes-in-source-files)).
 
 ### Docker Build
 

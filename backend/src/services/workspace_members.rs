@@ -1,6 +1,6 @@
 use crate::DbConn;
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     models::{
         workspace_members::{WorkspaceMember},
         permissions::{PermissionValidator},
@@ -70,9 +70,10 @@ pub async fn update_workspace_member(
     if let Some(role_id) = update_member.role_id {
         let role = roles::get_role_by_id(conn, role_id).await?;
         if role.workspace_id != workspace_id {
-            return Err(Error::Validation(
-                "Role does not belong to the specified workspace".to_string(),
-            ));
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "role_id".to_string(),
+                message: "Role does not belong to the specified workspace".to_string(),
+            }));
         }
     }
 
@@ -102,9 +103,10 @@ pub async fn remove_workspace_member(
 
     // Prevent the owner from being removed as a member
     if workspace.owner_id == user_id {
-        return Err(Error::Validation(
-            "Cannot remove the workspace owner as a member".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "user_id".to_string(),
+            message: "Cannot remove the workspace owner as a member".to_string(),
+        }));
     }
 
     // Check if the member exists
@@ -132,9 +134,10 @@ pub async fn create_workspace_member(
     // Validate that the role exists and belongs to the workspace
     let role = roles::get_role_by_id(conn, new_member.role_id).await?;
     if role.workspace_id != new_member.workspace_id {
-        return Err(Error::Validation(
-            "Role does not belong to the specified workspace".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "role_id".to_string(),
+            message: "Role does not belong to the specified workspace".to_string(),
+        }));
     }
 
     // Check if user is already a member of the workspace
@@ -146,9 +149,10 @@ pub async fn create_workspace_member(
     .await?;
 
     if existing_member.is_some() {
-        return Err(Error::Validation(
-            "User is already a member of this workspace".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "user_id".to_string(),
+            message: "User is already a member of this workspace".to_string(),
+        }));
     }
 
     // Create the workspace member
@@ -171,10 +175,13 @@ pub async fn validate_workspace_permission(
 
     // Validate that the permission exists
     if !PermissionValidator::is_valid_permission(required_permission) {
-        return Err(Error::Validation(format!(
-            "Invalid permission: {}",
-            required_permission
-        )));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "permission".to_string(),
+            message: format!(
+                "Invalid permission: {}",
+                required_permission
+            ),
+        }));
     }
 
     // Get the user's membership

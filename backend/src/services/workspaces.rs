@@ -1,6 +1,6 @@
 use crate::DbConn;
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     models::{
         requests::{
             CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
@@ -117,7 +117,10 @@ pub async fn create_workspace_with_members(conn: &mut DbConn, request: CreateWor
 
         // Validate role name is not empty
         if member_request.role_name.trim().is_empty() {
-            return Err(Error::Validation("Role name cannot be empty".to_string()));
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "role_name".to_string(),
+                message: "Role name cannot be empty".to_string(),
+            }));
         }
 
         // Find the role by name within transaction
@@ -166,9 +169,10 @@ pub async fn update_workspace_owner(
 
     // Prevent transferring to the same user
     if current_owner_id == new_owner_id {
-        return Err(Error::Validation(
-            "Cannot transfer ownership to yourself".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "new_owner_id".to_string(),
+            message: "Cannot transfer ownership to yourself".to_string(),
+        }));
     }
 
     // Start a transaction for atomic ownership transfer

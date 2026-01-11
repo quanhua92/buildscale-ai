@@ -12,6 +12,30 @@
     <link rel="apple-touch-icon" href="/logo192.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>Create TanStack App - admin</title>
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem('buildscale_theme');
+          var isDark = false;
+
+          if (theme === 'dark') {
+            isDark = true;
+          } else if (theme === 'light') {
+            isDark = false;
+          } else if (theme === 'system' || !theme) {
+            isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          }
+
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.add('light');
+          }
+        } catch (e) {
+          console.warn('Failed to apply theme:', e);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

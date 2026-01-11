@@ -1,6 +1,6 @@
 use crate::DbConn;
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     models::{
         invitations::{
             WorkspaceInvitation, NewWorkspaceInvitation, UpdateWorkspaceInvitation,
@@ -26,7 +26,10 @@ pub async fn create_invitation(
 ) -> Result<CreateInvitationResponse> {
     // Validate email format
     InvitationValidator::validate_email(&request.invited_email)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "invited_email".to_string(),
+            message: e,
+        }))?;
 
     // Check if inviter has permission to invite members
     validate_workspace_permission(
@@ -52,9 +55,10 @@ pub async fn create_invitation(
 
     // Validate the role belongs to the workspace
     if role.workspace_id != request.workspace_id {
-        return Err(Error::Validation(
-            "Role does not belong to the specified workspace".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "role_name".to_string(),
+            message: "Role does not belong to the specified workspace".to_string(),
+        }));
     }
 
     // Check if user is already a member of the workspace
@@ -89,7 +93,10 @@ pub async fn create_invitation(
     // Calculate expiration time
     let hours = request.expires_in_hours.unwrap_or(DEFAULT_INVITATION_EXPIRATION_HOURS);
     InvitationValidator::validate_expiration_hours(hours)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "expires_in_hours".to_string(),
+            message: e,
+        }))?;
 
     let expires_at = InvitationUtils::calculate_expiration(hours);
 
@@ -127,7 +134,10 @@ pub async fn get_invitation_by_token(
 ) -> Result<WorkspaceInvitation> {
     // Validate token format
     InvitationValidator::validate_invitation_token(token)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "invitation_token".to_string(),
+            message: e,
+        }))?;
 
     invitations::get_invitation_by_token(conn, token).await
 }
@@ -167,7 +177,10 @@ pub async fn list_email_invitations(
 ) -> Result<Vec<WorkspaceInvitation>> {
     // Validate email format
     InvitationValidator::validate_email(email)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "email".to_string(),
+            message: e,
+        }))?;
 
     let normalized_email = email.to_lowercase();
     invitations::list_invitations_by_email(conn, &normalized_email).await
@@ -181,7 +194,10 @@ pub async fn accept_invitation(
 ) -> Result<AcceptInvitationResponse> {
     // Validate token format
     InvitationValidator::validate_invitation_token(&request.invitation_token)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "invitation_token".to_string(),
+            message: e,
+        }))?;
 
     // Get the invitation
     let mut invitation = invitations::get_invitation_by_token(
@@ -204,7 +220,10 @@ pub async fn accept_invitation(
                 }
             }
         };
-        return Err(Error::Validation(reason.to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "invitation_token".to_string(),
+            message: reason.to_string(),
+        }));
     }
 
     // Verify that the accepting user's email matches the invitation
@@ -280,9 +299,10 @@ pub async fn revoke_invitation(
     // Check if invitation can be revoked
     let status_enum = invitation.status_enum();
     if !InvitationValidator::can_revoke(&status_enum) {
-        return Err(Error::Validation(
-            "Invitation cannot be revoked in current state".to_string(),
-        ));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "invitation_id".to_string(),
+            message: "Invitation cannot be revoked in current state".to_string(),
+        }));
     }
 
     // Update invitation status to revoked
@@ -398,11 +418,17 @@ pub async fn bulk_create_invitations(
     ).await?;
 
     if emails.is_empty() {
-        return Err(Error::Validation("No email addresses provided".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "emails".to_string(),
+            message: "No email addresses provided".to_string(),
+        }));
     }
 
     if emails.len() > 100 {
-        return Err(Error::Validation("Cannot invite more than 100 users at once".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "emails".to_string(),
+            message: "Cannot invite more than 100 users at once".to_string(),
+        }));
     }
 
     let mut responses = Vec::new();

@@ -90,8 +90,20 @@ pub async fn health_cache(
     Extension(_user): Extension<AuthenticatedUser>, // From middleware
     State(state): State<AppState>,
 ) -> Json<CacheHealthMetrics> {
+    #[cfg(debug_assertions)]
+    tracing::debug!(operation = "health_cache", "Cache health metrics requested");
+
     // user.id, user.email, user.full_name are available if needed
     let metrics = state.cache.get_health_metrics().await
         .expect("Failed to get cache health metrics");
+
+    #[cfg(debug_assertions)]
+    tracing::debug!(
+        operation = "health_cache",
+        num_keys = metrics.num_keys,
+        size_bytes = metrics.size_bytes,
+        "Cache health metrics retrieved",
+    );
+
     Json(metrics)
 }

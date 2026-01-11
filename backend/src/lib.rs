@@ -14,13 +14,14 @@ pub mod workers;
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
-pub use handlers::{auth::login, auth::logout, auth::register, auth::refresh, health::health_check, health::health_cache};
+pub use error::{Error, Result, ValidationErrors};
+pub use handlers::{auth::login, auth::logout, auth::me, auth::register, auth::refresh, health::health_check, health::health_cache};
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
 pub use workers::revoked_token_cleanup_worker;
 
 /// Load configuration from environment variables
-pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+pub fn load_config() -> Result<Config> {
     Ok(Config::load()?)
 }
 
@@ -151,6 +152,7 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
         .merge(
             Router::new()
                 .route("/health/cache", get(health_cache))
+                .route("/auth/me", get(me))
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     jwt_auth_middleware,
@@ -182,13 +184,13 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 pub async fn run_api_server(
     config: &Config,
     cache: Cache<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     use secrecy::ExposeSecret;
 
     // Create database connection pool
     let pool = DbPool::connect(config.database.connection_string().expose_secret())
         .await
-        .map_err(|e| format!("Failed to connect to database: {}", e))?;
+        .map_err(|e| Error::Internal(format!("Failed to connect to database: {}", e)))?;
 
     // Spawn revoked token cleanup worker
     let (revoked_cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);

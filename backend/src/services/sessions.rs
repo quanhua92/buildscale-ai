@@ -1,6 +1,6 @@
 use crate::DbConn;
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     queries::sessions,
 };
 
@@ -41,7 +41,10 @@ pub async fn user_has_active_sessions(conn: &mut DbConn, user_id: uuid::Uuid) ->
 pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> Result<()> {
     // Validate input
     if session_token.trim().is_empty() {
-        return Err(Error::Validation("Session token cannot be empty".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "session_token".to_string(),
+            message: "Session token cannot be empty".to_string(),
+        }));
     }
 
     // Hash the token for database lookup

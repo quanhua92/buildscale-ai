@@ -514,24 +514,128 @@ Uses `BUILDSCALE_` prefix with double underscore separators:
 ```rust
 pub enum Error {
     Sqlx(#[from] sqlx::Error),           // Database errors
-    Validation(String),                   // Input validation errors
+    Validation(ValidationErrors),         // Input validation errors with field-level details
     NotFound(String),                      // Resource not found
     Forbidden(String),                    // Permission denied
     Conflict(String),                      // Resource conflicts
     Authentication(String),               // Authentication failures (invalid credentials)
     InvalidToken(String),                 // Invalid or expired session tokens
     SessionExpired(String),               // Session expiration errors
+    TokenTheftDetected(String),           // Stolen refresh token used after rotation
     Internal(String),                      // System errors
+    Config(#[from] ConfigError),          // Configuration errors
+    Cache(String),                         // Cache operation errors
+    CacheSerialization(String),           // Cache serialization errors
+    Io(#[from] std::io::Error),          // IO errors
+}
+
+pub enum ValidationErrors {
+    Single { field: String, message: String },
+    Multiple { fields: HashMap<String, String> },
+}
+```
+
+### Error Response Format
+
+All error responses include an `error` message and a `code` field for programmatic handling:
+
+#### Standard Error Format
+```json
+{
+  "error": "Descriptive error message",
+  "code": "ERROR_CODE"
+}
+```
+
+#### Validation Errors (with field-level errors)
+Validation errors return structured field-level errors:
+
+**Single Field Error:**
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "fields": {
+    "email": "Email cannot be empty"
+  }
+}
+```
+
+**Multiple Field Errors:**
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "fields": {
+    "email": "Invalid email format",
+    "password": "Password must be at least 12 characters long",
+    "confirm_password": "Passwords do not match"
+  }
+}
+```
+
+### Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Field validation failed with field-specific errors |
+| `NOT_FOUND` | 404 | Resource not found |
+| `FORBIDDEN` | 403 | Access denied (insufficient permissions) |
+| `CONFLICT` | 409 | Resource already exists or state conflict |
+| `AUTHENTICATION_FAILED` | 401 | Invalid credentials |
+| `INVALID_TOKEN` | 401 | Invalid or malformed token |
+| `SESSION_EXPIRED` | 401 | Session token expired |
+| `TOKEN_THEFT` | 403 | Stolen refresh token used after rotation |
+| `INTERNAL_ERROR` | 500 | Internal server error |
+| `CONFIG_ERROR` | 500 | Configuration error |
+| `CACHE_ERROR` | 500 | Cache operation error |
+
+### Field Names
+Common field names used in validation errors:
+- `email` - Email address validation
+- `password` - Password strength validation
+- `confirm_password` - Password confirmation matching
+- `full_name` - Full name validation
+- `workspace_name` - Workspace name validation
+- `role_name` - Role name validation
+- `session_token` - Session token validation
+- `invitation_token` - Invitation token validation
+- `hours_to_extend` - Session extension time validation
+- `permission` - Permission string validation
+- `invited_email` - Invitation email validation
+- `expires_in_hours` - Invitation expiration validation
+- `user_id` - User ID validation
+- `role_id` - Role ID validation
+- `new_owner_id` - New owner ID validation
+
+### Frontend SDK Usage
+
+The frontend SDK can check error codes for programmatic error handling:
+
+```typescript
+// Check error code in frontend SDK
+if (response.status === 403 && data.code === 'TOKEN_THEFT') {
+  // Handle token theft
+  throw new TokenTheftError(data.message || 'Token theft detected')
+}
+
+// Access field-level validation errors
+if (data.code === 'VALIDATION_ERROR') {
+  // Display field-specific errors
+  for (const [field, message] of Object.entries(data.fields)) {
+    showFieldError(field, message)
+  }
 }
 ```
 
 ### Validation Rules
-- **Users**: Email uniqueness, 8+ character passwords, password confirmation, case-insensitive email lookup
+- **Users**: Email uniqueness, 12+ character passwords (up from 8), password confirmation, case-insensitive email lookup
 - **Authentication**: Email and password required, session tokens must be valid and non-expired, JWT tokens must be valid and non-expired
 - **Workspaces**: 1-100 character names, owner must exist
 - **Roles**: Unique names per workspace, 100 char name limit, 500 char description limit
 - **Sessions**: Unique tokens, required expiration time, automatic cleanup of expired sessions
 - **JWT**: Tokens must have valid signature, non-expired expiration time, valid UUID in sub field
+- **Invitations**: Email format validation, token format validation, expiration time limits (max 168 hours = 7 days)
 
 ## Testing Strategy
 

@@ -1,6 +1,6 @@
 use crate::{Config, DbConn};
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, ValidationErrors},
     models::{
         users::{LoginUser, LoginResult, NewUser, NewUserSession, RefreshTokenResult, RegisterUser, User},
         requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest}
@@ -26,7 +26,10 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
 
     // Use constant-time comparison for password confirmation to prevent timing attacks
     if register_user.password.len() != register_user.confirm_password.len() {
-        return Err(Error::Validation("Passwords do not match".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "confirm_password".to_string(),
+            message: "Passwords do not match".to_string(),
+        }));
     }
 
     let password_bytes = register_user.password.as_bytes();
@@ -34,7 +37,10 @@ pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Re
 
     // subtle's ct_eq returns Choice(1) if equal, Choice(0) if not equal
     if password_bytes.ct_eq(confirm_bytes).unwrap_u8() == 0 {
-        return Err(Error::Validation("Passwords do not match".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "confirm_password".to_string(),
+            message: "Passwords do not match".to_string(),
+        }));
     }
 
     // Validate password strength
@@ -73,7 +79,10 @@ pub async fn register_user_with_workspace(conn: &mut DbConn, request: UserWorksp
 
     // Use constant-time comparison for password confirmation to prevent timing attacks
     if request.password.len() != request.confirm_password.len() {
-        return Err(Error::Validation("Passwords do not match".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "confirm_password".to_string(),
+            message: "Passwords do not match".to_string(),
+        }));
     }
 
     let password_bytes = request.password.as_bytes();
@@ -81,7 +90,10 @@ pub async fn register_user_with_workspace(conn: &mut DbConn, request: UserWorksp
 
     // subtle's ct_eq returns Choice(1) if equal, Choice(0) if not equal
     if password_bytes.ct_eq(confirm_bytes).unwrap_u8() == 0 {
-        return Err(Error::Validation("Passwords do not match".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "confirm_password".to_string(),
+            message: "Passwords do not match".to_string(),
+        }));
     }
 
     validate_password(&request.password)?;
@@ -129,7 +141,10 @@ pub fn generate_password_hash(password: &str) -> Result<String> {
     let argon2 = Argon2::default();
     let password_hash = argon2
         .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| Error::Validation(format!("Failed to hash password: {}", e)))?
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "password".to_string(),
+            message: format!("Failed to hash password: {}", e),
+        }))?
         .to_string();
 
     Ok(password_hash)
@@ -138,17 +153,20 @@ pub fn generate_password_hash(password: &str) -> Result<String> {
 /// Verifies a password against a password hash
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     let parsed_hash = PasswordHash::new(hash)
-        .map_err(|e| Error::Validation(format!("Invalid password hash: {}", e)))?;
+        .map_err(|e| Error::Validation(ValidationErrors::Single {
+            field: "password".to_string(),
+            message: format!("Invalid password hash: {}", e),
+        }))?;
 
     let argon2 = Argon2::default();
 
     match argon2.verify_password(password.as_bytes(), &parsed_hash) {
         Ok(()) => Ok(true),
         Err(argon2::password_hash::Error::Password) => Ok(false),
-        Err(e) => Err(Error::Validation(format!(
-            "Password verification failed: {}",
-            e
-        ))),
+        Err(e) => Err(Error::Validation(ValidationErrors::Single {
+            field: "password".to_string(),
+            message: format!("Password verification failed: {}", e),
+        })),
     }
 }
 
@@ -159,7 +177,10 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
 
     // Validate password is not empty (password strength check not needed for login)
     if login_user.password.is_empty() {
-        return Err(Error::Validation("Password cannot be empty".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "password".to_string(),
+            message: "Password cannot be empty".to_string(),
+        }));
     }
 
     // Find user by email (case-insensitive, sanitized)
@@ -260,16 +281,22 @@ pub async fn refresh_session(conn: &mut DbConn, session_token: &str, hours_to_ex
 
     // Validate hours to extend
     if hours_to_extend <= 0 {
-        return Err(Error::Validation("Hours to extend must be positive".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "hours_to_extend".to_string(),
+            message: "Hours to extend must be positive".to_string(),
+        }));
     }
 
     // Load config to get max extension time
     let config = Config::load()?;
     if hours_to_extend > config.sessions.expiration_hours {
-        return Err(Error::Validation(format!(
-            "Cannot extend session by more than {} hours",
-            config.sessions.expiration_hours
-        )));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "hours_to_extend".to_string(),
+            message: format!(
+                "Cannot extend session by more than {} hours",
+                config.sessions.expiration_hours
+            ),
+        }));
     }
 
     // Get current session by hashing token
@@ -437,7 +464,10 @@ pub fn generate_session_token() -> Result<String> {
 pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &str) -> Result<()> {
     // Validate password length (minimum 8 characters)
     if new_password.len() < 8 {
-        return Err(Error::Validation("Password must be at least 8 characters long".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "password".to_string(),
+            message: "Password must be at least 8 characters long".to_string(),
+        }));
     }
 
     // Hash the password using existing utility
@@ -451,7 +481,10 @@ pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &st
 pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<crate::models::users::UserSession>> {
     // Validate token format
     if session_token.trim().is_empty() {
-        return Err(Error::Validation("Session token cannot be empty".to_string()));
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "session_token".to_string(),
+            message: "Session token cannot be empty".to_string(),
+        }));
     }
 
     // Hash the token for database lookup
