@@ -119,19 +119,26 @@ class ApiClient {
 
   private async handleResponse<T>(response: Response): Promise<T> {
     const text = await response.text()
-    const data = text ? JSON.parse(text) : {}
+    let data: unknown
+    try {
+      data = text ? JSON.parse(text) : {}
+    } catch (error) {
+      // If parsing fails, throw an error with the raw text
+      throw new ApiError(`Failed to parse server response: ${text}`, response.status)
+    }
 
     if (!response.ok) {
+      const errorData = data as { code?: string; message?: string; error?: string; fields?: Record<string, string> }
       // Handle token theft detection (403 from refresh endpoint)
-      if (response.status === 403 && data.code === 'TOKEN_THEFT') {
-        throw new TokenTheftError(data.message || 'Token theft detected')
+      if (response.status === 403 && errorData.code === 'TOKEN_THEFT') {
+        throw new TokenTheftError(errorData.message || 'Token theft detected')
       }
 
       throw new ApiError(
-        data.error || data.message || 'Request failed',
+        errorData.error || errorData.message || 'Request failed',
         response.status,
-        data.code,
-        data.fields  // Extract field-specific errors from backend
+        errorData.code,
+        errorData.fields  // Extract field-specific errors from backend
       )
     }
 
