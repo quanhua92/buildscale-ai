@@ -29,17 +29,21 @@ export function Form({ children, className, onSubmit, externalError }: FormProps
   useEffect(() => {
     if (externalError?.fields) {
       setErrors(externalError.fields)
+    } else if (externalError === null) {
+      // Only clear local errors if external error is explicitly cleared (not on first render)
+      setErrors({})
     }
   }, [externalError])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    clearErrors()
 
     const formData = new FormData(e.currentTarget)
     const data = Object.fromEntries(formData.entries()) as Record<string, string>
 
     await onSubmit(data)
+    // Clear errors after submission completes (on success or new error)
+    clearErrors()
   }
 
   return (

@@ -2,6 +2,7 @@
  * Auth.Login - Pre-built login form component
  */
 
+import { useState } from 'react'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
@@ -10,10 +11,22 @@ import { Button } from './AuthButton'
 
 export function Login() {
   const { login, isLoading, error, clearError, success } = useAuth()
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
+  })
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }))
+  }
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
     await login(data.email, data.password)
+    // Don't clear form on error - values preserved in state
   }
 
   return (
@@ -27,6 +40,8 @@ export function Login() {
           placeholder="you@example.com"
           className="delay-100"
           autoComplete="email"
+          value={formData.email}
+          onChange={handleChange}
         />
         <Input
           name="password"
@@ -36,6 +51,8 @@ export function Login() {
           placeholder="••••••••"
           className="delay-200"
           autoComplete="current-password"
+          value={formData.password}
+          onChange={handleChange}
         />
         {error && !error.fields && (
           <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">

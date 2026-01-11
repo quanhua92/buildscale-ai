@@ -2,6 +2,7 @@
  * Auth.Register - Pre-built register form component
  */
 
+import { useState } from 'react'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
@@ -10,6 +11,19 @@ import { Button } from './AuthButton'
 
 export function Register() {
   const { register, isLoading, error, clearError, success } = useAuth()
+  const [formData, setFormData] = useState({
+    full_name: '',
+    email: '',
+    password: '',
+    confirm_password: ''
+  })
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }))
+  }
 
   const handleSubmit = async (data: Record<string, string>) => {
     clearError()
@@ -19,6 +33,7 @@ export function Register() {
       confirm_password: data.confirm_password,
       full_name: data.full_name || undefined,
     })
+    // Don't clear form on error - values preserved in state
   }
 
   return (
@@ -31,6 +46,8 @@ export function Register() {
           placeholder="John Doe"
           className="delay-100"
           autoComplete="name"
+          value={formData.full_name}
+          onChange={handleChange}
         />
         <Input
           name="email"
@@ -40,6 +57,8 @@ export function Register() {
           placeholder="you@example.com"
           className="delay-200"
           autoComplete="email"
+          value={formData.email}
+          onChange={handleChange}
         />
         <Input
           name="password"
@@ -50,6 +69,8 @@ export function Register() {
           minLength={12}
           className="delay-300"
           autoComplete="new-password"
+          value={formData.password}
+          onChange={handleChange}
         />
         <Input
           name="confirm_password"
@@ -60,6 +81,8 @@ export function Register() {
           minLength={12}
           className="delay-[400ms]"
           autoComplete="new-password"
+          value={formData.confirm_password}
+          onChange={handleChange}
         />
         {error && !error.fields && (
           <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">
