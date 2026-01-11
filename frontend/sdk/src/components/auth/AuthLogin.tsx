@@ -25,6 +25,8 @@ export function Login() {
           label="Email address"
           required
           placeholder="you@example.com"
+          className="delay-100"
+          autoComplete="email"
         />
         <Input
           name="password"
@@ -32,13 +34,27 @@ export function Login() {
           label="Password"
           required
           placeholder="••••••••"
+          className="delay-200"
+          autoComplete="current-password"
         />
         {error && !error.fields && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
-            {error.message}
+          <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-destructive/20 p-1">
+                  <div className="h-3 w-3 rounded-full bg-destructive" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-destructive">Authentication Error</p>
+                  <p className="text-sm text-destructive/80 mt-1">{error.message}</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
-        <Button isLoading={isLoading}>Sign In</Button>
+        <Button isLoading={isLoading} className="delay-300">
+          Sign In
+        </Button>
       </Form>
     </Card>
   )

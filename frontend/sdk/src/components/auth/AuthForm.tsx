@@ -45,7 +45,14 @@ export function Form({ children, className, onSubmit, externalError }: FormProps
 
   return (
     <FormContext.Provider value={{ errors, setErrors, clearErrors }}>
-      <form onSubmit={handleSubmit} className={cn('space-y-6', className)}>
+      <form
+        onSubmit={handleSubmit}
+        className={cn(
+          'space-y-5',
+          'animate-in fade-in-0 slide-in-from-bottom-4 duration-500',
+          className
+        )}
+      >
         {children}
       </form>
     </FormContext.Provider>

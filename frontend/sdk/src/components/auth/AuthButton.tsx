@@ -2,6 +2,7 @@
  * AuthButton - Submit button component with loading state using shadcn Button
  */
 
+import { Loader2 } from 'lucide-react'
 import { Button as ShadcnButton } from '../ui/button'
 import { cn } from '@/utils'
 
@@ -20,13 +21,21 @@ export function Button({
     <ShadcnButton
       type="submit"
       disabled={disabled || isLoading}
-      className={cn('w-full', className)}
+      className={cn(
+        'w-full',
+        'relative overflow-hidden',
+        'transition-all duration-200',
+        'active:scale-[0.98]',
+        'disabled:opacity-70 disabled:cursor-not-allowed',
+        isLoading && 'gap-2',
+        className
+      )}
       {...props}
     >
       {isLoading ? (
         <>
-          <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Loading...
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="inline-block animate-pulse">Loading...</span>
         </>
       ) : (
         children

@@ -29,6 +29,8 @@ export function Register() {
           type="text"
           label="Full Name"
           placeholder="John Doe"
+          className="delay-100"
+          autoComplete="name"
         />
         <Input
           name="email"
@@ -36,6 +38,8 @@ export function Register() {
           label="Email address"
           required
           placeholder="you@example.com"
+          className="delay-200"
+          autoComplete="email"
         />
         <Input
           name="password"
@@ -44,6 +48,8 @@ export function Register() {
           required
           placeholder="••••••••"
           minLength={12}
+          className="delay-300"
+          autoComplete="new-password"
         />
         <Input
           name="confirm_password"
@@ -52,13 +58,27 @@ export function Register() {
           required
           placeholder="••••••••"
           minLength={12}
+          className="delay-[400ms]"
+          autoComplete="new-password"
         />
         {error && !error.fields && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
-            {error.message}
+          <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-destructive/20 p-1">
+                  <div className="h-3 w-3 rounded-full bg-destructive" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-destructive">Registration Error</p>
+                  <p className="text-sm text-destructive/80 mt-1">{error.message}</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
-        <Button isLoading={isLoading}>Create Account</Button>
+        <Button isLoading={isLoading} className="delay-[500ms]">
+          Create Account
+        </Button>
       </Form>
     </Card>
   )

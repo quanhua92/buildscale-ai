@@ -7,7 +7,7 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   clean: true,
-  external: ['react', 'react-dom', '@tanstack/react-router'],
+  external: ['react', 'react-dom', '@tanstack/react-router', 'lucide-react'],
   esbuildOptions(options) {
     options.banner = {
       js: '// @buildscale/sdk - Authentication SDK',

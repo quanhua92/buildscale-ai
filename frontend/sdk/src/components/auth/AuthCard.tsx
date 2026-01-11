@@ -4,6 +4,7 @@
 
 import type { ReactNode } from 'react'
 import { Card as ShadcnCard, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { cn } from '@/utils'
 
 interface AuthCardProps {
   children: ReactNode
@@ -14,7 +15,14 @@ interface AuthCardProps {
 
 export function Card({ children, className, title, description }: AuthCardProps) {
   return (
-    <ShadcnCard className={className}>
+    <ShadcnCard
+      className={cn(
+        'animate-in fade-in-0 zoom-in-95 duration-300',
+        'shadow-lg border-border/50',
+        'dark:shadow-none',
+        className
+      )}
+    >
       {(title || description) && (
         <CardHeader>
           {title && <CardTitle>{title}</CardTitle>}
