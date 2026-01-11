@@ -75,12 +75,16 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     [apiBaseUrl, getAccessToken, getRefreshToken, setTokens, clearTokens]
   )
 
-  const login = useCallback(async (email: string, password: string) => {
+  // Helper function to reduce duplication in auth operations
+  const executeAuthOperation = useCallback(async (
+    operation: () => Promise<{ user: User }>,
+    fallbackErrorMessage: string
+  ) => {
     setIsLoading(true)
     setError(null)
     setSuccess(false)
     try {
-      const response = await apiClient.login({ email, password })
+      const response = await operation()
       setUser(response.user)
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
       setSuccess(true)
@@ -90,10 +94,10 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
           message: err.message,
           code: err.code,
           status: err.status,
-          fields: err.fields  // Use fields directly from backend error
+          fields: err.fields
         })
       } else {
-        const message = err instanceof Error ? err.message : 'Login failed'
+        const message = err instanceof Error ? err.message : fallbackErrorMessage
         setError({ message })
       }
     } finally {
@@ -101,36 +105,24 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [apiClient, setItem])
 
+  const login = useCallback(async (email: string, password: string) => {
+    await executeAuthOperation(
+      () => apiClient.login({ email, password }),
+      'Login failed'
+    )
+  }, [apiClient, executeAuthOperation])
+
   const register = useCallback(async (data: {
     email: string
     password: string
     confirm_password: string
     full_name?: string
   }) => {
-    setIsLoading(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      const response = await apiClient.register(data)
-      setUser(response.user)
-      setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
-      setSuccess(true)
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError({
-          message: err.message,
-          code: err.code,
-          status: err.status,
-          fields: err.fields  // Use fields directly from backend error
-        })
-      } else {
-        const message = err instanceof Error ? err.message : 'Registration failed'
-        setError({ message })
-      }
-    } finally {
-      setIsLoading(false)
-    }
-  }, [apiClient, setItem])
+    await executeAuthOperation(
+      () => apiClient.register(data),
+      'Registration failed'
+    )
+  }, [apiClient, executeAuthOperation])
 
   const logout = useCallback(async () => {
     setIsLoading(true)
