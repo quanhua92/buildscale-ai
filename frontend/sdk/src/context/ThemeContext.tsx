@@ -22,18 +22,19 @@ export interface ThemeProviderProps {
 
 export function ThemeProvider({ children, defaultTheme = 'system' }: ThemeProviderProps) {
   const { getItem, setItem } = useStorage()
-  const [theme, setThemeState] = useState<Theme>(() => {
-    // Initialize from localStorage during SSR
-    if (typeof window === 'undefined') {
-      return defaultTheme
-    }
+  const [theme, setThemeState] = useState<Theme>(defaultTheme)
+
+  // Load theme from storage on mount
+  useEffect(() => {
     try {
       const savedTheme = getItem(STORAGE_KEYS.THEME)
-      return (savedTheme as Theme) || defaultTheme
-    } catch {
-      return defaultTheme
+      if (savedTheme) {
+        setThemeState(savedTheme as Theme)
+      }
+    } catch (error) {
+      console.warn('Failed to load theme from storage:', error)
     }
-  })
+  }, [getItem])
 
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme)
