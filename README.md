@@ -56,6 +56,21 @@ Running `pnpm dev` from the `frontend/` directory starts all services in paralle
 
 This enables seamless development where SDK changes automatically propagate to both admin and web applications without manual rebuilding.
 
+**Important - SDK Styling:**
+
+The SDK uses Tailwind CSS v4 for styling. Consumer apps (admin/web) must include the `@source` directive in their `styles.css` to tell Tailwind to scan SDK source files:
+
+```css
+/* In frontend/admin/src/styles.css and frontend/web/src/styles.css */
+@import 'tailwindcss';
+
+@source '../../sdk/src/**/*.{ts,tsx}';  /* Required: Scan SDK for Tailwind classes */
+
+@import 'tw-animate-css';
+```
+
+This is the official Tailwind v4 solution for component libraries in monorepos ([docs](https://tailwindcss.com/docs/detecting-classes-in-source-files)).
+
 ### Docker Build
 
 ```bash

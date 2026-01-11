@@ -1,5 +1,5 @@
 /**
- * AuthButton - Submit button component with loading state using shadcn Button
+ * AuthButton - Submit button with loading state
  */
 
 import { Loader2 } from 'lucide-react'
@@ -10,32 +10,19 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean
 }
 
-export function Button({
-  children,
-  isLoading,
-  className,
-  disabled,
-  ...props
-}: ButtonProps) {
+export function Button({ children, isLoading, className, disabled, ...props }: ButtonProps) {
   return (
     <ShadcnButton
       type="submit"
+      size="lg"
       disabled={disabled || isLoading}
-      className={cn(
-        'w-full',
-        'relative overflow-hidden',
-        'transition-all duration-200',
-        'active:scale-[0.98]',
-        'disabled:opacity-70 disabled:cursor-not-allowed',
-        isLoading && 'gap-2',
-        className
-      )}
+      className={cn('w-full', isLoading && 'gap-2', className)}
       {...props}
     >
       {isLoading ? (
         <>
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="inline-block animate-pulse">Loading...</span>
+          <span>Loading...</span>
         </>
       ) : (
         children

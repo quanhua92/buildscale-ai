@@ -1,12 +1,10 @@
 /**
- * AuthInput - Input component with label using shadcn components
+ * AuthInput - Input component with label, inline icon, and password toggle
  */
 
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
-import { Input as ShadcnInput } from '../ui/input'
-import { Label } from '../ui/label'
 import { cn } from '@/utils'
 import { useFormErrors } from './AuthForm'
 
@@ -15,7 +13,6 @@ interface AuthInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string
 }
 
-// Helper function to get the appropriate icon based on input type/name
 const getInputIcon = (type: string, name: string): LucideIcon | null => {
   if (type === 'password' || name === 'password') return Lock
   if (type === 'email' || name === 'email') return Mail
@@ -23,65 +20,61 @@ const getInputIcon = (type: string, name: string): LucideIcon | null => {
   return null
 }
 
-export function Input({ label, error, className, id, name, type = 'text', ...props }: AuthInputProps) {
+export function Input({ label, error, className, id, name, type = 'text', disabled, ...props }: AuthInputProps) {
   const { errors } = useFormErrors()
-  // Use manual error prop if provided, otherwise get field error from context
   const fieldError = error || (name ? errors[name] : undefined)
-
   const [showPassword, setShowPassword] = useState(false)
   const Icon = getInputIcon(type, name || '')
-
   const isPassword = type === 'password' || name?.includes('password')
   const inputType = isPassword && showPassword ? 'text' : type
 
   return (
-    <div className="space-y-2 animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+    <div className="space-y-2">
       {label && (
-        <Label htmlFor={id} className="text-sm font-medium text-foreground">
+        <label className="text-sm font-medium text-foreground" htmlFor={id}>
           {label}
-        </Label>
+        </label>
       )}
-      <div className="relative group">
-        {/* Icon on left side */}
+
+      <div
+        className={cn(
+          'flex items-center w-full h-11 rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors',
+          'focus-within:outline-none focus-within:ring-1 focus-within:ring-ring',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          fieldError && 'border-destructive focus-within:ring-destructive',
+          className
+        )}
+      >
         {Icon && (
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
-            <Icon className="h-4 w-4 text-muted-foreground group-focus-within:text-foreground transition-colors duration-200" />
+          <div className="flex items-center justify-center pr-3 text-muted-foreground shrink-0">
+            <Icon size={16} />
           </div>
         )}
 
-        <ShadcnInput
+        <input
           id={id}
           name={name}
           type={inputType}
-          className={cn(
-            'transition-all duration-200',
-            'focus-visible:ring-2 focus-visible:ring-ring/20',
-            'placeholder:text-muted-foreground/60',
-            Icon && 'pl-9', // Left padding for icon (36px)
-            isPassword && 'pr-10', // Right padding for password toggle
-            fieldError && 'border-destructive focus-visible:ring-destructive/20',
-            className
-          )}
+          disabled={disabled}
+          className="flex-1 bg-transparent border-0 outline-none text-sm placeholder:text-muted-foreground min-w-0"
           {...props}
         />
 
-        {/* Password visibility toggle on right side */}
         {isPassword && (
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring rounded-sm"
+            className="flex items-center justify-center pl-3 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring rounded shrink-0"
             tabIndex={-1}
           >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         )}
       </div>
 
-      {/* Error message with bullet indicator */}
       {fieldError && (
-        <p className="text-sm text-destructive animate-in fade-in-0 slide-in-from-top-1 duration-200 flex items-center gap-1">
-          <span className="inline-block w-1 h-1 rounded-full bg-destructive" />
+        <p className="text-sm text-destructive flex items-center gap-2">
+          <span className="w-1 h-1 rounded-full bg-destructive shrink-0" />
           {fieldError}
         </p>
       )}
