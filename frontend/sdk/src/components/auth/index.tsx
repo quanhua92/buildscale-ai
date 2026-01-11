@@ -10,6 +10,7 @@ import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 import { Login } from './AuthLogin'
 import { Register } from './AuthRegister'
+import { Logout } from './AuthLogout'
 
 interface AuthProps {
   children: React.ReactNode
@@ -36,5 +37,6 @@ Auth.Input = Input
 Auth.Button = Button
 Auth.Login = Login
 Auth.Register = Register
+Auth.Logout = Logout
 
 export default Auth

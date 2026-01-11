@@ -25,6 +25,11 @@ function App() {
             Go to Login
           </Link>
         )}
+        {isAuthenticated && (
+          <Link to="/logout" className="text-[#61dafb] hover:underline mt-2">
+            Logout
+          </Link>
+        )}
         <p>
           Admin Frontend - Edit <code>src/routes/index.tsx</code> and save to reload.
         </p>
