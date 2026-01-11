@@ -7,17 +7,17 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: '/admin',
   plugins: [
-    devtools(),
+    mode === 'development' ? devtools() : null,
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
     }),
     viteReact(),
     tailwindcss(),
-  ],
+  ].filter(Boolean),
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -38,4 +38,4 @@ export default defineConfig({
       ignored: ['!**/node_modules/@buildscale/sdk/dist/**'],
     },
   },
-})
+}))
