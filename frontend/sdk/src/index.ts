@@ -13,6 +13,8 @@
 // Context and hooks
 export { AuthProvider, useAuth } from './context'
 export type { AuthProviderProps, AuthError } from './context'
+export { ThemeProvider, useTheme, useResolvedTheme } from './context'
+export type { ThemeProviderProps, Theme } from './context'
 
 // Storage context
 export { StorageProvider, useStorage } from './context/StorageContext'
@@ -28,6 +30,7 @@ export { Button } from './components/ui/button'
 export { Input } from './components/ui/input'
 export { Label } from './components/ui/label'
 export { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
+export { ThemeToggle } from './components/ui/theme-toggle'
 
 // API client
 export { ApiClient } from './api'
@@ -38,6 +41,7 @@ export { BrowserStorage } from './utils/storage'
 
 // Constants
 export { STORAGE_KEYS, STORAGE_PREFIX } from './utils/constants'
+export { safeLocalStorage } from './utils'
 
 // Types
 export type {
