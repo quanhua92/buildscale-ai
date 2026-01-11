@@ -1703,3 +1703,83 @@ async fn test_me_endpoint_authorization_header_priority_over_cookie() {
     // Should return user1's data (from Authorization header)
     assert_eq!(body["user"]["id"], user_id1);
 }
+
+#[tokio::test]
+async fn test_me_endpoint_cache_hit_works_correctly() {
+    let app = TestApp::new().await;
+    let email = generate_test_email();
+
+    // Register and login to get access token
+    app.client
+        .post(&app.url("/api/v1/auth/register"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!",
+            "confirm_password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_response = app
+        .client
+        .post(&app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({
+            "email": email,
+            "password": "SecurePass123!"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let login_body: serde_json::Value = login_response.json().await.unwrap();
+    let access_token = login_body["access_token"].as_str().unwrap();
+    let expected_email = login_body["user"]["email"].as_str().unwrap();
+    let expected_user_id = login_body["user"]["id"].as_str().unwrap();
+
+    // First call - cache miss (DB query)
+    let response1 = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response1.status(), 200);
+    let body1: serde_json::Value = response1.json().await.unwrap();
+    assert_eq!(body1["user"]["email"], expected_email);
+    assert_eq!(body1["user"]["id"], expected_user_id);
+
+    // Second call - cache hit (should not return 500)
+    let response2 = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response2.status(), 200);
+    let body2: serde_json::Value = response2.json().await.unwrap();
+    assert_eq!(body2["user"]["email"], expected_email);
+    assert_eq!(body2["user"]["id"], expected_user_id);
+
+    // Third call - another cache hit (verify cache works consistently)
+    let response3 = app
+        .client
+        .get(&app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response3.status(), 200);
+    let body3: serde_json::Value = response3.json().await.unwrap();
+    assert_eq!(body3["user"]["email"], expected_email);
+    assert_eq!(body3["user"]["id"], expected_user_id);
+
+    // Verify all responses are identical
+    assert_eq!(body1, body2);
+    assert_eq!(body2, body3);
+}
