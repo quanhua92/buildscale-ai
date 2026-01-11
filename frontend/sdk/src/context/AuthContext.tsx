@@ -154,12 +154,15 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
 
     const restoreSession = async () => {
       setRestoreAttempted(true)  // Mark as attempted
+      console.log('[Auth] Attempting to restore session from cookies...')
       // Try to get user profile - backend will validate HttpOnly cookies
       try {
         const { user: profileUser } = await apiClient.getProfile()
+        console.log('[Auth] Session restored successfully:', profileUser.id)
         setUser(profileUser)
       } catch (error) {
         // Invalid or expired token - not logged in
+        console.log('[Auth] Session restoration failed:', error)
         // No need to clear tokens (HttpOnly cookies handled by backend)
       } finally {
         setIsLoading(false)
