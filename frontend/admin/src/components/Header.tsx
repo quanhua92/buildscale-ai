@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 
 import { useState } from 'react'
 import { Home, Menu, X } from 'lucide-react'
+import tanstackLogo from '/tanstack-word-logo-white.svg'
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false)
@@ -19,7 +20,7 @@ export default function Header() {
         <h1 className="ml-4 text-xl font-semibold">
           <Link to="/">
             <img
-              src="/tanstack-word-logo-white.svg"
+              src={tanstackLogo}
               alt="TanStack Logo"
               className="h-10"
             />
