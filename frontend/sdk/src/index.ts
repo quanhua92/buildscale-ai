@@ -20,7 +20,7 @@ export type { ThemeProviderProps, Theme } from './context'
 export { StorageProvider, useStorage } from './context/StorageContext'
 
 // Hooks
-export { useProtectedRoute } from './hooks'
+export { useProtectedRoute, useAuthRedirects } from './hooks'
 
 // Components
 export { default as Auth } from './components/auth'
