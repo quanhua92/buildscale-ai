@@ -105,88 +105,34 @@ fn create_error_body(msg: String, code: &str) -> serde_json::Value {
     serde_json::json!({ "error": msg, "code": code })
 }
 
+/// Log error at appropriate level based on error type
+/// Client-facing errors (4xx) are logged as warnings, server errors (5xx) as errors
+fn log_error(error: &Error, error_code: &str, status_code: u16) {
+    if status_code >= 500 {
+        tracing::error!(
+            error_code,
+            error = %error,
+            status_code,
+            "Error returned to client"
+        );
+    } else {
+        tracing::warn!(
+            error_code,
+            error = %error,
+            status_code,
+            "Error returned to client"
+        );
+    }
+}
+
 /// Convert custom Error to HTTP response
 ///
 /// This implementation maps each error variant to an appropriate HTTP status code
 /// and returns a JSON response with an error message and error code.
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        // Log the error before returning response (safety net for all errors)
-        // Uses appropriate log level based on error type
-        match &self {
-            Error::Validation(_) => {
-                tracing::warn!(
-                    error_code = "VALIDATION_ERROR",
-                    error = %self,
-                    status_code = 400,
-                    "Error returned to client"
-                );
-            }
-            Error::NotFound(_) => {
-                tracing::warn!(
-                    error_code = "NOT_FOUND",
-                    error = %self,
-                    status_code = 404,
-                    "Error returned to client"
-                );
-            }
-            Error::Forbidden(_) => {
-                tracing::warn!(
-                    error_code = "FORBIDDEN",
-                    error = %self,
-                    status_code = 403,
-                    "Error returned to client"
-                );
-            }
-            Error::Conflict(_) => {
-                tracing::warn!(
-                    error_code = "CONFLICT",
-                    error = %self,
-                    status_code = 409,
-                    "Error returned to client"
-                );
-            }
-            Error::Authentication(_) => {
-                tracing::warn!(
-                    error_code = "AUTHENTICATION_FAILED",
-                    error = %self,
-                    status_code = 401,
-                    "Error returned to client"
-                );
-            }
-            Error::InvalidToken(_) => {
-                tracing::warn!(
-                    error_code = "INVALID_TOKEN",
-                    error = %self,
-                    status_code = 401,
-                    "Error returned to client"
-                );
-            }
-            Error::SessionExpired(_) => {
-                tracing::warn!(
-                    error_code = "SESSION_EXPIRED",
-                    error = %self,
-                    status_code = 401,
-                    "Error returned to client"
-                );
-            }
-            Error::TokenTheftDetected(_) => {
-                tracing::warn!(
-                    error_code = "TOKEN_THEFT",
-                    error = %self,
-                    status_code = 403,
-                    "Error returned to client"
-                );
-            }
-            _ => {
-                tracing::error!(
-                    error_code = %self.error_code(),
-                    error = %self,
-                    status_code = %self.status_code(),
-                    "Error returned to client"
-                );
-            }
-        }
+        // Log the error before returning response using helper
+        log_error(&self, self.error_code(), self.status_code());
 
         let (body, status) = match self {
             Error::Validation(errors) => {
