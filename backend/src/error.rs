@@ -9,6 +9,9 @@ use axum::{
     Json,
 };
 
+// Import tracing for error logging
+use tracing as _;
+
 /// Structured validation errors with field-level error mapping
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -108,6 +111,83 @@ fn create_error_body(msg: String, code: &str) -> serde_json::Value {
 /// and returns a JSON response with an error message and error code.
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
+        // Log the error before returning response (safety net for all errors)
+        // Uses appropriate log level based on error type
+        match &self {
+            Error::Validation(_) => {
+                tracing::warn!(
+                    error_code = "VALIDATION_ERROR",
+                    error = %self,
+                    status_code = 400,
+                    "Error returned to client"
+                );
+            }
+            Error::NotFound(_) => {
+                tracing::warn!(
+                    error_code = "NOT_FOUND",
+                    error = %self,
+                    status_code = 404,
+                    "Error returned to client"
+                );
+            }
+            Error::Forbidden(_) => {
+                tracing::warn!(
+                    error_code = "FORBIDDEN",
+                    error = %self,
+                    status_code = 403,
+                    "Error returned to client"
+                );
+            }
+            Error::Conflict(_) => {
+                tracing::warn!(
+                    error_code = "CONFLICT",
+                    error = %self,
+                    status_code = 409,
+                    "Error returned to client"
+                );
+            }
+            Error::Authentication(_) => {
+                tracing::warn!(
+                    error_code = "AUTHENTICATION_FAILED",
+                    error = %self,
+                    status_code = 401,
+                    "Error returned to client"
+                );
+            }
+            Error::InvalidToken(_) => {
+                tracing::warn!(
+                    error_code = "INVALID_TOKEN",
+                    error = %self,
+                    status_code = 401,
+                    "Error returned to client"
+                );
+            }
+            Error::SessionExpired(_) => {
+                tracing::warn!(
+                    error_code = "SESSION_EXPIRED",
+                    error = %self,
+                    status_code = 401,
+                    "Error returned to client"
+                );
+            }
+            Error::TokenTheftDetected(_) => {
+                tracing::warn!(
+                    error_code = "TOKEN_THEFT",
+                    error = %self,
+                    status_code = 403,
+                    "Error returned to client"
+                );
+            }
+            _ => {
+                tracing::error!(
+                    error_code = %self.error_code(),
+                    error = %self,
+                    status_code = %self.status_code(),
+                    "Error returned to client"
+                );
+            }
+        }
+
         let (body, status) = match self {
             Error::Validation(errors) => {
                 let body = match errors {
@@ -146,5 +226,40 @@ impl IntoResponse for Error {
         };
 
         (status, Json(body)).into_response()
+    }
+}
+
+impl Error {
+    /// Helper method to get the HTTP status code for an error
+    fn status_code(&self) -> u16 {
+        match self {
+            Error::Validation(_) => 400,
+            Error::NotFound(_) => 404,
+            Error::Forbidden(_) => 403,
+            Error::Conflict(_) => 409,
+            Error::Authentication(_) | Error::InvalidToken(_) | Error::SessionExpired(_) => 401,
+            Error::TokenTheftDetected(_) => 403,
+            _ => 500,
+        }
+    }
+
+    /// Helper method to get the error code for logging
+    fn error_code(&self) -> &'static str {
+        match self {
+            Error::Validation(_) => "VALIDATION_ERROR",
+            Error::NotFound(_) => "NOT_FOUND",
+            Error::Forbidden(_) => "FORBIDDEN",
+            Error::Conflict(_) => "CONFLICT",
+            Error::Authentication(_) => "AUTHENTICATION_FAILED",
+            Error::InvalidToken(_) => "INVALID_TOKEN",
+            Error::SessionExpired(_) => "SESSION_EXPIRED",
+            Error::TokenTheftDetected(_) => "TOKEN_THEFT",
+            Error::Sqlx(_) => "INTERNAL_ERROR",
+            Error::Internal(_) => "INTERNAL_ERROR",
+            Error::Config(_) => "CONFIG_ERROR",
+            Error::Cache(_) => "CACHE_ERROR",
+            Error::CacheSerialization(_) => "CACHE_ERROR",
+            Error::Io(_) => "INTERNAL_ERROR",
+        }
     }
 }
