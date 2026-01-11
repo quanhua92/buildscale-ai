@@ -151,14 +151,13 @@ class ApiClient {
       return this.refreshPromise
     }
 
+    // Set flag synchronously to prevent race condition
+    this.isRefreshing = true
+
     // Check if we have a stored refresh token (token-based auth)
     const storedRefreshToken = this.getRefreshToken()
 
-    // Assign promise synchronously before setting isRefreshing flag
-    // This prevents race condition where concurrent calls see isRefreshing=true
-    // but refreshPromise is still null
     this.refreshPromise = (async () => {
-      this.isRefreshing = true
       try {
         // For token-based auth: use the stored token
         // For cookie-based auth: storedRefreshToken will be null, browser sends cookie automatically
@@ -170,6 +169,7 @@ class ApiClient {
         await this.clearTokens()
         throw error
       } finally {
+        // Reset state for the next refresh cycle
         this.isRefreshing = false
         this.refreshPromise = null
       }
