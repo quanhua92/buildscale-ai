@@ -8,7 +8,7 @@ use axum::{
     Extension,
 };
 use crate::{
-    error::Result,
+    error::{Error, Result},
     middleware::auth::AuthenticatedUser,
     models::users::{LoginUser, RegisterUser},
     services::{
@@ -22,6 +22,50 @@ use crate::{
     },
     state::AppState,
 };
+
+/// Macro to reduce boilerplate in error handling for auth handlers
+/// Logs errors at appropriate level based on error type
+macro_rules! handle_auth_error {
+    ($operation:expr, $e:expr, $error_type_map:tt) => {
+        match &$e {
+            Error::Validation(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("User ", $operation, " failed: validation error"),
+                );
+            }
+            Error::Conflict(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("User ", $operation, " failed: conflict"),
+                );
+            }
+            Error::Authentication(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = "authentication_failed",
+                    concat!("User ", $operation, " failed: invalid credentials"),
+                );
+            }
+            Error::InvalidToken(_) | Error::SessionExpired(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = "invalid_token",
+                    concat!("Token ", $operation, " failed: invalid or expired token"),
+                );
+            }
+            _ => {
+                tracing::error!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("User ", $operation, " failed: internal error"),
+                );
+            }
+        }
+    };
+}
 
 /// Custom response type for login that sets multiple Set-Cookie headers
 pub struct LoginResponse {
@@ -159,30 +203,7 @@ pub async fn register(
     let user = match users::register_user(&mut conn, request).await {
         Ok(user) => user,
         Err(e) => {
-            // Log the error with appropriate level based on error type
-            match &e {
-                crate::error::Error::Validation(_) => {
-                    tracing::warn!(
-                        operation = "register",
-                        error = %e,
-                        "User registration failed: validation error",
-                    );
-                }
-                crate::error::Error::Conflict(_) => {
-                    tracing::warn!(
-                        operation = "register",
-                        error = %e,
-                        "User registration failed: conflict",
-                    );
-                }
-                _ => {
-                    tracing::error!(
-                        operation = "register",
-                        error = %e,
-                        "User registration failed: internal error",
-                    );
-                }
-            }
+            handle_auth_error!("register", e, {});
             return Err(e);
         }
     };
@@ -257,30 +278,7 @@ pub async fn login(
     let login_result = match users::login_user(&mut conn, request).await {
         Ok(result) => result,
         Err(e) => {
-            // Log the error with appropriate level based on error type
-            match &e {
-                crate::error::Error::Validation(_) => {
-                    tracing::warn!(
-                        operation = "login",
-                        error = %e,
-                        "User login failed: validation error",
-                    );
-                }
-                crate::error::Error::Authentication(_) => {
-                    tracing::warn!(
-                        operation = "login",
-                        error = "authentication_failed",
-                        "User login failed: invalid credentials",
-                    );
-                }
-                _ => {
-                    tracing::error!(
-                        operation = "login",
-                        error = %e,
-                        "User login failed: internal error",
-                    );
-                }
-            }
+            handle_auth_error!("login", e, {});
             return Err(e);
         }
     };
@@ -378,23 +376,7 @@ pub async fn refresh(
     let refresh_result = match users::refresh_access_token(&mut conn, &token).await {
         Ok(result) => result,
         Err(e) => {
-            // Log the error with appropriate level based on error type
-            match &e {
-                crate::error::Error::InvalidToken(_) | crate::error::Error::SessionExpired(_) => {
-                    tracing::warn!(
-                        operation = "refresh",
-                        error = "invalid_token",
-                        "Token refresh failed: invalid or expired token",
-                    );
-                }
-                _ => {
-                    tracing::error!(
-                        operation = "refresh",
-                        error = %e,
-                        "Token refresh failed: internal error",
-                    );
-                }
-            }
+            handle_auth_error!("refresh", e, {});
             return Err(e);
         }
     };
