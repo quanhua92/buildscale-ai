@@ -37,12 +37,24 @@ buildscale-ai/
 # Backend
 cd backend && cargo run
 
-# Admin frontend
+# Frontend (all services with SDK watch mode)
+cd frontend && pnpm dev
+
+# Admin frontend (standalone)
 cd frontend/admin && pnpm dev
 
-# Web frontend
+# Web frontend (standalone)
 cd frontend/web && pnpm dev
 ```
+
+**Frontend Development:**
+
+Running `pnpm dev` from the `frontend/` directory starts all services in parallel:
+- **SDK watch mode** - Automatically rebuilds on changes
+- **Admin**: `http://localhost:5173/admin` (with TanStack devtools)
+- **Web**: `http://localhost:5174` (devtools disabled - focusing on admin)
+
+This enables seamless development where SDK changes automatically propagate to both admin and web applications without manual rebuilding.
 
 ### Docker Build
 
