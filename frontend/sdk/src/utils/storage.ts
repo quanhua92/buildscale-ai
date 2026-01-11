@@ -4,6 +4,7 @@
  */
 
 import { STORAGE_PREFIX } from './constants'
+import { safeLocalStorage } from './safeLocalStorage'
 
 // Token-specific methods (for ApiClient)
 export interface TokenCallbacks {
@@ -49,25 +50,26 @@ export class BrowserStorage implements TokenCallbacks, StorageCallbacks {
     // No-op for browser clients
   }
 
-  // Generic storage methods - use localStorage
+  // Generic storage methods - use safeLocalStorage
   getItem(key: string): string | null {
-    return localStorage.getItem(key)
+    return safeLocalStorage.getItem(key)
   }
 
   setItem(key: string, value: string): void {
-    localStorage.setItem(key, value)
+    safeLocalStorage.setItem(key, value)
   }
 
   removeItem(key: string): void {
-    localStorage.removeItem(key)
+    safeLocalStorage.removeItem(key)
   }
 
   clearAuthData(): void {
+    if (!safeLocalStorage.available) return
     // Clear all app data with our prefix from localStorage
     const keys = Object.keys(localStorage)
     keys.forEach(key => {
       if (key.startsWith(STORAGE_PREFIX)) {
-        localStorage.removeItem(key)
+        safeLocalStorage.removeItem(key)
       }
     })
   }
