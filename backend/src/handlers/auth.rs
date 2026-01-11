@@ -156,7 +156,36 @@ pub async fn register(
     })?;
 
     // Call service layer to register user
-    let user = users::register_user(&mut conn, request).await?;
+    let user = match users::register_user(&mut conn, request).await {
+        Ok(user) => user,
+        Err(e) => {
+            // Log the error with appropriate level based on error type
+            match &e {
+                crate::error::Error::Validation(_) => {
+                    tracing::warn!(
+                        operation = "register",
+                        error = %e,
+                        "User registration failed: validation error",
+                    );
+                }
+                crate::error::Error::Conflict(_) => {
+                    tracing::warn!(
+                        operation = "register",
+                        error = %e,
+                        "User registration failed: conflict",
+                    );
+                }
+                _ => {
+                    tracing::error!(
+                        operation = "register",
+                        error = %e,
+                        "User registration failed: internal error",
+                    );
+                }
+            }
+            return Err(e);
+        }
+    };
 
     tracing::info!(
         operation = "register",
@@ -225,7 +254,36 @@ pub async fn login(
     })?;
 
     // Call service layer to authenticate user
-    let login_result = users::login_user(&mut conn, request).await?;
+    let login_result = match users::login_user(&mut conn, request).await {
+        Ok(result) => result,
+        Err(e) => {
+            // Log the error with appropriate level based on error type
+            match &e {
+                crate::error::Error::Validation(_) => {
+                    tracing::warn!(
+                        operation = "login",
+                        error = %e,
+                        "User login failed: validation error",
+                    );
+                }
+                crate::error::Error::Authentication(_) => {
+                    tracing::warn!(
+                        operation = "login",
+                        error = "authentication_failed",
+                        "User login failed: invalid credentials",
+                    );
+                }
+                _ => {
+                    tracing::error!(
+                        operation = "login",
+                        error = %e,
+                        "User login failed: internal error",
+                    );
+                }
+            }
+            return Err(e);
+        }
+    };
 
     tracing::info!(
         operation = "login",
@@ -317,7 +375,29 @@ pub async fn refresh(
     })?;
 
     // Call service layer to refresh access token with rotation
-    let refresh_result = users::refresh_access_token(&mut conn, &token).await?;
+    let refresh_result = match users::refresh_access_token(&mut conn, &token).await {
+        Ok(result) => result,
+        Err(e) => {
+            // Log the error with appropriate level based on error type
+            match &e {
+                crate::error::Error::InvalidToken(_) | crate::error::Error::SessionExpired(_) => {
+                    tracing::warn!(
+                        operation = "refresh",
+                        error = "invalid_token",
+                        "Token refresh failed: invalid or expired token",
+                    );
+                }
+                _ => {
+                    tracing::error!(
+                        operation = "refresh",
+                        error = %e,
+                        "Token refresh failed: internal error",
+                    );
+                }
+            }
+            return Err(e);
+        }
+    };
 
     let token_rotated = refresh_result.refresh_token.is_some();
     tracing::info!(
@@ -407,9 +487,19 @@ pub async fn logout(
     })?;
 
     // Call service layer to logout user (invalidate session)
-    users::logout_user(&mut conn, &token).await?;
-
-    tracing::info!(operation = "logout", "User logout successful");
+    match users::logout_user(&mut conn, &token).await {
+        Ok(_) => {
+            tracing::info!(operation = "logout", "User logout successful");
+        }
+        Err(e) => {
+            tracing::error!(
+                operation = "logout",
+                error = %e,
+                "User logout failed: internal error",
+            );
+            return Err(e);
+        }
+    }
 
     // Build clear cookie headers for both tokens
     let config = CookieConfig::default();
