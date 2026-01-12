@@ -24,6 +24,15 @@ export { useProtectedRoute, useAuthRedirects } from './hooks'
 
 // Components
 export { default as Auth } from './components/auth'
+export { NavigationMenu } from './components/NavigationMenu'
+export type {
+  NavigationMenuProps,
+  NavigationMenuItemProps,
+  NavigationMenuSectionProps,
+  NavigationMenuGroupProps,
+  NavigationMenuSeparatorProps,
+} from './components/NavigationMenu'
+// @deprecated Use NavigationMenu instead
 export { MobileMenu } from './components/MobileMenu'
 export type { MobileMenuProps } from './components/MobileMenu'
 
