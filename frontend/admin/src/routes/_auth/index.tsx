@@ -1,14 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useAuth } from '@buildscale/sdk'
-import logo from '../logo.svg'
+import logo from '../../logo.svg'
 
-export const Route = createFileRoute('/')({
-  component: App,
+export const Route = createFileRoute('/_auth/')({
+  component: Dashboard,
 })
 
-function App() {
-  const { user, isAuthenticated } = useAuth()
-
+function Dashboard() {
   return (
     <div className="text-center">
       <header className="min-h-screen flex flex-col items-center justify-center bg-[#282c34] text-white text-[calc(10px+2vmin)]">
@@ -17,22 +14,13 @@ function App() {
           className="h-[40vmin] pointer-events-none animate-[spin_20s_linear_infinite]"
           alt="logo"
         />
+        <p>Admin Dashboard - Protected! ✅</p>
         <p>
-          {isAuthenticated && user ? `Auth: ${user.id}` : 'Auth: unauth'}
+          Admin Frontend - Edit <code>src/routes/_auth/index.tsx</code> and save to reload.
         </p>
-        {!isAuthenticated && (
-          <Link to="/login" className="text-[#61dafb] hover:underline mt-2">
-            Go to Login
-          </Link>
-        )}
-        {isAuthenticated && (
-          <Link to="/logout" className="text-[#61dafb] hover:underline mt-2">
-            Logout
-          </Link>
-        )}
-        <p>
-          Admin Frontend - Edit <code>src/routes/index.tsx</code> and save to reload.
-        </p>
+        <Link to="/logout" className="text-[#61dafb] hover:underline mt-2">
+          Logout
+        </Link>
         <a
           className="text-[#61dafb] hover:underline"
           href="https://reactjs.org"

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { AuthProvider, StorageProvider, ThemeProvider, Toaster } from '@buildscale/sdk'
+import { AuthProvider, StorageProvider, ThemeProvider, Toaster, useAuth } from '@buildscale/sdk'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
@@ -15,7 +15,10 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 // Create a new router instance
 const router = createRouter({
   routeTree,
-  context: {},
+  context: {
+    // Auth context will be set by InnerApp component
+    auth: undefined as any,
+  },
   defaultPreload: 'intent',
   scrollRestoration: true,
   defaultStructuralSharing: true,
@@ -31,6 +34,12 @@ declare module '@tanstack/react-router' {
   }
 }
 
+// Inner app component that provides auth context to router
+function InnerApp() {
+  const auth = useAuth()
+  return <RouterProvider router={router} context={{ auth }} />
+}
+
 // Render the app
 const rootElement = document.getElementById('app')
 if (rootElement && !rootElement.innerHTML) {
@@ -40,7 +49,7 @@ if (rootElement && !rootElement.innerHTML) {
       <StorageProvider>
         <ThemeProvider>
           <AuthProvider apiBaseUrl={apiBaseUrl} redirectTarget="/">
-            <RouterProvider router={router} />
+            <InnerApp />
           </AuthProvider>
         </ThemeProvider>
       </StorageProvider>
