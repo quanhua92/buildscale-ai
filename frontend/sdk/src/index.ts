@@ -12,7 +12,7 @@
 
 // Context and hooks
 export { AuthProvider, useAuth } from './context'
-export type { AuthProviderProps, AuthError, AuthResult } from './context'
+export type { AuthProviderProps, AuthError, AuthResult, AuthContextType } from './context'
 export { ThemeProvider, useTheme, useResolvedTheme } from './context'
 export type { ThemeProviderProps, Theme } from './context'
 
@@ -24,6 +24,15 @@ export { useProtectedRoute, useAuthRedirects } from './hooks'
 
 // Components
 export { default as Auth } from './components/auth'
+export { NavigationMenu } from './components/NavigationMenu'
+export type {
+  NavigationMenuProps,
+  NavigationMenuItemProps,
+  NavigationMenuSectionProps,
+  NavigationMenuGroupProps,
+  NavigationMenuSeparatorProps,
+} from './components/NavigationMenu'
+// @deprecated Use NavigationMenu instead
 export { MobileMenu } from './components/MobileMenu'
 export type { MobileMenuProps } from './components/MobileMenu'
 

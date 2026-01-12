@@ -22,7 +22,7 @@ export interface AuthResult {
   error?: AuthError
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isRestoring: boolean  // Only for initial session restore
