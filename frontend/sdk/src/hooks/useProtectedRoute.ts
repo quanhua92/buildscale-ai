@@ -7,14 +7,14 @@ import { useNavigate } from '@tanstack/react-router'
 import { useAuth } from '../context'
 
 export function useProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isRestoring } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (!isRestoring && !isAuthenticated) {
       navigate({ to: '/login', replace: true })
     }
-  }, [isAuthenticated, isLoading, navigate])
+  }, [isAuthenticated, isRestoring, navigate])
 
-  return { isAuthenticated, isLoading }
+  return { isAuthenticated, isRestoring }
 }

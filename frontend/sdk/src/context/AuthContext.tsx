@@ -17,22 +17,24 @@ export interface AuthError {
   fields?: Record<string, string>  // Field-specific errors from backend
 }
 
+export interface AuthResult {
+  success: boolean
+  error?: AuthError
+}
+
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
-  isLoading: boolean
-  error: AuthError | null
-  success: boolean
+  isRestoring: boolean  // Only for initial session restore
   redirectTarget: string
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<AuthResult>
   register: (data: {
     email: string
     password: string
     confirm_password: string
     full_name?: string
-  }) => Promise<void>
-  logout: () => Promise<void>
-  clearError: () => void
+  }) => Promise<AuthResult>
+  logout: () => Promise<AuthResult>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -45,9 +47,7 @@ export interface AuthProviderProps {
 
 export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTargetProp = '/' }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<AuthError | null>(null)
-  const [success, setSuccess] = useState(false)
+  const [isRestoring, setIsRestoring] = useState(true)
   // Track if we've already attempted to restore session (prevent multiple attempts)
   const [restoreAttempted, setRestoreAttempted] = useState(false)
 
@@ -75,78 +75,57 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     [apiBaseUrl, getAccessToken, getRefreshToken, setTokens, clearTokens]
   )
 
-  // Helper function to reduce duplication in auth operations
-  const executeAuthOperation = useCallback(async (
-    operation: () => Promise<{ user: User }>,
-    fallbackErrorMessage: string
-  ) => {
-    setIsLoading(true)
-    setError(null)
-    setSuccess(false)
+  const handleError = useCallback((err: unknown): AuthError => {
+    if (err instanceof ApiError) {
+      return {
+        message: err.message,
+        code: err.code,
+        status: err.status,
+        fields: err.fields
+      }
+    }
+    return {
+      message: err instanceof Error ? err.message : 'An error occurred'
+    }
+  }, [])
+
+  const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     try {
-      const response = await operation()
+      const response = await apiClient.login({ email, password })
       setUser(response.user)
       setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
-      setSuccess(true)
+      return { success: true }
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError({
-          message: err.message,
-          code: err.code,
-          status: err.status,
-          fields: err.fields
-        })
-      } else {
-        const message = err instanceof Error ? err.message : fallbackErrorMessage
-        setError({ message })
-      }
-    } finally {
-      setIsLoading(false)
+      return { success: false, error: handleError(err) }
     }
-  }, [apiClient, setItem])
-
-  const login = useCallback(async (email: string, password: string) => {
-    await executeAuthOperation(
-      () => apiClient.login({ email, password }),
-      'Login failed'
-    )
-  }, [apiClient, executeAuthOperation])
+  }, [apiClient, setItem, handleError])
 
   const register = useCallback(async (data: {
     email: string
     password: string
     confirm_password: string
     full_name?: string
-  }) => {
-    await executeAuthOperation(
-      () => apiClient.register(data),
-      'Registration failed'
-    )
-  }, [apiClient, executeAuthOperation])
+  }): Promise<AuthResult> => {
+    try {
+      const response = await apiClient.register(data)
+      setUser(response.user)
+      setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, setItem, handleError])
 
-  const logout = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    setSuccess(false)
+  const logout = useCallback(async (): Promise<AuthResult> => {
     try {
       await apiClient.logout()
       setUser(null)
       clearAuthData()
-      setSuccess(true)
+      return { success: true }
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError({ message: err.message, code: err.code, status: err.status })
-      } else {
-        setError({ message: err instanceof Error ? err.message : 'Logout failed' })
-      }
-    } finally {
-      setIsLoading(false)
+      return { success: false, error: handleError(err) }
     }
-  }, [apiClient, clearAuthData])
-
-  const clearError = useCallback(() => {
-    setError(null)
-  }, [])
+  }, [apiClient, clearAuthData, handleError])
 
   // Restore session on mount (only once)
   useEffect(() => {
@@ -167,7 +146,7 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
         console.log('[Auth] Session restoration failed:', error)
         // No need to clear tokens (HttpOnly cookies handled by backend)
       } finally {
-        setIsLoading(false)
+        setIsRestoring(false)
       }
     }
 
@@ -177,14 +156,11 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
   const value: AuthContextType = {
     user,
     isAuthenticated: !!user,
-    isLoading,
-    error,
-    success,
+    isRestoring,
     redirectTarget: redirectTargetProp,
     login,
     register,
     logout,
-    clearError,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

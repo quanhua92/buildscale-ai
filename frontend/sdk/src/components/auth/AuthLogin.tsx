@@ -2,16 +2,21 @@
  * Auth.Login - Pre-built login form component
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { useAuth } from '../../context'
+import { useAuth, type AuthError } from '../../context'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
 export function Login() {
-  const { login, isLoading, error, clearError, success } = useAuth()
+  const { login, redirectTarget } = useAuth()
+  const navigate = useNavigate()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
+  const [success, setSuccess] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -25,27 +30,30 @@ export function Login() {
   }
 
   const handleSubmit = async (data: Record<string, string>) => {
-    clearError()
-    await login(data.email, data.password)
-    // Don't clear form on error - values preserved in state
-  }
+    setIsLoading(true)
+    setError(null)
+    setSuccess(false)
 
-  // Show toast on success/error
-  useEffect(() => {
-    if (success) {
+    const result = await login(data.email, data.password)
+
+    setIsLoading(false)
+
+    if (result.success) {
+      setSuccess(true)
       toast.success('Login successful', {
         description: 'Welcome back!',
       })
-    }
-  }, [success])
-
-  useEffect(() => {
-    if (error) {
+      // Redirect after 1 second
+      setTimeout(() => {
+        navigate({ to: redirectTarget, replace: true })
+      }, 1000)
+    } else if (result.error) {
+      setError(result.error)
       toast.error('Login failed', {
-        description: error.message,
+        description: result.error.message,
       })
     }
-  }, [error])
+  }
 
   return (
     <Card title="Sign In" description="Enter your credentials to access your account">
