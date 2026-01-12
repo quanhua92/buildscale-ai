@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { AuthProvider, StorageProvider, ThemeProvider, Toaster, useAuth } from '@buildscale/sdk'
@@ -37,7 +37,15 @@ declare module '@tanstack/react-router' {
 // Inner app component that provides auth context to router
 function InnerApp() {
   const auth = useAuth()
-  return <RouterProvider router={router} context={{ auth }} />
+  const [routerContext, setRouterContext] = useState({ auth })
+
+  // Update router context whenever auth changes
+  useEffect(() => {
+    console.log('[Auth] State changed:', auth.isAuthenticated ? 'authenticated' : 'not authenticated')
+    setRouterContext({ auth })
+  }, [auth])
+
+  return <RouterProvider router={router} context={routerContext} />
 }
 
 // Render the app
