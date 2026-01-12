@@ -18,7 +18,7 @@
  * ```
  */
 
-import { ChevronRight, X, Home } from 'lucide-react'
+import { ChevronRight, X, Menu } from 'lucide-react'
 import * as React from 'react'
 import { Link } from '@tanstack/react-router'
 import {
@@ -84,7 +84,7 @@ function NavigationMenu({
   trigger,
   children,
 }: NavigationMenuProps) {
-  // Default trigger is a Home icon button
+  // Default trigger is a Menu icon button
   const defaultTrigger = (
     <Button
       variant="ghost"
@@ -92,7 +92,7 @@ function NavigationMenu({
       className="hover:bg-accent rounded-md"
       aria-label="Open menu"
     >
-      <Home className="h-5 w-5" />
+      <Menu className="h-5 w-5" />
     </Button>
   )
 
