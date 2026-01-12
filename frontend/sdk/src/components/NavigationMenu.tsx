@@ -20,6 +20,7 @@
 
 import { ChevronRight, X, Home } from 'lucide-react'
 import * as React from 'react'
+import { Link } from '@tanstack/react-router'
 import {
   Sheet,
   SheetClose,
@@ -156,10 +157,10 @@ function Item({
   if (to) {
     return (
       <SheetClose asChild>
-        <a href={to} className={baseClasses} {...props}>
+        <Link to={to} className={baseClasses} {...props}>
           {icon && <span className={iconClasses}>{icon}</span>}
           {children}
-        </a>
+        </Link>
       </SheetClose>
     )
   }
