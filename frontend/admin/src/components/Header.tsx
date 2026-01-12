@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useRouter } from '@tanstack/react-router'
 
 import { useState } from 'react'
 import { Home } from 'lucide-react'
@@ -7,6 +7,8 @@ import tanstackLogo from '/tanstack-word-logo-white.svg'
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false)
+  const router = useRouter()
+  const basePath = router.basepath // Returns '/admin'
 
   return (
     <>
@@ -19,7 +21,7 @@ export default function Header() {
           <NavigationMenu.Separator />
 
           <NavigationMenu.Section title="Workspaces" defaultOpen={true}>
-            <NavigationMenu.Item to="/admin/workspaces/all">
+            <NavigationMenu.Item to={`${basePath}/workspaces/all`}>
               All Workspaces
             </NavigationMenu.Item>
           </NavigationMenu.Section>
