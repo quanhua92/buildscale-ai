@@ -24,6 +24,8 @@ export { useProtectedRoute, useAuthRedirects } from './hooks'
 
 // Components
 export { default as Auth } from './components/auth'
+export { MobileMenu } from './components/MobileMenu'
+export type { MobileMenuProps } from './components/MobileMenu'
 
 // shadcn/ui components (re-export for convenience)
 export { Button } from './components/ui/button'
