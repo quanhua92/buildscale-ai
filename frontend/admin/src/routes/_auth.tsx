@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { useAuth } from '@buildscale/sdk'
 import { useEffect } from 'react'
 
@@ -9,16 +9,17 @@ export const Route = createFileRoute('/_auth')({
 function AuthLayout() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   useEffect(() => {
     // Redirect if not authenticated after restoration completes
     if (!auth.isRestoring && !auth.isAuthenticated) {
       navigate({
         to: '/login',
-        search: { redirect: window.location.pathname },
+        search: { redirect: location.href },
       })
     }
-  }, [auth.isRestoring, auth.isAuthenticated, navigate])
+  }, [auth.isRestoring, auth.isAuthenticated, navigate, location.href])
 
   // Show loading while restoring session
   if (auth.isRestoring) {

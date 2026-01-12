@@ -41,7 +41,6 @@ function InnerApp() {
 
   // Update router context whenever auth changes
   useEffect(() => {
-    console.log('[Auth] State changed:', auth.isAuthenticated ? 'authenticated' : 'not authenticated')
     setRouterContext({ auth })
   }, [auth])
 
