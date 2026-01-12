@@ -2,7 +2,8 @@
  * Auth.Login - Pre-built login form component
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
@@ -28,6 +29,23 @@ export function Login() {
     await login(data.email, data.password)
     // Don't clear form on error - values preserved in state
   }
+
+  // Show toast on success/error
+  useEffect(() => {
+    if (success) {
+      toast.success('Login successful', {
+        description: 'Welcome back!',
+      })
+    }
+  }, [success])
+
+  useEffect(() => {
+    if (error) {
+      toast.error('Login failed', {
+        description: error.message,
+      })
+    }
+  }, [error])
 
   return (
     <Card title="Sign In" description="Enter your credentials to access your account">

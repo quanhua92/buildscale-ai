@@ -2,7 +2,8 @@
  * Auth.Register - Pre-built register form component
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useAuth } from '../../context'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
@@ -35,6 +36,23 @@ export function Register() {
     })
     // Don't clear form on error - values preserved in state
   }
+
+  // Show toast on success/error
+  useEffect(() => {
+    if (success) {
+      toast.success('Registration successful', {
+        description: 'Welcome to Buildscale!',
+      })
+    }
+  }, [success])
+
+  useEffect(() => {
+    if (error) {
+      toast.error('Registration failed', {
+        description: error.message,
+      })
+    }
+  }, [error])
 
   return (
     <Card title="Create Account" description="Sign up to get started">

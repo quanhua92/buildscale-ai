@@ -127,10 +127,12 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
   const logout = useCallback(async () => {
     setIsLoading(true)
     setError(null)
+    setSuccess(false)
     try {
       await apiClient.logout()
       setUser(null)
       clearAuthData()
+      setSuccess(true)
     } catch (err) {
       if (err instanceof ApiError) {
         setError({ message: err.message, code: err.code, status: err.status })
