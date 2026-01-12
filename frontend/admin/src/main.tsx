@@ -17,7 +17,7 @@ const router = createRouter({
   routeTree,
   context: {
     // Auth context will be set by InnerApp component
-    auth: undefined as any,
+    auth: undefined!,
   },
   defaultPreload: 'intent',
   scrollRestoration: true,

@@ -1,15 +1,13 @@
 import { Outlet, createRootRouteWithContext } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import type { AuthContextType } from '@buildscale/sdk'
 
 import Header from '../components/Header'
 
-// Define router context type for auth state
+// Define router context type using SDK's auth context type
 interface RouterContext {
-  auth: {
-    isAuthenticated: boolean
-    user: { id: string } | null
-  }
+  auth: AuthContextType
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({

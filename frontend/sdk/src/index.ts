@@ -12,7 +12,7 @@
 
 // Context and hooks
 export { AuthProvider, useAuth } from './context'
-export type { AuthProviderProps, AuthError, AuthResult } from './context'
+export type { AuthProviderProps, AuthError, AuthResult, AuthContextType } from './context'
 export { ThemeProvider, useTheme, useResolvedTheme } from './context'
 export type { ThemeProviderProps, Theme } from './context'
 
