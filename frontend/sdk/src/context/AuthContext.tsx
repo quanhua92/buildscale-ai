@@ -89,16 +89,20 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [])
 
+  const handleAuthSuccess = useCallback((user: User) => {
+    setUser(user)
+    setItem(STORAGE_KEYS.USER_ID, user.id.toString())
+  }, [setItem])
+
   const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     try {
       const response = await apiClient.login({ email, password })
-      setUser(response.user)
-      setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
+      handleAuthSuccess(response.user)
       return { success: true }
     } catch (err) {
       return { success: false, error: handleError(err) }
     }
-  }, [apiClient, setItem, handleError])
+  }, [apiClient, handleAuthSuccess, handleError])
 
   const register = useCallback(async (data: {
     email: string
@@ -108,13 +112,12 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
   }): Promise<AuthResult> => {
     try {
       const response = await apiClient.register(data)
-      setUser(response.user)
-      setItem(STORAGE_KEYS.USER_ID, response.user.id.toString())
+      handleAuthSuccess(response.user)
       return { success: true }
     } catch (err) {
       return { success: false, error: handleError(err) }
     }
-  }, [apiClient, setItem, handleError])
+  }, [apiClient, handleAuthSuccess, handleError])
 
   const logout = useCallback(async (): Promise<AuthResult> => {
     try {
