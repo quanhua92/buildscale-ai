@@ -2,17 +2,38 @@
  * Auth.Logout - Pre-built logout confirmation component
  */
 
-import { useAuth } from '../../context'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { useAuth, type AuthError } from '../../context'
 import { Card } from './AuthCard'
 import { Button } from './AuthButton'
 
 export function Logout() {
-  const { logout, isLoading, error, clearError, success } = useAuth()
+  const { logout } = useAuth()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
+  const [success, setSuccess] = useState(false)
 
   const handleLogout = async () => {
-    clearError()
-    await logout()
-    // useAuthRedirects in route component handles redirect
+    setIsLoading(true)
+    setError(null)
+    setSuccess(false)
+
+    const result = await logout()
+
+    setIsLoading(false)
+
+    if (result.success) {
+      setSuccess(true)
+      toast.success('Logged out successfully', {
+        description: 'See you next time!',
+      })
+    } else if (result.error) {
+      setError(result.error)
+      toast.error('Logout failed', {
+        description: result.error.message,
+      })
+    }
   }
 
   return (

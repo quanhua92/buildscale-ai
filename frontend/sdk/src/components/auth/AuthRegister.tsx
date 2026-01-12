@@ -3,14 +3,20 @@
  */
 
 import { useState } from 'react'
-import { useAuth } from '../../context'
+import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
+import { useAuth, type AuthError } from '../../context'
 import { Card } from './AuthCard'
 import { Form } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
 export function Register() {
-  const { register, isLoading, error, clearError, success } = useAuth()
+  const { register, redirectTarget } = useAuth()
+  const navigate = useNavigate()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
+  const [success, setSuccess] = useState(false)
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -26,14 +32,34 @@ export function Register() {
   }
 
   const handleSubmit = async (data: Record<string, string>) => {
-    clearError()
-    await register({
+    setIsLoading(true)
+    setError(null)
+    setSuccess(false)
+
+    const result = await register({
       email: data.email,
       password: data.password,
       confirm_password: data.confirm_password,
       full_name: data.full_name || undefined,
     })
-    // Don't clear form on error - values preserved in state
+
+    setIsLoading(false)
+
+    if (result.success) {
+      setSuccess(true)
+      toast.success('Registration successful', {
+        description: 'Welcome to Buildscale!',
+      })
+      // Redirect after 1 second
+      setTimeout(() => {
+        navigate({ to: redirectTarget, replace: true })
+      }, 1000)
+    } else if (result.error) {
+      setError(result.error)
+      toast.error('Registration failed', {
+        description: result.error.message,
+      })
+    }
   }
 
   return (
