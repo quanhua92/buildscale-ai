@@ -1,12 +1,17 @@
 import { Link } from '@tanstack/react-router'
 
 import { useState } from 'react'
-import { Home } from 'lucide-react'
-import { NavigationMenu, ThemeToggle } from '@buildscale/sdk'
+import { Home, LogOut, LogIn, UserPlus } from 'lucide-react'
+import { NavigationMenu, ThemeToggle, useAuth } from '@buildscale/sdk'
 import tanstackLogo from '/tanstack-word-logo-white.svg'
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false)
+  const auth = useAuth()
+
+  const handleLogout = () => {
+    auth.logout()
+  }
 
   return (
     <>
@@ -16,13 +21,38 @@ export default function Header() {
             Home
           </NavigationMenu.Item>
 
-          <NavigationMenu.Separator />
+          {auth.isAuthenticated ? (
+            <>
+              <NavigationMenu.Separator />
 
-          <NavigationMenu.Section title="Workspaces" defaultOpen={true}>
-            <NavigationMenu.Item to="/workspaces/all">
-              All Workspaces
-            </NavigationMenu.Item>
-          </NavigationMenu.Section>
+              <NavigationMenu.Section title="Workspaces" defaultOpen={true}>
+                <NavigationMenu.Item to="/workspaces/all">
+                  All Workspaces
+                </NavigationMenu.Item>
+              </NavigationMenu.Section>
+
+              <NavigationMenu.Separator />
+
+              <NavigationMenu.Item
+                onClick={handleLogout}
+                icon={<LogOut size={20} />}
+              >
+                Logout
+              </NavigationMenu.Item>
+            </>
+          ) : (
+            <>
+              <NavigationMenu.Separator />
+
+              <NavigationMenu.Item to="/login" icon={<LogIn size={20} />}>
+                Login
+              </NavigationMenu.Item>
+
+              <NavigationMenu.Item to="/register" icon={<UserPlus size={20} />}>
+                Register
+              </NavigationMenu.Item>
+            </>
+          )}
         </NavigationMenu>
 
         <h1 className="ml-4 text-xl font-semibold">
