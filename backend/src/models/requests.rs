@@ -48,3 +48,9 @@ pub struct UserWorkspaceResult {
     pub user: super::users::User,
     pub workspace: CompleteWorkspaceResult,
 }
+
+/// Request to update workspace details
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateWorkspaceRequest {
+    pub name: String,
+}

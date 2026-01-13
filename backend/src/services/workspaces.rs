@@ -227,6 +227,35 @@ pub async fn update_workspace_owner(
     Ok(updated_workspace)
 }
 
+/// Updates workspace details (name)
+///
+/// Only the workspace owner can update workspace details.
+pub async fn update_workspace(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    update: crate::models::requests::UpdateWorkspaceRequest,
+) -> Result<Workspace> {
+    // Validate ownership
+    if !workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+        return Err(Error::Forbidden(
+            "You are not the owner of this workspace".to_string(),
+        ));
+    }
+
+    // Validate workspace name
+    validate_workspace_name(&update.name)?;
+
+    // Build update struct
+    let workspace_update = crate::models::workspaces::UpdateWorkspace {
+        name: Some(validate_required_string(&update.name, "Workspace name")?),
+        owner_id: None,  // Ownership changes use update_workspace_owner
+    };
+
+    let updated = workspaces::update_workspace(conn, workspace_id, workspace_update).await?;
+    Ok(updated)
+}
+
 // Essential read methods (kept from original)
 /// Gets a workspace by ID
 pub async fn get_workspace(conn: &mut DbConn, id: Uuid) -> Result<Workspace> {
@@ -234,10 +263,26 @@ pub async fn get_workspace(conn: &mut DbConn, id: Uuid) -> Result<Workspace> {
     Ok(workspace)
 }
 
-/// Lists all workspaces for a specific owner
-pub async fn list_user_workspaces(conn: &mut DbConn, owner_id: Uuid) -> Result<Vec<Workspace>> {
-    let workspaces = workspaces::get_workspaces_by_owner(conn, owner_id).await?;
-    Ok(workspaces)
+/// Lists all workspaces for a specific user (owner or member)
+pub async fn list_user_workspaces(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<Workspace>> {
+    // Get workspaces where user is owner
+    let owned_workspaces = workspaces::get_workspaces_by_owner(conn, user_id).await?;
+
+    // Get workspaces where user is a member
+    let member_workspace_ids = workspace_members::get_workspace_ids_by_user(conn, user_id).await?;
+
+    let mut all_workspaces = owned_workspaces;
+
+    // Fetch member workspaces and deduplicate
+    for workspace_id in member_workspace_ids {
+        if let Ok(workspace) = workspaces::get_workspace_by_id(conn, workspace_id).await {
+            if !all_workspaces.iter().any(|w| w.id == workspace.id) {
+                all_workspaces.push(workspace);
+            }
+        }
+    }
+
+    Ok(all_workspaces)
 }
 
 /// Lists all workspaces
