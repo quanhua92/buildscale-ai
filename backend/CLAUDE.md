@@ -753,6 +753,50 @@ git commit -m "Commit message describing the completed feature"
 
 ## Development Guidelines
 
+## Architecture Rules
+
+### Handler vs Service Responsibility
+
+**Handler Layer (Thin)**:
+- Pure orchestration: extract → validate → call service → return response
+- 3-5 lines maximum
+- NO business logic
+- NO authorization logic (use middleware or services)
+
+**Service Layer (Thick)**:
+- ALL business logic
+- ALL authorization logic (can be called by middleware or handlers)
+- Reusable across HTTP, CLI, tests
+- Can call other services
+
+**Middleware Layer**:
+- Extracts context (auth, workspace access)
+- Calls service methods for authorization
+- Adds authorization context to request extensions
+
+**Example**:
+```rust
+// ❌ BAD: Business logic in handler
+pub async fn update_workspace(...) {
+    if !workspace_access.is_owner {
+        return Err(Error::Forbidden(...));  // Business logic in handler
+    }
+    let workspace = workspaces::update_workspace(...).await?;
+    Ok(Json(...))
+}
+
+// ✅ GOOD: Handler is pure orchestration
+pub async fn update_workspace(
+    Extension(access): Extension<WorkspaceAccess>,  // Middleware provided
+    DbConnection(mut conn): DbConnection,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateRequest>,
+) -> Result<Json<Value>> {
+    let workspace = workspaces::update_workspace(&mut conn, id, req).await?;
+    Ok(Json(json!({ "workspace": workspace })))
+}
+```
+
 ### Code Organization
 - Separate concerns: models (data), services (business logic), queries (data access)
 - Use type-safe enums for role management

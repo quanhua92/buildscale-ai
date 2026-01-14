@@ -227,17 +227,42 @@ pub async fn update_workspace_owner(
     Ok(updated_workspace)
 }
 
+/// Updates workspace details (name)
+///
+/// Authorization is handled by middleware calling check_workspace_access.
+/// Handler checks ownership before calling this service method.
+pub async fn update_workspace(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    update: crate::models::requests::UpdateWorkspaceRequest,
+) -> Result<Workspace> {
+    // Validate workspace name
+    validate_workspace_name(&update.name)?;
+
+    // Build update struct
+    let workspace_update = crate::models::workspaces::UpdateWorkspace {
+        name: Some(validate_required_string(&update.name, "Workspace name")?),
+        owner_id: None,  // Ownership changes use update_workspace_owner
+    };
+
+    let updated = workspaces::update_workspace(conn, workspace_id, workspace_update).await?;
+    Ok(updated)
+}
+
 // Essential read methods (kept from original)
 /// Gets a workspace by ID
 pub async fn get_workspace(conn: &mut DbConn, id: Uuid) -> Result<Workspace> {
-    let workspace = workspaces::get_workspace_by_id(conn, id).await?;
+    let workspace = workspaces::get_workspace_by_id_optional(conn, id).await?
+        .ok_or_else(|| Error::NotFound(format!("Workspace with id {} not found", id)))?;
     Ok(workspace)
 }
 
-/// Lists all workspaces for a specific owner
-pub async fn list_user_workspaces(conn: &mut DbConn, owner_id: Uuid) -> Result<Vec<Workspace>> {
-    let workspaces = workspaces::get_workspaces_by_owner(conn, owner_id).await?;
-    Ok(workspaces)
+/// Lists all workspaces for a specific user (owner or member)
+///
+/// Uses a single optimized UNION query to fetch all workspaces where the user
+/// is either the owner or a member, eliminating the N+1 query problem.
+pub async fn list_user_workspaces(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<Workspace>> {
+    workspaces::get_workspaces_by_user_membership(conn, user_id).await
 }
 
 /// Lists all workspaces
@@ -276,6 +301,47 @@ pub async fn can_access_workspace(
     .await?;
 
     Ok(is_member)
+}
+
+/// Checks workspace access and returns detailed access information
+///
+/// This method is designed to be called by middleware for authorization.
+/// It returns a tuple of (is_owner, is_member) and ensures the user has
+/// at least member-level access to the workspace.
+///
+/// # Returns
+/// - `(true, true)` if user is the workspace owner
+/// - `(false, true)` if user is a member but not owner
+/// - Error if user has no access (Forbidden)
+///
+/// # Example (middleware usage)
+/// ```rust
+/// let (is_owner, is_member) = workspaces::check_workspace_access(
+///     &mut conn,
+///     workspace_id,
+///     user_id,
+/// ).await?;
+/// ```
+pub async fn check_workspace_access(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<(bool, bool)> {
+    let is_owner = workspaces::is_workspace_owner(conn, workspace_id, user_id).await?;
+
+    let is_member = if is_owner {
+        true
+    } else {
+        can_access_workspace(conn, workspace_id, user_id).await?
+    };
+
+    if !is_member {
+        return Err(Error::Forbidden(
+            "You do not have access to this workspace".to_string(),
+        ));
+    }
+
+    Ok((is_owner, is_member))
 }
 
 /// Deletes a workspace by ID

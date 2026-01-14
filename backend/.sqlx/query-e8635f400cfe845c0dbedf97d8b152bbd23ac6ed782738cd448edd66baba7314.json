@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT w.id, w.name, w.owner_id, w.created_at, w.updated_at\n        FROM workspaces w\n        LEFT JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $1\n        WHERE w.owner_id = $1 OR wm.user_id = $1\n        ORDER BY w.created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e8635f400cfe845c0dbedf97d8b152bbd23ac6ed782738cd448edd66baba7314"
+}

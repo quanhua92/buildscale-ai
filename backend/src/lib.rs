@@ -91,7 +91,7 @@ fn get_build_date() -> String {
     "unknown".to_string()
 }
 
-use axum::{Router, routing::{get, post}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
+use axum::{Router, routing::{get, post, patch, delete}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
@@ -158,6 +158,45 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
                     jwt_auth_middleware,
                 ))
         )
+        // Add workspace routes with their own security middleware
+        .nest("/workspaces", create_workspace_router(state.clone()))
+}
+
+/// Create workspace routes with JWT authentication
+///
+/// # Security Model
+/// - POST /workspaces: Any authenticated user can create
+/// - GET /workspaces: Returns only user's workspaces (owner OR member)
+/// - GET /workspaces/:id: Requires workspace membership (validated by middleware)
+/// - PATCH /workspaces/:id: Requires workspace ownership (validated by middleware)
+/// - DELETE /workspaces/:id: Requires workspace ownership (validated by middleware)
+///
+/// # Arguments
+/// * `state` - Application state containing cache, user_cache, and database pool
+///
+/// # Returns
+/// A configured Router with workspace routes
+fn create_workspace_router(state: AppState) -> Router<AppState> {
+    use crate::handlers::workspaces as workspace_handlers;
+    use crate::middleware::workspace_access::workspace_access_middleware;
+
+    Router::new()
+        .route("/", post(workspace_handlers::create_workspace))
+        .route("/", get(workspace_handlers::list_workspaces))
+        .route(
+            "/{id}",
+            get(workspace_handlers::get_workspace)
+                .patch(workspace_handlers::update_workspace)
+                .delete(workspace_handlers::delete_workspace)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route_layer(axum_middleware::from_fn_with_state(
+            state.clone(),
+            jwt_auth_middleware,
+        ))
 }
 
 /// Start the Axum API server

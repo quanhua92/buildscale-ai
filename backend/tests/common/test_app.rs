@@ -6,6 +6,42 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use buildscale::models::users::User;
 
+/// Configuration options for TestApp
+///
+/// This struct allows fine-grained control over TestApp behavior
+/// and can be extended with new options in the future.
+#[derive(Debug, Clone)]
+pub struct TestAppOptions {
+    /// Enable cookie storage for HTTP client
+    /// - true: persists cookies across requests (for browser testing)
+    /// - false: no cookie persistence (for API testing with Bearer tokens)
+    pub cookie_store: bool,
+}
+
+impl Default for TestAppOptions {
+    fn default() -> Self {
+        Self {
+            cookie_store: true,  // Default: enable cookies for backward compatibility
+        }
+    }
+}
+
+impl TestAppOptions {
+    /// Create options for API testing (cookies disabled)
+    pub fn api() -> Self {
+        Self {
+            cookie_store: false,
+        }
+    }
+
+    /// Create options for browser testing (cookies enabled)
+    pub fn browser() -> Self {
+        Self {
+            cookie_store: true,
+        }
+    }
+}
+
 /// HTTP test application wrapper
 ///
 /// Manages an Axum server running on a random port for HTTP testing.
@@ -22,14 +58,10 @@ pub struct TestApp {
 }
 
 impl TestApp {
-    /// Create a new HTTP test app with server on random port
+    /// Create a new HTTP test app with default options
     ///
-    /// # How it works:
-    /// 1. Creates an Axum router with /api/v1 routes
-    /// 2. Binds to port 0 (OS assigns random available port)
-    /// 3. Starts server in background task
-    /// 4. Creates reqwest client configured for testing
-    /// 5. Waits 100ms for server to be ready
+    /// This uses default options (cookies enabled) for backward compatibility.
+    /// For API testing without cookies, use `TestApp::new_with_options(TestAppOptions::api())` instead.
     ///
     /// # Example
     /// ```rust
@@ -47,6 +79,26 @@ impl TestApp {
     /// }
     /// ```
     pub async fn new() -> Self {
+        Self::new_with_options(TestAppOptions::default()).await
+    }
+
+    /// Create a new HTTP test app with custom options
+    ///
+    /// # Parameters
+    /// * `options` - Configuration options for the test app
+    ///
+    /// # Example
+    /// ```rust
+    /// // API testing without cookies
+    /// let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    ///
+    /// // Browser testing with cookies (also the default)
+    /// let app = TestApp::new_with_options(TestAppOptions::browser()).await;
+    ///
+    /// // Custom options
+    /// let app = TestApp::new_with_options(TestAppOptions { cookie_store: false }).await;
+    /// ```
+    pub async fn new_with_options(options: TestAppOptions) -> Self {
         // Load config
         let config = load_config().expect("Failed to load config");
 
@@ -95,10 +147,10 @@ impl TestApp {
         // Give server time to start
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        // Create HTTP client with persistent cookies
+        // Create HTTP client with configurable cookie storage
         let client = Client::builder()
             .redirect(Policy::none())
-            .cookie_store(true)
+            .cookie_store(options.cookie_store)
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .expect("Failed to create HTTP client");

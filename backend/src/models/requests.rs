@@ -8,6 +8,12 @@ pub struct CreateWorkspaceRequest {
     pub owner_id: Uuid,
 }
 
+/// HTTP API request for creating a workspace (owner_id extracted from JWT)
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateWorkspaceHttp {
+    pub name: String,
+}
+
 /// Request for creating a workspace with initial members
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkspaceWithMembersRequest {
@@ -47,4 +53,10 @@ pub struct CompleteWorkspaceResult {
 pub struct UserWorkspaceResult {
     pub user: super::users::User,
     pub workspace: CompleteWorkspaceResult,
+}
+
+/// Request to update workspace details
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateWorkspaceRequest {
+    pub name: String,
 }

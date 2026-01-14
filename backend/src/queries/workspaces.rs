@@ -154,3 +154,33 @@ pub async fn is_workspace_owner(conn: &mut DbConn, workspace_id: Uuid, user_id: 
 
     Ok(count > 0)
 }
+
+/// Gets all workspaces where user is owner or member in a single optimized query.
+///
+/// This uses a single query with LEFT JOIN to fetch workspaces where the user
+/// is the owner OR a member, eliminating the N+1 query problem.
+///
+/// # Performance
+/// - Before: N+1 queries (1 for owned + 1 for member IDs + N for each workspace)
+/// - After: 1 query with LEFT JOIN
+pub async fn get_workspaces_by_user_membership(
+    conn: &mut DbConn,
+    user_id: Uuid,
+) -> Result<Vec<Workspace>> {
+    let workspaces = sqlx::query_as!(
+        Workspace,
+        r#"
+        SELECT DISTINCT w.id, w.name, w.owner_id, w.created_at, w.updated_at
+        FROM workspaces w
+        LEFT JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $1
+        WHERE w.owner_id = $1 OR wm.user_id = $1
+        ORDER BY w.created_at DESC
+        "#,
+        user_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(workspaces)
+}

@@ -209,3 +209,21 @@ pub async fn is_workspace_member(conn: &mut DbConn, workspace_id: Uuid, user_id:
 
     Ok(count > 0)
 }
+
+/// Gets all workspace IDs where user is a member.
+pub async fn get_workspace_ids_by_user(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<Uuid>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT workspace_id
+        FROM workspace_members
+        WHERE user_id = $1
+        ORDER BY workspace_id ASC
+        "#,
+        user_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(rows.into_iter().map(|r| r.workspace_id).collect())
+}
