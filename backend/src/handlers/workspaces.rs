@@ -11,8 +11,8 @@ use axum::{
 use uuid::Uuid;
 use crate::{
     error::{Error, Result},
-    middleware::{auth::AuthenticatedUser, workspace_access::WorkspaceAccess},
-    models::requests::{CreateWorkspaceRequest, UpdateWorkspaceRequest},
+    middleware::auth::AuthenticatedUser,
+    models::requests::{CreateWorkspaceHttp, CreateWorkspaceRequest, UpdateWorkspaceRequest},
     services::workspaces,
     state::AppState,
 };
@@ -42,7 +42,7 @@ use crate::{
 pub async fn create_workspace(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
-    Json(request): Json<CreateWorkspaceRequest>,
+    Json(request): Json<CreateWorkspaceHttp>,
 ) -> Result<Json<serde_json::Value>> {
     let mut conn = state.pool.acquire().await
         .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
@@ -115,15 +115,28 @@ pub async fn list_workspaces(
 /// - `500 INTERNAL_SERVER_ERROR`: Database error
 pub async fn get_workspace(
     State(state): State<AppState>,
-    Extension(_auth_user): Extension<AuthenticatedUser>,
-    Extension(_workspace_access): Extension<WorkspaceAccess>,  // Already validated by middleware
+    Extension(auth_user): Extension<AuthenticatedUser>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    // Middleware already validated access, now fetch the workspace
     let mut conn = state.pool.acquire().await
         .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
+    // Try to get workspace first (will return NotFound if doesn't exist)
     let workspace = workspaces::get_workspace(&mut conn, workspace_id).await?;
+
+    // Check workspace access (owner or member)
+    let is_owner = workspaces::validate_workspace_ownership(&mut conn, workspace_id, auth_user.id).await?;
+    let is_member = if is_owner {
+        true
+    } else {
+        workspaces::can_access_workspace(&mut conn, workspace_id, auth_user.id).await?
+    };
+
+    if !is_member {
+        return Err(Error::Forbidden(
+            "You do not have access to this workspace".to_string(),
+        ));
+    }
 
     Ok(Json(serde_json::json!({
         "workspace": workspace,
@@ -157,19 +170,19 @@ pub async fn get_workspace(
 pub async fn update_workspace(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
-    Extension(workspace_access): Extension<WorkspaceAccess>,
     Path(workspace_id): Path<Uuid>,
     Json(request): Json<UpdateWorkspaceRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    // Middleware validated membership, now check ownership
-    if !workspace_access.is_owner {
+    let mut conn = state.pool.acquire().await
+        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+
+    // Check workspace ownership
+    let is_owner = workspaces::validate_workspace_ownership(&mut conn, workspace_id, auth_user.id).await?;
+    if !is_owner {
         return Err(Error::Forbidden(
             "Only the workspace owner can update workspace details".to_string(),
         ));
     }
-
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
     let workspace = workspaces::update_workspace(
         &mut conn,
@@ -205,19 +218,19 @@ pub async fn update_workspace(
 /// - `500 INTERNAL_SERVER_ERROR`: Database error
 pub async fn delete_workspace(
     State(state): State<AppState>,
-    Extension(_auth_user): Extension<AuthenticatedUser>,
-    Extension(workspace_access): Extension<WorkspaceAccess>,
+    Extension(auth_user): Extension<AuthenticatedUser>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    // Middleware validated membership, now check ownership
-    if !workspace_access.is_owner {
+    let mut conn = state.pool.acquire().await
+        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+
+    // Check workspace ownership
+    let is_owner = workspaces::validate_workspace_ownership(&mut conn, workspace_id, auth_user.id).await?;
+    if !is_owner {
         return Err(Error::Forbidden(
             "Only the workspace owner can delete the workspace".to_string(),
         ));
     }
-
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
     workspaces::delete_workspace(&mut conn, workspace_id).await?;
 

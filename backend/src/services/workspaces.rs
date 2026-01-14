@@ -259,7 +259,8 @@ pub async fn update_workspace(
 // Essential read methods (kept from original)
 /// Gets a workspace by ID
 pub async fn get_workspace(conn: &mut DbConn, id: Uuid) -> Result<Workspace> {
-    let workspace = workspaces::get_workspace_by_id(conn, id).await?;
+    let workspace = workspaces::get_workspace_by_id_optional(conn, id).await?
+        .ok_or_else(|| Error::NotFound(format!("Workspace with id {} not found", id)))?;
     Ok(workspace)
 }
 

@@ -129,19 +129,24 @@ fn extract_workspace_id<B>(request: &Request<B>) -> Result<Uuid> {
     let path = request.uri().path();
 
     // Split path and find the workspace ID segment
-    // /api/v1/workspaces/{workspace_id} -> workspace_id is at index 4
     let segments: Vec<&str> = path.split('/').collect();
 
-    // Find "workspaces" segment and get next segment as ID
-    let workspace_id_str = segments.iter()
-        .position(|&s| s == "workspaces")
-        .and_then(|pos| segments.get(pos + 1))
-        .ok_or_else(|| Error::Validation(
-            crate::error::ValidationErrors::Single {
-                field: "workspace_id".to_string(),
-                message: "Workspace ID not found in path".to_string(),
-            }
-        ))?;
+    // Handle two cases:
+    // 1. /api/v1/workspaces/{workspace_id} - full path (not nested)
+    // 2. /{workspace_id} - nested router path (prefix already stripped)
+    let workspace_id_str = if let Some(pos) = segments.iter().position(|&s| s == "workspaces") {
+        // Case 1: Full path, get segment after "workspaces"
+        segments.get(pos + 1)
+    } else {
+        // Case 2: Nested router, first non-empty segment is the workspace ID
+        segments.iter().find(|s| !s.is_empty())
+    }
+    .ok_or_else(|| Error::Validation(
+        crate::error::ValidationErrors::Single {
+            field: "workspace_id".to_string(),
+            message: "Workspace ID not found in path".to_string(),
+        }
+    ))?;
 
     Uuid::parse_str(workspace_id_str).map_err(|_| Error::Validation(
         crate::error::ValidationErrors::Single {

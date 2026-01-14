@@ -1,14 +1,4 @@
-use crate::common::TestApp;
-
-/// Helper function to generate a unique test email
-fn generate_test_email() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("test_{}@example.com", timestamp)
-}
+use crate::common::{TestApp, generate_test_email};
 
 #[tokio::test]
 async fn test_register_endpoint_returns_200_on_success() {
