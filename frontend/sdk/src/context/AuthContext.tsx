@@ -4,7 +4,7 @@
 
 import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import type { User } from '../api/types'
+import type { User, Workspace } from '../api/types'
 import ApiClient from '../api/client'
 import { ApiError } from '../api/errors'
 import { useStorage } from './StorageContext'
@@ -22,6 +22,12 @@ export interface AuthResult {
   error?: AuthError
 }
 
+export interface ApiResult<T = void> {
+  success: boolean
+  data?: T
+  error?: AuthError
+}
+
 export interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
@@ -35,6 +41,7 @@ export interface AuthContextType {
     full_name?: string
   }) => Promise<AuthResult>
   logout: () => Promise<AuthResult>
+  createWorkspace: (name: string) => Promise<ApiResult<Workspace>>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -130,6 +137,15 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [apiClient, clearAuthData, handleError])
 
+  const createWorkspace = useCallback(async (name: string): Promise<ApiResult<Workspace>> => {
+    try {
+      const response = await apiClient.createWorkspace(name)
+      return { success: true, data: response.workspace }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, handleError])
+
   // Restore session on mount (only once)
   useEffect(() => {
     if (restoreAttempted) {
@@ -164,6 +180,7 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     login,
     register,
     logout,
+    createWorkspace,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

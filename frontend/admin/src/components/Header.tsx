@@ -29,6 +29,9 @@ export default function Header() {
                 <NavigationMenu.Item to="/workspaces/all">
                   All Workspaces
                 </NavigationMenu.Item>
+                <NavigationMenu.Item to="/workspaces/new">
+                  Create Workspace
+                </NavigationMenu.Item>
               </NavigationMenu.Section>
 
               <NavigationMenu.Separator />

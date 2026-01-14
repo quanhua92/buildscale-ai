@@ -14,6 +14,7 @@ import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as AuthIndexRouteImport } from './routes/_auth/index'
+import { Route as AuthWorkspacesNewRouteImport } from './routes/_auth/workspaces/new'
 import { Route as AuthWorkspacesAllRouteImport } from './routes/_auth/workspaces/all'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -40,6 +41,11 @@ const AuthIndexRoute = AuthIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthWorkspacesNewRoute = AuthWorkspacesNewRouteImport.update({
+  id: '/workspaces/new',
+  path: '/workspaces/new',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthWorkspacesAllRoute = AuthWorkspacesAllRouteImport.update({
   id: '/workspaces/all',
   path: '/workspaces/all',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/': typeof AuthIndexRoute
   '/workspaces/all': typeof AuthWorkspacesAllRoute
+  '/workspaces/new': typeof AuthWorkspacesNewRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/': typeof AuthIndexRoute
   '/workspaces/all': typeof AuthWorkspacesAllRoute
+  '/workspaces/new': typeof AuthWorkspacesNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -68,12 +76,25 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_auth/': typeof AuthIndexRoute
   '/_auth/workspaces/all': typeof AuthWorkspacesAllRoute
+  '/_auth/workspaces/new': typeof AuthWorkspacesNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/login' | '/logout' | '/register' | '/' | '/workspaces/all'
+  fullPaths:
+    | '/login'
+    | '/logout'
+    | '/register'
+    | '/'
+    | '/workspaces/all'
+    | '/workspaces/new'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/logout' | '/register' | '/' | '/workspaces/all'
+  to:
+    | '/login'
+    | '/logout'
+    | '/register'
+    | '/'
+    | '/workspaces/all'
+    | '/workspaces/new'
   id:
     | '__root__'
     | '/_auth'
@@ -82,6 +103,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_auth/'
     | '/_auth/workspaces/all'
+    | '/_auth/workspaces/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -128,6 +150,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthIndexRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/workspaces/new': {
+      id: '/_auth/workspaces/new'
+      path: '/workspaces/new'
+      fullPath: '/workspaces/new'
+      preLoaderRoute: typeof AuthWorkspacesNewRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/workspaces/all': {
       id: '/_auth/workspaces/all'
       path: '/workspaces/all'
@@ -141,11 +170,13 @@ declare module '@tanstack/react-router' {
 interface AuthRouteChildren {
   AuthIndexRoute: typeof AuthIndexRoute
   AuthWorkspacesAllRoute: typeof AuthWorkspacesAllRoute
+  AuthWorkspacesNewRoute: typeof AuthWorkspacesNewRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthIndexRoute: AuthIndexRoute,
   AuthWorkspacesAllRoute: AuthWorkspacesAllRoute,
+  AuthWorkspacesNewRoute: AuthWorkspacesNewRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)

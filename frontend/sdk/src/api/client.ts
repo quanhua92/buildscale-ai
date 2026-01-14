@@ -9,6 +9,7 @@ import type {
   AuthResponse,
   RefreshTokenResponse,
   User,
+  CreateWorkspaceResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -290,6 +291,13 @@ class ApiClient {
 
   async getProfile(): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/me')
+  }
+
+  async createWorkspace(name: string): Promise<CreateWorkspaceResponse> {
+    return this.request<CreateWorkspaceResponse>('/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
   }
 
   // Generic methods for other API calls
