@@ -16,7 +16,8 @@ import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as AuthIndexRouteImport } from './routes/_auth/index'
 import { Route as AuthWorkspacesNewRouteImport } from './routes/_auth/workspaces/new'
 import { Route as AuthWorkspacesAllRouteImport } from './routes/_auth/workspaces/all'
-import { Route as AuthWorkspacesWorkspaceIdRouteImport } from './routes/_auth/workspaces/$workspaceId'
+import { Route as AuthWorkspacesWorkspaceIdIndexRouteImport } from './routes/_auth/workspaces/$workspaceId/index'
+import { Route as AuthWorkspacesWorkspaceIdEditRouteImport } from './routes/_auth/workspaces/$workspaceId/edit'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -52,10 +53,16 @@ const AuthWorkspacesAllRoute = AuthWorkspacesAllRouteImport.update({
   path: '/workspaces/all',
   getParentRoute: () => AuthRoute,
 } as any)
-const AuthWorkspacesWorkspaceIdRoute =
-  AuthWorkspacesWorkspaceIdRouteImport.update({
-    id: '/workspaces/$workspaceId',
-    path: '/workspaces/$workspaceId',
+const AuthWorkspacesWorkspaceIdIndexRoute =
+  AuthWorkspacesWorkspaceIdIndexRouteImport.update({
+    id: '/workspaces/$workspaceId/',
+    path: '/workspaces/$workspaceId/',
+    getParentRoute: () => AuthRoute,
+  } as any)
+const AuthWorkspacesWorkspaceIdEditRoute =
+  AuthWorkspacesWorkspaceIdEditRouteImport.update({
+    id: '/workspaces/$workspaceId/edit',
+    path: '/workspaces/$workspaceId/edit',
     getParentRoute: () => AuthRoute,
   } as any)
 
@@ -64,18 +71,20 @@ export interface FileRoutesByFullPath {
   '/logout': typeof LogoutRoute
   '/register': typeof RegisterRoute
   '/': typeof AuthIndexRoute
-  '/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdRoute
   '/workspaces/all': typeof AuthWorkspacesAllRoute
   '/workspaces/new': typeof AuthWorkspacesNewRoute
+  '/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
+  '/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/register': typeof RegisterRoute
   '/': typeof AuthIndexRoute
-  '/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdRoute
   '/workspaces/all': typeof AuthWorkspacesAllRoute
   '/workspaces/new': typeof AuthWorkspacesNewRoute
+  '/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
+  '/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -84,9 +93,10 @@ export interface FileRoutesById {
   '/logout': typeof LogoutRoute
   '/register': typeof RegisterRoute
   '/_auth/': typeof AuthIndexRoute
-  '/_auth/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdRoute
   '/_auth/workspaces/all': typeof AuthWorkspacesAllRoute
   '/_auth/workspaces/new': typeof AuthWorkspacesNewRoute
+  '/_auth/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
+  '/_auth/workspaces/$workspaceId/': typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -95,18 +105,20 @@ export interface FileRouteTypes {
     | '/logout'
     | '/register'
     | '/'
-    | '/workspaces/$workspaceId'
     | '/workspaces/all'
     | '/workspaces/new'
+    | '/workspaces/$workspaceId/edit'
+    | '/workspaces/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/logout'
     | '/register'
     | '/'
-    | '/workspaces/$workspaceId'
     | '/workspaces/all'
     | '/workspaces/new'
+    | '/workspaces/$workspaceId/edit'
+    | '/workspaces/$workspaceId'
   id:
     | '__root__'
     | '/_auth'
@@ -114,9 +126,10 @@ export interface FileRouteTypes {
     | '/logout'
     | '/register'
     | '/_auth/'
-    | '/_auth/workspaces/$workspaceId'
     | '/_auth/workspaces/all'
     | '/_auth/workspaces/new'
+    | '/_auth/workspaces/$workspaceId/edit'
+    | '/_auth/workspaces/$workspaceId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -177,11 +190,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthWorkspacesAllRouteImport
       parentRoute: typeof AuthRoute
     }
-    '/_auth/workspaces/$workspaceId': {
-      id: '/_auth/workspaces/$workspaceId'
+    '/_auth/workspaces/$workspaceId/': {
+      id: '/_auth/workspaces/$workspaceId/'
       path: '/workspaces/$workspaceId'
       fullPath: '/workspaces/$workspaceId'
-      preLoaderRoute: typeof AuthWorkspacesWorkspaceIdRouteImport
+      preLoaderRoute: typeof AuthWorkspacesWorkspaceIdIndexRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/workspaces/$workspaceId/edit': {
+      id: '/_auth/workspaces/$workspaceId/edit'
+      path: '/workspaces/$workspaceId/edit'
+      fullPath: '/workspaces/$workspaceId/edit'
+      preLoaderRoute: typeof AuthWorkspacesWorkspaceIdEditRouteImport
       parentRoute: typeof AuthRoute
     }
   }
@@ -189,16 +209,18 @@ declare module '@tanstack/react-router' {
 
 interface AuthRouteChildren {
   AuthIndexRoute: typeof AuthIndexRoute
-  AuthWorkspacesWorkspaceIdRoute: typeof AuthWorkspacesWorkspaceIdRoute
   AuthWorkspacesAllRoute: typeof AuthWorkspacesAllRoute
   AuthWorkspacesNewRoute: typeof AuthWorkspacesNewRoute
+  AuthWorkspacesWorkspaceIdEditRoute: typeof AuthWorkspacesWorkspaceIdEditRoute
+  AuthWorkspacesWorkspaceIdIndexRoute: typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthIndexRoute: AuthIndexRoute,
-  AuthWorkspacesWorkspaceIdRoute: AuthWorkspacesWorkspaceIdRoute,
   AuthWorkspacesAllRoute: AuthWorkspacesAllRoute,
   AuthWorkspacesNewRoute: AuthWorkspacesNewRoute,
+  AuthWorkspacesWorkspaceIdEditRoute: AuthWorkspacesWorkspaceIdEditRoute,
+  AuthWorkspacesWorkspaceIdIndexRoute: AuthWorkspacesWorkspaceIdIndexRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)

@@ -12,6 +12,7 @@ import { Login } from './AuthLogin'
 import { Register } from './AuthRegister'
 import { Logout } from './AuthLogout'
 import { CreateWorkspace } from './AuthCreateWorkspace'
+import { EditWorkspace } from './AuthEditWorkspace'
 
 interface AuthProps {
   children: React.ReactNode
@@ -40,5 +41,6 @@ Auth.Login = Login
 Auth.Register = Register
 Auth.Logout = Logout
 Auth.CreateWorkspace = CreateWorkspace
+Auth.EditWorkspace = EditWorkspace
 
 export default Auth

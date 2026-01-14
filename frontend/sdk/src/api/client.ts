@@ -12,6 +12,7 @@ import type {
   CreateWorkspaceResponse,
   ListWorkspacesResponse,
   GetWorkspaceResponse,
+  UpdateWorkspaceResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -311,6 +312,13 @@ class ApiClient {
   async getWorkspace(id: string): Promise<GetWorkspaceResponse> {
     return this.request<GetWorkspaceResponse>(`/workspaces/${id}`, {
       method: 'GET',
+    })
+  }
+
+  async updateWorkspace(id: string, name: string): Promise<UpdateWorkspaceResponse> {
+    return this.request<UpdateWorkspaceResponse>(`/workspaces/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
     })
   }
 

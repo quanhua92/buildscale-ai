@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useAuth, Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@buildscale/sdk'
 import type { Workspace } from '@buildscale/sdk'
 
-export const Route = createFileRoute('/_auth/workspaces/$workspaceId')({
+export const Route = createFileRoute('/_auth/workspaces/$workspaceId/')({
   component: WorkspaceDetail,
 })
 
 function WorkspaceDetail() {
   const { workspaceId } = Route.useParams()
   const { getWorkspace } = useAuth()
+  const navigate = useNavigate()
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +67,12 @@ function WorkspaceDetail() {
               ID: <code className="bg-muted px-1 py-0.5 rounded text-sm">{workspace.id}</code>
             </p>
           </div>
-          <Button variant="outline">Settings</Button>
+          <Button 
+            variant="outline" 
+            onClick={() => navigate({ to: `/workspaces/${workspaceId}/edit` })}
+          >
+            Edit Workspace
+          </Button>
         </div>
       </div>
 

@@ -31,6 +31,10 @@ export interface CreateWorkspaceRequest {
   name: string
 }
 
+export interface UpdateWorkspaceRequest {
+  name: string
+}
+
 // ============================================================================
 // Request Types
 // ============================================================================
@@ -62,6 +66,10 @@ export interface ListWorkspacesResponse {
 }
 
 export interface GetWorkspaceResponse {
+  workspace: Workspace
+}
+
+export interface UpdateWorkspaceResponse {
   workspace: Workspace
 }
 

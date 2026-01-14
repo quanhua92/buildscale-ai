@@ -44,6 +44,7 @@ export interface AuthContextType {
   createWorkspace: (name: string) => Promise<ApiResult<Workspace>>
   listWorkspaces: () => Promise<ApiResult<{ workspaces: Workspace[], count: number }>>
   getWorkspace: (id: string) => Promise<ApiResult<Workspace>>
+  updateWorkspace: (id: string, name: string) => Promise<ApiResult<Workspace>>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -166,6 +167,15 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [apiClient, handleError])
 
+  const updateWorkspace = useCallback(async (id: string, name: string): Promise<ApiResult<Workspace>> => {
+    try {
+      const response = await apiClient.updateWorkspace(id, name)
+      return { success: true, data: response.workspace }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, handleError])
+
   // Restore session on mount (only once)
   useEffect(() => {
     if (restoreAttempted) {
@@ -203,6 +213,7 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     createWorkspace,
     listWorkspaces,
     getWorkspace,
+    updateWorkspace,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

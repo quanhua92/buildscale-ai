@@ -3,17 +3,17 @@
  */
 
 import { Loader2 } from 'lucide-react'
-import { Button as ShadcnButton } from '../ui/button'
+import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from '../ui/button'
 import { cn } from '@/utils'
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends ShadcnButtonProps {
   isLoading?: boolean
 }
 
-export function Button({ children, isLoading, className, disabled, ...props }: ButtonProps) {
+export function Button({ children, isLoading, className, disabled, type = 'submit', ...props }: ButtonProps) {
   return (
     <ShadcnButton
-      type="submit"
+      type={type}
       size="lg"
       disabled={disabled || isLoading}
       className={cn('w-full', isLoading && 'gap-2', className)}
