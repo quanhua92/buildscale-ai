@@ -167,9 +167,9 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 /// # Security Model
 /// - POST /workspaces: Any authenticated user can create
 /// - GET /workspaces: Returns only user's workspaces (owner OR member)
-/// - GET /workspaces/:id: Requires workspace membership (checked in handler)
-/// - PATCH /workspaces/:id: Requires workspace ownership (checked in handler)
-/// - DELETE /workspaces/:id: Requires workspace ownership (checked in handler)
+/// - GET /workspaces/:id: Requires workspace membership (validated by middleware)
+/// - PATCH /workspaces/:id: Requires workspace ownership (validated by middleware)
+/// - DELETE /workspaces/:id: Requires workspace ownership (validated by middleware)
 ///
 /// # Arguments
 /// * `state` - Application state containing cache, user_cache, and database pool
@@ -178,13 +178,21 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 /// A configured Router with workspace routes
 fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::workspaces as workspace_handlers;
+    use crate::middleware::workspace_access::workspace_access_middleware;
 
     Router::new()
         .route("/", post(workspace_handlers::create_workspace))
         .route("/", get(workspace_handlers::list_workspaces))
-        .route("/{id}", get(workspace_handlers::get_workspace))
-        .route("/{id}", patch(workspace_handlers::update_workspace))
-        .route("/{id}", delete(workspace_handlers::delete_workspace))
+        .route(
+            "/{id}",
+            get(workspace_handlers::get_workspace)
+                .patch(workspace_handlers::update_workspace)
+                .delete(workspace_handlers::delete_workspace)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
             jwt_auth_middleware,

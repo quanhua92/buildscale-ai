@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
+    middleware::workspace_access::WorkspaceAccess,
     models::requests::{CreateWorkspaceHttp, CreateWorkspaceRequest, UpdateWorkspaceRequest},
     services::workspaces,
     state::AppState,
@@ -100,7 +101,7 @@ pub async fn list_workspaces(
 /// GET /api/v1/workspaces/:id
 ///
 /// Gets a single workspace by ID.
-/// Requires workspace membership (owner or member).
+/// Requires workspace membership (validated by middleware).
 ///
 /// # Parameters
 /// - `id`: Workspace UUID
@@ -110,33 +111,20 @@ pub async fn list_workspaces(
 ///
 /// # HTTP Status Codes
 /// - `200 OK`: Workspace retrieved successfully
-/// - `403 FORBIDDEN`: User is not a member of the workspace
+/// - `403 FORBIDDEN`: User is not a member of the workspace (middleware)
 /// - `404 NOT_FOUND`: Workspace not found
 /// - `500 INTERNAL_SERVER_ERROR`: Database error
 pub async fn get_workspace(
     State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthenticatedUser>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
     let mut conn = state.pool.acquire().await
         .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
-    // Try to get workspace first (will return NotFound if doesn't exist)
+    // Middleware already validated workspace access
+    // Handler only handles business logic: get the workspace
     let workspace = workspaces::get_workspace(&mut conn, workspace_id).await?;
-
-    // Check workspace access (owner or member)
-    let is_owner = workspaces::validate_workspace_ownership(&mut conn, workspace_id, auth_user.id).await?;
-    let is_member = if is_owner {
-        true
-    } else {
-        workspaces::can_access_workspace(&mut conn, workspace_id, auth_user.id).await?
-    };
-
-    if !is_member {
-        return Err(Error::Forbidden(
-            "You do not have access to this workspace".to_string(),
-        ));
-    }
 
     Ok(Json(serde_json::json!({
         "workspace": workspace,
@@ -150,7 +138,7 @@ pub async fn get_workspace(
 /// PATCH /api/v1/workspaces/:id
 ///
 /// Updates workspace details (name).
-/// Requires workspace ownership.
+/// Requires workspace ownership (membership validated by middleware).
 ///
 /// # Parameters
 /// - `id`: Workspace UUID
@@ -164,21 +152,20 @@ pub async fn get_workspace(
 /// # HTTP Status Codes
 /// - `200 OK`: Workspace updated successfully
 /// - `400 BAD_REQUEST`: Validation error
-/// - `403 FORBIDDEN**: User is not the workspace owner
+/// - `403 FORBIDDEN`: User is not the workspace owner
 /// - `404 NOT_FOUND`: Workspace not found
 /// - `500 INTERNAL_SERVER_ERROR`: Database error
 pub async fn update_workspace(
     State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthenticatedUser>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
     Path(workspace_id): Path<Uuid>,
     Json(request): Json<UpdateWorkspaceRequest>,
 ) -> Result<Json<serde_json::Value>> {
     let mut conn = state.pool.acquire().await
         .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
-    // Check workspace ownership
-    let is_owner = workspaces::validate_workspace_ownership(&mut conn, workspace_id, auth_user.id).await?;
-    if !is_owner {
+    // Middleware validated membership, handler checks ownership
+    if !workspace_access.is_owner {
         return Err(Error::Forbidden(
             "Only the workspace owner can update workspace details".to_string(),
         ));
@@ -187,7 +174,6 @@ pub async fn update_workspace(
     let workspace = workspaces::update_workspace(
         &mut conn,
         workspace_id,
-        auth_user.id,
         request,
     ).await?;
 
@@ -203,7 +189,7 @@ pub async fn update_workspace(
 /// DELETE /api/v1/workspaces/:id
 ///
 /// Deletes a workspace.
-/// Requires workspace ownership.
+/// Requires workspace ownership (membership validated by middleware).
 ///
 /// # Parameters
 /// - `id`: Workspace UUID
@@ -218,15 +204,14 @@ pub async fn update_workspace(
 /// - `500 INTERNAL_SERVER_ERROR`: Database error
 pub async fn delete_workspace(
     State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthenticatedUser>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
     let mut conn = state.pool.acquire().await
         .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
-    // Check workspace ownership
-    let is_owner = workspaces::validate_workspace_ownership(&mut conn, workspace_id, auth_user.id).await?;
-    if !is_owner {
+    // Middleware validated membership, handler checks ownership
+    if !workspace_access.is_owner {
         return Err(Error::Forbidden(
             "Only the workspace owner can delete the workspace".to_string(),
         ));

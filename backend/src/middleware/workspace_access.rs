@@ -79,29 +79,12 @@ pub async fn workspace_access_middleware(
     let mut conn = state.pool.acquire().await
         .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
 
-    // Check workspace access
-    let is_owner = workspaces::validate_workspace_ownership(
+    // Check workspace access using service method (authorization logic in service layer)
+    let (is_owner, is_member) = workspaces::check_workspace_access(
         &mut conn,
         workspace_id,
         auth_user.id,
     ).await?;
-
-    let is_member = if is_owner {
-        true  // Owner is always a member
-    } else {
-        workspaces::can_access_workspace(
-            &mut conn,
-            workspace_id,
-            auth_user.id,
-        ).await?
-    };
-
-    // Deny access if not owner or member
-    if !is_member {
-        return Err(Error::Forbidden(
-            "You do not have access to this workspace".to_string(),
-        ));
-    }
 
     // Add workspace access context to extensions
     let access = WorkspaceAccess {

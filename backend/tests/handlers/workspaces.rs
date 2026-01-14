@@ -327,7 +327,7 @@ async fn test_delete_workspace_returns_200_for_owner() {
 
     assert_eq!(response.status(), 200);
 
-    // Verify workspace is deleted
+    // Verify workspace is deleted (middleware returns 403 not 404 to prevent enumeration)
     let get_response = app
         .client
         .get(&app.url(&format!("/api/v1/workspaces/{}", workspace_id)))
@@ -336,7 +336,7 @@ async fn test_delete_workspace_returns_200_for_owner() {
         .await
         .unwrap();
 
-    assert_eq!(get_response.status(), 404);
+    assert_eq!(get_response.status(), 403);
 }
 
 #[tokio::test]
