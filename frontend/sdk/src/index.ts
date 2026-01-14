@@ -119,11 +119,15 @@ export { safeLocalStorage } from './utils'
 // Types
 export type {
   User,
+  Workspace,
   RegisterRequest,
   LoginRequest,
   AuthResponse,
   RefreshTokenResponse,
   ErrorResponse,
+  ListWorkspacesResponse,
+  GetWorkspaceResponse,
+  CreateWorkspaceResponse,
 } from './api/types'
 
 // Errors

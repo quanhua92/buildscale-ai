@@ -56,6 +56,15 @@ export interface CreateWorkspaceResponse {
   // roles and owner_membership are also returned but often not needed immediately by client
 }
 
+export interface ListWorkspacesResponse {
+  workspaces: Workspace[]
+  count: number
+}
+
+export interface GetWorkspaceResponse {
+  workspace: Workspace
+}
+
 export interface AuthResponse {
   user: User
   access_token: string

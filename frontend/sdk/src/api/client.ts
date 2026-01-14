@@ -10,6 +10,8 @@ import type {
   RefreshTokenResponse,
   User,
   CreateWorkspaceResponse,
+  ListWorkspacesResponse,
+  GetWorkspaceResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -297,6 +299,18 @@ class ApiClient {
     return this.request<CreateWorkspaceResponse>('/workspaces', {
       method: 'POST',
       body: JSON.stringify({ name }),
+    })
+  }
+
+  async listWorkspaces(): Promise<ListWorkspacesResponse> {
+    return this.request<ListWorkspacesResponse>('/workspaces', {
+      method: 'GET',
+    })
+  }
+
+  async getWorkspace(id: string): Promise<GetWorkspaceResponse> {
+    return this.request<GetWorkspaceResponse>(`/workspaces/${id}`, {
+      method: 'GET',
     })
   }
 
