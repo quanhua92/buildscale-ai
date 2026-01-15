@@ -128,6 +128,8 @@ export type {
   ListWorkspacesResponse,
   GetWorkspaceResponse,
   CreateWorkspaceResponse,
+  WorkspaceMemberDetailed,
+  GetMembershipResponse,
 } from './api/types'
 
 // Errors

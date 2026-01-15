@@ -73,6 +73,19 @@ export interface UpdateWorkspaceResponse {
   workspace: Workspace
 }
 
+export interface WorkspaceMemberDetailed {
+  workspace_id: string
+  user_id: string
+  email: string
+  full_name: string | null
+  role_id: string
+  role_name: string
+}
+
+export interface GetMembershipResponse {
+  member: WorkspaceMemberDetailed
+}
+
 export interface AuthResponse {
   user: User
   access_token: string

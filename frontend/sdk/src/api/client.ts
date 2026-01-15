@@ -13,6 +13,7 @@ import type {
   ListWorkspacesResponse,
   GetWorkspaceResponse,
   UpdateWorkspaceResponse,
+  GetMembershipResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -319,6 +320,18 @@ class ApiClient {
     return this.request<UpdateWorkspaceResponse>(`/workspaces/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
+    })
+  }
+
+  async deleteWorkspace(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/workspaces/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getMembership(workspaceId: string): Promise<GetMembershipResponse> {
+    return this.request<GetMembershipResponse>(`/workspaces/${workspaceId}/members/me`, {
+      method: 'GET',
     })
   }
 
