@@ -1698,9 +1698,9 @@ The example demonstrates:
 - ✅ Authorization header for API clients
 - ✅ Token refresh with both header and cookie modes
 - ✅ User logout with cookie clearing
-- ✅ Verification that logged-out tokens cannot be reused
-- ✅ Error handling (wrong password, duplicate email, weak password)
-- ✅ Full request/response logging with headers
+- [ ] Verification that logged-out tokens cannot be reused
+- [ ] Error handling (wrong password, duplicate email, weak password)
+- [ ] Full request/response logging with headers
 
 ### Using Postman or Insomnia
 

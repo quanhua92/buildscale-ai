@@ -21,7 +21,7 @@ use crate::{
 /// Macro to reduce boilerplate in error handling for workspace handlers
 macro_rules! handle_workspace_error {
     ($operation:expr, $e:expr) => {
-        match &$e {
+        match $e {
             Error::Validation(_) => {
                 tracing::warn!(
                     operation = $operation,
@@ -52,6 +52,19 @@ macro_rules! handle_workspace_error {
             }
         }
     };
+}
+
+/// Helper to acquire database connection with consistent error logging
+async fn acquire_db_connection(state: &AppState, operation: &'static str) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>> {
+    state.pool.acquire().await.map_err(|e| {
+        tracing::error!(
+            operation = operation,
+            error_code = "DATABASE_ACQUISITION_FAILED",
+            error = %e,
+            "Failed to acquire database connection",
+        );
+        Error::Internal(format!("Failed to acquire database connection: {}", e))
+    })
 }
 
 // ============================================================================
@@ -90,15 +103,7 @@ pub async fn create_workspace(
         "Create workspace request details",
     );
 
-    let mut conn = state.pool.acquire().await.map_err(|e| {
-        tracing::error!(
-            operation = "create_workspace",
-            error_code = "DATABASE_ACQUISITION_FAILED",
-            error = %e,
-            "Failed to acquire database connection",
-        );
-        Error::Internal(format!("Failed to acquire database connection: {}", e))
-    })?;
+    let mut conn = acquire_db_connection(&state, "create_workspace").await?;
 
     let result = match workspaces::create_workspace(
         &mut conn,
@@ -109,7 +114,7 @@ pub async fn create_workspace(
     ).await {
         Ok(result) => result,
         Err(e) => {
-            handle_workspace_error!("create_workspace", e);
+            handle_workspace_error!("create_workspace", &e);
             return Err(e);
         }
     };
@@ -155,20 +160,12 @@ pub async fn list_workspaces(
         "Listing user workspaces",
     );
 
-    let mut conn = state.pool.acquire().await.map_err(|e| {
-        tracing::error!(
-            operation = "list_workspaces",
-            error_code = "DATABASE_ACQUISITION_FAILED",
-            error = %e,
-            "Failed to acquire database connection",
-        );
-        Error::Internal(format!("Failed to acquire database connection: {}", e))
-    })?;
+    let mut conn = acquire_db_connection(&state, "list_workspaces").await?;
 
     let workspaces = match workspaces::list_user_workspaces(&mut conn, auth_user.id).await {
         Ok(workspaces) => workspaces,
         Err(e) => {
-            handle_workspace_error!("list_workspaces", e);
+            handle_workspace_error!("list_workspaces", &e);
             return Err(e);
         }
     };
@@ -217,22 +214,14 @@ pub async fn get_workspace(
         "Fetching workspace details",
     );
 
-    let mut conn = state.pool.acquire().await.map_err(|e| {
-        tracing::error!(
-            operation = "get_workspace",
-            error_code = "DATABASE_ACQUISITION_FAILED",
-            error = %e,
-            "Failed to acquire database connection",
-        );
-        Error::Internal(format!("Failed to acquire database connection: {}", e))
-    })?;
+    let mut conn = acquire_db_connection(&state, "get_workspace").await?;
 
     // Middleware already validated workspace access
     // Handler only handles business logic: get the workspace
     let workspace = match workspaces::get_workspace(&mut conn, workspace_id).await {
         Ok(workspace) => workspace,
         Err(e) => {
-            handle_workspace_error!("get_workspace", e);
+            handle_workspace_error!("get_workspace", &e);
             return Err(e);
         }
     };
@@ -284,22 +273,14 @@ pub async fn update_workspace(
         "Workspace update initiated",
     );
 
-    let mut conn = state.pool.acquire().await.map_err(|e| {
-        tracing::error!(
-            operation = "update_workspace",
-            error_code = "DATABASE_ACQUISITION_FAILED",
-            error = %e,
-            "Failed to acquire database connection",
-        );
-        Error::Internal(format!("Failed to acquire database connection: {}", e))
-    })?;
+    let mut conn = acquire_db_connection(&state, "update_workspace").await?;
 
     // Middleware validated membership, handler checks ownership
     if !workspace_access.is_owner {
         let e = Error::Forbidden(
             "Only the workspace owner can update workspace details".to_string(),
         );
-        handle_workspace_error!("update_workspace", e);
+        handle_workspace_error!("update_workspace", &e);
         return Err(e);
     }
 
@@ -310,7 +291,7 @@ pub async fn update_workspace(
     ).await {
         Ok(workspace) => workspace,
         Err(e) => {
-            handle_workspace_error!("update_workspace", e);
+            handle_workspace_error!("update_workspace", &e);
             return Err(e);
         }
     };
@@ -358,29 +339,21 @@ pub async fn delete_workspace(
         "Workspace deletion initiated",
     );
 
-    let mut conn = state.pool.acquire().await.map_err(|e| {
-        tracing::error!(
-            operation = "delete_workspace",
-            error_code = "DATABASE_ACQUISITION_FAILED",
-            error = %e,
-            "Failed to acquire database connection",
-        );
-        Error::Internal(format!("Failed to acquire database connection: {}", e))
-    })?;
+    let mut conn = acquire_db_connection(&state, "delete_workspace").await?;
 
     // Middleware validated membership, handler checks ownership
     if !workspace_access.is_owner {
         let e = Error::Forbidden(
             "Only the workspace owner can delete the workspace".to_string(),
         );
-        handle_workspace_error!("delete_workspace", e);
+        handle_workspace_error!("delete_workspace", &e);
         return Err(e);
     }
 
     match workspaces::delete_workspace(&mut conn, workspace_id).await {
         Ok(_) => {},
         Err(e) => {
-            handle_workspace_error!("delete_workspace", e);
+            handle_workspace_error!("delete_workspace", &e);
             return Err(e);
         }
     };

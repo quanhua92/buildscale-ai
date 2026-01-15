@@ -27,7 +27,7 @@ use crate::{
 /// Logs errors at appropriate level based on error type
 macro_rules! handle_auth_error {
     ($operation:expr, $e:expr) => {
-        match &$e {
+        match $e {
             Error::Validation(_) => {
                 tracing::warn!(
                     operation = $operation,
@@ -203,7 +203,7 @@ pub async fn register(
     let user = match users::register_user(&mut conn, request).await {
         Ok(user) => user,
         Err(e) => {
-            handle_auth_error!("register", e);
+            handle_auth_error!("register", &e);
             return Err(e);
         }
     };
@@ -278,7 +278,7 @@ pub async fn login(
     let login_result = match users::login_user(&mut conn, request).await {
         Ok(result) => result,
         Err(e) => {
-            handle_auth_error!("login", e);
+            handle_auth_error!("login", &e);
             return Err(e);
         }
     };
@@ -376,7 +376,7 @@ pub async fn refresh(
     let refresh_result = match users::refresh_access_token(&mut conn, &token).await {
         Ok(result) => result,
         Err(e) => {
-            handle_auth_error!("refresh", e);
+            handle_auth_error!("refresh", &e);
             return Err(e);
         }
     };

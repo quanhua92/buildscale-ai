@@ -13,9 +13,11 @@ import { Button } from './AuthButton'
 
 interface EditWorkspaceProps {
   workspaceId: string
+  onSuccess?: () => void
+  onCancel?: () => void
 }
 
-export function EditWorkspace({ workspaceId }: EditWorkspaceProps) {
+export function EditWorkspace({ workspaceId, onSuccess, onCancel }: EditWorkspaceProps) {
   const { getWorkspace, updateWorkspace } = useAuth()
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(true)
@@ -67,15 +69,28 @@ export function EditWorkspace({ workspaceId }: EditWorkspaceProps) {
       toast.success('Workspace updated', {
         description: `Workspace "${result.data?.name}" updated successfully.`,
       })
-      // Redirect after 1 second to the details page
-      setTimeout(() => {
-        navigate({ to: `/workspaces/${workspaceId}` })
-      }, 1000)
+      
+      if (onSuccess) {
+        onSuccess()
+      } else {
+        // Redirect after 1 second to the details page
+        setTimeout(() => {
+          navigate({ to: `/workspaces/${workspaceId}` })
+        }, 1000)
+      }
     } else if (result.error) {
       setError(result.error)
       toast.error('Failed to update workspace', {
         description: result.error.message,
       })
+    }
+  }
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel()
+    } else {
+      navigate({ to: `/workspaces/${workspaceId}` })
     }
   }
 
@@ -139,7 +154,7 @@ export function EditWorkspace({ workspaceId }: EditWorkspaceProps) {
             type="button" 
             variant="outline" 
             className="flex-1"
-            onClick={() => navigate({ to: `/workspaces/${workspaceId}` })}
+            onClick={handleCancel}
           >
             Cancel
           </Button>

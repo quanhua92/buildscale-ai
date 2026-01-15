@@ -17,7 +17,6 @@ function WorkspaceDetail() {
 
   useEffect(() => {
     const fetchWorkspace = async () => {
-      setIsLoading(true)
       const result = await getWorkspace(workspaceId)
       
       if (result.success && result.data) {
@@ -90,11 +89,11 @@ function WorkspaceDetail() {
               </div>
               <div>
                 <dt className="text-sm font-medium text-muted-foreground">Created At</dt>
-                <dd className="text-sm mt-1">{new Date(workspace.created_at).toLocaleString()}</dd>
+                <dd className="text-sm mt-1">{new Date(workspace.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-muted-foreground">Last Updated</dt>
-                <dd className="text-sm mt-1">{new Date(workspace.updated_at).toLocaleString()}</dd>
+                <dd className="text-sm mt-1">{new Date(workspace.updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</dd>
               </div>
             </dl>
           </CardContent>

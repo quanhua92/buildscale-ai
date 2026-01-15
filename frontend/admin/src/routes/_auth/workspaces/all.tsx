@@ -24,7 +24,6 @@ function AllWorkspaces() {
 
   useEffect(() => {
     const fetchWorkspaces = async () => {
-      setIsLoading(true)
       const result = await listWorkspaces()
       
       if (result.success && result.data) {
@@ -95,7 +94,7 @@ function AllWorkspaces() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    {new Date(workspace.created_at).toLocaleDateString()}
+                    {new Date(workspace.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                   </TableCell>
                   <TableCell>
                     {/* Role info would normally come from the API, placeholder for now */}

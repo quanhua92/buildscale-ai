@@ -11,7 +11,11 @@ import { Form } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
-export function CreateWorkspace() {
+export interface CreateWorkspaceProps {
+  onSuccess?: () => void
+}
+
+export function CreateWorkspace({ onSuccess }: CreateWorkspaceProps = {}) {
   const { createWorkspace } = useAuth()
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
@@ -42,12 +46,15 @@ export function CreateWorkspace() {
       toast.success('Workspace created', {
         description: `Workspace "${result.data?.name}" created successfully.`,
       })
-      // Redirect after 1 second to the new workspace page or list
-      setTimeout(() => {
-        // TODO: Redirect to the specific workspace dashboard when available
-        // For now, redirect to the list
-        navigate({ to: '/workspaces/all' })
-      }, 1000)
+      
+      if (onSuccess) {
+        onSuccess()
+      } else {
+        // Redirect after 1 second to the new workspace page or list
+        setTimeout(() => {
+          navigate({ to: '/workspaces/all' })
+        }, 1000)
+      }
     } else if (result.error) {
       setError(result.error)
       toast.error('Failed to create workspace', {
