@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useLocation } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useAuth, type AuthError } from '../../context'
 import { Card } from './AuthCard'
@@ -14,6 +14,7 @@ import { Button } from './AuthButton'
 export function Login() {
   const { login, redirectTarget } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
   const [success, setSuccess] = useState(false)
@@ -45,7 +46,10 @@ export function Login() {
       })
       // Redirect after 1 second
       setTimeout(() => {
-        navigate({ to: redirectTarget, replace: true })
+        // Use redirect param from URL if present, otherwise fallback to default
+        const search = location.search as { redirect?: string }
+        const target = search?.redirect || redirectTarget
+        navigate({ to: target, replace: true })
       }, 1000)
     } else if (result.error) {
       setError(result.error)
