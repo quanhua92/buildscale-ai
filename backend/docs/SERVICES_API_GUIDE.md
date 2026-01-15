@@ -8,7 +8,7 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
 |------|--------------|
 | **Users** | `register_user`, `login_user`, `validate_session`, `logout_user`, `get_user_by_id`, `update_password` |
 | **Workspaces** | `create_workspace`, `get_workspace`, `list_user_workspaces`, `update_workspace_owner`, `can_access_workspace` |
-| **Members** | `create_workspace_member`, `update_workspace_member`, `remove_workspace_member`, `list_workspace_members` |
+| **Members** | `list_members`, `get_my_membership`, `add_member_by_email`, `update_member_role`, `remove_member` |
 | **Permissions** | `validate_workspace_permission`, `require_workspace_permission`, `get_user_workspace_permissions` |
 | **Roles** | `create_default_roles`, `get_role_by_name`, `list_workspace_roles`, `get_role` |
 | **Invitations** | `create_invitation`, `accept_invitation`, `revoke_invitation`, `bulk_create_invitations`, `get_invitation_by_token` |
@@ -109,180 +109,186 @@ pub async fn remove_workspace_member(
 pub async fn list_workspace_members(
     conn: &mut DbConn,
     workspace_id: Uuid,
-) -> Result<Vec<WorkspaceMember>>
+) -> Result<Vec<WorkspaceMemberDetailed>> {
+    let members = workspace_members::list_workspace_members_detailed(conn, workspace_id).await?;
+    Ok(members)
+}
 
 pub async fn list_user_workspaces(
     conn: &mut DbConn,
     user_id: Uuid,
-) -> Result<Vec<WorkspaceMember>>
+) -> Result<Vec<WorkspaceMember>> {
+    let memberships = workspace_members::list_user_workspaces(conn, user_id).await?;
+    Ok(memberships)
+}
 
 pub async fn get_workspace_member(
     conn: &mut DbConn,
     workspace_id: Uuid,
     user_id: Uuid,
-) -> Result<WorkspaceMember>
+) -> Result<WorkspaceMember> {
+    let member = workspace_members::get_workspace_member(conn, workspace_id, user_id).await?;
+    Ok(member)
+}
 
 pub async fn get_workspace_member_optional(
     conn: &mut DbConn,
     workspace_id: Uuid,
     user_id: Uuid,
-) -> Result<Option<WorkspaceMember>>
+) -> Result<Option<WorkspaceMember>> {
+    let member = workspace_members::get_workspace_member_optional(conn, workspace_id, user_id).await?;
+    Ok(member)
+}
 
 pub async fn is_workspace_member(
     conn: &mut DbConn,
     workspace_id: Uuid,
     user_id: Uuid,
-) -> Result<bool>
-```
+) -> Result<bool> {
+    let is_member = workspace_members::is_workspace_member(conn, workspace_id, user_id).await?;
+    Ok(is_member)
+}
 
-### Role Management
-```rust
-// Create default 4-tier role system for workspace
-pub async fn create_default_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>>
-
-// Role lookup and listing
-pub async fn get_role_by_name(
-    conn: &mut DbConn,
-    workspace_id: Uuid,
-    role_name: &str
-) -> Result<Role>
-
-pub async fn list_workspace_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>>
-
-// Individual role lookup
-pub async fn get_role(conn: &mut DbConn, id: Uuid) -> Result<Role>
-```
-
-### Permission Validation
-```rust
-// Permission checking functions
-pub async fn validate_workspace_permission(
+pub async fn get_my_membership(
     conn: &mut DbConn,
     workspace_id: Uuid,
     user_id: Uuid,
-    required_permission: &str,
-) -> Result<bool>
+) -> Result<WorkspaceMemberDetailed> {
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
-pub async fn require_workspace_permission(
+    let _member = workspace_members::get_workspace_member(conn, workspace_id, user_id).await?;
+
+    let detailed = workspace_members::get_workspace_member_detailed(conn, workspace_id, user_id).await?;
+    Ok(detailed)
+}
+
+pub async fn add_member_by_email(
     conn: &mut DbConn,
     workspace_id: Uuid,
-    user_id: Uuid,
-    required_permission: &str,
-) -> Result<()>
+    requester_user_id: Uuid,
+    request: AddMemberRequest,
+) -> Result<WorkspaceMemberDetailed> {
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
-pub async fn validate_any_workspace_permission(
+    crate::queries::permissions::require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
+
+    let email = request.email.trim().to_lowercase();
+
+    let user = crate::queries::users::get_user_by_email(conn, &email).await?
+        .ok_or_else(|| Error::NotFound(format!("User with email '{}' not found", email)))?;
+
+    let role = crate::queries::roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name).await?
+        .ok_or_else(|| Error::NotFound(format!(
+            "Role '{}' not found in workspace",
+            request.role_name
+        )))?;
+
+    let existing_member = workspace_members::get_workspace_member_optional(
+        conn,
+        workspace_id,
+        user.id,
+    )
+    .await?;
+
+    if existing_member.is_some() {
+        return Err(Error::Conflict(format!(
+            "User '{}' is already a member of this workspace",
+            email
+        )));
+    }
+
+    let new_member = workspace_members::create_workspace_member(
+        conn,
+        crate::models::workspace_members::NewWorkspaceMember {
+            workspace_id,
+            user_id: user.id,
+            role_id: role.id,
+        },
+    )
+    .await?;
+
+    let detailed = workspace_members::get_workspace_member_detailed(
+        conn,
+        workspace_id,
+        new_member.user_id,
+    )
+    .await?;
+
+    Ok(detailed)
+}
+
+pub async fn update_member_role(
     conn: &mut DbConn,
     workspace_id: Uuid,
-    user_id: Uuid,
-    required_permissions: &[&str],
-) -> Result<bool>
+    target_user_id: Uuid,
+    requester_user_id: Uuid,
+    request: UpdateMemberRoleRequest,
+) -> Result<WorkspaceMemberDetailed> {
+    let workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
-pub async fn validate_all_workspace_permissions(
+    if workspace.owner_id == target_user_id {
+        return Err(Error::Forbidden(
+            "Cannot modify the workspace owner's role".to_string(),
+        ));
+    }
+
+    crate::queries::permissions::require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
+
+    let role = crate::queries::roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name).await?
+        .ok_or_else(|| Error::NotFound(format!(
+            "Role '{}' not found in workspace",
+            request.role_name
+        )))?;
+
+    let _existing_member = workspace_members::get_workspace_member(conn, workspace_id, target_user_id).await?;
+
+    let updated_member = workspace_members::update_workspace_member(
+        conn,
+        workspace_id,
+        target_user_id,
+        crate::models::workspace_members::UpdateWorkspaceMember {
+            role_id: Some(role.id),
+        },
+    )
+    .await?;
+
+    let detailed = workspace_members::get_workspace_member_detailed(
+        conn,
+        workspace_id,
+        updated_member.user_id,
+    )
+    .await?;
+
+    Ok(detailed)
+}
+
+pub async fn remove_member(
     conn: &mut DbConn,
     workspace_id: Uuid,
-    user_id: Uuid,
-    required_permissions: &[&str],
-) -> Result<bool>
+    target_user_id: Uuid,
+    requester_user_id: Uuid,
+) -> Result<()> {
+    let workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
-// User permission lookup
-pub async fn get_user_workspace_permissions(
-    conn: &mut DbConn,
-    workspace_id: Uuid,
-    user_id: Uuid,
-) -> Result<Vec<String>>
-```
+    if workspace.owner_id == target_user_id {
+        return Err(Error::Forbidden(
+            "Cannot remove the workspace owner as a member".to_string(),
+        ));
+    }
 
-### Invitations
-```rust
-// Invitation creation with role assignment
-pub async fn create_invitation(
-    conn: &mut DbConn,
-    request: CreateInvitationRequest,
-    inviter_id: Uuid,
-) -> Result<CreateInvitationResponse>
+    if requester_user_id != target_user_id {
+        crate::queries::permissions::require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
+    }
 
-// Acceptance and management
-pub async fn accept_invitation(
-    conn: &mut DbConn,
-    request: AcceptInvitationRequest,
-    user_id: Uuid,
-) -> Result<AcceptInvitationResponse>
+    let _existing_member = workspace_members::get_workspace_member(conn, workspace_id, target_user_id).await?;
 
-pub async fn revoke_invitation(
-    conn: &mut DbConn,
-    request: RevokeInvitationRequest,
-    revoker_id: Uuid,
-) -> Result<WorkspaceInvitation>
+    let rows_affected = workspace_members::delete_workspace_member(conn, workspace_id, target_user_id).await?;
 
-// Bulk operations
-pub async fn bulk_create_invitations(
-    conn: &mut DbConn,
-    workspace_id: Uuid,
-    emails: Vec<String>,
-    role_name: String,
-    inviter_id: Uuid,
-    expires_in_hours: Option<i64>,
-) -> Result<Vec<CreateInvitationResponse>>
+    if rows_affected == 0 {
+        return Err(Error::NotFound("Workspace member not found".to_string()));
+    }
 
-// Additional invitation utilities
-pub async fn get_invitation_by_token(
-    conn: &mut DbConn,
-    token: &str,
-) -> Result<WorkspaceInvitation>
-
-pub async fn list_workspace_invitations(
-    conn: &mut DbConn,
-    workspace_id: Uuid,
-) -> Result<Vec<WorkspaceInvitation>>
-
-pub async fn list_user_sent_invitations(
-    conn: &mut DbConn,
-    user_id: Uuid,
-) -> Result<Vec<WorkspaceInvitation>>
-
-pub async fn cleanup_expired_invitations(conn: &mut DbConn) -> Result<u64>
-```
-
-### Enhanced User Management
-```rust
-// User lookup and utilities
-pub async fn get_user_by_id(conn: &mut DbConn, user_id: Uuid) -> Result<Option<User>>
-pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool>
-pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &str) -> Result<()>
-pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<UserSession>>
-
-// User workspace memberships
-pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<UserSession>>
-pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64>
-```
-
-### Session Management
-```rust
-// Session cleanup and maintenance
-pub async fn cleanup_expired_sessions(conn: &mut DbConn) -> Result<u64>
-pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> Result<()>
-pub async fn user_has_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<bool>
-pub async fn extend_all_user_sessions(conn: &mut DbConn, user_id: Uuid, hours_to_extend: i64) -> Result<u64>
-```
-
-### Input Validation Utilities
-```rust
-// Core validation functions (from validation.rs)
-pub fn validate_email(email: &str) -> Result<()>
-pub fn validate_password(password: &str) -> Result<()>
-pub fn validate_workspace_name(name: &str) -> Result<()>
-pub fn validate_full_name(full_name: &Option<String>) -> Result<()>
-pub fn validate_session_token(token: &str) -> Result<()>
-pub fn validate_uuid(uuid_str: &str) -> Result<Uuid>
-pub fn validate_required_string(input: &str, field_name: &str) -> Result<String>
-pub fn sanitize_string(input: &str) -> String
-```
-
-### Key Request Models
-```rust
-pub struct CreateWorkspaceRequest {
-    pub name: String,
-    pub owner_id: Uuid,
+    Ok(())
 }
 
 pub struct WorkspaceMemberRequest {

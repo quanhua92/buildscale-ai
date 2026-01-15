@@ -1565,6 +1565,81 @@ Authorization: Bearer <access_token>
 
 ---
 
+## Workspace Members API
+
+Manage workspace members and access control.
+
+### List Members
+
+Lists all members in a workspace with detailed user and role information.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/members`
+
+**Authentication**: Required (JWT access token)
+
+**Permission**: User must be a member of workspace with `members:read` permission.
+
+#### Request
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters**:
+- `id`: Workspace UUID
+
+#### Response (200 OK)
+
+```json
+{
+  "members": [
+    {
+      "workspace_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+      "user_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+      "email": "user@example.com",
+      "full_name": "John Doe",
+      "role_id": "...",
+      "role_name": "Editor"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `members` | array | Array of member details |
+| `members[].workspace_id` | UUID | Workspace identifier |
+| `members[].user_id` | UUID | User's unique identifier |
+| `members[].email` | string | User's email address |
+| `members[].full_name` | string or null | User's full name |
+| `members[].role_id` | UUID | Role's unique identifier |
+| `members[].role_name` | string | Role name (e.g., "admin", "editor", "member", "viewer") |
+| `count` | integer | Total number of members |
+
+#### Error Responses
+
+**403 Forbidden** - Insufficient Permissions
+```json
+{
+  "error": "Access forbidden: User is not a member of this workspace",
+  "code": "FORBIDDEN"
+}
+```
+
+**404 Not Found** - Workspace Not Found
+```json
+{
+  "error": "Workspace not found",
+  "code": "NOT_FOUND"
+}
+```
+
+---
+
 ## Error Responses
 
 All error responses follow a consistent format with error codes and optional field-level details.
