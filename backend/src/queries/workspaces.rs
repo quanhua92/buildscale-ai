@@ -174,7 +174,7 @@ pub async fn get_workspaces_by_user_membership(
             w.id, 
             w.name, 
             w.owner_id, 
-            r.name as "role_name?",
+            CASE WHEN r.id IS NOT NULL THEN r.name ELSE NULL END as "role_name?",
             w.created_at, 
             w.updated_at
         FROM workspaces w

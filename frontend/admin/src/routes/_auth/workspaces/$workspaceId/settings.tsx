@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  toast,
 } from '@buildscale/sdk'
 import type { Workspace, WorkspaceMemberDetailed } from '@buildscale/sdk'
 
@@ -36,38 +37,26 @@ function WorkspaceSettings() {
 
   useEffect(() => {
     const fetchData = async () => {
-      console.log('[Settings] Fetching data for workspace:', workspaceId)
       try {
         const [workspaceResult, membershipResult] = await Promise.all([
-          getWorkspace(workspaceId).catch(e => ({ success: false, error: { message: `getWorkspace threw: ${e.message || e}` } } as any)),
-          getMembership(workspaceId).catch(e => ({ success: false, error: { message: `getMembership threw: ${e.message || e}` } } as any))
+          getWorkspace(workspaceId).catch(e => ({ success: false, data: undefined, error: { message: `getWorkspace threw: ${e instanceof Error ? e.message : String(e)}` } })),
+          getMembership(workspaceId).catch(e => ({ success: false, data: undefined, error: { message: `getMembership threw: ${e instanceof Error ? e.message : String(e)}` } }))
         ])
-        
-        console.log('[Settings] Workspace result:', workspaceResult)
-        console.log('[Settings] Membership result:', membershipResult)
         
         if (workspaceResult.success && workspaceResult.data) {
           setWorkspace(workspaceResult.data)
         } else if (workspaceResult.error) {
-          console.error('[Settings] Workspace error:', workspaceResult.error)
           setError(`Workspace Error: ${workspaceResult.error.message}`)
         }
         
         if (membershipResult.success && membershipResult.data) {
           setMembership(membershipResult.data)
         } else if (membershipResult.error) {
-          console.error('[Settings] Membership error:', membershipResult.error)
-          // If workspace fetch succeeded, we can still show the page if they are the owner
-          // but we should probably know why membership failed
-          if (!workspaceResult.success) {
-             setError(prev => prev ? `${prev} | Membership Error: ${membershipResult.error?.message}` : `Membership Error: ${membershipResult.error?.message}`)
-          }
+          setError(prev => prev ? `${prev} | Membership Error: ${membershipResult.error?.message}` : `Membership Error: ${membershipResult.error?.message}`)
         }
       } catch (err) {
-        console.error('[Settings] Unexpected fetch error:', err)
         setError(`Unexpected Error: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
-        console.log('[Settings] Loading finished')
         setIsLoading(false)
       }
     }
@@ -84,10 +73,10 @@ function WorkspaceSettings() {
       if (result.success) {
         navigate({ to: '/workspaces/all' })
       } else if (result.error) {
-        alert(`Error deleting workspace: ${result.error.message}`)
+        toast.error(`Error deleting workspace: ${result.error.message}`)
       }
     } catch (err) {
-      alert(`Unexpected error during deletion: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Unexpected error during deletion: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setIsDeleting(false)
     }
@@ -97,7 +86,6 @@ function WorkspaceSettings() {
     return (
       <div className="p-8 flex justify-center flex-col items-center gap-4">
         <div className="animate-pulse text-muted-foreground">Loading settings for {workspaceId}...</div>
-        <div className="text-xs text-muted-foreground">Check console for debug logs</div>
       </div>
     )
   }
