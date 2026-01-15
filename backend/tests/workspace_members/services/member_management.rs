@@ -1,7 +1,9 @@
 use buildscale::{
-    services::workspace_members::create_workspace_member,
+    services::workspace_members::{create_workspace_member, list_members, add_member_by_email, update_member_role, remove_member},
+    models::workspace_members::{AddMemberRequest, UpdateMemberRoleRequest},
 };
 use crate::common::database::TestApp;
+use buildscale::models::roles::MEMBER_ROLE;
 
 #[tokio::test]
 async fn test_workspace_member_creation_success() {
@@ -96,4 +98,127 @@ async fn test_workspace_member_removal() {
     // Verify member count decreased (should be back to 1 - just the owner)
     let member_count = test_app.count_workspace_members(workspace.id).await.unwrap();
     assert_eq!(member_count, 1, "Should have exactly one member (the owner)");
+}
+
+#[tokio::test]
+async fn test_list_members_detailed() {
+    let test_app = TestApp::new("test_list_members_detailed").await;
+    let mut conn = test_app.get_connection().await;
+
+    let (user, workspace, _role, _) = test_app.create_complete_test_scenario().await.unwrap();
+
+    let result = list_members(&mut conn, workspace.id, user.id).await;
+    assert!(result.is_ok());
+    
+    let members = result.unwrap();
+    assert!(!members.is_empty());
+    assert_eq!(members[0].email, user.email);
+}
+
+#[tokio::test]
+async fn test_add_member_by_email_success() {
+    let test_app = TestApp::new("test_add_member_by_email_success").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Use comprehensive creation to get default roles
+    let user_data = test_app.generate_test_user();
+    let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let workspace_result = buildscale::services::workspaces::create_workspace(
+        &mut conn,
+        buildscale::models::requests::CreateWorkspaceRequest {
+            name: "Default Roles Workspace".to_string(),
+            owner_id: owner.id,
+        },
+    ).await.unwrap();
+    
+    let workspace = workspace_result.workspace;
+    let owner_id = workspace.owner_id;
+
+    // New user to add
+    let new_user_data = test_app.generate_test_user();
+    let new_user_email = new_user_data.email.clone();
+    buildscale::services::users::register_user(&mut conn, new_user_data).await.unwrap();
+
+    let request = AddMemberRequest {
+        email: new_user_email.clone(),
+        role_name: MEMBER_ROLE.to_string(),
+    };
+
+    let result = add_member_by_email(&mut conn, workspace.id, owner_id, request).await;
+    assert!(result.is_ok());
+    
+    let member = result.unwrap();
+    assert_eq!(member.email, new_user_email);
+    assert_eq!(member.role_name, MEMBER_ROLE);
+}
+
+#[tokio::test]
+async fn test_update_member_role_success() {
+    let test_app = TestApp::new("test_update_member_role_success").await;
+    let mut conn = test_app.get_connection().await;
+
+    // Create workspace with default roles
+    let user_data = test_app.generate_test_user();
+    let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let workspace_result = buildscale::services::workspaces::create_workspace(
+        &mut conn,
+        buildscale::models::requests::CreateWorkspaceRequest {
+            name: "Update Role Workspace".to_string(),
+            owner_id: owner.id,
+        },
+    ).await.unwrap();
+    let workspace = workspace_result.workspace;
+
+    // Add a member
+    let new_user_data = test_app.generate_test_user();
+    let new_user = buildscale::services::users::register_user(&mut conn, new_user_data).await.unwrap();
+    
+    add_member_by_email(&mut conn, workspace.id, owner.id, AddMemberRequest {
+        email: new_user.email.clone(),
+        role_name: "viewer".to_string(),
+    }).await.unwrap();
+
+    // Update to editor
+    let result = update_member_role(
+        &mut conn,
+        workspace.id,
+        new_user.id,
+        owner.id,
+        UpdateMemberRoleRequest { role_name: "editor".to_string() }
+    ).await;
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().role_name, "editor");
+}
+
+#[tokio::test]
+async fn test_remove_member_self_success() {
+    let test_app = TestApp::new("test_remove_member_self_success").await;
+    let mut conn = test_app.get_connection().await;
+
+    let user_data = test_app.generate_test_user();
+    let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let workspace_result = buildscale::services::workspaces::create_workspace(
+        &mut conn,
+        buildscale::models::requests::CreateWorkspaceRequest {
+            name: "Leave Workspace".to_string(),
+            owner_id: owner.id,
+        },
+    ).await.unwrap();
+    let workspace = workspace_result.workspace;
+
+    let new_user_data = test_app.generate_test_user();
+    let new_user = buildscale::services::users::register_user(&mut conn, new_user_data).await.unwrap();
+    
+    add_member_by_email(&mut conn, workspace.id, owner.id, AddMemberRequest {
+        email: new_user.email.clone(),
+        role_name: "member".to_string(),
+    }).await.unwrap();
+
+    // Member leaves (removes self)
+    let result = remove_member(&mut conn, workspace.id, new_user.id, new_user.id).await;
+    assert!(result.is_ok());
+    
+    let is_member = buildscale::queries::workspace_members::is_workspace_member(&mut conn, workspace.id, new_user.id).await.unwrap();
+    assert!(!is_member);
 }
