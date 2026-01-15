@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    models::workspace_members::{NewWorkspaceMember, UpdateWorkspaceMember, WorkspaceMember},
+    models::workspace_members::{NewWorkspaceMember, UpdateWorkspaceMember, WorkspaceMember, WorkspaceMemberDetailed},
 };
 use uuid::Uuid;
 
@@ -226,4 +226,58 @@ pub async fn get_workspace_ids_by_user(conn: &mut DbConn, user_id: Uuid) -> Resu
     .map_err(Error::Sqlx)?;
 
     Ok(rows.into_iter().map(|r| r.workspace_id).collect())
+}
+
+/// Lists all members in a workspace with detailed user and role information.
+pub async fn list_workspace_members_detailed(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<WorkspaceMemberDetailed>> {
+    let members = sqlx::query_as!(
+        WorkspaceMemberDetailed,
+        r#"
+        SELECT
+            wm.workspace_id,
+            wm.user_id,
+            u.email,
+            u.full_name,
+            wm.role_id,
+            r.name as role_name
+        FROM workspace_members wm
+        JOIN users u ON wm.user_id = u.id
+        JOIN roles r ON wm.role_id = r.id
+        WHERE wm.workspace_id = $1
+        ORDER BY u.email ASC
+        "#,
+        workspace_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(members)
+}
+
+/// Gets a single workspace member with detailed user and role information.
+pub async fn get_workspace_member_detailed(conn: &mut DbConn, workspace_id: Uuid, user_id: Uuid) -> Result<WorkspaceMemberDetailed> {
+    let member = sqlx::query_as!(
+        WorkspaceMemberDetailed,
+        r#"
+        SELECT
+            wm.workspace_id,
+            wm.user_id,
+            u.email,
+            u.full_name,
+            wm.role_id,
+            r.name as role_name
+        FROM workspace_members wm
+        JOIN users u ON wm.user_id = u.id
+        JOIN roles r ON wm.role_id = r.id
+        WHERE wm.workspace_id = $1 AND wm.user_id = $2
+        "#,
+        workspace_id,
+        user_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(member)
 }

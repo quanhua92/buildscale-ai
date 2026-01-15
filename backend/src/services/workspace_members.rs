@@ -2,18 +2,21 @@ use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
     models::{
-        workspace_members::{WorkspaceMember},
+        workspace_members::{WorkspaceMember, WorkspaceMemberDetailed, AddMemberRequest, UpdateMemberRoleRequest},
         permissions::{PermissionValidator},
     },
-    queries::{workspace_members, workspaces, roles},
+    queries::{workspace_members, roles, users},
 };
 use uuid::Uuid;
 
+// ==============================================================================
 // Essential read methods that are still needed
+// ==============================================================================
+
 /// Lists all members in a workspace
 pub async fn list_workspace_members(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<WorkspaceMember>> {
     // Validate that the workspace exists
-    let _workspace = workspaces::get_workspace_by_id(conn, workspace_id).await?;
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
     let members = workspace_members::list_workspace_members(conn, workspace_id).await?;
     Ok(members)
@@ -35,7 +38,7 @@ pub async fn get_workspace_member(
     Ok(member)
 }
 
-/// Gets a workspace member optionally (may not exist)
+/// Gets a workspace member by workspace ID and user ID (optional)
 pub async fn get_workspace_member_optional(
     conn: &mut DbConn,
     workspace_id: Uuid,
@@ -64,7 +67,7 @@ pub async fn update_workspace_member(
     update_member: crate::models::workspace_members::UpdateWorkspaceMember,
 ) -> Result<WorkspaceMember> {
     // Validate that the workspace exists
-    let _workspace = workspaces::get_workspace_by_id(conn, workspace_id).await?;
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
     // Validate that the new role exists and belongs to the workspace
     if let Some(role_id) = update_member.role_id {
@@ -99,7 +102,7 @@ pub async fn remove_workspace_member(
     user_id: Uuid,
 ) -> Result<u64> {
     // Validate that the workspace exists
-    let workspace = workspaces::get_workspace_by_id(conn, workspace_id).await?;
+    let workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
     // Prevent the owner from being removed as a member
     if workspace.owner_id == user_id {
@@ -129,7 +132,7 @@ pub async fn create_workspace_member(
     new_member: crate::models::workspace_members::NewWorkspaceMember,
 ) -> Result<WorkspaceMember> {
     // Validate that the workspace exists
-    let _workspace = workspaces::get_workspace_by_id(conn, new_member.workspace_id).await?;
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, new_member.workspace_id).await?;
 
     // Validate that the role exists and belongs to the workspace
     let role = roles::get_role_by_id(conn, new_member.role_id).await?;
@@ -161,6 +164,10 @@ pub async fn create_workspace_member(
     Ok(member)
 }
 
+// ==============================================================================
+// Permission Validation System
+// ==============================================================================
+
 /// Validates that a user can perform an action in a workspace based on their role
 pub async fn validate_workspace_permission(
     conn: &mut DbConn,
@@ -169,7 +176,7 @@ pub async fn validate_workspace_permission(
     required_permission: &str,
 ) -> Result<bool> {
     // Check if user is the owner (owners have all permissions)
-    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+    if crate::queries::workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
         return Ok(true);
     }
 
@@ -224,7 +231,7 @@ pub async fn validate_any_workspace_permission(
     required_permissions: &[&str],
 ) -> Result<bool> {
     // Check if user is the owner (owners have all permissions)
-    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+    if crate::queries::workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
         return Ok(true);
     }
 
@@ -250,7 +257,7 @@ pub async fn validate_all_workspace_permissions(
     required_permissions: &[&str],
 ) -> Result<bool> {
     // Check if user is the owner (owners have all permissions)
-    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+    if crate::queries::workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
         return Ok(true);
     }
 
@@ -275,7 +282,7 @@ pub async fn get_user_workspace_permissions(
     user_id: Uuid,
 ) -> Result<Vec<String>> {
     // Check if user is the owner (owners have all permissions)
-    if workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
+    if crate::queries::workspaces::is_workspace_owner(conn, workspace_id, user_id).await? {
         return Ok(PermissionValidator::get_role_permissions("admin")
             .into_iter()
             .map(|p| p.to_string())
@@ -297,4 +304,207 @@ pub async fn get_user_workspace_permissions(
     } else {
         Ok(Vec::new()) // User is not a member
     }
+}
+
+// ==============================================================================
+// Member Management with Detailed Information
+// ==============================================================================
+
+/// Lists all members in a workspace with detailed user and role information.
+/// Requires member:read permission.
+pub async fn list_members(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    requester_user_id: Uuid,
+) -> Result<Vec<WorkspaceMemberDetailed>> {
+    // Validate requester is a member and has read permission
+    require_workspace_permission(conn, workspace_id, requester_user_id, "members:read").await?;
+
+    // List detailed members
+    let members = workspace_members::list_workspace_members_detailed(conn, workspace_id).await?;
+    Ok(members)
+}
+
+/// Gets the current user's membership details in a workspace.
+pub async fn get_my_membership(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<WorkspaceMemberDetailed> {
+    // Validate that the workspace exists
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
+
+    // Validate that the user is a member
+    let _member = workspace_members::get_workspace_member(conn, workspace_id, user_id).await?;
+
+    // Get detailed membership
+    let detailed = workspace_members::get_workspace_member_detailed(conn, workspace_id, user_id).await?;
+    Ok(detailed)
+}
+
+/// Adds a new member to a workspace by email address with a specific role.
+/// Requires members:write permission.
+pub async fn add_member_by_email(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    requester_user_id: Uuid,
+    request: AddMemberRequest,
+) -> Result<WorkspaceMemberDetailed> {
+    // Validate that the workspace exists
+    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
+
+    // Validate that the requester has members:write permission
+    require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
+
+    // Normalize email to lowercase for consistency
+    let email = request.email.trim().to_lowercase();
+
+    // Validate email format
+    if !email.contains('@') || !email.contains('.') {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "email".to_string(),
+            message: "Invalid email format".to_string(),
+        }));
+    }
+
+    // Find user by email
+    let user = users::get_user_by_email(conn, &email).await?
+        .ok_or_else(|| Error::NotFound(format!("User with email '{}' not found", email)))?;
+
+    // Find role by name in this workspace
+    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name).await?
+        .ok_or_else(|| Error::NotFound(format!(
+            "Role '{}' not found in workspace",
+            request.role_name
+        )))?;
+
+    // Check if user is already a member
+    let existing_member = workspace_members::get_workspace_member_optional(
+        conn,
+        workspace_id,
+        user.id,
+    )
+    .await?;
+
+    if existing_member.is_some() {
+        return Err(Error::Conflict(format!(
+            "User '{}' is already a member of this workspace",
+            email
+        )));
+    }
+
+    // Create the membership
+    let new_member = workspace_members::create_workspace_member(
+        conn,
+        crate::models::workspace_members::NewWorkspaceMember {
+            workspace_id,
+            user_id: user.id,
+            role_id: role.id,
+        },
+    )
+    .await?;
+
+    // Return detailed membership
+    let detailed = workspace_members::get_workspace_member_detailed(
+        conn,
+        workspace_id,
+        new_member.user_id,
+    )
+    .await?;
+
+    Ok(detailed)
+}
+
+/// Updates a workspace member's role.
+/// Requires members:write permission.
+/// Cannot update the workspace owner's role.
+pub async fn update_member_role(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    target_user_id: Uuid,
+    requester_user_id: Uuid,
+    request: UpdateMemberRoleRequest,
+) -> Result<WorkspaceMemberDetailed> {
+    // Validate that the workspace exists
+    let workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
+
+    // Prevent modifying the workspace owner's role
+    if workspace.owner_id == target_user_id {
+        return Err(Error::Forbidden(
+            "Cannot modify the workspace owner's role".to_string(),
+        ));
+    }
+
+    // Validate that the requester has members:write permission
+    require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
+
+    // Find role by name in this workspace
+    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name).await?
+        .ok_or_else(|| Error::NotFound(format!(
+            "Role '{}' not found in workspace",
+            request.role_name
+        )))?;
+
+    // Check if member exists
+    let _existing_member = workspace_members::get_workspace_member(conn, workspace_id, target_user_id).await?;
+
+    // Update the membership role
+    let updated_member = workspace_members::update_workspace_member(
+        conn,
+        workspace_id,
+        target_user_id,
+        crate::models::workspace_members::UpdateWorkspaceMember {
+            role_id: Some(role.id),
+        },
+    )
+    .await?;
+
+    // Return detailed membership
+    let detailed = workspace_members::get_workspace_member_detailed(
+        conn,
+        workspace_id,
+        updated_member.user_id,
+    )
+    .await?;
+
+    Ok(detailed)
+}
+
+/// Removes a member from a workspace.
+/// - Users can remove themselves (leave workspace).
+/// - Requires members:write permission to remove other members.
+/// - Cannot remove the workspace owner.
+pub async fn remove_member(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    target_user_id: Uuid,
+    requester_user_id: Uuid,
+) -> Result<()> {
+    // Validate that the workspace exists
+    let workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
+
+    // Prevent removing the workspace owner
+    if workspace.owner_id == target_user_id {
+        return Err(Error::Forbidden(
+            "Cannot remove the workspace owner as a member".to_string(),
+        ));
+    }
+
+    // Allow users to remove themselves
+    // Otherwise, require members:write permission
+    if requester_user_id != target_user_id {
+        require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
+    }
+
+    // Check if member exists
+    let _existing_member = workspace_members::get_workspace_member(conn, workspace_id, target_user_id).await?;
+
+    // Remove the membership
+    let rows_affected = workspace_members::delete_workspace_member(conn, workspace_id, target_user_id).await?;
+
+    if rows_affected == 0 {
+        return Err(Error::NotFound("Workspace member not found".to_string()));
+    }
+
+    Ok(())
 }
