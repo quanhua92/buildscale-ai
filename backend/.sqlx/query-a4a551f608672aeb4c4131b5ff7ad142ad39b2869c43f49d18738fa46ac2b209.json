@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO workspaces (name, owner_id)\n        VALUES ($1, $2)\n        RETURNING id, name, owner_id, created_at, updated_at\n        ",
+  "query": "\n        SELECT id, name, owner_id, NULL as \"role_name?\", created_at, updated_at\n        FROM workspaces\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -20,18 +20,22 @@
       },
       {
         "ordinal": 3,
+        "name": "role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
         "Uuid"
       ]
     },
@@ -39,9 +43,10 @@
       false,
       false,
       false,
+      null,
       false,
       false
     ]
   },
-  "hash": "ded909f8781c5b5059694400b379a3f8c44bf770d557e8cb0b00d55573aeb27f"
+  "hash": "a4a551f608672aeb4c4131b5ff7ad142ad39b2869c43f49d18738fa46ac2b209"
 }

@@ -43,6 +43,7 @@ export { Label } from './components/ui/label'
 export { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 export { ThemeToggle } from './components/ui/theme-toggle'
 export { Toaster } from './components/ui/sonner'
+export { toast } from 'sonner'
 export {
   Select,
   SelectContent,
@@ -128,6 +129,8 @@ export type {
   ListWorkspacesResponse,
   GetWorkspaceResponse,
   CreateWorkspaceResponse,
+  WorkspaceMemberDetailed,
+  GetMembershipResponse,
 } from './api/types'
 
 // Errors

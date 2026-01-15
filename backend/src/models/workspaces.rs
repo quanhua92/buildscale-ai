@@ -7,6 +7,7 @@ pub struct Workspace {
     pub id: Uuid,
     pub name: String,
     pub owner_id: Uuid,
+    pub role_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

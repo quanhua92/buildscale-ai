@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, owner_id, created_at, updated_at\n        FROM workspaces\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT id, name, owner_id, NULL as \"role_name?\", created_at, updated_at\n        FROM workspaces\n        ORDER BY created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -20,11 +20,16 @@
       },
       {
         "ordinal": 3,
+        "name": "role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -36,9 +41,10 @@
       false,
       false,
       false,
+      null,
       false,
       false
     ]
   },
-  "hash": "29389aed50bd309e2f9051d1667694260ad9facd62237828bdc0747d4f628e82"
+  "hash": "51bbd750c8ebf31ec3c62e51977e5f0f7f30c24384e02838568d928c72085728"
 }

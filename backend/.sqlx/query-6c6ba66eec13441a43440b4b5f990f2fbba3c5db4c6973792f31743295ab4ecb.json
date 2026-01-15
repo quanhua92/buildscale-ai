@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE workspaces\n        SET name = COALESCE($1, name),\n            owner_id = COALESCE($2, owner_id),\n            updated_at = now()\n        WHERE id = $3\n        RETURNING id, name, owner_id, created_at, updated_at\n        ",
+  "query": "\n        UPDATE workspaces\n        SET name = COALESCE($1, name),\n            owner_id = COALESCE($2, owner_id),\n            updated_at = now()\n        WHERE id = $3\n        RETURNING id, name, owner_id, NULL as \"role_name?\", created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -20,11 +20,16 @@
       },
       {
         "ordinal": 3,
+        "name": "role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -40,9 +45,10 @@
       false,
       false,
       false,
+      null,
       false,
       false
     ]
   },
-  "hash": "33f924e8f2b64db6533498c4b280a720ca1aeb9d6fe58418f87cb2c291b69419"
+  "hash": "6c6ba66eec13441a43440b4b5f990f2fbba3c5db4c6973792f31743295ab4ecb"
 }

@@ -66,12 +66,20 @@ function WorkspaceDetail() {
               ID: <code className="bg-muted px-1 py-0.5 rounded text-sm">{workspace.id}</code>
             </p>
           </div>
-          <Button 
-            variant="outline" 
-            onClick={() => navigate({ to: `/workspaces/${workspaceId}/edit` })}
-          >
-            Edit Workspace
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => navigate({ to: '/workspaces/$workspaceId/settings', params: { workspaceId } })}
+            >
+              Settings
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => navigate({ to: '/workspaces/$workspaceId/edit', params: { workspaceId } })}
+            >
+              Edit
+            </Button>
+          </div>
         </div>
       </div>
 

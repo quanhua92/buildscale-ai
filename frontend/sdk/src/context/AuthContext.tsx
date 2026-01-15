@@ -4,7 +4,7 @@
 
 import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import type { User, Workspace } from '../api/types'
+import type { User, Workspace, WorkspaceMemberDetailed } from '../api/types'
 import ApiClient from '../api/client'
 import { ApiError } from '../api/errors'
 import { useStorage } from './StorageContext'
@@ -45,6 +45,8 @@ export interface AuthContextType {
   listWorkspaces: () => Promise<ApiResult<{ workspaces: Workspace[], count: number }>>
   getWorkspace: (id: string) => Promise<ApiResult<Workspace>>
   updateWorkspace: (id: string, name: string) => Promise<ApiResult<Workspace>>
+  deleteWorkspace: (id: string) => Promise<ApiResult<{ message: string }>>
+  getMembership: (workspaceId: string) => Promise<ApiResult<WorkspaceMemberDetailed>>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -176,6 +178,24 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [apiClient, handleError])
 
+  const deleteWorkspace = useCallback(async (id: string): Promise<ApiResult<{ message: string }>> => {
+    try {
+      const response = await apiClient.deleteWorkspace(id)
+      return { success: true, data: response }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, handleError])
+
+  const getMembership = useCallback(async (workspaceId: string): Promise<ApiResult<WorkspaceMemberDetailed>> => {
+    try {
+      const response = await apiClient.getMembership(workspaceId)
+      return { success: true, data: response.member }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, handleError])
+
   // Restore session on mount (only once)
   useEffect(() => {
     if (restoreAttempted) {
@@ -214,6 +234,8 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     listWorkspaces,
     getWorkspace,
     updateWorkspace,
+    deleteWorkspace,
+    getMembership,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
