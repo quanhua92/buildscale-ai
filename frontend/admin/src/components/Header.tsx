@@ -11,8 +11,8 @@ export default function Header() {
   const matches = useMatches()
   
   // Find workspaceId in route params
-  const workspaceMatch = matches.find((m) => m.id.includes('workspaceId'))
-  const workspaceId = workspaceMatch?.params && 'workspaceId' in workspaceMatch.params ? (workspaceMatch.params as any).workspaceId : undefined
+  const workspaceMatch = matches.find((m) => m.params && 'workspaceId' in m.params);
+  const workspaceId = (workspaceMatch?.params as { workspaceId?: string })?.workspaceId;
 
   const handleLogout = () => {
     auth.logout()
