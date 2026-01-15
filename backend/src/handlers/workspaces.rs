@@ -18,6 +18,55 @@ use crate::{
     state::AppState,
 };
 
+/// Macro to reduce boilerplate in error handling for workspace handlers
+macro_rules! handle_workspace_error {
+    ($operation:expr, $e:expr) => {
+        match $e {
+            Error::Validation(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("Workspace ", $operation, " failed: validation error"),
+                );
+            }
+            Error::NotFound(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("Workspace ", $operation, " failed: not found"),
+                );
+            }
+            Error::Forbidden(_) => {
+                tracing::warn!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("Workspace ", $operation, " failed: forbidden"),
+                );
+            }
+            _ => {
+                tracing::error!(
+                    operation = $operation,
+                    error = %$e,
+                    concat!("Workspace ", $operation, " failed: internal error"),
+                );
+            }
+        }
+    };
+}
+
+/// Helper to acquire database connection with consistent error logging
+async fn acquire_db_connection(state: &AppState, operation: &'static str) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>> {
+    state.pool.acquire().await.map_err(|e| {
+        tracing::error!(
+            operation = operation,
+            error_code = "DATABASE_ACQUISITION_FAILED",
+            error = %e,
+            "Failed to acquire database connection",
+        );
+        Error::Internal(format!("Failed to acquire database connection: {}", e))
+    })
+}
+
 // ============================================================================
 // CREATE WORKSPACE
 // ============================================================================
@@ -45,16 +94,38 @@ pub async fn create_workspace(
     Extension(auth_user): Extension<AuthenticatedUser>,
     Json(request): Json<CreateWorkspaceHttp>,
 ) -> Result<Json<serde_json::Value>> {
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+    tracing::info!(operation = "create_workspace", "Workspace creation initiated");
 
-    let result = workspaces::create_workspace(
+    #[cfg(debug_assertions)]
+    tracing::debug!(
+        name_length = request.name.len(),
+        owner_id = %auth_user.id,
+        "Create workspace request details",
+    );
+
+    let mut conn = acquire_db_connection(&state, "create_workspace").await?;
+
+    let result = match workspaces::create_workspace(
         &mut conn,
         CreateWorkspaceRequest {
             name: request.name,
             owner_id: auth_user.id,
         },
-    ).await?;
+    ).await {
+        Ok(result) => result,
+        Err(e) => {
+            handle_workspace_error!("create_workspace", &e);
+            return Err(e);
+        }
+    };
+
+    tracing::info!(
+        operation = "create_workspace",
+        workspace_id = %result.workspace.id,
+        workspace_name = %result.workspace.name,
+        owner_id = %result.workspace.owner_id,
+        "Workspace created successfully",
+    );
 
     Ok(Json(serde_json::json!({
         "workspace": result.workspace,
@@ -83,10 +154,28 @@ pub async fn list_workspaces(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<serde_json::Value>> {
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+    tracing::info!(
+        operation = "list_workspaces",
+        user_id = %auth_user.id,
+        "Listing user workspaces",
+    );
 
-    let workspaces = workspaces::list_user_workspaces(&mut conn, auth_user.id).await?;
+    let mut conn = acquire_db_connection(&state, "list_workspaces").await?;
+
+    let workspaces = match workspaces::list_user_workspaces(&mut conn, auth_user.id).await {
+        Ok(workspaces) => workspaces,
+        Err(e) => {
+            handle_workspace_error!("list_workspaces", &e);
+            return Err(e);
+        }
+    };
+
+    tracing::info!(
+        operation = "list_workspaces",
+        user_id = %auth_user.id,
+        count = workspaces.len(),
+        "Workspaces listed successfully",
+    );
 
     Ok(Json(serde_json::json!({
         "workspaces": workspaces,
@@ -119,12 +208,29 @@ pub async fn get_workspace(
     Extension(_workspace_access): Extension<WorkspaceAccess>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+    tracing::info!(
+        operation = "get_workspace",
+        workspace_id = %workspace_id,
+        "Fetching workspace details",
+    );
+
+    let mut conn = acquire_db_connection(&state, "get_workspace").await?;
 
     // Middleware already validated workspace access
     // Handler only handles business logic: get the workspace
-    let workspace = workspaces::get_workspace(&mut conn, workspace_id).await?;
+    let workspace = match workspaces::get_workspace(&mut conn, workspace_id).await {
+        Ok(workspace) => workspace,
+        Err(e) => {
+            handle_workspace_error!("get_workspace", &e);
+            return Err(e);
+        }
+    };
+
+    tracing::info!(
+        operation = "get_workspace",
+        workspace_id = %workspace.id,
+        "Workspace details fetched successfully",
+    );
 
     Ok(Json(serde_json::json!({
         "workspace": workspace,
@@ -161,21 +267,41 @@ pub async fn update_workspace(
     Path(workspace_id): Path<Uuid>,
     Json(request): Json<UpdateWorkspaceRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+    tracing::info!(
+        operation = "update_workspace",
+        workspace_id = %workspace_id,
+        "Workspace update initiated",
+    );
+
+    let mut conn = acquire_db_connection(&state, "update_workspace").await?;
 
     // Middleware validated membership, handler checks ownership
     if !workspace_access.is_owner {
-        return Err(Error::Forbidden(
+        let e = Error::Forbidden(
             "Only the workspace owner can update workspace details".to_string(),
-        ));
+        );
+        handle_workspace_error!("update_workspace", &e);
+        return Err(e);
     }
 
-    let workspace = workspaces::update_workspace(
+    let workspace = match workspaces::update_workspace(
         &mut conn,
         workspace_id,
         request,
-    ).await?;
+    ).await {
+        Ok(workspace) => workspace,
+        Err(e) => {
+            handle_workspace_error!("update_workspace", &e);
+            return Err(e);
+        }
+    };
+
+    tracing::info!(
+        operation = "update_workspace",
+        workspace_id = %workspace.id,
+        workspace_name = %workspace.name,
+        "Workspace updated successfully",
+    );
 
     Ok(Json(serde_json::json!({
         "workspace": workspace,
@@ -207,17 +333,36 @@ pub async fn delete_workspace(
     Extension(workspace_access): Extension<WorkspaceAccess>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    let mut conn = state.pool.acquire().await
-        .map_err(|e| Error::Internal(format!("Failed to acquire database connection: {}", e)))?;
+    tracing::info!(
+        operation = "delete_workspace",
+        workspace_id = %workspace_id,
+        "Workspace deletion initiated",
+    );
+
+    let mut conn = acquire_db_connection(&state, "delete_workspace").await?;
 
     // Middleware validated membership, handler checks ownership
     if !workspace_access.is_owner {
-        return Err(Error::Forbidden(
+        let e = Error::Forbidden(
             "Only the workspace owner can delete the workspace".to_string(),
-        ));
+        );
+        handle_workspace_error!("delete_workspace", &e);
+        return Err(e);
     }
 
-    workspaces::delete_workspace(&mut conn, workspace_id).await?;
+    match workspaces::delete_workspace(&mut conn, workspace_id).await {
+        Ok(_) => {},
+        Err(e) => {
+            handle_workspace_error!("delete_workspace", &e);
+            return Err(e);
+        }
+    };
+
+    tracing::info!(
+        operation = "delete_workspace",
+        workspace_id = %workspace_id,
+        "Workspace deleted successfully",
+    );
 
     Ok(Json(serde_json::json!({
         "message": "Workspace deleted successfully",

@@ -9,6 +9,10 @@ import type {
   AuthResponse,
   RefreshTokenResponse,
   User,
+  CreateWorkspaceResponse,
+  ListWorkspacesResponse,
+  GetWorkspaceResponse,
+  UpdateWorkspaceResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -290,6 +294,32 @@ class ApiClient {
 
   async getProfile(): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/me')
+  }
+
+  async createWorkspace(name: string): Promise<CreateWorkspaceResponse> {
+    return this.request<CreateWorkspaceResponse>('/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async listWorkspaces(): Promise<ListWorkspacesResponse> {
+    return this.request<ListWorkspacesResponse>('/workspaces', {
+      method: 'GET',
+    })
+  }
+
+  async getWorkspace(id: string): Promise<GetWorkspaceResponse> {
+    return this.request<GetWorkspaceResponse>(`/workspaces/${id}`, {
+      method: 'GET',
+    })
+  }
+
+  async updateWorkspace(id: string, name: string): Promise<UpdateWorkspaceResponse> {
+    return this.request<UpdateWorkspaceResponse>(`/workspaces/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    })
   }
 
   // Generic methods for other API calls

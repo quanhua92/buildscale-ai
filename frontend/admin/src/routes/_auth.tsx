@@ -14,12 +14,17 @@ function AuthLayout() {
   useEffect(() => {
     // Redirect if not authenticated after restoration completes
     if (!auth.isRestoring && !auth.isAuthenticated) {
+      // Prevent infinite redirect loops if we are already on the login page
+      if (location.pathname.includes('/login')) {
+        return
+      }
+
       navigate({
         to: '/login',
         search: { redirect: location.href },
       })
     }
-  }, [auth.isRestoring, auth.isAuthenticated, navigate, location.href])
+  }, [auth.isRestoring, auth.isAuthenticated, navigate, location.href, location.pathname])
 
   // Show loading while restoring session
   if (auth.isRestoring) {

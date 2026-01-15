@@ -16,6 +16,26 @@ export interface User {
 }
 
 // ============================================================================
+// Workspace Types
+// ============================================================================
+
+export interface Workspace {
+  id: string
+  name: string
+  owner_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateWorkspaceRequest {
+  name: string
+}
+
+export interface UpdateWorkspaceRequest {
+  name: string
+}
+
+// ============================================================================
 // Request Types
 // ============================================================================
 
@@ -34,6 +54,24 @@ export interface LoginRequest {
 // ============================================================================
 // Response Types
 // ============================================================================
+
+export interface CreateWorkspaceResponse {
+  workspace: Workspace
+  // roles and owner_membership are also returned but often not needed immediately by client
+}
+
+export interface ListWorkspacesResponse {
+  workspaces: Workspace[]
+  count: number
+}
+
+export interface GetWorkspaceResponse {
+  workspace: Workspace
+}
+
+export interface UpdateWorkspaceResponse {
+  workspace: Workspace
+}
 
 export interface AuthResponse {
   user: User

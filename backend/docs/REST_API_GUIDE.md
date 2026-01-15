@@ -27,6 +27,11 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/auth/login` | POST | Login and get tokens | No |
 | `/api/v1/auth/refresh` | POST | Refresh access token | No (uses refresh token) |
 | `/api/v1/auth/logout` | POST | Logout and invalidate session | No (uses refresh token) |
+| `/api/v1/workspaces` | POST | Create new workspace | Yes (JWT) |
+| `/api/v1/workspaces` | GET | List my workspaces | Yes (JWT) |
+| `/api/v1/workspaces/:id` | GET | Get workspace details | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id` | PATCH | Update workspace | Yes (JWT + Owner) |
+| `/api/v1/workspaces/:id` | DELETE | Delete workspace | Yes (JWT + Owner) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -1321,40 +1326,311 @@ const logout = async () => {
 
 ---
 
-## Error Responses
 
-All error responses follow a consistent format:
+---
 
-### Error Response Structure
+## Workspaces API
 
+Manage workspaces and access control.
+
+### Create Workspace
+
+Create a new workspace with the authenticated user as the owner.
+
+**Endpoint**: `POST /api/v1/workspaces`
+
+**Authentication**: Required (JWT access token)
+
+#### Request
+
+**Headers**:
+```
+Content-Type: application/json
+Authorization: Bearer <access_token>
+```
+
+**Body**:
 ```json
 {
-  "error": "Human-readable error message"
+  "name": "My New Startup"
 }
 ```
 
-### HTTP Status Codes
+#### Request Fields
 
-| Status | Meaning | Example Scenarios |
-|--------|---------|-------------------|
-| **200 OK** | Success | Request completed successfully |
-| **400 Bad Request** | Validation Error | Invalid email, weak password, missing fields |
-| **401 Unauthorized** | Authentication Failed | Wrong email/password, expired token |
-| **403 Forbidden** | Security Violation | Token theft detected |
-| **409 Conflict** | Resource Conflict | Email already exists |
-| **500 Internal Server Error** | Server Error | Database connection failed |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Workspace name (1-100 characters) |
+
+#### Response (200 OK)
+
+```json
+{
+  "workspace": {
+    "id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "name": "My New Startup",
+    "owner_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "created_at": "2026-01-07T09:00:00Z",
+    "updated_at": "2026-01-07T09:00:00Z"
+  },
+  "roles": [
+    {
+      "id": "...",
+      "name": "Owner",
+      "workspace_id": "...",
+      "is_system": true,
+      ...
+    },
+    ...
+  ],
+  "owner_membership": {
+    "user_id": "...",
+    "workspace_id": "...",
+    "role_id": "...",
+    ...
+  }
+}
+```
+
+---
+
+### List User Workspaces
+
+List all workspaces where the authenticated user is a member (including owned workspaces).
+
+**Endpoint**: `GET /api/v1/workspaces`
+
+**Authentication**: Required (JWT access token)
+
+#### Request
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "workspaces": [
+    {
+      "id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+      "name": "My New Startup",
+      "owner_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+      "created_at": "2026-01-07T09:00:00Z",
+      "updated_at": "2026-01-07T09:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### Get Single Workspace
+
+Get details of a specific workspace.
+
+**Endpoint**: `GET /api/v1/workspaces/:id`
+
+**Authentication**: Required (JWT access token)
+**Permission**: User must be a member of the workspace.
+
+#### Request
+
+**Path Parameters**:
+- `id`: Workspace UUID
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "workspace": {
+    "id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "name": "My New Startup",
+    "owner_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "created_at": "2026-01-07T09:00:00Z",
+    "updated_at": "2026-01-07T09:00:00Z"
+  }
+}
+```
+
+#### Error Responses
+
+**403 Forbidden** - Not a Member
+```json
+{
+  "error": "Access forbidden: User is not a member of this workspace",
+  "code": "FORBIDDEN"
+}
+```
+
+---
+
+### Update Workspace
+
+Update workspace details (e.g., name).
+
+**Endpoint**: `PATCH /api/v1/workspaces/:id`
+
+**Authentication**: Required (JWT access token)
+**Permission**: User must be the **Owner** of the workspace.
+
+#### Request
+
+**Path Parameters**:
+- `id`: Workspace UUID
+
+**Headers**:
+```
+Content-Type: application/json
+Authorization: Bearer <access_token>
+```
+
+**Body**:
+```json
+{
+  "name": "Rebranded Startup"
+}
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "workspace": {
+    "id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "name": "Rebranded Startup",
+    "owner_id": "...",
+    "created_at": "...",
+    "updated_at": "..."
+  }
+}
+```
+
+#### Error Responses
+
+**403 Forbidden** - Not Owner
+```json
+{
+  "error": "Only the workspace owner can update workspace details",
+  "code": "FORBIDDEN"
+}
+```
+
+---
+
+### Delete Workspace
+
+Delete a workspace and all associated data (roles, members).
+
+**Endpoint**: `DELETE /api/v1/workspaces/:id`
+
+**Authentication**: Required (JWT access token)
+**Permission**: User must be the **Owner** of the workspace.
+
+#### Request
+
+**Path Parameters**:
+- `id`: Workspace UUID
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "message": "Workspace deleted successfully"
+}
+```
+
+#### Error Responses
+
+**403 Forbidden** - Not Owner
+```json
+{
+  "error": "Only the workspace owner can delete the workspace",
+  "code": "FORBIDDEN"
+}
+```
+
+---
+
+## Error Responses
+
+All error responses follow a consistent format with error codes and optional field-level details.
+
+### Error Response Structure
+
+**Generic Error**:
+```json
+{
+  "error": "Human-readable error message",
+  "code": "ERROR_CODE"
+}
+```
+
+**Validation Error (Single Field)**:
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "fields": {
+    "email": "Invalid email format"
+  }
+}
+```
+
+**Validation Error (Multiple Fields)**:
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "fields": {
+    "email": "Invalid email format",
+    "password": "Password must be at least 12 characters long"
+  }
+}
+```
+
+### HTTP Status Codes & Error Codes
+
+| Status | Error Code | Meaning |
+|--------|------------|---------|
+| **200 OK** | - | Request completed successfully |
+| **400 Bad Request** | `VALIDATION_ERROR` | Invalid input data (email format, password length) |
+| **401 Unauthorized** | `AUTHENTICATION_FAILED` | Wrong email/password |
+| **401 Unauthorized** | `INVALID_TOKEN` | Token is invalid or malformed |
+| **401 Unauthorized** | `SESSION_EXPIRED` | Token has expired |
+| **403 Forbidden** | `FORBIDDEN` | Access denied (not member/owner) |
+| **403 Forbidden** | `TOKEN_THEFT` | Token theft detected (security breach) |
+| **404 Not Found** | `NOT_FOUND` | Resource not found |
+| **409 Conflict** | `CONFLICT` | Resource already exists (duplicate email) |
+| **500 Internal Server Error** | `INTERNAL_ERROR` | Database or server error |
+| **500 Internal Server Error** | `CONFIG_ERROR` | Configuration error |
+| **500 Internal Server Error** | `CACHE_ERROR` | Cache operation failed |
 
 ### Common Error Messages
 
-| Error Message | Status | Cause |
-|---------------|--------|-------|
-| `"Email cannot be empty"` | 400 | Email field missing or empty |
-| `"Password must be at least 12 characters long"` | 400 | Password too short |
-| `"Passwords do not match"` | 400 | Password and confirmation don't match |
-| `"Email 'user@example.com' already exists"` | 409 | Duplicate email registration |
-| `"Invalid email or password"` | 401 | Wrong login credentials |
-| `"Database error"` | 500 | Server-side database issue |
-| `"Potential security breach detected. Your refresh token was used after rotation. All sessions have been revoked for your protection. Please login again and consider changing your password."` | 403 | Token theft detected (stolen refresh token used after rotation) |
+| Error Message | Code | HTTP Status | Cause |
+|---------------|------|-------------|-------|
+| `"Email cannot be empty"` | `VALIDATION_ERROR` | 400 | Email field missing or empty |
+| `"Password must be at least 12 characters long"` | `VALIDATION_ERROR` | 400 | Password too short |
+| `"Passwords do not match"` | `VALIDATION_ERROR` | 400 | Password and confirmation don't match |
+| `"Email 'user@example.com' already exists"` | `CONFLICT` | 409 | Duplicate email registration |
+| `"Invalid email or password"` | `AUTHENTICATION_FAILED` | 401 | Wrong login credentials |
+| `"Access forbidden: User is not a member of this workspace"` | `FORBIDDEN` | 403 | Accessing workspace without membership |
+| `"Only the workspace owner can update workspace details"` | `FORBIDDEN` | 403 | Non-owner trying to update workspace |
+| `"Potential security breach detected..."` | `TOKEN_THEFT` | 403 | Stolen refresh token used after rotation |
 
 ---
 
@@ -1422,9 +1698,9 @@ The example demonstrates:
 - ✅ Authorization header for API clients
 - ✅ Token refresh with both header and cookie modes
 - ✅ User logout with cookie clearing
-- ✅ Verification that logged-out tokens cannot be reused
-- ✅ Error handling (wrong password, duplicate email, weak password)
-- ✅ Full request/response logging with headers
+- [ ] Verification that logged-out tokens cannot be reused
+- [ ] Error handling (wrong password, duplicate email, weak password)
+- [ ] Full request/response logging with headers
 
 ### Using Postman or Insomnia
 
@@ -1500,7 +1776,6 @@ BUILDSCALE__COOKIE__SECURE=true  # Enable for HTTPS (production)
 
 ## Next Steps
 
-- **Workspace Management API**: Create and manage workspaces
 - **Member Management API**: Add/remove members with role assignments
 - **Permission System**: Role-based access control (RBAC)
 - **Invitation System**: Invite users to workspaces via email

@@ -1,9 +1,9 @@
 /**
- * Auth.Login - Pre-built login form component
+ * Auth.CreateWorkspace - Pre-built workspace creation form component
  */
 
 import { useState } from 'react'
-import { useNavigate, useLocation } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useAuth, type AuthError } from '../../context'
 import { Card } from './AuthCard'
@@ -11,16 +11,18 @@ import { Form } from './AuthForm'
 import { Input } from './AuthInput'
 import { Button } from './AuthButton'
 
-export function Login() {
-  const { login, redirectTarget } = useAuth()
+export interface CreateWorkspaceProps {
+  onSuccess?: () => void
+}
+
+export function CreateWorkspace({ onSuccess }: CreateWorkspaceProps = {}) {
+  const { createWorkspace } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
   const [success, setSuccess] = useState(false)
   const [formData, setFormData] = useState({
-    email: '',
-    password: ''
+    name: '',
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,53 +37,44 @@ export function Login() {
     setError(null)
     setSuccess(false)
 
-    const result = await login(data.email, data.password)
+    const result = await createWorkspace(data.name)
 
     setIsLoading(false)
 
     if (result.success) {
       setSuccess(true)
-      toast.success('Login successful', {
-        description: 'Welcome back!',
+      toast.success('Workspace created', {
+        description: `Workspace "${result.data?.name}" created successfully.`,
       })
-      // Redirect after 1 second
-      setTimeout(() => {
-        // Use redirect param from URL if present, otherwise fallback to default
-        const search = location.search as { redirect?: string }
-        const target = search?.redirect || redirectTarget
-        navigate({ to: target, replace: true })
-      }, 1000)
+      
+      if (onSuccess) {
+        onSuccess()
+      } else {
+        // Redirect after 1 second to the new workspace page or list
+        setTimeout(() => {
+          navigate({ to: '/workspaces/all' })
+        }, 1000)
+      }
     } else if (result.error) {
       setError(result.error)
-      toast.error('Login failed', {
+      toast.error('Failed to create workspace', {
         description: result.error.message,
       })
     }
   }
 
   return (
-    <Card title="Sign In" description="Enter your credentials to access your account">
+    <Card title="Create Workspace" description="Create a new workspace to start collaborating">
       <Form onSubmit={handleSubmit} externalError={error}>
         <Input
-          name="email"
-          type="email"
-          label="Email address"
+          name="name"
+          type="text"
+          label="Workspace Name"
           required
-          placeholder="you@example.com"
+          placeholder="My New Startup"
           className="delay-100"
-          autoComplete="email"
-          value={formData.email}
-          onChange={handleChange}
-        />
-        <Input
-          name="password"
-          type="password"
-          label="Password"
-          required
-          placeholder="••••••••"
-          className="delay-200"
-          autoComplete="current-password"
-          value={formData.password}
+          autoComplete="off"
+          value={formData.name}
           onChange={handleChange}
         />
         {error && !error.fields && (
@@ -92,7 +85,7 @@ export function Login() {
                   <div className="h-3 w-3 rounded-full bg-destructive" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-destructive">Authentication Error</p>
+                  <p className="text-sm font-medium text-destructive">Error</p>
                   <p className="text-sm text-destructive/80 mt-1">{error.message}</p>
                 </div>
               </div>
@@ -109,15 +102,15 @@ export function Login() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-green-600">Login Successful</p>
-                  <p className="text-sm text-green-600/80 mt-1">Redirecting you now...</p>
+                  <p className="text-sm font-medium text-green-600">Success</p>
+                  <p className="text-sm text-green-600/80 mt-1">Redirecting...</p>
                 </div>
               </div>
             </div>
           </div>
         )}
-        <Button isLoading={isLoading} className="delay-300">
-          Sign In
+        <Button isLoading={isLoading} className="delay-200">
+          Create Workspace
         </Button>
       </Form>
     </Card>
