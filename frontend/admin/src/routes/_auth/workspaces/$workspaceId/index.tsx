@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useAuth, Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@buildscale/sdk'
+import { useAuth, Button, Card, CardHeader, CardTitle, CardDescription, CardContent, formatDateTime } from '@buildscale/sdk'
 import type { Workspace } from '@buildscale/sdk'
 
 export const Route = createFileRoute('/_auth/workspaces/$workspaceId/')({
@@ -89,11 +89,11 @@ function WorkspaceDetail() {
               </div>
               <div>
                 <dt className="text-sm font-medium text-muted-foreground">Created At</dt>
-                <dd className="text-sm mt-1">{new Date(workspace.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</dd>
+                <dd className="text-sm mt-1">{formatDateTime(workspace.created_at)}</dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-muted-foreground">Last Updated</dt>
-                <dd className="text-sm mt-1">{new Date(workspace.updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</dd>
+                <dd className="text-sm mt-1">{formatDateTime(workspace.updated_at)}</dd>
               </div>
             </dl>
           </CardContent>

@@ -8,7 +8,8 @@ import {
   TableBody, 
   TableRow, 
   TableHead, 
-  TableCell 
+  TableCell,
+  formatDate
 } from '@buildscale/sdk'
 import type { Workspace } from '@buildscale/sdk'
 
@@ -94,7 +95,7 @@ function AllWorkspaces() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    {new Date(workspace.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                    {formatDate(workspace.created_at)}
                   </TableCell>
                   <TableCell>
                     {/* Role info would normally come from the API, placeholder for now */}

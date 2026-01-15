@@ -134,4 +134,5 @@ export type {
 export { ApiError, TokenTheftError } from './api/errors'
 
 // Utils
-export { cn } from './utils'
+export { cn, formatDate, formatDateTime } from './utils'
+
