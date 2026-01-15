@@ -1,13 +1,18 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useMatches } from '@tanstack/react-router'
 
 import { useState } from 'react'
-import { Home, LogOut, LogIn, UserPlus } from 'lucide-react'
+import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File } from 'lucide-react'
 import { NavigationMenu, ThemeToggle, useAuth } from '@buildscale/sdk'
 import tanstackLogo from '/tanstack-word-logo-white.svg'
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false)
   const auth = useAuth()
+  const matches = useMatches()
+  
+  // Find workspaceId in route params
+  const workspaceMatch = matches.find((m) => m.id.includes('workspaceId'))
+  const workspaceId = workspaceMatch?.params && 'workspaceId' in workspaceMatch.params ? (workspaceMatch.params as any).workspaceId : undefined
 
   const handleLogout = () => {
     auth.logout()
@@ -24,6 +29,44 @@ export default function Header() {
           {auth.isAuthenticated ? (
             <>
               <NavigationMenu.Separator />
+
+              {workspaceId && (
+                <>
+                  <NavigationMenu.Section title="Current Workspace" defaultOpen={true}>
+                    <NavigationMenu.Item 
+                      to="/workspaces/$workspaceId" 
+                      params={{ workspaceId }}
+                      icon={<LayoutDashboard size={20} />}
+                    >
+                      Overview
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item 
+                      to="/workspaces/$workspaceId/files" 
+                      params={{ workspaceId }}
+                      disabled
+                      className="opacity-50 cursor-not-allowed"
+                      icon={<File size={20} />}
+                    >
+                      Files
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item 
+                      disabled 
+                      className="opacity-50 cursor-not-allowed"
+                      icon={<Images size={20} />}
+                    >
+                      Images
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item 
+                      disabled 
+                      className="opacity-50 cursor-not-allowed"
+                      icon={<Users size={20} />}
+                    >
+                      Members
+                    </NavigationMenu.Item>
+                  </NavigationMenu.Section>
+                  <NavigationMenu.Separator />
+                </>
+              )}
 
               <NavigationMenu.Section title="Workspaces" defaultOpen={true}>
                 <NavigationMenu.Item to="/workspaces/all">
