@@ -36,22 +36,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Clean up any existing example data
     println!("Cleaning up any existing example data...");
-    let _ = sqlx::query("DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)")
+    sqlx::query("DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)")
         .bind(format!("{}%", EXAMPLE_PREFIX))
         .execute(&mut *conn)
-        .await;
-    let _ = sqlx::query("DELETE FROM roles WHERE workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)")
+        .await?;
+    sqlx::query("DELETE FROM roles WHERE workspace_id IN (SELECT id FROM workspaces WHERE name LIKE $1)")
         .bind(format!("{}%", EXAMPLE_PREFIX))
         .execute(&mut *conn)
-        .await;
-    let _ = sqlx::query("DELETE FROM workspaces WHERE name LIKE $1")
+        .await?;
+    sqlx::query("DELETE FROM workspaces WHERE name LIKE $1")
         .bind(format!("{}%", EXAMPLE_PREFIX))
         .execute(&mut *conn)
-        .await;
-    let _ = sqlx::query("DELETE FROM users WHERE email LIKE $1")
+        .await?;
+    sqlx::query("DELETE FROM users WHERE email LIKE $1")
         .bind(format!("{}%", EXAMPLE_PREFIX))
         .execute(&mut *conn)
-        .await;
+        .await?;
     println!("✓ Cleanup completed");
     println!();
 

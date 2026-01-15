@@ -331,15 +331,15 @@ pub async fn get_my_membership(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> Result<WorkspaceMemberDetailed> {
-    // Validate that the workspace exists
-    let _workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
-
-    // Validate that the user is a member
-    let _member = workspace_members::get_workspace_member(conn, workspace_id, user_id).await?;
-
-    // Get detailed membership
-    let detailed = workspace_members::get_workspace_member_detailed(conn, workspace_id, user_id).await?;
-    Ok(detailed)
+    // Get detailed membership. This single query validates workspace, user, and membership existence.
+    workspace_members::get_workspace_member_detailed(conn, workspace_id, user_id)
+        .await
+        .map_err(|e| match e {
+            Error::Sqlx(sqlx::Error::RowNotFound) => {
+                Error::NotFound("Membership not found".to_string())
+            }
+            _ => e,
+        })
 }
 
 /// Adds a new member to a workspace by email address with a specific role.
@@ -359,20 +359,15 @@ pub async fn add_member_by_email(
     // Normalize email to lowercase for consistency
     let email = request.email.trim().to_lowercase();
 
-    // Validate email format
-    if !email.contains('@') || !email.contains('.') {
-        return Err(Error::Validation(ValidationErrors::Single {
-            field: "email".to_string(),
-            message: "Invalid email format".to_string(),
-        }));
-    }
+    // Validate email format using centralized validation
+    crate::validation::validate_email(&email)?;
 
     // Find user by email
     let user = users::get_user_by_email(conn, &email).await?
         .ok_or_else(|| Error::NotFound(format!("User with email '{}' not found", email)))?;
 
     // Find role by name in this workspace
-    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name).await?
+    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name.to_lowercase()).await?
         .ok_or_else(|| Error::NotFound(format!(
             "Role '{}' not found in workspace",
             request.role_name
@@ -405,14 +400,14 @@ pub async fn add_member_by_email(
     .await?;
 
     // Return detailed membership
-    let detailed = workspace_members::get_workspace_member_detailed(
-        conn,
-        workspace_id,
-        new_member.user_id,
-    )
-    .await?;
-
-    Ok(detailed)
+    Ok(WorkspaceMemberDetailed {
+        workspace_id: new_member.workspace_id,
+        user_id: new_member.user_id,
+        email: user.email,
+        full_name: user.full_name,
+        role_id: new_member.role_id,
+        role_name: role.name,
+    })
 }
 
 /// Updates a workspace member's role.
@@ -439,7 +434,7 @@ pub async fn update_member_role(
     require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
 
     // Find role by name in this workspace
-    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name).await?
+    let role = roles::get_role_by_workspace_and_name(conn, workspace_id, &request.role_name.to_lowercase()).await?
         .ok_or_else(|| Error::NotFound(format!(
             "Role '{}' not found in workspace",
             request.role_name
@@ -495,9 +490,6 @@ pub async fn remove_member(
     if requester_user_id != target_user_id {
         require_workspace_permission(conn, workspace_id, requester_user_id, "members:write").await?;
     }
-
-    // Check if member exists
-    let _existing_member = workspace_members::get_workspace_member(conn, workspace_id, target_user_id).await?;
 
     // Remove the membership
     let rows_affected = workspace_members::delete_workspace_member(conn, workspace_id, target_user_id).await?;

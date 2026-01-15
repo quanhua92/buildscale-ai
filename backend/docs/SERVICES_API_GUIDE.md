@@ -271,10 +271,9 @@ pub async fn remove_member(
     let workspace = crate::queries::workspaces::get_workspace_by_id(conn, workspace_id).await?;
 
     if workspace.owner_id == target_user_id {
-        return Err(Error::Validation(ValidationErrors::Single {
-            field: "user_id".to_string(),
-            message: "Cannot remove the workspace owner as a member".to_string(),
-        }));
+        return Err(Error::Forbidden(
+            "Cannot remove the workspace owner as a member".to_string(),
+        ));
     }
 
     if requester_user_id != target_user_id {

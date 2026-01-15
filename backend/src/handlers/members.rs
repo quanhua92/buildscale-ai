@@ -62,36 +62,7 @@ pub async fn list_members(
     )
     .await
     .map_err(|e| {
-        match e {
-            Error::Validation(_) => {
-                tracing::warn!(
-                    operation = "list_members",
-                    error = %e,
-                    "Member list_members failed: validation error",
-                );
-            }
-            Error::NotFound(_) => {
-                tracing::warn!(
-                    operation = "list_members",
-                    error = %e,
-                    "Member list_members failed: not found",
-                );
-            }
-            Error::Forbidden(_) => {
-                tracing::warn!(
-                    operation = "list_members",
-                    error = %e,
-                    "Member list_members failed: forbidden",
-                );
-            }
-            _ => {
-                tracing::error!(
-                    operation = "list_members",
-                    error = %e,
-                    "Member list_members failed: internal error",
-                );
-            }
-        }
+        log_handler_error("list_members", &e);
         e
     })?;
 
@@ -151,36 +122,7 @@ pub async fn get_my_membership(
     )
     .await
     .map_err(|e| {
-        match e {
-            Error::Validation(_) => {
-                tracing::warn!(
-                    operation = "get_my_membership",
-                    error = %e,
-                    "Member get_my_membership failed: validation error",
-                );
-            }
-            Error::NotFound(_) => {
-                tracing::warn!(
-                    operation = "get_my_membership",
-                    error = %e,
-                    "Member get_my_membership failed: not found",
-                );
-            }
-            Error::Forbidden(_) => {
-                tracing::warn!(
-                    operation = "get_my_membership",
-                    error = %e,
-                    "Member get_my_membership failed: forbidden",
-                );
-            }
-            _ => {
-                tracing::error!(
-                    operation = "get_my_membership",
-                    error = %e,
-                    "Member get_my_membership failed: internal error",
-                );
-            }
-        }
+        log_handler_error("get_my_membership", &e);
         e
     })?;
 
@@ -252,43 +194,7 @@ pub async fn add_member(
     )
     .await
     .map_err(|e| {
-        match e {
-            Error::Validation(_) => {
-                tracing::warn!(
-                    operation = "add_member",
-                    error = %e,
-                    "Member add_member failed: validation error",
-                );
-            }
-            Error::NotFound(_) => {
-                tracing::warn!(
-                    operation = "add_member",
-                    error = %e,
-                    "Member add_member failed: not found",
-                );
-            }
-            Error::Forbidden(_) => {
-                tracing::warn!(
-                    operation = "add_member",
-                    error = %e,
-                    "Member add_member failed: forbidden",
-                );
-            }
-            Error::Conflict(_) => {
-                tracing::warn!(
-                    operation = "add_member",
-                    error = %e,
-                    "Member add_member failed: conflict",
-                );
-            }
-            _ => {
-                tracing::error!(
-                    operation = "add_member",
-                    error = %e,
-                    "Member add_member failed: internal error",
-                );
-            }
-        }
+        log_handler_error("add_member", &e);
         e
     })?;
 
@@ -362,36 +268,7 @@ pub async fn update_member_role(
     )
     .await
     .map_err(|e| {
-        match e {
-            Error::Validation(_) => {
-                tracing::warn!(
-                    operation = "update_member_role",
-                    error = %e,
-                    "Member update_member_role failed: validation error",
-                );
-            }
-            Error::NotFound(_) => {
-                tracing::warn!(
-                    operation = "update_member_role",
-                    error = %e,
-                    "Member update_member_role failed: not found",
-                );
-            }
-            Error::Forbidden(_) => {
-                tracing::warn!(
-                    operation = "update_member_role",
-                    error = %e,
-                    "Member update_member_role failed: forbidden",
-                );
-            }
-            _ => {
-                tracing::error!(
-                    operation = "update_member_role",
-                    error = %e,
-                    "Member update_member_role failed: internal error",
-                );
-            }
-        }
+        log_handler_error("update_member_role", &e);
         e
     })?;
 
@@ -457,36 +334,7 @@ pub async fn remove_member(
     )
     .await
     .map_err(|e| {
-        match e {
-            Error::Validation(_) => {
-                tracing::warn!(
-                    operation = "remove_member",
-                    error = %e,
-                    "Member remove_member failed: validation error",
-                );
-            }
-            Error::NotFound(_) => {
-                tracing::warn!(
-                    operation = "remove_member",
-                    error = %e,
-                    "Member remove_member failed: not found",
-                );
-            }
-            Error::Forbidden(_) => {
-                tracing::warn!(
-                    operation = "remove_member",
-                    error = %e,
-                    "Member remove_member failed: forbidden",
-                );
-            }
-            _ => {
-                tracing::error!(
-                    operation = "remove_member",
-                    error = %e,
-                    "Member remove_member failed: internal error",
-                );
-            }
-        }
+        log_handler_error("remove_member", &e);
         e
     })?;
 
@@ -505,6 +353,18 @@ pub async fn remove_member(
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/// Helper to log handler errors with appropriate level
+fn log_handler_error(operation: &str, e: &Error) {
+    match e {
+        Error::Validation(_) | Error::NotFound(_) | Error::Forbidden(_) | Error::Conflict(_) => {
+            tracing::warn!(operation = operation, error = %e, "Handler operation failed");
+        }
+        _ => {
+            tracing::error!(operation = operation, error = %e, "Handler operation failed");
+        }
+    }
+}
 
 /// Helper to acquire database connection with consistent error logging
 async fn acquire_db_connection(state: &AppState, operation: &'static str) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>> {

@@ -315,7 +315,7 @@ pub async fn can_access_workspace(
 /// - Error if user has no access (Forbidden)
 ///
 /// # Example (middleware usage)
-/// ```rust
+/// ```rust,ignore
 /// let (is_owner, is_member) = workspaces::check_workspace_access(
 ///     &mut conn,
 ///     workspace_id,

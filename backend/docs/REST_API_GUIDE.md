@@ -1603,7 +1603,7 @@ Authorization: Bearer <access_token>
       "role_name": "Editor"
     }
   ],
-  "count": 2
+  "count": 1
 }
 ```
 
