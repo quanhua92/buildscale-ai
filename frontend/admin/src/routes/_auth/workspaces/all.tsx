@@ -18,7 +18,7 @@ export const Route = createFileRoute('/_auth/workspaces/all')({
 })
 
 function AllWorkspaces() {
-  const { listWorkspaces } = useAuth()
+  const { listWorkspaces, user } = useAuth()
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -98,9 +98,8 @@ function AllWorkspaces() {
                     {formatDate(workspace.created_at)}
                   </TableCell>
                   <TableCell>
-                    {/* Role info would normally come from the API, placeholder for now */}
-                    <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80">
-                      Member
+                    <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80 capitalize">
+                      {workspace.role_name || (workspace.owner_id === user?.id ? 'Owner' : 'Member')}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">

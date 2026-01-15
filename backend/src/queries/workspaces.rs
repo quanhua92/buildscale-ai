@@ -13,7 +13,7 @@ pub async fn create_workspace(conn: &mut DbConn, new_workspace: NewWorkspace) ->
         r#"
         INSERT INTO workspaces (name, owner_id)
         VALUES ($1, $2)
-        RETURNING id, name, owner_id, created_at, updated_at
+        RETURNING id, name, owner_id, NULL as "role_name?", created_at, updated_at
         "#,
         new_workspace.name,
         new_workspace.owner_id
@@ -30,7 +30,7 @@ pub async fn get_workspace_by_id(conn: &mut DbConn, id: Uuid) -> Result<Workspac
     let workspace = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
         FROM workspaces
         WHERE id = $1
         "#,
@@ -48,7 +48,7 @@ pub async fn get_workspace_by_id_optional(conn: &mut DbConn, id: Uuid) -> Result
     let workspace = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
         FROM workspaces
         WHERE id = $1
         "#,
@@ -66,7 +66,7 @@ pub async fn get_workspaces_by_owner(conn: &mut DbConn, owner_id: Uuid) -> Resul
     let workspaces = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
         FROM workspaces
         WHERE owner_id = $1
         ORDER BY created_at DESC
@@ -85,7 +85,7 @@ pub async fn list_workspaces(conn: &mut DbConn) -> Result<Vec<Workspace>> {
     let workspaces = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
         FROM workspaces
         ORDER BY created_at DESC
         "#,
@@ -107,7 +107,7 @@ pub async fn update_workspace(conn: &mut DbConn, id: Uuid, update_workspace: Upd
             owner_id = COALESCE($2, owner_id),
             updated_at = now()
         WHERE id = $3
-        RETURNING id, name, owner_id, created_at, updated_at
+        RETURNING id, name, owner_id, NULL as "role_name?", created_at, updated_at
         "#,
         update_workspace.name,
         update_workspace.owner_id,
@@ -170,9 +170,16 @@ pub async fn get_workspaces_by_user_membership(
     let workspaces = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT DISTINCT w.id, w.name, w.owner_id, w.created_at, w.updated_at
+        SELECT DISTINCT 
+            w.id, 
+            w.name, 
+            w.owner_id, 
+            r.name as "role_name?",
+            w.created_at, 
+            w.updated_at
         FROM workspaces w
         LEFT JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $1
+        LEFT JOIN roles r ON wm.role_id = r.id
         WHERE w.owner_id = $1 OR wm.user_id = $1
         ORDER BY w.created_at DESC
         "#,

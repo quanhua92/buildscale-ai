@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, owner_id, created_at, updated_at\n        FROM workspaces\n        WHERE owner_id = $1\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT DISTINCT \n            w.id, \n            w.name, \n            w.owner_id, \n            r.name as \"role_name?\",\n            w.created_at, \n            w.updated_at\n        FROM workspaces w\n        LEFT JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $1\n        LEFT JOIN roles r ON wm.role_id = r.id\n        WHERE w.owner_id = $1 OR wm.user_id = $1\n        ORDER BY w.created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -20,11 +20,16 @@
       },
       {
         "ordinal": 3,
+        "name": "role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -39,8 +44,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "19e627ba75ef257354d43cb258c07efdd6cd31c43c869a618d791aa80cdf6a4a"
+  "hash": "dc3c01e7f82e68098b75701dfb462b863c1fcde3b974c155f65296ca64c377c3"
 }

@@ -23,6 +23,7 @@ export interface Workspace {
   id: string
   name: string
   owner_id: string
+  role_name?: string | null
   created_at: string
   updated_at: string
 }
