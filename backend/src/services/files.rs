@@ -345,7 +345,8 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
 
         // Placeholder embedding: until OpenAI is integrated, we store a dummy vector
         // Dimension is 1536 for text-embedding-3-small
-        let dummy_vector = Vector::from(vec![0.0; 1536]);
+        // Using a non-zero vector to avoid NaN similarity results
+        let dummy_vector = Vector::from(vec![0.1; 1536]);
 
         let chunk = files::upsert_chunk(
             conn,
