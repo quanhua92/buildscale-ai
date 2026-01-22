@@ -418,3 +418,200 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
 
     Ok(files)
 }
+
+// ============================================================================
+// TAGGING QUERIES
+// ============================================================================
+
+/// Adds a tag to a file.
+pub async fn add_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()> {
+    sqlx::query!(
+        r#"
+        INSERT INTO file_tags (file_id, tag)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        "#,
+        file_id,
+        tag
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
+/// Removes a tag from a file.
+pub async fn remove_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()> {
+    sqlx::query!(
+        r#"
+        DELETE FROM file_tags
+        WHERE file_id = $1 AND tag = $2
+        "#,
+        file_id,
+        tag
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
+/// Gets all tags for a file.
+pub async fn get_tags_for_file(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<String>> {
+    let tags = sqlx::query!(
+        r#"
+        SELECT tag FROM file_tags
+        WHERE file_id = $1
+        ORDER BY tag ASC
+        "#,
+        file_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?
+    .into_iter()
+    .map(|r| r.tag)
+    .collect();
+
+    Ok(tags)
+}
+
+/// Lists files by tag in a workspace.
+pub async fn list_files_by_tag(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    tag: &str,
+) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT 
+            f.id, 
+            f.workspace_id, 
+            f.parent_id, 
+            f.author_id, 
+            f.file_type as "file_type: FileType", 
+            f.status as "status: FileStatus", 
+            f.slug, 
+            f.deleted_at, 
+            f.created_at, 
+            f.updated_at
+        FROM files f
+        INNER JOIN file_tags ft ON f.id = ft.file_id
+        WHERE f.workspace_id = $1 
+          AND ft.tag = $2
+          AND f.deleted_at IS NULL
+        ORDER BY f.updated_at DESC
+        "#,
+        workspace_id,
+        tag
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}
+
+// ============================================================================
+// LINKING QUERIES
+// ============================================================================
+
+/// Adds a link between two files.
+pub async fn add_link(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> Result<()> {
+    sqlx::query!(
+        r#"
+        INSERT INTO file_links (source_file_id, target_file_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        "#,
+        source_id,
+        target_id
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
+/// Removes a link between two files.
+pub async fn remove_link(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> Result<()> {
+    sqlx::query!(
+        r#"
+        DELETE FROM file_links
+        WHERE source_file_id = $1 AND target_file_id = $2
+        "#,
+        source_id,
+        target_id
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
+/// Gets all files that a specific file links TO.
+pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT 
+            f.id, 
+            f.workspace_id, 
+            f.parent_id, 
+            f.author_id, 
+            f.file_type as "file_type: FileType", 
+            f.status as "status: FileStatus", 
+            f.slug, 
+            f.deleted_at, 
+            f.created_at, 
+            f.updated_at
+        FROM files f
+        INNER JOIN file_links fl ON f.id = fl.target_file_id
+        WHERE fl.source_file_id = $1
+          AND f.deleted_at IS NULL
+        ORDER BY f.slug ASC
+        "#,
+        file_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}
+
+/// Gets all files that link TO a specific file (backlinks).
+pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT 
+            f.id, 
+            f.workspace_id, 
+            f.parent_id, 
+            f.author_id, 
+            f.file_type as "file_type: FileType", 
+            f.status as "status: FileStatus", 
+            f.slug, 
+            f.deleted_at, 
+            f.created_at, 
+            f.updated_at
+        FROM files f
+        INNER JOIN file_links fl ON f.id = fl.source_file_id
+        WHERE fl.target_file_id = $1
+          AND f.deleted_at IS NULL
+        ORDER BY f.slug ASC
+        "#,
+        file_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}

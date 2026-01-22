@@ -21,6 +21,7 @@ pub use handlers::{
     members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
     workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
     files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::list_trash,
+    files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
@@ -90,7 +91,7 @@ fn get_build_date() -> String {
     "unknown".to_string()
 }
 
-use axum::{Router, routing::{get, post, patch}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
+use axum::{Router, routing::{get, post, patch, delete}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
@@ -250,6 +251,54 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/files/trash",
             get(file_handlers::list_trash)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/tags/{tag}",
+            get(file_handlers::list_files_by_tag)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/tags",
+            post(file_handlers::add_tag)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/tags/{tag}",
+            delete(file_handlers::remove_tag)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/links",
+            post(file_handlers::create_link)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/links/{target_id}",
+            delete(file_handlers::remove_link)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/network",
+            get(file_handlers::get_file_network)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

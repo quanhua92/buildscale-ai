@@ -3,7 +3,7 @@ use crate::{
     error::{Error, Result},
     models::{
         files::{File, FileStatus, FileType, NewFile, NewFileVersion},
-        requests::{CreateFileRequest, CreateVersionRequest, FileWithContent, UpdateFileHttp},
+        requests::{CreateFileRequest, CreateVersionRequest, FileNetworkSummary, FileWithContent, UpdateFileHttp},
     },
     queries::files,
     validation::validate_file_slug,
@@ -217,4 +217,87 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
 /// Lists all items in the trash for a workspace
 pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>> {
     files::list_trash(conn, workspace_id).await
+}
+
+// ============================================================================
+// TAGGING SERVICES
+// ============================================================================
+
+/// Adds a tag to a file
+pub async fn add_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()> {
+    let tag = tag.trim().to_lowercase();
+
+    if tag.is_empty() {
+        return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "tag".to_string(),
+            message: "Tag cannot be empty".to_string(),
+        }));
+    }
+
+    if tag.len() > 50 {
+        return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "tag".to_string(),
+            message: "Tag must be 50 characters or less".to_string(),
+        }));
+    }
+
+    files::add_tag(conn, file_id, &tag).await
+}
+
+/// Removes a tag from a file
+pub async fn remove_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()> {
+    files::remove_tag(conn, file_id, tag).await
+}
+
+/// Lists files by tag in a workspace
+pub async fn list_files_by_tag(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    tag: &str,
+) -> Result<Vec<File>> {
+    files::list_files_by_tag(conn, workspace_id, tag).await
+}
+
+// ============================================================================
+// LINKING SERVICES
+// ============================================================================
+
+/// Creates a link between two files
+pub async fn link_files(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> Result<()> {
+    if source_id == target_id {
+        return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "target_file_id".to_string(),
+            message: "A file cannot link to itself".to_string(),
+        }));
+    }
+
+    // Boundary Check: Do they belong to the same workspace?
+    let source = files::get_file_by_id(conn, source_id).await?;
+    let target = files::get_file_by_id(conn, target_id).await?;
+
+    if source.workspace_id != target.workspace_id {
+        return Err(Error::Forbidden(
+            "Cannot link files across different workspaces".to_string(),
+        ));
+    }
+
+    files::add_link(conn, source_id, target_id).await
+}
+
+/// Removes a link between two files
+pub async fn remove_link(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> Result<()> {
+    files::remove_link(conn, source_id, target_id).await
+}
+
+/// Gets the local network summary for a file
+pub async fn get_file_network(conn: &mut DbConn, file_id: Uuid) -> Result<FileNetworkSummary> {
+    let tags = files::get_tags_for_file(conn, file_id).await?;
+    let outbound_links = files::get_outbound_links(conn, file_id).await?;
+    let backlinks = files::get_backlinks(conn, file_id).await?;
+
+    Ok(FileNetworkSummary {
+        tags,
+        outbound_links,
+        backlinks,
+    })
 }

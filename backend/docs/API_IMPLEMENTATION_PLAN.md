@@ -14,7 +14,7 @@ This document serves as the self-contained execution guide for implementing the 
 - [x] **Phase 2**: Core Versioning Logic (The Heart)
 - [x] **Phase 3**: Basic API & File Lifecycle (The Interface)
 - [x] **Phase 4**: Advanced Organization (The Folder Tree & Trash)
-- [ ] **Phase 5**: Knowledge Graph & Taxonomy (The Network)
+- [x] **Phase 5**: Knowledge Graph & Taxonomy (The Network)
 - [ ] **Phase 6**: AI Foundation (The Brain)
 
 ---
@@ -87,16 +87,17 @@ This document serves as the self-contained execution guide for implementing the 
     - [x] Handler: `DELETE ...` and `POST .../restore`.
     - [x] **Constraint**: Folder must be empty before deletion.
 
-
 ## Phase 5: Knowledge Graph & Taxonomy (The Network)
 **Goal**: Connect files beyond folders.
 
-- [ ] **5.1 Tagging**
-    - [ ] Handlers: `POST /files/:id/tags`, `DELETE /files/:id/tags`.
-    - [ ] Query: `get_files_by_tag(tag)`.
-- [ ] **5.2 Links (Backlinks)**
-    - [ ] Query: `get_backlinks(file_id)`: Find all files that link TO this file.
-    - [ ] Handler: `GET /files/:id/backlinks`.
+- [x] **5.1 Tagging**
+    - [x] Handlers: `POST /files/:id/tags`, `DELETE /files/:id/tags`.
+    - [x] Query: `get_files_by_tag(tag)`.
+- [x] **5.2 Links (Backlinks)**
+    - [x] Query: `get_backlinks(file_id)`: Find all files that link TO this file.
+    - [x] Handler: `GET /files/:id/backlinks`.
+    - [x] Service: Workspace boundary check for linking.
+
 
 ## Phase 6: AI Foundation (The Brain)
 **Goal**: Prepare data for the RAG engine.

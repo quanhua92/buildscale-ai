@@ -1,6 +1,6 @@
 use buildscale::models::{
     files::FileType,
-    requests::{CreateFileHttp, CreateVersionHttp, UpdateFileHttp},
+    requests::{AddLinkHttp, AddTagHttp, CreateFileHttp, CreateVersionHttp, UpdateFileHttp},
 };
 use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
 
@@ -249,4 +249,93 @@ async fn test_trash_restore_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .send().await.unwrap();
     assert_eq!(final_resp.status(), 200);
+}
+
+#[tokio::test]
+async fn test_tagging_lifecycle() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Tag WS").await;
+
+    // 1. Create file
+    let create_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "tag_me.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_id = create_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 2. Add tag
+    app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files/{}/tags", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&AddTagHttp { tag: "Research".to_string() })
+        .send().await.unwrap();
+
+    // 3. Search by tag (lowercase check)
+    let search_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/tags/research", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    let items: Vec<serde_json::Value> = search_resp.json().await.unwrap();
+    assert!(items.iter().any(|i| i["id"] == file_id));
+
+    // 4. Remove tag
+    app.client.delete(&app.url(&format!("/api/v1/workspaces/{}/files/{}/tags/research", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+
+    // 5. Verify gone
+    let final_search = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/tags/research", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    let final_items: Vec<serde_json::Value> = final_search.json().await.unwrap();
+    assert!(final_items.is_empty());
+}
+
+#[tokio::test]
+async fn test_backlink_discovery() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Link WS").await;
+
+    // 1. Create File A
+    let a_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "file_a.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_a_id = a_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 2. Create File B
+    let b_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "file_b.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_b_id = b_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 3. Link A -> B
+    app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files/{}/links", workspace_id, file_a_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&AddLinkHttp { target_file_id: uuid::Uuid::parse_str(&file_b_id).unwrap() })
+        .send().await.unwrap();
+
+    // 4. Check B's network (backlinks)
+    let network_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/{}/network", workspace_id, file_b_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    let network: serde_json::Value = network_resp.json().await.unwrap();
+    
+    assert!(network["backlinks"].as_array().unwrap().iter().any(|f| f["id"] == file_a_id));
 }

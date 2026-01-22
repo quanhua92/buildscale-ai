@@ -119,3 +119,23 @@ pub struct UpdateFileHttp {
     pub parent_id: Option<Uuid>,
     pub slug: Option<String>,
 }
+
+/// HTTP API request for adding a tag to a file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddTagHttp {
+    pub tag: String,
+}
+
+/// HTTP API request for creating a link between files
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddLinkHttp {
+    pub target_file_id: Uuid,
+}
+
+/// Summary of a file's network relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileNetworkSummary {
+    pub tags: Vec<String>,
+    pub outbound_links: Vec<File>,
+    pub backlinks: Vec<File>,
+}

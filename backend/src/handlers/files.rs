@@ -14,8 +14,8 @@ use crate::{
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
     models::requests::{
-        CreateFileHttp, CreateFileRequest, CreateVersionHttp, CreateVersionRequest, FileWithContent,
-        UpdateFileHttp,
+        AddLinkHttp, AddTagHttp, CreateFileHttp, CreateFileRequest, CreateVersionHttp,
+        CreateVersionRequest, FileNetworkSummary, FileWithContent, UpdateFileHttp,
     },
     services::files as file_services,
     state::AppState,
@@ -163,6 +163,118 @@ pub async fn list_trash(
     let result = file_services::list_trash(&mut conn, workspace_access.workspace_id)
         .await
         .inspect_err(|e| log_handler_error("list_trash", e))?;
+
+    Ok(Json(result))
+}
+
+// ============================================================================
+// TAGGING HANDLERS
+// ============================================================================
+
+/// POST /api/v1/workspaces/:id/files/:file_id/tags
+///
+/// Adds a tag to a file.
+pub async fn add_tag(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<AddTagHttp>,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(&state, "add_tag").await?;
+
+    file_services::add_tag(&mut conn, file_id, &request.tag)
+        .await
+        .inspect_err(|e| log_handler_error("add_tag", e))?;
+
+    Ok(Json(serde_json::json!({ "message": "Tag added successfully" })))
+}
+
+/// DELETE /api/v1/workspaces/:id/files/:file_id/tags/:tag
+///
+/// Removes a tag from a file.
+pub async fn remove_tag(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id, tag)): Path<(Uuid, Uuid, String)>,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(&state, "remove_tag").await?;
+
+    file_services::remove_tag(&mut conn, file_id, &tag)
+        .await
+        .inspect_err(|e| log_handler_error("remove_tag", e))?;
+
+    Ok(Json(serde_json::json!({ "message": "Tag removed successfully" })))
+}
+
+/// GET /api/v1/workspaces/:id/files/tags/:tag
+///
+/// Lists files by tag in a workspace.
+pub async fn list_files_by_tag(
+    State(state): State<AppState>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, tag)): Path<(Uuid, String)>,
+) -> Result<Json<Vec<crate::models::files::File>>> {
+    let mut conn = acquire_db_connection(&state, "list_files_by_tag").await?;
+
+    let result = file_services::list_files_by_tag(&mut conn, workspace_access.workspace_id, &tag)
+        .await
+        .inspect_err(|e| log_handler_error("list_files_by_tag", e))?;
+
+    Ok(Json(result))
+}
+
+// ============================================================================
+// LINKING HANDLERS
+// ============================================================================
+
+/// POST /api/v1/workspaces/:id/files/:file_id/links
+///
+/// Creates a link between two files.
+pub async fn create_link(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<AddLinkHttp>,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(&state, "create_link").await?;
+
+    file_services::link_files(&mut conn, file_id, request.target_file_id)
+        .await
+        .inspect_err(|e| log_handler_error("create_link", e))?;
+
+    Ok(Json(serde_json::json!({ "message": "Link created successfully" })))
+}
+
+/// DELETE /api/v1/workspaces/:id/files/:file_id/links/:target_id
+///
+/// Removes a link between two files.
+pub async fn remove_link(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id, target_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(&state, "remove_link").await?;
+
+    file_services::remove_link(&mut conn, file_id, target_id)
+        .await
+        .inspect_err(|e| log_handler_error("remove_link", e))?;
+
+    Ok(Json(serde_json::json!({ "message": "Link removed successfully" })))
+}
+
+/// GET /api/v1/workspaces/:id/files/:file_id/network
+///
+/// Gets the local network summary for a file (tags, outbound links, backlinks).
+pub async fn get_file_network(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<FileNetworkSummary>> {
+    let mut conn = acquire_db_connection(&state, "get_file_network").await?;
+
+    let result = file_services::get_file_network(&mut conn, file_id)
+        .await
+        .inspect_err(|e| log_handler_error("get_file_network", e))?;
 
     Ok(Json(result))
 }
