@@ -172,6 +172,7 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::workspaces as workspace_handlers;
     use crate::handlers::members as member_handlers;
+    use crate::handlers::files as file_handlers;
     use crate::middleware::workspace_access::workspace_access_middleware;
 
     Router::new()
@@ -208,6 +209,31 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
             "/{id}/members/{user_id}",
             patch(member_handlers::update_member_role)
                 .delete(member_handlers::remove_member)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        // File routes
+        .route(
+            "/{id}/files",
+            post(file_handlers::create_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}",
+            get(file_handlers::get_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/versions",
+            post(file_handlers::create_version)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

@@ -88,6 +88,24 @@ pub struct CreateVersionRequest {
     pub app_data: Option<serde_json::Value>,
 }
 
+/// HTTP API request for creating a file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFileHttp {
+    pub parent_id: Option<Uuid>,
+    pub slug: String,
+    pub file_type: FileType,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// HTTP API request for creating a new version
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateVersionHttp {
+    pub branch: Option<String>,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
 /// Combined model for a file and its latest content version
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileWithContent {

@@ -12,7 +12,7 @@ This document serves as the self-contained execution guide for implementing the 
 
 - [x] **Phase 1**: Database & Domain Modeling (The Skeleton)
 - [x] **Phase 2**: Core Versioning Logic (The Heart)
-- [ ] **Phase 3**: Basic API & File Lifecycle (The Interface)
+- [x] **Phase 3**: Basic API & File Lifecycle (The Interface)
 - [ ] **Phase 4**: Advanced Organization (The Folder Tree & Trash)
 - [ ] **Phase 5**: Knowledge Graph & Taxonomy (The Network)
 - [ ] **Phase 6**: AI Foundation (The Brain)
@@ -57,16 +57,17 @@ This document serves as the self-contained execution guide for implementing the 
 ## Phase 3: Basic API & File Lifecycle (The Interface)
 **Goal**: Expose creation and reading via REST API.
 
-- [ ] **3.1 API Handlers (`src/handlers/files.rs`)**
-    - [ ] `POST /workspaces/:id/files`:
+- [x] **3.1 API Handlers (`src/handlers/files.rs`)**
+    - [x] `POST /workspaces/:id/files`:
         - Body: `{ parent_id, name, file_type, initial_content }`.
         - Logic: Sanitize slug -> Call Service -> Return 201.
-    - [ ] `GET /workspaces/:id/files/:file_id`:
+    - [x] `GET /workspaces/:id/files/:file_id`:
         - Return `File` metadata + `LatestVersion` content.
-- [ ] **3.2 Ingestion State Machine**
-    - [ ] Handle `status` transitions:
+- [x] **3.2 Ingestion State Machine**
+    - [x] Handle `status` transitions:
         - `pending` (Created) -> `ready` (Saved).
         - (Future hooks for `processing` will go here).
+
 
 ## Phase 4: Advanced Organization (The Folder Tree & Trash)
 **Goal**: Manage the hierarchy and safety mechanisms.

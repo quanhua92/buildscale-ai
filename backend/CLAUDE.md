@@ -171,6 +171,13 @@ Tests use a sophisticated isolation system:
 - **Three-Layer Flow**: `Request Model` → `Validation` → `Service (Transaction)` → `Query`.
 - **Folders First**: Always sort file listings with `(file_type = 'folder') DESC`.
 
+#### Handler Implementation Patterns
+- **Thin Handlers**: 3-5 lines maximum. Orchestrate extraction, validation, service call, and response.
+- **Locality Rule**: Keep `log_handler_error` and `acquire_db_connection` helpers inside each handler file to maintain modularity.
+- **Explicit Extraction**: Use `Extension<AuthenticatedUser>` for user context and `Extension<WorkspaceAccess>` for workspace permissions.
+- **Decoupling**: Use dedicated `Http` request models (e.g., `CreateFileHttp`) to separate API surface from internal service logic.
+- **Instrumentation**: Use `tracing` spans and `.inspect_err()` for idiomatic side-effect logging.
+
 ## Database Schema
 
 ### Core Tables
