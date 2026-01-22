@@ -1,8 +1,8 @@
 use buildscale::models::{
     files::FileType,
-    requests::{CreateFileHttp, CreateVersionHttp},
+    requests::{CreateFileHttp, CreateVersionHttp, UpdateFileHttp},
 };
-use crate::common::{TestApp, TestAppOptions, register_and_login};
+use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
 
 #[tokio::test]
 async fn test_file_api_lifecycle() {
@@ -118,4 +118,135 @@ async fn test_file_api_permission_denied() {
         .send().await.unwrap();
 
     assert_eq!(get_resp.status(), 403);
+}
+
+#[tokio::test]
+async fn test_folder_delete_safeguard() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Delete Test WS").await;
+
+    // 1. Create a folder
+    let folder_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "my_folder".to_string(),
+            file_type: FileType::Folder,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let folder_id = folder_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 2. Create a file inside that folder
+    app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: Some(uuid::Uuid::parse_str(&folder_id).unwrap()),
+            slug: "inside.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!({"text": "hello"}),
+            app_data: None,
+        }).send().await.unwrap();
+
+    // 3. Try to delete the folder - should fail (409 Conflict)
+    let delete_resp = app.client.delete(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, folder_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    
+    assert_eq!(delete_resp.status(), 409);
+
+    // 4. Delete the file first
+    let list_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/trash", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    assert_eq!(list_resp.status(), 200);
+}
+
+#[tokio::test]
+async fn test_move_rename_lifecycle() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Move Test WS").await;
+
+    // 1. Create a folder
+    let folder_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "target_folder".to_string(),
+            file_type: FileType::Folder,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let folder_id = folder_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 2. Create a file in root
+    let file_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "move_me.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!({"text": "original"}),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_id = file_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 3. Move file into folder and rename it
+    let patch_resp = app.client.patch(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&UpdateFileHttp {
+            parent_id: Some(uuid::Uuid::parse_str(&folder_id).unwrap()),
+            slug: Some("renamed.md".to_string()),
+        }).send().await.unwrap();
+    
+    assert_eq!(patch_resp.status(), 200);
+    let patched_body: serde_json::Value = patch_resp.json().await.unwrap();
+    assert_eq!(patched_body["slug"], "renamed.md");
+    assert_eq!(patched_body["parent_id"], folder_id);
+}
+
+#[tokio::test]
+async fn test_trash_restore_lifecycle() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Trash Test WS").await;
+
+    // 1. Create file
+    let create_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "trash_me.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_id = create_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 2. Delete it
+    let delete_resp = app.client.delete(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    assert_eq!(delete_resp.status(), 200);
+
+    // 3. Check trash
+    let trash_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/trash", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    let trash_items: Vec<serde_json::Value> = trash_resp.json().await.unwrap();
+    assert!(trash_items.iter().any(|i| i["id"] == file_id));
+
+    // 4. Restore it
+    let restore_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files/{}/restore", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    assert_eq!(restore_resp.status(), 200);
+
+    // 5. Verify it's back in root
+    let final_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    assert_eq!(final_resp.status(), 200);
 }

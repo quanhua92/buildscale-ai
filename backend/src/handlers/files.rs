@@ -13,7 +13,10 @@ use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
-    models::requests::{CreateFileHttp, CreateFileRequest, CreateVersionHttp, CreateVersionRequest, FileWithContent},
+    models::requests::{
+        CreateFileHttp, CreateFileRequest, CreateVersionHttp, CreateVersionRequest, FileWithContent,
+        UpdateFileHttp,
+    },
     services::files as file_services,
     state::AppState,
 };
@@ -76,6 +79,90 @@ pub async fn get_file(
     let result = file_services::get_file_with_content(&mut conn, file_id)
         .await
         .inspect_err(|e| log_handler_error("get_file", e))?;
+
+    Ok(Json(result))
+}
+
+// ============================================================================
+// UPDATE FILE
+// ============================================================================
+
+/// PATCH /api/v1/workspaces/:id/files/:file_id
+///
+/// Updates file metadata (move and/or rename).
+pub async fn update_file(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<UpdateFileHttp>,
+) -> Result<Json<crate::models::files::File>> {
+    let mut conn = acquire_db_connection(&state, "update_file").await?;
+
+    let result = file_services::move_or_rename_file(&mut conn, file_id, request)
+        .await
+        .inspect_err(|e| log_handler_error("update_file", e))?;
+
+    Ok(Json(result))
+}
+
+// ============================================================================
+// DELETE FILE
+// ============================================================================
+
+/// DELETE /api/v1/workspaces/:id/files/:file_id
+///
+/// Soft deletes a file. Folders must be empty.
+pub async fn delete_file(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(&state, "delete_file").await?;
+
+    file_services::soft_delete_file(&mut conn, file_id)
+        .await
+        .inspect_err(|e| log_handler_error("delete_file", e))?;
+
+    Ok(Json(serde_json::json!({ "message": "File deleted successfully" })))
+}
+
+// ============================================================================
+// RESTORE FILE
+// ============================================================================
+
+/// POST /api/v1/workspaces/:id/files/:file_id/restore
+///
+/// Restores a soft-deleted file.
+pub async fn restore_file(
+    State(state): State<AppState>,
+    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<crate::models::files::File>> {
+    let mut conn = acquire_db_connection(&state, "restore_file").await?;
+
+    let result = file_services::restore_file(&mut conn, file_id)
+        .await
+        .inspect_err(|e| log_handler_error("restore_file", e))?;
+
+    Ok(Json(result))
+}
+
+// ============================================================================
+// LIST TRASH
+// ============================================================================
+
+/// GET /api/v1/workspaces/:id/files/trash
+///
+/// Lists all soft-deleted files in the workspace.
+pub async fn list_trash(
+    State(state): State<AppState>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
+) -> Result<Json<Vec<crate::models::files::File>>> {
+    let mut conn = acquire_db_connection(&state, "list_trash").await?;
+
+    let result = file_services::list_trash(&mut conn, workspace_access.workspace_id)
+        .await
+        .inspect_err(|e| log_handler_error("list_trash", e))?;
 
     Ok(Json(result))
 }

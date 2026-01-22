@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE files\n        SET deleted_at = NULL, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            slug, \n            deleted_at, \n            created_at, \n            updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_type: FileType",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: FileStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "a809099b04c1f8804f0767d92762f76c2e1869733e2eae61958419c86d17ba52"
+}

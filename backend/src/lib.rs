@@ -15,7 +15,13 @@ pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use error::{Error, Result, ValidationErrors};
-pub use handlers::{auth::login, auth::logout, auth::me, auth::register, auth::refresh, health::health_check, health::health_cache, members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member, workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace};
+pub use handlers::{
+    auth::login, auth::logout, auth::me, auth::register, auth::refresh,
+    health::health_check, health::health_cache,
+    members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
+    workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
+    files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::list_trash,
+};
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
 pub use workers::revoked_token_cleanup_worker;
@@ -226,6 +232,24 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/files/{file_id}",
             get(file_handlers::get_file)
+                .patch(file_handlers::update_file)
+                .delete(file_handlers::delete_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/restore",
+            post(file_handlers::restore_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/trash",
+            get(file_handlers::list_trash)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

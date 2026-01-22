@@ -232,3 +232,189 @@ pub async fn list_files_in_folder(
 
     Ok(files)
 }
+
+/// Checks if a file has any active (not deleted) children.
+pub async fn has_active_children(conn: &mut DbConn, file_id: Uuid) -> Result<bool> {
+    let result = sqlx::query!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM files 
+            WHERE parent_id = $1 AND deleted_at IS NULL
+        ) as "exists!"
+        "#,
+        file_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(result.exists)
+}
+
+/// Checks if a slug collision exists in a target folder.
+pub async fn check_slug_collision(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    parent_id: Option<Uuid>,
+    slug: &str,
+) -> Result<bool> {
+    let result = sqlx::query!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM files 
+            WHERE workspace_id = $1 
+              AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))
+              AND slug = $3
+              AND deleted_at IS NULL
+        ) as "exists!"
+        "#,
+        workspace_id,
+        parent_id,
+        slug
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(result.exists)
+}
+
+/// Checks if one file is a descendant of another using a recursive CTE.
+pub async fn is_descendant_of(
+    conn: &mut DbConn,
+    potential_descendant_id: Uuid,
+    potential_ancestor_id: Uuid,
+) -> Result<bool> {
+    let result = sqlx::query!(
+        r#"
+        WITH RECURSIVE file_ancestry AS (
+            SELECT id, parent_id FROM files WHERE id = $1
+            UNION ALL
+            SELECT f.id, f.parent_id FROM files f
+            INNER JOIN file_ancestry fa ON f.id = fa.parent_id
+        )
+        SELECT EXISTS(
+            SELECT 1 FROM file_ancestry WHERE id = $2
+        ) as "exists!"
+        "#,
+        potential_descendant_id,
+        potential_ancestor_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(result.exists)
+}
+
+/// Updates file metadata (parent_id and/or slug).
+pub async fn update_file_metadata(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    parent_id: Option<Uuid>,
+    slug: &str,
+) -> Result<File> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        UPDATE files
+        SET parent_id = $2, slug = $3, updated_at = NOW()
+        WHERE id = $1
+        RETURNING 
+            id, 
+            workspace_id, 
+            parent_id, 
+            author_id, 
+            file_type as "file_type: FileType", 
+            status as "status: FileStatus", 
+            slug, 
+            deleted_at, 
+            created_at, 
+            updated_at
+        "#,
+        file_id,
+        parent_id,
+        slug
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(file)
+}
+
+/// Performs a soft delete on a file.
+pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE files
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+        "#,
+        file_id
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
+/// Restores a soft-deleted file.
+pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        UPDATE files
+        SET deleted_at = NULL, updated_at = NOW()
+        WHERE id = $1
+        RETURNING 
+            id, 
+            workspace_id, 
+            parent_id, 
+            author_id, 
+            file_type as "file_type: FileType", 
+            status as "status: FileStatus", 
+            slug, 
+            deleted_at, 
+            created_at, 
+            updated_at
+        "#,
+        file_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(file)
+}
+
+/// Lists all soft-deleted files in a workspace.
+pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT 
+            id, 
+            workspace_id, 
+            parent_id, 
+            author_id, 
+            file_type as "file_type: FileType", 
+            status as "status: FileStatus", 
+            slug, 
+            deleted_at, 
+            created_at, 
+            updated_at
+        FROM files
+        WHERE workspace_id = $1 
+          AND deleted_at IS NOT NULL
+        ORDER BY deleted_at DESC
+        "#,
+        workspace_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}

@@ -13,7 +13,7 @@ This document serves as the self-contained execution guide for implementing the 
 - [x] **Phase 1**: Database & Domain Modeling (The Skeleton)
 - [x] **Phase 2**: Core Versioning Logic (The Heart)
 - [x] **Phase 3**: Basic API & File Lifecycle (The Interface)
-- [ ] **Phase 4**: Advanced Organization (The Folder Tree & Trash)
+- [x] **Phase 4**: Advanced Organization (The Folder Tree & Trash)
 - [ ] **Phase 5**: Knowledge Graph & Taxonomy (The Network)
 - [ ] **Phase 6**: AI Foundation (The Brain)
 
@@ -68,24 +68,25 @@ This document serves as the self-contained execution guide for implementing the 
         - `pending` (Created) -> `ready` (Saved).
         - (Future hooks for `processing` will go here).
 
-
 ## Phase 4: Advanced Organization (The Folder Tree & Trash)
 **Goal**: Manage the hierarchy and safety mechanisms.
 
-- [ ] **4.1 Folder Navigation**
-    - [ ] Query: `list_files(parent_id)`:
+- [x] **4.1 Folder Navigation**
+    - [x] Query: `list_files(parent_id)`:
         - Filter: `deleted_at IS NULL`.
         - Order: Folders first, then Alphabetical.
-    - [ ] Handler: `GET /workspaces/:id/files?parent_id=...`.
-- [ ] **4.2 Move & Rename**
-    - [ ] Query: `update_file_location(id, new_parent, new_slug)`.
-    - [ ] **Validation Rule**: Cycle Detection (Ensure Target Folder is not a child of Source).
-    - [ ] **Validation Rule**: Slug Uniqueness (Check collision in Target Folder).
-    - [ ] Handler: `PATCH /workspaces/:id/files/:file_id`.
-- [ ] **4.3 Trash Bin (Soft Delete)**
-    - [ ] Query: `soft_delete(id)`: Set `deleted_at = NOW()`.
-    - [ ] Query: `restore(id)`: Set `deleted_at = NULL`.
-    - [ ] Handler: `DELETE ...` and `POST .../restore`.
+    - [x] Handler: `GET /workspaces/:id/files?parent_id=...`.
+- [x] **4.2 Move & Rename**
+    - [x] Query: `update_file_location(id, new_parent, new_slug)`.
+    - [x] **Validation Rule**: Cycle Detection (Ensure Target Folder is not a child of Source).
+    - [x] **Validation Rule**: Slug Uniqueness (Check collision in Target Folder).
+    - [x] Handler: `PATCH /workspaces/:id/files/:file_id`.
+- [x] **4.3 Trash Bin (Soft Delete)**
+    - [x] Query: `soft_delete(id)`: Set `deleted_at = NOW()`.
+    - [x] Query: `restore(id)`: Set `deleted_at = NULL`.
+    - [x] Handler: `DELETE ...` and `POST .../restore`.
+    - [x] **Constraint**: Folder must be empty before deletion.
+
 
 ## Phase 5: Knowledge Graph & Taxonomy (The Network)
 **Goal**: Connect files beyond folders.

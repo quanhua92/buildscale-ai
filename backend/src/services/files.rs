@@ -2,8 +2,8 @@ use crate::DbConn;
 use crate::{
     error::{Error, Result},
     models::{
-        files::{FileStatus, NewFile, NewFileVersion},
-        requests::{CreateFileRequest, CreateVersionRequest, FileWithContent},
+        files::{File, FileStatus, FileType, NewFile, NewFileVersion},
+        requests::{CreateFileRequest, CreateVersionRequest, FileWithContent, UpdateFileHttp},
     },
     queries::files,
     validation::validate_file_slug,
@@ -109,4 +109,112 @@ pub async fn get_file_with_content(conn: &mut DbConn, file_id: Uuid) -> Result<F
         file,
         latest_version,
     })
+}
+
+/// Updates a file's metadata (move and/or rename)
+pub async fn move_or_rename_file(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    request: UpdateFileHttp,
+) -> Result<File> {
+    // 1. Get current file state
+    let current_file = files::get_file_by_id(conn, file_id).await?;
+
+    // 2. Determine target values
+    let target_parent_id = request.parent_id.or(current_file.parent_id);
+    let target_slug = request.slug.as_deref().unwrap_or(&current_file.slug);
+
+    // 3. Validation
+    if let Some(new_slug) = &request.slug {
+        validate_file_slug(new_slug)?;
+    }
+
+    // 4. Check if anything actually changed
+    if target_parent_id == current_file.parent_id && target_slug == current_file.slug {
+        return Ok(current_file);
+    }
+
+    // 5. Start transaction
+    let mut tx = conn.begin().await.map_err(|e| {
+        Error::Internal(format!("Failed to begin transaction: {}", e))
+    })?;
+
+    // 6. Cycle Detection (if moving)
+    if request.parent_id.is_some() {
+        if let Some(new_parent_id) = request.parent_id {
+            // Cannot move to itself
+            if new_parent_id == file_id {
+                return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                    field: "parent_id".to_string(),
+                    message: "Cannot move a folder into itself".to_string(),
+                }));
+            }
+
+            // Cannot move to a descendant
+            if files::is_descendant_of(&mut tx, new_parent_id, file_id).await? {
+                return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                    field: "parent_id".to_string(),
+                    message: "Cannot move a folder into one of its own subfolders".to_string(),
+                }));
+            }
+        }
+    }
+
+    // 7. Collision Check
+    if files::check_slug_collision(&mut tx, current_file.workspace_id, target_parent_id, target_slug).await? {
+        return Err(Error::Conflict(format!(
+            "A file with name '{}' already exists in the target folder",
+            target_slug
+        )));
+    }
+
+    // 8. Update metadata
+    let updated_file = files::update_file_metadata(&mut tx, file_id, target_parent_id, target_slug).await?;
+
+    // 9. Commit
+    tx.commit().await.map_err(|e| {
+        Error::Internal(format!("Failed to commit transaction: {}", e))
+    })?;
+
+    Ok(updated_file)
+}
+
+/// Soft deletes a file with a check for empty folders
+pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+    let file = files::get_file_by_id(conn, file_id).await?;
+
+    // If it's a folder, ensure it's empty
+    if matches!(file.file_type, FileType::Folder) {
+        if files::has_active_children(conn, file_id).await? {
+            return Err(Error::Conflict(
+                "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
+            ));
+        }
+    }
+
+    files::soft_delete_file(conn, file_id).await
+}
+
+/// Restores a soft-deleted file
+pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
+    let file = files::get_file_by_id(conn, file_id).await?;
+
+    if file.deleted_at.is_none() {
+        return Ok(file);
+    }
+
+    // Collision check: can it return to its original home?
+    if files::check_slug_collision(conn, file.workspace_id, file.parent_id, &file.slug).await? {
+        return Err(Error::Conflict(format!(
+            "Cannot restore '{}' because another file with the same name already exists in its original location.",
+            file.slug
+        )));
+    }
+
+    files::restore_file(conn, file_id).await
+}
+
+/// Lists all items in the trash for a workspace
+pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>> {
+    files::list_trash(conn, workspace_id).await
 }

@@ -112,3 +112,10 @@ pub struct FileWithContent {
     pub file: File,
     pub latest_version: FileVersion,
 }
+
+/// HTTP API request for updating file metadata (move/rename)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateFileHttp {
+    pub parent_id: Option<Uuid>,
+    pub slug: Option<String>,
+}
