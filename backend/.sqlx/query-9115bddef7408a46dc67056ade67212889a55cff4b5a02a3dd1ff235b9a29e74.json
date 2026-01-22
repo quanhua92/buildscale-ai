@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM file_links\n        WHERE source_file_id = $1 AND target_file_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9115bddef7408a46dc67056ade67212889a55cff4b5a02a3dd1ff235b9a29e74"
+}

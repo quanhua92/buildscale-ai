@@ -22,6 +22,7 @@ pub use handlers::{
     workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
     files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::list_trash,
     files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
+    files::semantic_search,
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
@@ -251,6 +252,14 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/files/trash",
             get(file_handlers::list_trash)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/search",
+            post(file_handlers::semantic_search)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

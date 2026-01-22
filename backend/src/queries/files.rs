@@ -1,8 +1,9 @@
 use crate::{
     error::{Error, Result},
-    models::files::{File, FileStatus, FileType, FileVersion, NewFile, NewFileVersion},
+    models::files::{File, FileChunk, FileStatus, FileType, FileVersion, NewFile, NewFileVersion},
     DbConn,
 };
+use pgvector::Vector;
 use uuid::Uuid;
 
 /// Creates a new file identity in the database.
@@ -232,6 +233,10 @@ pub async fn list_files_in_folder(
 
     Ok(files)
 }
+
+// ============================================================================
+// ORGANIZATION & HIERARCHY QUERIES
+// ============================================================================
 
 /// Checks if a file has any active (not deleted) children.
 pub async fn has_active_children(conn: &mut DbConn, file_id: Uuid) -> Result<bool> {
@@ -614,4 +619,145 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
     .map_err(Error::Sqlx)?;
 
     Ok(files)
+}
+
+// ============================================================================
+// AI & SEMANTIC QUERIES
+// ============================================================================
+
+/// Creates a new semantic chunk or returns existing one if hash matches.
+pub async fn upsert_chunk(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    chunk_hash: &str,
+    content: &str,
+    embedding: Vector,
+) -> Result<FileChunk> {
+    let chunk = sqlx::query_as!(
+        FileChunk,
+        r#"
+        INSERT INTO file_chunks (workspace_id, chunk_hash, chunk_content, embedding)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (workspace_id, chunk_hash) DO UPDATE 
+        SET chunk_content = EXCLUDED.chunk_content
+        RETURNING id, workspace_id, chunk_hash, chunk_content, embedding as "embedding: Vector", created_at
+        "#,
+        workspace_id,
+        chunk_hash,
+        content,
+        embedding as _
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(chunk)
+}
+
+/// Links a file version to a semantic chunk.
+pub async fn link_version_to_chunk(
+    conn: &mut DbConn,
+    version_id: Uuid,
+    chunk_id: Uuid,
+    index: i32,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+        INSERT INTO file_version_chunks (file_version_id, chunk_id, chunk_index)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (file_version_id, chunk_index) DO UPDATE 
+        SET chunk_id = EXCLUDED.chunk_id
+        "#,
+        version_id,
+        chunk_id,
+        index
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
+/// Performs semantic search within a workspace.
+pub async fn semantic_search(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    query_vector: Vector,
+    limit: i32,
+) -> Result<Vec<(File, String, f32)>> {
+    // Note: cosine similarity = 1 - cosine distance
+    // pgvector <=> is cosine distance
+    let results = sqlx::query!(
+        r#"
+        SELECT 
+            f.id, f.workspace_id, f.parent_id, f.author_id, 
+            f.file_type as "file_type: FileType", 
+            f.status as "status: FileStatus", 
+            f.slug, f.deleted_at, f.created_at, f.updated_at,
+            fc.chunk_content,
+            (1 - (fc.embedding <=> $2)) as "similarity: f64"
+        FROM file_chunks fc
+        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
+        INNER JOIN file_versions fv ON fvc.file_version_id = fv.id
+        INNER JOIN files f ON fv.file_id = f.id
+        -- Ensure we only search against the LATEST version of each file
+        WHERE fc.workspace_id = $1
+          AND f.deleted_at IS NULL
+          AND fv.id = (
+              SELECT id FROM file_versions 
+              WHERE file_id = f.id 
+              ORDER BY created_at DESC 
+              LIMIT 1
+          )
+        ORDER BY fc.embedding <=> $2
+        LIMIT $3
+        "#,
+        workspace_id,
+        query_vector as Vector,
+        limit as i64
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    let mapped = results
+        .into_iter()
+        .map(|r| {
+            (
+                File {
+                    id: r.id,
+                    workspace_id: r.workspace_id,
+                    parent_id: r.parent_id,
+                    author_id: r.author_id,
+                    file_type: r.file_type,
+                    status: r.status,
+                    slug: r.slug,
+                    deleted_at: r.deleted_at,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                },
+                r.chunk_content,
+                r.similarity.unwrap_or(0.0) as f32,
+            )
+        })
+        .collect();
+
+    Ok(mapped)
+}
+
+/// Updates file status.
+pub async fn update_file_status(conn: &mut DbConn, file_id: Uuid, status: FileStatus) -> Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE files SET status = $2, updated_at = NOW() WHERE id = $1
+        "#,
+        file_id,
+        status as FileStatus
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
 }

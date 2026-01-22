@@ -139,3 +139,18 @@ pub struct FileNetworkSummary {
     pub outbound_links: Vec<File>,
     pub backlinks: Vec<File>,
 }
+
+/// Request for semantic search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticSearchHttp {
+    pub query_vector: Vec<f32>,
+    pub limit: Option<i32>,
+}
+
+/// Single result from a semantic search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub file: File,
+    pub chunk_content: String,
+    pub similarity: f32,
+}

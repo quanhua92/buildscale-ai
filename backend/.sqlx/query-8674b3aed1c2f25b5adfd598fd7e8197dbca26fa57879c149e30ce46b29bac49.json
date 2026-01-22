@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO file_chunks (workspace_id, chunk_hash, chunk_content, embedding)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (workspace_id, chunk_hash) DO UPDATE \n        SET chunk_content = EXCLUDED.chunk_content\n        RETURNING id, workspace_id, chunk_hash, chunk_content, embedding as \"embedding: Vector\", created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "chunk_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "chunk_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "embedding: Vector",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "8674b3aed1c2f25b5adfd598fd7e8197dbca26fa57879c149e30ce46b29bac49"
+}

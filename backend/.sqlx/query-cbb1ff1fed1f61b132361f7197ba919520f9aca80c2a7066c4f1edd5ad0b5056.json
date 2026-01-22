@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            f.id, f.workspace_id, f.parent_id, f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.slug, f.deleted_at, f.created_at, f.updated_at,\n            fc.chunk_content,\n            (1 - (fc.embedding <=> $2)) as \"similarity: f64\"\n        FROM file_chunks fc\n        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id\n        INNER JOIN file_versions fv ON fvc.file_version_id = fv.id\n        INNER JOIN files f ON fv.file_id = f.id\n        -- Ensure we only search against the LATEST version of each file\n        WHERE fc.workspace_id = $1\n          AND f.deleted_at IS NULL\n          AND fv.id = (\n              SELECT id FROM file_versions \n              WHERE file_id = f.id \n              ORDER BY created_at DESC \n              LIMIT 1\n          )\n        ORDER BY fc.embedding <=> $2\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_type: FileType",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: FileStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "chunk_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "similarity: f64",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "cbb1ff1fed1f61b132361f7197ba919520f9aca80c2a7066c4f1edd5ad0b5056"
+}

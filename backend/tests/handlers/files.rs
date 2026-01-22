@@ -1,7 +1,8 @@
 use buildscale::models::{
     files::FileType,
-    requests::{AddLinkHttp, AddTagHttp, CreateFileHttp, CreateVersionHttp, UpdateFileHttp},
+    requests::{AddLinkHttp, AddTagHttp, CreateFileHttp, CreateVersionHttp, UpdateFileHttp, SemanticSearchHttp},
 };
+use buildscale::services::files::process_file_for_ai;
 use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
 
 #[tokio::test]
@@ -338,4 +339,50 @@ async fn test_backlink_discovery() {
     let network: serde_json::Value = network_resp.json().await.unwrap();
     
     assert!(network["backlinks"].as_array().unwrap().iter().any(|f| f["id"] == file_a_id));
+}
+
+#[tokio::test]
+async fn test_semantic_search_flow() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "AI WS").await;
+    let mut conn = app.get_connection().await;
+
+    // 1. Create a file with content
+    let create_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            slug: "ai_doc.md".to_string(),
+            file_type: FileType::Document,
+            content: serde_json::json!("This is a document about machine learning and artificial intelligence."),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_id_str = create_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+    let file_id = uuid::Uuid::parse_str(&file_id_str).unwrap();
+
+    // 2. Trigger AI ingestion (manually for test)
+    process_file_for_ai(&mut conn, file_id).await.expect("AI ingestion failed");
+
+    // 3. Verify status is Ready
+    let get_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    let file_body: serde_json::Value = get_resp.json().await.unwrap();
+    assert_eq!(file_body["file"]["status"], "ready");
+
+    // 4. Perform search
+    // Since we used dummy vectors [0.0; 1536], searching with any vector will return it
+    let search_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/search", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&SemanticSearchHttp {
+            query_vector: vec![0.0; 1536],
+            limit: Some(5),
+        }).send().await.unwrap();
+    
+    assert_eq!(search_resp.status(), 200);
+    let results: Vec<serde_json::Value> = search_resp.json().await.unwrap();
+    assert!(!results.is_empty());
+    assert_eq!(results[0]["file"]["id"], file_id_str);
+    assert!(results[0]["chunk_content"].as_str().unwrap().contains("machine learning"));
 }

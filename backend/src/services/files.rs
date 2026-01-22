@@ -3,14 +3,16 @@ use crate::{
     error::{Error, Result},
     models::{
         files::{File, FileStatus, FileType, NewFile, NewFileVersion},
-        requests::{CreateFileRequest, CreateVersionRequest, FileNetworkSummary, FileWithContent, UpdateFileHttp},
+        requests::{CreateFileRequest, CreateVersionRequest, FileNetworkSummary, FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileHttp},
     },
     queries::files,
     validation::validate_file_slug,
 };
+use pgvector::Vector;
 use sha2::{Digest, Sha256};
 use sqlx::Acquire;
 use uuid::Uuid;
+
 
 /// Hashes JSON content using SHA-256 for content-addressing
 pub fn hash_content(content: &serde_json::Value) -> String {
@@ -140,23 +142,21 @@ pub async fn move_or_rename_file(
     })?;
 
     // 6. Cycle Detection (if moving)
-    if request.parent_id.is_some() {
-        if let Some(new_parent_id) = request.parent_id {
-            // Cannot move to itself
-            if new_parent_id == file_id {
-                return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                    field: "parent_id".to_string(),
-                    message: "Cannot move a folder into itself".to_string(),
-                }));
-            }
+    if let Some(new_parent_id) = request.parent_id {
+        // Cannot move to itself
+        if new_parent_id == file_id {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "parent_id".to_string(),
+                message: "Cannot move a folder into itself".to_string(),
+            }));
+        }
 
-            // Cannot move to a descendant
-            if files::is_descendant_of(&mut tx, new_parent_id, file_id).await? {
-                return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                    field: "parent_id".to_string(),
-                    message: "Cannot move a folder into one of its own subfolders".to_string(),
-                }));
-            }
+        // Cannot move to a descendant
+        if files::is_descendant_of(&mut tx, new_parent_id, file_id).await? {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "parent_id".to_string(),
+                message: "Cannot move a folder into one of its own subfolders".to_string(),
+            }));
         }
     }
 
@@ -184,12 +184,10 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
     let file = files::get_file_by_id(conn, file_id).await?;
 
     // If it's a folder, ensure it's empty
-    if matches!(file.file_type, FileType::Folder) {
-        if files::has_active_children(conn, file_id).await? {
-            return Err(Error::Conflict(
-                "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
-            ));
-        }
+    if matches!(file.file_type, FileType::Folder) && files::has_active_children(conn, file_id).await? {
+        return Err(Error::Conflict(
+            "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
+        ));
     }
 
     files::soft_delete_file(conn, file_id).await
@@ -300,4 +298,159 @@ pub async fn get_file_network(conn: &mut DbConn, file_id: Uuid) -> Result<FileNe
         outbound_links,
         backlinks,
     })
+}
+
+// ============================================================================
+// AI & SEMANTIC SERVICES
+// ============================================================================
+
+/// Orchestrates the AI ingestion pipeline for a file.
+pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+    // 1. Get file and its latest version
+    let file = files::get_file_by_id(conn, file_id).await?;
+    let latest_version = files::get_latest_version(conn, file_id).await?;
+
+    // 2. Set status to Processing
+    files::update_file_status(conn, file_id, FileStatus::Processing).await?;
+
+    // 3. Extract text content (from JSONB)
+    let text = if let Some(content) = latest_version.content_raw.as_str() {
+        content.to_string()
+    } else if let Some(obj) = latest_version.content_raw.as_object() {
+        // Fallback for structured JSON: flatten all strings
+        obj.values()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        // If it's not text or an object, we can't chunk it yet
+        files::update_file_status(conn, file_id, FileStatus::Ready).await?;
+        return Ok(());
+    };
+
+    if text.trim().is_empty() {
+        files::update_file_status(conn, file_id, FileStatus::Ready).await?;
+        return Ok(());
+    }
+
+    // 4. Chunk text
+    let chunks = chunk_text(&text, 1000, 200);
+
+    // 5. Upsert chunks and link them
+    for (i, chunk_text) in chunks.into_iter().enumerate() {
+        // Hashing for semantic deduplication
+        let mut hasher = Sha256::new();
+        hasher.update(chunk_text.as_bytes());
+        let chunk_hash = hex::encode(hasher.finalize());
+
+        // Placeholder embedding: until OpenAI is integrated, we store a dummy vector
+        // Dimension is 1536 for text-embedding-3-small
+        let dummy_vector = Vector::from(vec![0.0; 1536]);
+
+        let chunk = files::upsert_chunk(
+            conn,
+            file.workspace_id,
+            &chunk_hash,
+            &chunk_text,
+            dummy_vector,
+        )
+        .await?;
+
+        files::link_version_to_chunk(conn, latest_version.id, chunk.id, i as i32).await?;
+    }
+
+    // 6. Final status: Ready
+    files::update_file_status(conn, file_id, FileStatus::Ready).await?;
+
+    Ok(())
+}
+
+/// Splits text into overlapping semantic windows.
+pub fn chunk_text(text: &str, window_size: usize, overlap: usize) -> Vec<String> {
+    if text.is_empty() {
+        return vec![];
+    }
+
+    if window_size == 0 {
+        return vec![text.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
+
+    let mut start = 0;
+    while start < n {
+        let end = (start + window_size).min(n);
+        let chunk: String = chars[start..end].iter().collect();
+        chunks.push(chunk);
+
+        if end == n {
+            break;
+        }
+
+        // Advance by window_size minus overlap
+        let advance = window_size.saturating_sub(overlap).max(1);
+        start += advance;
+    }
+
+    chunks
+}
+
+/// Performs semantic search across the workspace.
+pub async fn semantic_search(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    request: SemanticSearchHttp,
+) -> Result<Vec<SearchResult>> {
+    let limit = request.limit.unwrap_or(5).min(50);
+    let query_vector = Vector::from(request.query_vector);
+
+    let raw_results = files::semantic_search(conn, workspace_id, query_vector, limit).await?;
+
+    let results = raw_results
+        .into_iter()
+        .map(|(file, chunk_content, similarity)| SearchResult {
+            file,
+            chunk_content,
+            similarity,
+        })
+        .collect();
+
+    Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunk_text_basic() {
+        let text = "abcdefghij"; // 10 chars
+        let chunks = chunk_text(text, 4, 2);
+        // "abcd"
+        //   "cdef"
+        //     "efgh"
+        //       "ghij"
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], "abcd");
+        assert_eq!(chunks[1], "cdef");
+        assert_eq!(chunks[2], "efgh");
+        assert_eq!(chunks[3], "ghij");
+    }
+
+    #[test]
+    fn test_chunk_text_overlap_greater_than_window() {
+        let text = "abc";
+        let chunks = chunk_text(text, 2, 5); // overlap 5 > window 2
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], "ab");
+        assert_eq!(chunks[1], "bc");
+    }
+
+    #[test]
+    fn test_chunk_text_empty() {
+        let chunks = chunk_text("", 10, 2);
+        assert!(chunks.is_empty());
+    }
 }

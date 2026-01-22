@@ -15,7 +15,8 @@ use crate::{
     middleware::workspace_access::WorkspaceAccess,
     models::requests::{
         AddLinkHttp, AddTagHttp, CreateFileHttp, CreateFileRequest, CreateVersionHttp,
-        CreateVersionRequest, FileNetworkSummary, FileWithContent, UpdateFileHttp,
+        CreateVersionRequest, FileNetworkSummary, FileWithContent, SearchResult,
+        SemanticSearchHttp, UpdateFileHttp,
     },
     services::files as file_services,
     state::AppState,
@@ -277,6 +278,27 @@ pub async fn get_file_network(
         .inspect_err(|e| log_handler_error("get_file_network", e))?;
 
     Ok(Json(result))
+}
+
+// ============================================================================
+// SEARCH HANDLER
+// ============================================================================
+
+/// POST /api/v1/workspaces/:id/search
+///
+/// Performs semantic search across all files in the workspace.
+pub async fn semantic_search(
+    State(state): State<AppState>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
+    Json(request): Json<SemanticSearchHttp>,
+) -> Result<Json<Vec<SearchResult>>> {
+    let mut conn = acquire_db_connection(&state, "semantic_search").await?;
+
+    let results = file_services::semantic_search(&mut conn, workspace_access.workspace_id, request)
+        .await
+        .inspect_err(|e| log_handler_error("semantic_search", e))?;
+
+    Ok(Json(results))
 }
 
 // ============================================================================
