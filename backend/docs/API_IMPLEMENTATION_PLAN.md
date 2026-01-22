@@ -10,7 +10,7 @@ This document serves as the self-contained execution guide for implementing the 
 
 ## 📅 Progress Log
 
-- [ ] **Phase 1**: Database & Domain Modeling (The Skeleton)
+- [x] **Phase 1**: Database & Domain Modeling (The Skeleton)
 - [ ] **Phase 2**: Core Versioning Logic (The Heart)
 - [ ] **Phase 3**: Basic API & File Lifecycle (The Interface)
 - [ ] **Phase 4**: Advanced Organization (The Folder Tree & Trash)
@@ -22,19 +22,19 @@ This document serves as the self-contained execution guide for implementing the 
 ## Phase 1: Database & Domain Modeling (The Skeleton)
 **Goal**: Establish the Rust structures that mirror the PostgreSQL schema. Ensure `sqlx` can talk to the new tables.
 
-- [ ] **1.1 Dependencies**
-    - [ ] Add `pgvector` to `Cargo.toml` (needed for `file_chunks` embedding).
-    - [ ] Add `strum` / `strum_macros` for Enum string serialization (optional but recommended for `FileType`).
-- [ ] **1.2 Domain Models (`src/models/files.rs`)**
-    - [ ] Define Enums: `FileStatus` (Pending, Uploading...), `FileType` (Document, Folder...).
-    - [ ] Struct `File` (Identity): `id`, `parent_id`, `slug`, `status`, `created_at`...
-    - [ ] Struct `FileVersion` (Content): `id`, `file_id`, `content_raw` (JSONB), `hash`, `branch`.
-    - [ ] Struct `FileChunk` (Semantic): `id`, `chunk_hash`, `embedding` (Vector).
-    - [ ] Struct `FileLink` & `FileTag`.
-- [ ] **1.3 Base Queries (`src/queries/files.rs`)**
-    - [ ] `create_file_identity`: Insert into `files` table.
-    - [ ] `get_file_by_id`: Fetch basic metadata.
-    - [ ] `get_file_by_slug`: Resolve path (`parent_id` + `slug`).
+- [x] **1.1 Dependencies**
+    - [x] Add `pgvector` to `Cargo.toml` (needed for `file_chunks` embedding).
+    - [x] Add `strum` / `strum_macros` for Enum string serialization (optional but recommended for `FileType`).
+- [x] **1.2 Domain Models (`src/models/files.rs`)**
+    - [x] Define Enums: `FileStatus` (Pending, Uploading...), `FileType` (Document, Folder...).
+    - [x] Struct `File` (Identity): `id`, `parent_id`, `slug`, `status`, `created_at`...
+    - [x] Struct `FileVersion` (Content): `id`, `file_id`, `content_raw` (JSONB), `hash`, `branch`.
+    - [x] Struct `FileChunk` (Semantic): `id`, `chunk_hash`, `embedding` (Vector).
+    - [x] Struct `FileLink` & `FileTag`.
+- [x] **1.3 Base Queries (`src/queries/files.rs`)**
+    - [x] `create_file_identity`: Insert into `files` table.
+    - [x] `get_file_by_id`: Fetch basic metadata.
+    - [x] `get_file_by_slug`: Resolve path (`parent_id` + `slug`).
 
 ## Phase 2: Core Versioning Logic (The Heart)
 **Goal**: Implement the "Identity vs Content" philosophy. Files are never overwritten, only appended.

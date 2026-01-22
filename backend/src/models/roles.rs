@@ -72,7 +72,8 @@ pub mod descriptions {
 
     pub const ADMIN: &str = "Full administrative access to workspace";
     pub const EDITOR: &str = "Can create and edit any content";
-    pub const MEMBER: &str = "Can create and edit their own content, comment, and participate in discussions";
+    pub const MEMBER: &str =
+        "Can create and edit their own content, comment, and participate in discussions";
     pub const VIEWER: &str = "Read-only access to workspace";
 
     /// Get description for a role name
