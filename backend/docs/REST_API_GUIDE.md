@@ -12,6 +12,9 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Login](#user-login)
   - [Refresh Access Token](#refresh-access-token)
   - [User Logout](#user-logout)
+  - [Workspaces](#workspaces)
+  - [Members](#members)
+  - [Files & AI](#files-and-ai)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 
@@ -32,10 +35,87 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id` | GET | Get workspace details | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id` | PATCH | Update workspace | Yes (JWT + Owner) |
 | `/api/v1/workspaces/:id` | DELETE | Delete workspace | Yes (JWT + Owner) |
+| `/api/v1/workspaces/:id/files` | POST | Create file/folder | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid` | GET | Get file content | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/search` | POST | Semantic search | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
 **API Version**: `v1` (all endpoints are prefixed with `/api/v1`)
+
+---
+
+## Files and AI
+
+Manage the "Everything is a File" system and use the AI Engine.
+
+### Create File
+Create a new file or folder.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/files`
+
+**Authentication**: Required
+
+#### Request
+```json
+{
+  "parent_id": "optional-folder-uuid",
+  "slug": "document.md",
+  "file_type": "document",
+  "content": { "text": "Hello world" },
+  "app_data": { "cursor": 0 }
+}
+```
+
+### Get File
+Retrieve file metadata and its latest content version.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/files/:file_id`
+
+**Authentication**: Required
+
+#### Response
+```json
+{
+  "file": {
+    "id": "...",
+    "slug": "document.md",
+    "file_type": "document",
+    "status": "ready"
+  },
+  "latest_version": {
+    "id": "...",
+    "content_raw": { "text": "Hello world" },
+    "hash": "..."
+  }
+}
+```
+
+### Semantic Search
+Search for content across all files in the workspace using vector similarity.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/search`
+
+**Authentication**: Required
+
+#### Request
+```json
+{
+  "query_vector": [0.1, 0.2, ...], // 1536-dim vector
+  "limit": 5
+}
+```
+
+#### Response
+```json
+[
+  {
+    "file": { ... },
+    "chunk_content": "Relevant text snippet...",
+    "similarity": 0.89
+  }
+]
+```
 
 ---
 
@@ -1796,63 +1876,3 @@ The example demonstrates:
      "password": "testpass123"
    }
    ```
-
----
-
-## Production Considerations
-
-### Environment Variables
-
-```bash
-# Database Configuration
-BUILDSCALE__DATABASE__USER=your_db_user
-BUILDSCALE__DATABASE__PASSWORD=your_db_password
-BUILDSCALE__DATABASE__HOST=localhost
-BUILDSCALE__DATABASE__PORT=5432
-BUILDSCALE__DATABASE__DATABASE=your_db_name
-
-# JWT Configuration
-BUILDSCALE__JWT__SECRET=your-jwt-secret-min-32-chars
-BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES=15
-
-# Session Configuration
-BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720
-
-# Cookie Configuration
-BUILDSCALE__COOKIE__SECURE=true  # Enable for HTTPS (production)
-```
-
-### Security Best Practices
-
-1. **Always use HTTPS in production**
-   - Set `BUILDSCALE__COOKIE__SECURE=true`
-   - Cookies will only be sent over HTTPS
-
-2. **Protect your JWT secret**
-   - Use strong, random secret (minimum 32 characters)
-   - Never commit to version control
-   - Rotate periodically
-
-3. **Implement rate limiting**
-   - Prevent brute force attacks on login
-   - Limit registration attempts per IP
-
-4. **Monitor and log**
-   - Track failed login attempts
-   - Monitor for suspicious activity
-   - Implement account lockout after N failed attempts
-
-5. **Token storage**
-   - Browser: HttpOnly cookies (automatic)
-   - Mobile: Encrypted keychain/keystore
-   - Never store tokens in localStorage (XSS vulnerable)
-
----
-
-## Next Steps
-
-- **Member Management API**: Add/remove members with role assignments
-- **Permission System**: Role-based access control (RBAC)
-- **Invitation System**: Invite users to workspaces via email
-
-See `docs/SERVICES_API_GUIDE.md` for complete service layer API reference.
