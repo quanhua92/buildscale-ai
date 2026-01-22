@@ -1,3 +1,9 @@
+use crate::models::{
+    files::{File, FileType, FileVersion},
+    roles::Role,
+    workspace_members::WorkspaceMember,
+    workspaces::Workspace,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -42,10 +48,10 @@ pub struct UserWorkspaceRegistrationRequest {
 /// Result of a complete workspace creation operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteWorkspaceResult {
-    pub workspace: super::workspaces::Workspace,
-    pub roles: Vec<super::roles::Role>,
-    pub owner_membership: super::workspace_members::WorkspaceMember,
-    pub members: Vec<super::workspace_members::WorkspaceMember>,
+    pub workspace: Workspace,
+    pub roles: Vec<Role>,
+    pub owner_membership: WorkspaceMember,
+    pub members: Vec<WorkspaceMember>,
 }
 
 /// Result of user registration with workspace
@@ -59,4 +65,32 @@ pub struct UserWorkspaceResult {
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateWorkspaceRequest {
     pub name: String,
+}
+
+/// Request for creating a new file with initial content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFileRequest {
+    pub workspace_id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub author_id: Uuid,
+    pub slug: String,
+    pub file_type: FileType,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// Request for creating a new version of an existing file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateVersionRequest {
+    pub author_id: Option<Uuid>,
+    pub branch: Option<String>,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// Combined model for a file and its latest content version
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWithContent {
+    pub file: File,
+    pub latest_version: FileVersion,
 }

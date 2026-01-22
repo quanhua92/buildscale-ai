@@ -11,7 +11,7 @@ This document serves as the self-contained execution guide for implementing the 
 ## 📅 Progress Log
 
 - [x] **Phase 1**: Database & Domain Modeling (The Skeleton)
-- [ ] **Phase 2**: Core Versioning Logic (The Heart)
+- [x] **Phase 2**: Core Versioning Logic (The Heart)
 - [ ] **Phase 3**: Basic API & File Lifecycle (The Interface)
 - [ ] **Phase 4**: Advanced Organization (The Folder Tree & Trash)
 - [ ] **Phase 5**: Knowledge Graph & Taxonomy (The Network)
@@ -39,16 +39,16 @@ This document serves as the self-contained execution guide for implementing the 
 ## Phase 2: Core Versioning Logic (The Heart)
 **Goal**: Implement the "Identity vs Content" philosophy. Files are never overwritten, only appended.
 
-- [ ] **2.1 Service Layer (`src/services/files.rs`)**
-    - [ ] **Hashing Logic**: Implement SHA-256 calculation for content.
-    - [ ] **Storage Strategy**:
+- [x] **2.1 Service Layer (`src/services/files.rs`)**
+    - [x] **Hashing Logic**: Implement SHA-256 calculation for content.
+    - [x] **Storage Strategy**:
         - *Logic*: If content is small text (<1MB), store in `content_raw`.
         - *Future Stub*: If binary/large, upload to S3 (mock for now) and store pointer.
-    - [ ] `create_version`:
+    - [x] `create_version`:
         - Input: `file_id`, `content`, `author`.
         - Action: Calculate Hash -> Check Dedup (optional) -> Insert `file_versions` -> Update `files.updated_at`.
-- [ ] **2.2 Transactional Creation**
-    - [ ] `create_file_with_content`:
+- [x] **2.2 Transactional Creation**
+    - [x] `create_file_with_content`:
         - Run inside `sqlx::Transaction`.
         - 1. Create `File` (Identity).
         - 2. Create first `FileVersion` (Content).

@@ -1,4 +1,5 @@
 pub mod cookies;
+pub mod files;
 pub mod invitations;
 pub mod jwt;
 pub mod refresh_tokens;

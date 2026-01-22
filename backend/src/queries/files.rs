@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    models::files::{File, NewFile, FileType, FileStatus},
+    models::files::{File, FileStatus, FileType, FileVersion, NewFile, NewFileVersion},
     DbConn,
 };
 use uuid::Uuid;
@@ -38,6 +38,38 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
     Ok(file)
 }
 
+/// Creates a new file version in the database.
+pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> Result<FileVersion> {
+    let version = sqlx::query_as!(
+        FileVersion,
+        r#"
+        INSERT INTO file_versions (file_id, branch, content_raw, app_data, hash, author_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING 
+            id, 
+            file_id, 
+            branch as "branch!", 
+            content_raw, 
+            app_data, 
+            hash, 
+            author_id as "author_id?", 
+            created_at, 
+            updated_at
+        "#,
+        new_version.file_id,
+        new_version.branch,
+        new_version.content_raw,
+        new_version.app_data,
+        new_version.hash,
+        new_version.author_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(version)
+}
+
 /// Gets a file by its ID.
 pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
     let file = sqlx::query_as!(
@@ -64,6 +96,67 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
     .map_err(Error::Sqlx)?;
 
     Ok(file)
+}
+
+/// Gets the latest version of a file.
+pub async fn get_latest_version(conn: &mut DbConn, file_id: Uuid) -> Result<FileVersion> {
+    let version = sqlx::query_as!(
+        FileVersion,
+        r#"
+        SELECT 
+            id, 
+            file_id, 
+            branch as "branch!", 
+            content_raw, 
+            app_data, 
+            hash, 
+            author_id as "author_id?", 
+            created_at, 
+            updated_at
+        FROM file_versions
+        WHERE file_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        file_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(version)
+}
+
+/// Gets the latest version of a file (optional).
+pub async fn get_latest_version_optional(
+    conn: &mut DbConn,
+    file_id: Uuid,
+) -> Result<Option<FileVersion>> {
+    let version = sqlx::query_as!(
+        FileVersion,
+        r#"
+        SELECT 
+            id, 
+            file_id, 
+            branch as "branch!", 
+            content_raw, 
+            app_data, 
+            hash, 
+            author_id as "author_id?", 
+            created_at, 
+            updated_at
+        FROM file_versions
+        WHERE file_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        file_id
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(version)
 }
 
 /// Resolves a file by its slug and parent_id.
