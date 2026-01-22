@@ -20,6 +20,20 @@ pub enum WorkspaceRole {
     Viewer,
 }
 
+impl std::str::FromStr for WorkspaceRole {
+    type Err = ();
+
+    fn from_str(role: &str) -> Result<Self, Self::Err> {
+        match role {
+            ADMIN_ROLE => Ok(WorkspaceRole::Admin),
+            EDITOR_ROLE => Ok(WorkspaceRole::Editor),
+            MEMBER_ROLE => Ok(WorkspaceRole::Member),
+            VIEWER_ROLE => Ok(WorkspaceRole::Viewer),
+            _ => Err(()),
+        }
+    }
+}
+
 impl WorkspaceRole {
     /// Get the string representation of the role
     pub fn as_str(&self) -> &'static str {
@@ -34,17 +48,6 @@ impl WorkspaceRole {
     /// Get the role name as a String
     pub fn name(&self) -> String {
         self.as_str().to_string()
-    }
-
-    /// Create a WorkspaceRole from a string
-    pub fn from_str(role: &str) -> Option<Self> {
-        match role {
-            ADMIN_ROLE => Some(WorkspaceRole::Admin),
-            EDITOR_ROLE => Some(WorkspaceRole::Editor),
-            MEMBER_ROLE => Some(WorkspaceRole::Member),
-            VIEWER_ROLE => Some(WorkspaceRole::Viewer),
-            _ => None,
-        }
     }
 }
 

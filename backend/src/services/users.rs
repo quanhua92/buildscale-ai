@@ -492,7 +492,6 @@ pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<
 
     // Use existing query function
     sessions::get_session_by_token_hash(conn, &token_hash).await
-        .map_err(|e| e.into())
 }
 
 /// Checks if an email is available for registration
@@ -509,11 +508,9 @@ pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool> 
 /// Gets all active sessions for a user
 pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<crate::models::users::UserSession>> {
     crate::services::sessions::get_user_active_sessions(conn, user_id).await
-        .map_err(|e| e.into())
 }
 
 /// Revokes all sessions for a user
 pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64> {
     crate::services::sessions::revoke_all_user_sessions(conn, user_id).await
-        .map_err(|e| e.into())
 }

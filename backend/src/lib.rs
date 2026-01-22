@@ -35,9 +35,7 @@ pub fn load_config() -> Result<Config> {
 /// ```
 /// use buildscale::init_tracing;
 ///
-/// fn main() {
-///     init_tracing();
-/// }
+/// init_tracing();
 /// ```
 pub fn init_tracing() {
     tracing_subscriber::fmt()
@@ -55,23 +53,20 @@ pub fn init_tracing() {
 /// (e.g., in Docker builds), or falls back to running git command.
 fn get_git_commit_hash() -> String {
     // Check environment variable first (set in Docker builds)
-    if let Ok(commit) = std::env::var("GIT_COMMIT") {
-        if !commit.is_empty() {
-            return commit;
-        }
+    if let Some(commit) = std::env::var("GIT_COMMIT").ok().filter(|c| !c.is_empty()) {
+        return commit;
     }
 
     // Fallback: try to get the short commit hash from git
     use std::process::Command;
-    if let Ok(output) = Command::new("git")
+    if let Some(hash) = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
     {
-        if output.status.success() {
-            if let Ok(hash) = String::from_utf8(output.stdout) {
-                return hash.trim().to_string();
-            }
-        }
+        return hash.trim().to_string();
     }
 
     // Final fallback if git is not available or not in a git repo
@@ -83,10 +78,8 @@ fn get_git_commit_hash() -> String {
 /// Returns the build date from the BUILD_DATE environment variable if set
 /// (e.g., in Docker builds), or "unknown".
 fn get_build_date() -> String {
-    if let Ok(date) = std::env::var("BUILD_DATE") {
-        if !date.is_empty() {
-            return date;
-        }
+    if let Some(date) = std::env::var("BUILD_DATE").ok().filter(|d| !d.is_empty()) {
+        return date;
     }
     "unknown".to_string()
 }

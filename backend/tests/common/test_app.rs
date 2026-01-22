@@ -1,4 +1,4 @@
-use axum::{Router, routing::{get, post}};
+use axum::Router;
 use buildscale::{load_config, Cache, CacheConfig, AppState, DbPool, create_api_router};
 use reqwest::{Client, redirect::Policy};
 use secrecy::ExposeSecret;

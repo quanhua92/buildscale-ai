@@ -38,8 +38,8 @@ pub fn generate_refresh_token(config: &Config) -> Result<String> {
     let signature = mac.finalize().into_bytes();
 
     // Encode as hex for storage/transmission
-    let random_hex = hex::encode(&random_bytes);
-    let signature_hex = hex::encode(&signature.as_slice());
+    let random_hex = hex::encode(random_bytes);
+    let signature_hex = hex::encode(signature.as_slice());
 
     // Return format: random:signature
     // Total length: 64 chars (random) + 1 (separator) + 64 chars (signature) = 129 chars
@@ -97,7 +97,11 @@ pub fn verify_refresh_token(token: &str, config: &Config) -> Result<Vec<u8>> {
 
     // Verify signature matches using constant-time comparison
     use subtle::ConstantTimeEq;
-    if expected_signature.as_slice().ct_eq(&provided_signature[..]).into() {
+    if expected_signature
+        .as_slice()
+        .ct_eq(&provided_signature[..])
+        .into()
+    {
         Ok(random_bytes)
     } else {
         Err(Error::InvalidToken("Invalid token signature".to_string()))
@@ -118,7 +122,10 @@ mod tests {
         let random_hex = hex::encode(&random_bytes);
 
         assert_eq!(random_hex.len(), 64, "Random part should be 64 hex chars");
-        assert!(random_hex.chars().all(|c| c.is_ascii_hexdigit()), "Should be valid hex");
+        assert!(
+            random_hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "Should be valid hex"
+        );
     }
 
     #[test]
@@ -126,7 +133,11 @@ mod tests {
         // Test that the format is correct: hex:hex
         let example = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let parts: Vec<&str> = example.split(':').collect();
-        assert_eq!(parts.len(), 2, "Token should have 2 parts separated by colon");
+        assert_eq!(
+            parts.len(),
+            2,
+            "Token should have 2 parts separated by colon"
+        );
         assert_eq!(parts[0].len(), 64, "Random part should be 64 chars");
         assert_eq!(parts[1].len(), 64, "Signature part should be 64 chars");
     }
@@ -140,6 +151,9 @@ mod tests {
     #[test]
     fn test_hex_encoding_invalid() {
         let invalid_hex = "ghijklmnopqrstuvwxyz0123456789abcdef0123456789abcdef0123456789";
-        assert!(hex::decode(invalid_hex).is_err(), "Should reject invalid hex");
+        assert!(
+            hex::decode(invalid_hex).is_err(),
+            "Should reject invalid hex"
+        );
     }
 }
