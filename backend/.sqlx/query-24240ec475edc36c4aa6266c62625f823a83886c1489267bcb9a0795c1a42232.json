@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        WITH latest_versions AS (\n            SELECT DISTINCT ON (file_id) id, file_id\n            FROM file_versions\n            ORDER BY file_id, created_at DESC\n        )\n        SELECT \n            f.id, f.workspace_id, f.parent_id, f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.slug, f.deleted_at, f.created_at, f.updated_at,\n            fc.chunk_content,\n            (1 - (fc.embedding <=> $2)) as \"similarity: f64\"\n        FROM file_chunks fc\n        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id\n        INNER JOIN latest_versions fv ON fvc.file_version_id = fv.id\n        INNER JOIN files f ON fv.file_id = f.id\n        WHERE fc.workspace_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY fc.embedding <=> $2\n        LIMIT $3\n        ",
+  "query": "\n        WITH latest_versions AS (\n            SELECT DISTINCT ON (f.id) \n                f.id, f.workspace_id, f.parent_id, f.author_id, \n                f.file_type, f.status, f.slug, f.deleted_at, f.created_at, f.updated_at,\n                fv.id as version_id\n            FROM files f\n            INNER JOIN file_versions fv ON f.id = fv.file_id\n            WHERE f.workspace_id = $1 AND f.deleted_at IS NULL\n            ORDER BY f.id, fv.created_at DESC\n        )\n        SELECT \n            lv.id, lv.workspace_id, lv.parent_id, lv.author_id, \n            lv.file_type as \"file_type: FileType\", \n            lv.status as \"status: FileStatus\", \n            lv.slug, lv.deleted_at, lv.created_at, lv.updated_at,\n            fc.chunk_content,\n            (1 - (fc.embedding <=> $2)) as \"similarity: f64\"\n        FROM file_chunks fc\n        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id\n        INNER JOIN latest_versions lv ON fvc.file_version_id = lv.version_id\n        WHERE fc.workspace_id = $1\n        ORDER BY fc.embedding <=> $2\n        LIMIT $3\n        ",
   "describe": {
     "columns": [
       {
@@ -91,5 +91,5 @@
       null
     ]
   },
-  "hash": "67b9c4f9a6ff256eeb68410d12b809054d1aaaf49b4c573f3358238feb5da339"
+  "hash": "24240ec475edc36c4aa6266c62625f823a83886c1489267bcb9a0795c1a42232"
 }

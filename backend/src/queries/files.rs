@@ -685,10 +685,11 @@ pub async fn semantic_search(
     workspace_id: Uuid,
     query_vector: Vector,
     limit: i32,
-) -> Result<Vec<(File, String, f32)>> {
+) -> Result<Vec<SearchResultRow>> {
     // Note: cosine similarity = 1 - cosine distance
     // pgvector <=> is cosine distance
-    let results = sqlx::query!(
+    let results = sqlx::query_as!(
+        SearchResultRow,
         r#"
         WITH latest_versions AS (
             SELECT DISTINCT ON (f.id) 
@@ -722,30 +723,24 @@ pub async fn semantic_search(
     .await
     .map_err(Error::Sqlx)?;
 
+    Ok(results)
+}
 
-    let mapped = results
-        .into_iter()
-        .map(|r| {
-            (
-                File {
-                    id: r.id,
-                    workspace_id: r.workspace_id,
-                    parent_id: r.parent_id,
-                    author_id: r.author_id,
-                    file_type: r.file_type,
-                    status: r.status,
-                    slug: r.slug,
-                    deleted_at: r.deleted_at,
-                    created_at: r.created_at,
-                    updated_at: r.updated_at,
-                },
-                r.chunk_content,
-                r.similarity.unwrap_or(0.0) as f32,
-            )
-        })
-        .collect();
-
-    Ok(mapped)
+/// Row structure for semantic search results.
+#[derive(Debug, Clone)]
+pub struct SearchResultRow {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub author_id: Uuid,
+    pub file_type: FileType,
+    pub status: FileStatus,
+    pub slug: String,
+    pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub chunk_content: String,
+    pub similarity: Option<f64>,
 }
 
 /// Updates file status.

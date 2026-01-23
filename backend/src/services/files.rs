@@ -13,6 +13,12 @@ use sha2::{Digest, Sha256};
 use sqlx::Acquire;
 use uuid::Uuid;
 
+/// Default window size for AI text chunking (in characters)
+pub const DEFAULT_CHUNK_WINDOW_SIZE: usize = 1000;
+/// Default overlap for AI text chunking (in characters)
+pub const DEFAULT_CHUNK_OVERLAP: usize = 200;
+/// Dimension for OpenAI text-embedding-3-small
+pub const AI_EMBEDDING_DIMENSION: usize = 1536;
 
 /// Hashes JSON content using SHA-256 for content-addressing
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
@@ -335,7 +341,7 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
     }
 
     // 4. Chunk text
-    let chunks = chunk_text(&text, 1000, 200);
+    let chunks = chunk_text(&text, DEFAULT_CHUNK_WINDOW_SIZE, DEFAULT_CHUNK_OVERLAP);
 
     // 5. Upsert chunks and link them
     for (i, chunk_text) in chunks.into_iter().enumerate() {
@@ -345,9 +351,9 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
         let chunk_hash = hex::encode(hasher.finalize());
 
         // Placeholder embedding: until OpenAI is integrated, we store a dummy vector
-        // Dimension is 1536 for text-embedding-3-small
+        // Dimension is AI_EMBEDDING_DIMENSION
         // Using a non-zero vector to avoid NaN similarity results
-        let dummy_vector = Vector::from(vec![0.1; 1536]);
+        let dummy_vector = Vector::from(vec![0.1; AI_EMBEDDING_DIMENSION]);
 
         let chunk = files::upsert_chunk(
             conn,
@@ -412,10 +418,21 @@ pub async fn semantic_search(
 
     let results = raw_results
         .into_iter()
-        .map(|(file, chunk_content, similarity)| SearchResult {
-            file,
-            chunk_content,
-            similarity,
+        .map(|r| SearchResult {
+            file: File {
+                id: r.id,
+                workspace_id: r.workspace_id,
+                parent_id: r.parent_id,
+                author_id: r.author_id,
+                file_type: r.file_type,
+                status: r.status,
+                slug: r.slug,
+                deleted_at: r.deleted_at,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            },
+            chunk_content: r.chunk_content,
+            similarity: r.similarity.unwrap_or(0.0) as f32,
         })
         .collect();
 
