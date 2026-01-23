@@ -1,238 +1,29 @@
 # Backend System Documentation
 
-Multi-tenant Rust backend with workspace-based RBAC, complete user management, and secure authentication.
+Welcome to the BuildScale.ai Backend documentation. This directory contains comprehensive guides on the system's architecture, security, and APIs.
 
-## Quick Start
+## 🌟 The Vision
+- **[Files Are All You Need](./FILES_ARE_ALL_YOU_NEED.md)**: Our core philosophy on why folders and tools are the future of AI.
+- **[Everything Is A File](./EVERYTHING_IS_A_FILE.md)**: The technical implementation of our unified file-based architecture.
 
-| Need | Guide |
-|------|-------|
-| **New to System?** | [Architecture Overview](./ARCHITECTURE.md#architecture-overview) |
-| **Authentication & Security** | [Authentication & Security](./AUTHENTICATION.md#authentication-security) |
-| **User & Workspace Management** | [User, Workspace & Member Management](./USER_WORKSPACE_MANAGEMENT.md#user-management) |
-| **Roles & Permissions** | [Role-Based Access Control](./ROLE_MANAGEMENT.md#rbac-overview) |
-| **Invitation System** | [Workspace Invitations](./WORKSPACE_INVITATIONS.md#workspace-invitations-overview) |
-| **Caching** | [Cache Implementation & Usage](./CACHE.md#usage) |
-| **REST API Endpoints** | [HTTP REST API Guide](./REST_API_GUIDE.md#quick-reference) |
-| **Service Layer APIs** | [Services API Guide](./SERVICES_API_GUIDE.md#quick-api-reference) |
+## 🏗️ System Architecture
+- **[Architecture Overview](./ARCHITECTURE.md)**: High-level design and database schema.
+- **[User & Workspace Management](./USER_WORKSPACE_MANAGEMENT.md)**: How multi-tenancy and memberships work.
+- **[Role-Based Access Control (RBAC)](./ROLE_MANAGEMENT.md)**: Permission system and role hierarchy.
+- **[Workspace Invitations](./WORKSPACE_INVITATIONS.md)**: Secure onboarding flow for new members.
+- **[Cache Implementation](./CACHE.md)**: Async caching with TTL and Redis compatibility.
 
-## Installation & Setup
+## 🔐 Security & Operations
+- **[Authentication & Security](./AUTHENTICATION.md)**: Dual-token system, Argon2 hashing, and validation rules.
+- **[Configuration Reference](./CONFIGURATION.md)**: Environment variables and system constraints.
+- **[Static File Serving](./STATIC_FILE_SERVING.md)**: Documentation on how files are served to clients.
 
-### Prerequisites
+## 🔌 API References
+- **[REST API Guide](./REST_API_GUIDE.md)**: HTTP endpoints, request formats, and dual-token usage.
+- **[Services API Guide](./SERVICES_API_GUIDE.md)**: Internal Rust service layer functions and usage examples.
 
-- **Rust**: Current stable version
-- **PostgreSQL**: Current stable version (13+)
-- **sqlx CLI**: For database migrations
-- **Git**: For cloning the repository
+---
 
-### 1. Clone Repository
-
-```bash
-git clone <repository-url>
-cd buildscale-ai/backend
-```
-
-### 2. Install Dependencies
-
-```bash
-# Install Rust dependencies
-cargo build
-
-# Install sqlx CLI (if not already installed)
-cargo install sqlx-cli --no-default-features --features rustls,postgres
-```
-
-### 3. Database Setup
-
-#### Start PostgreSQL
-```bash
-# Using Docker (recommended)
-docker run --name postgres-buildscale \
-  -e POSTGRES_DB=buildscale \
-  -e POSTGRES_USER=buildscale \
-  -e POSTGRES_PASSWORD=your_secure_password \
-  -p 5432:5432 \
-  -d postgres:latest
-
-# Or use your local PostgreSQL installation
-# Ensure you have a database named 'buildscale' and user 'buildscale'
-```
-
-#### Configure Environment
-```bash
-# Copy environment configuration template
-cp .env.example .env
-
-# Edit .env with your database configuration
-# Replace PASSWORD with your actual PostgreSQL password
-nano .env
-```
-
-**Required .env Configuration:**
-```env
-# Database Configuration
-BUILDSCALE__DATABASE__USER=buildscale
-BUILDSCALE__DATABASE__PASSWORD=your_secure_password
-BUILDSCALE__DATABASE__HOST=localhost
-BUILDSCALE__DATABASE__PORT=5432
-BUILDSCALE__DATABASE__DATABASE=buildscale
-
-# For sqlx CLI operations
-DATABASE_URL=postgresql://buildscale:your_secure_password@localhost:5432/buildscale
-```
-
-### 4. Run Database Migrations
-
-```bash
-# Check migration status (optional)
-sqlx migrate info
-
-# Run all migrations to set up database schema
-sqlx migrate run
-
-# Verify tables were created
-psql -h localhost -U buildscale -d buildscale -c "\dt"
-```
-
-### 5. Verify Installation
-
-```bash
-# Build the project (should complete without errors)
-cargo build
-
-# Run tests to verify everything works
-cargo test
-
-# Run example to see the system in action
-cargo run --example 01_hello
-```
-
-### 6. Development Workflow
-
-```bash
-# Start development
-cargo run  # Start the application
-
-# Run with logging
-RUST_LOG=debug cargo run
-
-# Run specific tests
-cargo test users::services
-cargo test test_user_registration_success
-
-# Run with test output
-cargo test -- --nocapture
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Build Errors:**
-```bash
-# Ensure Rust is up to date
-rustup update stable
-
-# Clean and rebuild
-cargo clean && cargo build
-```
-
-**Database Connection Errors:**
-```bash
-# Check PostgreSQL is running
-docker ps | grep postgres
-
-# Test database connection
-psql -h localhost -U buildscale -d buildscale
-
-# Verify .env configuration
-cat .env
-```
-
-**Migration Issues:**
-```bash
-# Check migration status
-sqlx migrate info
-
-# Reset and rerun migrations (use with caution)
-sqlx migrate revert  # Revert last migration
-sqlx migrate run     # Run migrations again
-```
-
-**Test Failures:**
-```bash
-# Run tests with verbose output
-cargo test -- --nocapture
-
-# Run specific failing test
-cargo test test_name -- --exact --nocapture
-```
-
-### Getting Help
-
-- Check logs: `RUST_LOG=debug cargo run`
-- Review test output: `cargo test -- --nocapture`
-- Verify database schema: `\dt` in psql
-- Check environment variables: `env | grep BUILDSCALE`
-
-## System Architecture
-
-**Multi-tenant workspace-based RBAC** with three-layer architecture (Service → Query → Model).
-
-### Core Components
-- **Workspace Isolation**: Complete data separation between tenants
-- **Four-Tier RBAC**: Admin > Editor > Member > Viewer hierarchy
-- **Session-Based Auth**: Random HMAC-signed tokens with Argon2 password hashing
-- **Secure Invitations**: Token-based member onboarding with role assignments
-
-### Module Structure
-```
-src/
-├── models/           # Data structures & validation
-│   ├── users.rs       # User, LoginUser, UserSession
-│   ├── workspaces.rs  # Workspace entities
-│   ├── roles.rs        # Role definitions & constants
-│   ├── workspace_members.rs # Member assignments
-│   ├── invitations.rs  # Invitation entities & validation
-│   ├── permissions.rs  # Comprehensive permission system
-│   └── requests.rs     # API request models
-├── services/           # Business logic layer
-│   ├── users.rs        # User auth & management
-│   ├── workspaces.rs   # Workspace operations
-│   ├── roles.rs        # Role management
-│   ├── workspace_members.rs # Member operations
-│   ├── invitations.rs  # Invitation system
-│   └── sessions.rs     # Session management
-├── queries/            # Database operations (SQLx)
-├── cache.rs            # Generic async cache with TTL support
-├── config.rs           # Environment configuration
-├── database.rs         # Connection pooling
-├── error.rs            # Error handling
-└── lib.rs              # Public exports
-```
-
-## Documentation Index
-
-| Domain | Documentation | Focus |
-|--------|---------------|--------|
-| **Architecture** | [ARCHITECTURE.md](./ARCHITECTURE.md) | System design + database schema |
-| **Authentication** | [AUTHENTICATION.md](./AUTHENTICATION.md) | Auth + security + validation |
-| **User & Workspace** | [USER_WORKSPACE_MANAGEMENT.md](./USER_WORKSPACE_MANAGEMENT.md) | Users + workspaces + members |
-| **Roles & Permissions** | [ROLE_MANAGEMENT.md](./ROLE_MANAGEMENT.md) | RBAC system with comprehensive permissions |
-| **Invitations** | [WORKSPACE_INVITATIONS.md](./WORKSPACE_INVITATIONS.md) | Token-based invitation system |
-| **Caching** | [CACHE.md](./CACHE.md) | Generic async cache with TTL, Axum/Redis integration |
-| **Configuration** | [CONFIGURATION.md](./CONFIGURATION.md) | System settings and constraints |
-| **REST API** | [REST_API_GUIDE.md](./REST_API_GUIDE.md) | HTTP endpoints + request/response formats |
-| **Service APIs** | [SERVICES_API_GUIDE.md](./SERVICES_API_GUIDE.md) | Internal service layer functions |
-
-## Key Features
-
-- **Secure Authentication**: Random HMAC-signed session tokens, Argon2 password hashing
-- **Comprehensive Permission System**: Fine-grained permissions across workspace, content, and member management categories
-- **Workspace Isolation**: Complete data separation with shared user accounts
-- **Advanced Session Management**: Multi-device support, cleanup, monitoring
-- **Generic Cache System**: Async in-memory cache with TTL, Redis-ready architecture for production scaling
-- **Secure Invitation System**: UUID v7 tokens with configurable default expiration
-- **Comprehensive Validation**: Multi-layer input validation and error handling
-- **Database Design**: PostgreSQL with proper indexing and cascade constraints
-- **Testing Infrastructure**: Parallel-safe isolated test environment
-
+## 🛠️ Ongoing Development
+- **[API Implementation Plan](./API_IMPLEMENTATION_PLAN.md)**: Roadmap for new features.
+- **[Files System TODO](./TODO_FILES.md)**: Pending tasks for the file management engine.

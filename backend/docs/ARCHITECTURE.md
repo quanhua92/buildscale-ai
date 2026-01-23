@@ -1,3 +1,5 @@
+← [Back to Index](./README.md)
+
 # System Architecture
 
 Multi-tenant workspace-based RBAC architecture with clear separation of concerns

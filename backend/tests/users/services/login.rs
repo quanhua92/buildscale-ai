@@ -49,7 +49,7 @@ async fn test_login_invalid_email() {
     // Try to login with non-existent email
     let login_user_data = LoginUser {
         email: "nonexistent@example.com".to_string(),
-        password: "somepassword123".to_string(),
+        password: "SomeSecurePass123!".to_string(),
     };
 
     let result = login_user(&mut conn, login_user_data).await;
@@ -77,7 +77,7 @@ async fn test_login_invalid_password() {
     // Try to login with wrong password
     let login_user_data = LoginUser {
         email: email.clone(),
-        password: "wrongpassword".to_string(),
+        password: "WrongSecurePass123!".to_string(),
     };
 
     let result = login_user(&mut conn, login_user_data).await;
@@ -99,7 +99,7 @@ async fn test_login_empty_credentials() {
     // Test empty email
     let login_user_data = LoginUser {
         email: "".to_string(),
-        password: "somepassword123".to_string(),
+        password: "SomeSecurePass123!".to_string(),
     };
 
     let result = login_user(&mut conn, login_user_data).await;

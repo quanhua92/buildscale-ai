@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **API Reference**: [REST API Guide](./REST_API_GUIDE.md#authentication)
+
 # Authentication & Security
 
 Dual-token authentication system with JWT access tokens (short-lived, 15 minutes) and session refresh tokens (long-lived, 30 days), Argon2 password hashing, and configurable expiration periods.
@@ -115,7 +117,7 @@ sequenceDiagram
 
 ### User Authentication
 ```rust
-// User registration (minimum password length requirements, email validation)
+// User registration (minimum 12 character password, email validation)
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User>
 
 // User authentication and session creation
@@ -210,7 +212,7 @@ pub struct UserSession {
 | Input | Requirement | Error Message |
 |--------|-------------|---------------|
 | Email | Required, valid format | "Email cannot be empty" / "Invalid email format" |
-| Password | Minimum length | "Password must meet minimum length requirements" |
+| Password | Minimum 12 characters, patterns | "Password must be at least 12 characters long" |
 | Session Token | Required, non-empty | "Session token cannot be empty" |
 | Login | Valid credentials | "Invalid email or password" |
 | Session | Non-expired token | "Invalid or expired session token" |
@@ -249,7 +251,7 @@ CREATE INDEX idx_user_sessions_expires_at ON user_sessions(expires_at);
 // Login and get both tokens
 let login_result = login_user(&mut conn, LoginUser {
     email: "user@example.com".to_string(),
-    password: "securepassword".to_string(),
+    password: "SecurePass123!".to_string(),
 }).await?;
 
 // Use JWT access token for API requests (in Authorization header)
@@ -384,7 +386,7 @@ Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password": "password123"
+  "password": "SecurePass123!"
 }
 
 ---
@@ -469,8 +471,8 @@ BUILDSCALE__COOKIES__DOMAIN=.example.com
 
 ### Finding Current Configuration Values
 ```bash
-# Check password length requirements (hardcoded in src/validation.rs)
-grep -n "password.len() < 8" src/services/users.rs
+# Check password length requirements (central utility in src/validation.rs)
+grep -n "password.len() < 12" src/validation.rs
 
 # Check session extension limits
 grep -n "Cannot extend session by more than" src/services/users.rs
@@ -487,7 +489,7 @@ grep -n "validate_workspace_name" src/validation.rs
 
 ### Session Management Configuration
 Session management settings are typically found in:
-- `src/models/users.rs`: Password validation requirements
+- `src/validation.rs`: Password validation requirements (12+ characters)
 - `src/services/sessions.rs`: Session cleanup and management
 - `src/services/users.rs`: Authentication logic
 

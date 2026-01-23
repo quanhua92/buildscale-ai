@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **Technical Implementation**: [Everything is a File](./EVERYTHING_IS_A_FILE.md)
+
 # Files Are All You Need: The BuildScale.ai Vision
 
 This document outlines how BuildScale.ai transforms a standard file system into a "Brain" and "Toolbox" for AI agents.

@@ -1,3 +1,5 @@
+← [Back to Index](./README.md)
+
 # Configuration Reference
 
 This document serves as a central reference for all configurable values, constraints, and defaults in the system. When code changes affect these values, update this document first.
@@ -6,8 +8,8 @@ This document serves as a central reference for all configurable values, constra
 
 ### Password Requirements
 ```rust
-// Hardcoded in services/users.rs (line with password validation)
-if new_password.len() < 8 {
+// Enforced via validation utility in src/validation.rs
+if password.len() < 12 {
     return Err(Error::Validation("Password must be at least 12 characters long".to_string()));
 }
 ```
@@ -100,7 +102,7 @@ The system includes comprehensive input validation utilities in `src/validation.
 // - Minimum 12 characters
 // - At least 2 of 4 character types: uppercase, lowercase, digit, special
 // - Cannot be empty
-// - Rejects common weak patterns
+// - Rejects common weak patterns (including the word "password")
 // - Rejects repetitive characters (e.g., "aaaaaaaa")
 // - Password hashing is handled separately with Argon2
 // Returns: Result<()> with descriptive error messages
@@ -111,9 +113,10 @@ The system includes comprehensive input validation utilities in `src/validation.
 - Repetitive characters: `aaaaaaaa`, `11111111`
 
 **Example strong passwords:**
-- `SecureP@ssw0rd` (14 chars, 4 types)
-- `TestPass123!` (12 chars, 3 types)
-- `MySecur3ity!` (12 chars, 3 types)
+- `SecureP@ssw0rd!` (Invalid - contains "password")
+- `SecurePass123!` (Valid - 13 chars, 4 types, no "password" substring)
+- `TestPass123!` (Valid - 12 chars, 3 types)
+- `MySecur3ity!` (Valid - 12 chars, 3 types)
 
 #### Workspace Name Validation (`validate_workspace_name`)
 ```rust

@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **API Reference**: [REST API Guide](./REST_API_GUIDE.md)
+
 # Developer API Guide
 
 Service layer API reference and usage examples for the multi-tenant workspace-based RBAC system.
@@ -24,7 +26,7 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
 
 ### User Authentication
 ```rust
-// User registration (8+ char password, email validation)
+// User registration (12+ char password, email validation)
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User>
 
 // Combined user + workspace creation
@@ -347,14 +349,14 @@ pub async fn semantic_search(
 // Register + Login
 let user = register_user(&mut conn, RegisterUser {
     email: "user@example.com".to_string(),
-    password: "securepassword123".to_string(),
-    confirm_password: "securepassword123".to_string(),
+    password: "SecurePass123!".to_string(),
+    confirm_password: "SecurePass123!".to_string(),
     full_name: Some("John Doe".to_string()),
 }).await?;
 
 let login_result = login_user(&mut conn, LoginUser {
     email: "user@example.com".to_string(),
-    password: "securepassword123".to_string(),
+    password: "SecurePass123!".to_string(),
 }).await?;
 
 // Returns both JWT access token (15 min) and refresh token (30 days)
@@ -592,7 +594,7 @@ match register_user(&mut conn, register_request).await {
     Ok(user) => create_user_session(user),
     Err(Error::Validation(msg)) => {
         match msg.as_str() {
-            "Password must meet minimum length requirements" =>
+            "Password must be at least 12 characters long" =>
                 show_field_error("password", "Password too short"),
             "Passwords do not match" =>
                 show_field_error("confirm_password", "Passwords don't match"),
@@ -708,7 +710,7 @@ pub struct ApiError {
 | Scenario | Error Type | HTTP Status | User Message |
 |----------|------------|-------------|--------------|
 | Invalid email format | `Validation` | 400 | "Invalid email format" |
-| Password too short | `Validation` | 400 | "Password must meet minimum length requirements" |
+| Password too short | `Validation` | 400 | "Password must be at least 12 characters long" |
 | Email already exists | `Conflict` | 409 | "Email already registered" |
 | Invalid login credentials | `Authentication` | 401 | "Invalid email or password" |
 | Session expired | `SessionExpired` | 401 | "Session expired. Please log in again" |

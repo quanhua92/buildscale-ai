@@ -57,7 +57,7 @@ async fn test_multiple_users_different_passwords() {
     let passwords = vec![
         "SecurePass123!",
         "AnotherPass456!",
-        "complex!@#$%^789",
+        "complex!@#$%^7890",
         "VeryVeryVeryLongSecure123!",
     ];
 
@@ -77,18 +77,16 @@ async fn test_multiple_users_different_passwords() {
         );
 
         // Verify passwords don't match each other
-        let is_different = !verify_password("wrongpassword", created_user.password_hash.as_deref().unwrap()).unwrap();
+        let is_different = !verify_password("WrongSecurePass123!", created_user.password_hash.as_deref().unwrap()).unwrap();
         assert!(is_different, "Wrong password should not verify");
     }
 
     // Verify all users have different password hashes
     let mut password_hashes = Vec::new();
     for user_id in user_ids {
-        // Look up user by finding a user with matching ID in our test prefix
-        let all_users = list_users(&mut conn).await.unwrap();
-        if let Some(user) = all_users.iter().find(|u| u.id == user_id) {
-            password_hashes.push(user.password_hash.clone());
-        }
+        // Look up user
+        let user = get_user_by_id(&mut conn, user_id).await.unwrap().unwrap();
+        password_hashes.push(user.password_hash.clone());
     }
 
     // All password hashes should be unique (even with same password, different salts)
@@ -143,7 +141,7 @@ async fn test_update_password_success() {
     let registered_user = register_user(&mut conn, register_user_data).await.unwrap();
 
     // Update password
-    let new_password = "newpassword123";
+    let new_password = "NewSecurePass123!";
     update_password(&mut conn, registered_user.id, new_password).await.unwrap();
 
     // Verify the new password works by logging in
@@ -187,7 +185,7 @@ async fn test_update_password_non_existent_user() {
 
     // Try to update password for non-existent user
     let non_existent_id = uuid::Uuid::now_v7();
-    let result = update_password(&mut conn, non_existent_id, "newpassword123").await;
+    let result = update_password(&mut conn, non_existent_id, "NewSecurePass123!").await;
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), buildscale::error::Error::NotFound(_)));
 }
@@ -217,7 +215,6 @@ async fn test_get_session_info_success() {
     assert!(session_info.is_some());
 
     let session_info = session_info.unwrap();
-    // Cannot compare token_hash with login_result.refresh_token (different types)
     assert_eq!(session_info.user_id, login_result.user.id);
     assert!(session_info.expires_at > chrono::Utc::now());
 }

@@ -200,8 +200,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_charlie+tag@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "Complex!@#$%^789".to_string(),
-            confirm_password: "Complex!@#$%^789".to_string(),
+            password: "Complex!@#$%^7890".to_string(),
+            confirm_password: "Complex!@#$%^7890".to_string(),
             full_name: Some("Charlie Day".to_string()),
         },
     )
@@ -213,8 +213,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_david@{}", EXAMPLE_PREFIX, "example.com"), // Use lowercase for consistency
-            password: "UPPERCASE123".to_string(),
-            confirm_password: "UPPERCASE123".to_string(),
+            password: "UPPERCASE123!".to_string(),
+            confirm_password: "UPPERCASE123!".to_string(),
             full_name: Some("David Williams".to_string()),
         },
     )
@@ -232,7 +232,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Update Bob's profile using query layer (excluding email - emails cannot be updated)
     let update_data = UpdateUser {
-        password_hash: Some(generate_password_hash("new_secure_password_789")?),
+        password_hash: Some(generate_password_hash("NewSecurePass789!")?),
         full_name: Some("Robert Smith".to_string()),
     };
 
@@ -262,15 +262,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         (
             format!("{}_bob.smith@{}", EXAMPLE_PREFIX, "example.com"),
-            "new_secure_password_789",
+            "NewSecurePass789!",
         ), // Note: Bob's email remains unchanged, only password hash updated
         (
             format!("{}_charlie+tag@{}", EXAMPLE_PREFIX, "example.com"),
-            "Complex!@#$%^789",
+            "Complex!@#$%^7890",
         ),
         (
             format!("{}_david@{}", EXAMPLE_PREFIX, "EXAMPLE.COM"),
-            "UPPERCASE123",
+            "UPPERCASE123!",
         ),
     ];
 
@@ -339,8 +339,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx.as_mut(),
         RegisterUser {
             email: format!("{}_transaction_user@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "transaction123".to_string(),
-            confirm_password: "transaction123".to_string(),
+            password: "Transaction123!".to_string(),
+            confirm_password: "Transaction123!".to_string(),
             full_name: Some("Transaction User".to_string()),
         },
     )
@@ -388,7 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test different password lengths
     println!("Testing various valid password lengths...");
     let password_tests = vec![
-        ("valid12", "validpass1234"),
+        ("valid12", "validPass1234"),
         ("valid15", "validSecurePass15"),
         ("valid20", "validSecurePass20Chars!!"),
     ];
@@ -588,20 +588,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Updating password for {}...", charlie_user.email);
 
         // Update Charlie's password
-        update_password(&mut conn, charlie_user.id, "NewCharliePassword2024").await?;
+        update_password(&mut conn, charlie_user.id, "NewCharliePass2024!").await?;
         println!("✓ Password updated successfully for {}", charlie_user.email);
 
         // Verify new password works by logging in
         let _login_result = login_user(&mut conn, LoginUser {
             email: charlie_user.email.clone(),
-            password: "NewCharliePassword2024".to_string(),
+            password: "NewCharliePass2024!".to_string(),
         }).await?;
         println!("✓ Login successful with new password for {}", charlie_user.email);
 
         // Verify old password no longer works
         match login_user(&mut conn, LoginUser {
             email: charlie_user.email.clone(),
-            password: "Complex!@#$%^789".to_string(), // Old password
+            password: "Complex!@#$%^7890".to_string(), // Old password
         }).await {
             Ok(_) => println!("✗ Old password should no longer work"),
             Err(_) => println!("✓ Old password correctly rejected"),
@@ -649,7 +649,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for i in 0..3 {
             match login_user(&mut conn, LoginUser {
                 email: david_user.email.clone(),
-                password: "UPPERCASE123".to_string(),
+                password: "UPPERCASE123!".to_string(),
             }).await {
                 Ok(login_result) => {
                     session_tokens.push(login_result.refresh_token);

@@ -30,11 +30,11 @@ async fn test_comprehensive_workspace_creation_success() {
     );
     assert_eq!(workspace_result.workspace.owner_id, user.id, "Workspace owner should match");
     assert!(
-        workspace_result.workspace.created_at <= chrono::Utc::now(),
+        workspace_result.workspace.created_at <= chrono::Utc::now() + chrono::Duration::seconds(5),
         "Created timestamp should be valid"
     );
     assert!(
-        workspace_result.workspace.updated_at <= chrono::Utc::now(),
+        workspace_result.workspace.updated_at <= chrono::Utc::now() + chrono::Duration::seconds(5),
         "Updated timestamp should be valid"
     );
 

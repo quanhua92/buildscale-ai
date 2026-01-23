@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **The Vision**: [Files Are All You Need](./FILES_ARE_ALL_YOU_NEED.md)
+
 # Everything is a File: Database Architecture
 
 This document details the "Everything is a file" philosophy and database implementation for BuildScale.ai. This architecture unifies documents, folders, chat sessions, and canvases into a single, cohesive system that supports both hierarchical organization (folders) and network organization (knowledge graph).

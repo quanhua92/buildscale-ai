@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **Related**: [User Management](./USER_WORKSPACE_MANAGEMENT.md), [RBAC](./ROLE_MANAGEMENT.md)
+
 # Workspace Invitation System
 
 Secure token-based invitation system with role assignments for workspace member onboarding.

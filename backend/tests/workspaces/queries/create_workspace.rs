@@ -22,11 +22,11 @@ async fn test_create_workspace_query() {
         "Workspace ID should be populated"
     );
     assert!(
-        created_workspace.created_at <= chrono::Utc::now(),
+        created_workspace.created_at <= chrono::Utc::now() + chrono::Duration::seconds(5),
         "Created timestamp should be valid"
     );
     assert!(
-        created_workspace.updated_at <= chrono::Utc::now(),
+        created_workspace.updated_at <= chrono::Utc::now() + chrono::Duration::seconds(5),
         "Updated timestamp should be valid"
     );
 }

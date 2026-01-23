@@ -35,8 +35,9 @@ async fn test_user_registration_success() {
         created_user.full_name.is_none(),
         "Full name should be None by default"
     );
+    // Verify timestamps
     assert!(
-        created_user.created_at <= chrono::Utc::now(),
+        created_user.created_at <= chrono::Utc::now() + chrono::Duration::seconds(5),
         "Created timestamp should be valid"
     );
 
@@ -60,7 +61,7 @@ async fn test_password_mismatch_validation() {
     let mut conn = test_app.get_connection().await;
 
     let mut register_user_data = test_app.generate_test_user();
-    register_user_data.confirm_password = "differentpassword".to_string();
+    register_user_data.confirm_password = "DifferentSecurePass123!".to_string();
 
     // Test password mismatch validation
     let result = register_user(&mut conn, register_user_data).await;

@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **Developer API**: [Services API Guide](./SERVICES_API_GUIDE.md)
+
 # REST API Guide
 
 HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC system.
@@ -565,8 +567,8 @@ Content-Type: application/json
 ```json
 {
   "email": "user@example.com",
-  "password": "securepassword123",
-  "confirm_password": "securepassword123",
+  "password": "SecurePass123!",
+  "confirm_password": "SecurePass123!",
   "full_name": "John Doe"
 }
 ```
@@ -583,7 +585,7 @@ Content-Type: application/json
 #### Validation Rules
 
 - **Email**: Must be valid email format, converted to lowercase
-- **Password**: Minimum 8 characters
+- **Password**: Minimum 12 characters, rejects weak patterns (including "password")
 - **Password confirmation**: Must exactly match password
 - **Full name**: Letters, spaces, hyphens, apostrophes, and periods only (if provided)
 
@@ -644,8 +646,8 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john@example.com",
-    "password": "securepass123",
-    "confirm_password": "securepass123",
+    "password": "SecurePass123!",
+    "confirm_password": "SecurePass123!",
     "full_name": "John Doe"
   }'
 ```
@@ -659,8 +661,8 @@ const response = await fetch('http://localhost:3000/api/v1/auth/register', {
   },
   body: JSON.stringify({
     email: 'john@example.com',
-    password: 'securepass123',
-    confirm_password: 'securepass123',
+    password: 'SecurePass123!',
+    confirm_password: 'SecurePass123!',
     full_name: 'John Doe'
   })
 });
@@ -690,7 +692,7 @@ Content-Type: application/json
 ```json
 {
   "email": "user@example.com",
-  "password": "securepassword123"
+  "password": "SecurePass123!"
 }
 ```
 
@@ -775,7 +777,7 @@ curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john@example.com",
-    "password": "securepass123"
+    "password": "SecurePass123!"
   }' \
   -c cookies.txt  # Save cookies for browser clients
 
@@ -798,7 +800,7 @@ const loginResponse = await fetch('http://localhost:3000/api/v1/auth/login', {
   credentials: 'include', // Include cookies for browser clients
   body: JSON.stringify({
     email: 'john@example.com',
-    password: 'securepass123'
+    password: 'SecurePass123!'
   })
 });
 
@@ -1413,8 +1415,6 @@ const logout = async () => {
 
 ## Workspaces API
 
-Manage workspaces and access control.
-
 ### Create Workspace
 
 Create a new workspace with the authenticated user as the owner.
@@ -1804,8 +1804,8 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
-    "password": "testpass123",
-    "confirm_password": "testpass123",
+    "password": "SecurePass123!",
+    "confirm_password": "SecurePass123!",
     "full_name": "Test User"
   }'
 
@@ -1814,7 +1814,7 @@ curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
-    "password": "testpass123"
+    "password": "SecurePass123!"
   }'
 
 # 4. Test duplicate email (should return 409)
@@ -1822,8 +1822,8 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
-    "password": "newpass123",
-    "confirm_password": "newpass123"
+    "password": "NewSecurePass123!",
+    "confirm_password": "NewSecurePass123!"
   }'
 
 # 5. Logout with Authorization header (API client)
@@ -1875,7 +1875,7 @@ The example demonstrates:
    ```json
    {
      "email": "test@example.com",
-     "password": "testpass123"
+     "password": "SecurePass123!"
    }
    ```
 
@@ -1935,6 +1935,7 @@ BUILDSCALE__COOKIE__SECURE=true  # Enable for HTTPS (production)
 
 - **Member Management API**: Add/remove members with role assignments
 - **Permission System**: Role-based access control (RBAC)
+
 - **Invitation System**: Invite users to workspaces via email
 
 See `docs/SERVICES_API_GUIDE.md` for complete service layer API reference.

@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **Related**: [User Management](./USER_WORKSPACE_MANAGEMENT.md), [Invitations](./WORKSPACE_INVITATIONS.md)
+
 # Role-Based Access Control (RBAC)
 
 Multi-tier role hierarchy with comprehensive permissions across workspace, content, and member management categories.

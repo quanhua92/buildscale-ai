@@ -158,7 +158,7 @@ impl IntoResponse for LogoutResponse {
 ///
 /// # Request Body
 /// - `email`: User's email address (must be unique)
-/// - `password`: User's password (minimum 8 characters)
+/// - `password`: User's password (minimum 12 characters)
 /// - `confirm_password`: Password confirmation (must match password)
 /// - `full_name`: Optional user's full name
 ///

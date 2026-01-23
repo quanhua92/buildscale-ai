@@ -1,3 +1,5 @@
+← [Back to Index](./README.md) | **Related**: [Roles](./ROLE_MANAGEMENT.md), [Invitations](./WORKSPACE_INVITATIONS.md)
+
 # User, Workspace & Member Management
 
 Global user accounts, workspace creation, and member management with role-based access control.
@@ -6,7 +8,7 @@ Global user accounts, workspace creation, and member management with role-based 
 
 ### User Management
 ```rust
-// User registration (8+ char password, email validation)
+// User registration (12+ char password, email validation)
 pub async fn register_user(conn: &mut DbConn, register_user: RegisterUser) -> Result<User>
 
 // Combined user + workspace creation
@@ -132,8 +134,8 @@ pub struct WorkspaceMember {
 ```rust
 let request = UserWorkspaceRegistrationRequest {
     email: "newuser@example.com".to_string(),
-    password: "SecurePassword123!".to_string(),
-    confirm_password: "SecurePassword123!".to_string(),
+    password: "SecurePass123!".to_string(),
+    confirm_password: "SecurePass123!".to_string(),
     full_name: Some("Jane Smith".to_string()),
     workspace_name: "Jane's Workspace".to_string(),
 };

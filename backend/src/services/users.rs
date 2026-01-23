@@ -462,13 +462,8 @@ pub fn generate_session_token() -> Result<String> {
 
 /// Updates a user's password with validation
 pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &str) -> Result<()> {
-    // Validate password length (minimum 8 characters)
-    if new_password.len() < 8 {
-        return Err(Error::Validation(ValidationErrors::Single {
-            field: "password".to_string(),
-            message: "Password must be at least 8 characters long".to_string(),
-        }));
-    }
+    // Validate password strength using central utility (enforces 12-char minimum and patterns)
+    validate_password(new_password)?;
 
     // Hash the password using existing utility
     let password_hash = generate_password_hash(new_password)?;
