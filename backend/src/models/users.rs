@@ -42,17 +42,17 @@ pub struct LoginUser {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginResult {
     pub user: User,
-    pub access_token: String,           // JWT access token (short-lived, e.g., 15 minutes)
-    pub refresh_token: String,          // Session token (long-lived, e.g., 30 days)
-    pub access_token_expires_at: DateTime<Utc>,   // When the access token expires
-    pub refresh_token_expires_at: DateTime<Utc>,  // When the refresh token expires
+    pub access_token: String, // JWT access token (short-lived, e.g., 15 minutes)
+    pub refresh_token: String, // Session token (long-lived, e.g., 30 days)
+    pub access_token_expires_at: DateTime<Utc>, // When the access token expires
+    pub refresh_token_expires_at: DateTime<Utc>, // When the refresh token expires
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenResult {
-    pub access_token: String,                      // New JWT access token
-    pub refresh_token: Option<String>,             // New refresh token (rotated), None if within grace period
-    pub expires_at: DateTime<Utc>,                 // When the new access token expires
+    pub access_token: String,          // New JWT access token
+    pub refresh_token: Option<String>, // New refresh token (rotated), None if within grace period
+    pub expires_at: DateTime<Utc>,     // When the new access token expires
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

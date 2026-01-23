@@ -55,16 +55,9 @@ pub async fn list_members(
 
     let mut conn = acquire_db_connection(&state, "list_members").await?;
 
-    let members = workspace_members::list_members(
-        &mut conn,
-        workspace_id,
-        auth_user.id,
-    )
-    .await
-    .map_err(|e| {
-        log_handler_error("list_members", &e);
-        e
-    })?;
+    let members = workspace_members::list_members(&mut conn, workspace_id, auth_user.id)
+        .await
+        .inspect_err(|e| log_handler_error("list_members", e))?;
 
     tracing::info!(
         operation = "list_members",
@@ -115,16 +108,9 @@ pub async fn get_my_membership(
 
     let mut conn = acquire_db_connection(&state, "get_my_membership").await?;
 
-    let membership = workspace_members::get_my_membership(
-        &mut conn,
-        workspace_id,
-        auth_user.id,
-    )
-    .await
-    .map_err(|e| {
-        log_handler_error("get_my_membership", &e);
-        e
-    })?;
+    let membership = workspace_members::get_my_membership(&mut conn, workspace_id, auth_user.id)
+        .await
+        .inspect_err(|e| log_handler_error("get_my_membership", e))?;
 
     tracing::info!(
         operation = "get_my_membership",
@@ -186,17 +172,9 @@ pub async fn add_member(
 
     let mut conn = acquire_db_connection(&state, "add_member").await?;
 
-    let member = workspace_members::add_member_by_email(
-        &mut conn,
-        workspace_id,
-        auth_user.id,
-        request,
-    )
-    .await
-    .map_err(|e| {
-        log_handler_error("add_member", &e);
-        e
-    })?;
+    let member = workspace_members::add_member_by_email(&mut conn, workspace_id, auth_user.id, request)
+        .await
+        .inspect_err(|e| log_handler_error("add_member", e))?;
 
     tracing::info!(
         operation = "add_member",
@@ -267,10 +245,7 @@ pub async fn update_member_role(
         request,
     )
     .await
-    .map_err(|e| {
-        log_handler_error("update_member_role", &e);
-        e
-    })?;
+    .inspect_err(|e| log_handler_error("update_member_role", e))?;
 
     tracing::info!(
         operation = "update_member_role",
@@ -326,17 +301,9 @@ pub async fn remove_member(
 
     let mut conn = acquire_db_connection(&state, "remove_member").await?;
 
-    workspace_members::remove_member(
-        &mut conn,
-        workspace_id,
-        target_user_id,
-        auth_user.id,
-    )
-    .await
-    .map_err(|e| {
-        log_handler_error("remove_member", &e);
-        e
-    })?;
+    workspace_members::remove_member(&mut conn, workspace_id, target_user_id, auth_user.id)
+        .await
+        .inspect_err(|e| log_handler_error("remove_member", e))?;
 
     tracing::info!(
         operation = "remove_member",

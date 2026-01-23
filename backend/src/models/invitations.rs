@@ -33,6 +33,19 @@ pub enum InvitationStatus {
     Revoked,
 }
 
+impl std::str::FromStr for InvitationStatus {
+    type Err = ();
+
+    fn from_str(status: &str) -> Result<Self, Self::Err> {
+        match status {
+            INVITATION_STATUS_PENDING => Ok(InvitationStatus::Pending),
+            INVITATION_STATUS_ACCEPTED => Ok(InvitationStatus::Accepted),
+            INVITATION_STATUS_EXPIRED => Ok(InvitationStatus::Expired),
+            INVITATION_STATUS_REVOKED => Ok(InvitationStatus::Revoked),
+            _ => Err(()),
+        }
+    }
+}
 
 impl InvitationStatus {
     /// Get the string representation of the status
@@ -42,17 +55,6 @@ impl InvitationStatus {
             InvitationStatus::Accepted => INVITATION_STATUS_ACCEPTED,
             InvitationStatus::Expired => INVITATION_STATUS_EXPIRED,
             InvitationStatus::Revoked => INVITATION_STATUS_REVOKED,
-        }
-    }
-
-    /// Create an InvitationStatus from a string
-    pub fn from_str(status: &str) -> Option<Self> {
-        match status {
-            INVITATION_STATUS_PENDING => Some(InvitationStatus::Pending),
-            INVITATION_STATUS_ACCEPTED => Some(InvitationStatus::Accepted),
-            INVITATION_STATUS_EXPIRED => Some(InvitationStatus::Expired),
-            INVITATION_STATUS_REVOKED => Some(InvitationStatus::Revoked),
-            _ => None,
         }
     }
 }
@@ -88,6 +90,7 @@ pub struct WorkspaceInvitation {
 impl WorkspaceInvitation {
     /// Get the status as InvitationStatus enum
     pub fn status_enum(&self) -> InvitationStatus {
+        use std::str::FromStr;
         InvitationStatus::from_str(&self.status).unwrap_or(InvitationStatus::Pending)
     }
 }
@@ -155,8 +158,8 @@ pub struct InvitationSummary {
     pub invited_email: String,
     pub invited_by: Uuid,
     pub invited_by_name: Option<String>, // Populated when joining with user
-    pub role_name: Option<String>, // Populated when joining with role
-    pub status: String, // Using String to avoid SQLx complexity
+    pub role_name: Option<String>,       // Populated when joining with role
+    pub status: String,                  // Using String to avoid SQLx complexity
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
@@ -164,6 +167,7 @@ pub struct InvitationSummary {
 impl InvitationSummary {
     /// Get the status as InvitationStatus enum
     pub fn status_enum(&self) -> InvitationStatus {
+        use std::str::FromStr;
         InvitationStatus::from_str(&self.status).unwrap_or(InvitationStatus::Pending)
     }
 }
@@ -233,7 +237,10 @@ impl InvitationValidator {
 
     /// Check if an invitation status allows revocation
     pub fn can_revoke(status: &InvitationStatus) -> bool {
-        matches!(status, InvitationStatus::Pending | InvitationStatus::Expired)
+        matches!(
+            status,
+            InvitationStatus::Pending | InvitationStatus::Expired
+        )
     }
 }
 
@@ -274,6 +281,7 @@ impl InvitationUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn test_invitation_status_enum() {
@@ -284,12 +292,9 @@ mod tests {
 
         assert_eq!(
             InvitationStatus::from_str("pending"),
-            Some(InvitationStatus::Pending)
+            Ok(InvitationStatus::Pending)
         );
-        assert_eq!(
-            InvitationStatus::from_str("invalid"),
-            None
-        );
+        assert_eq!(InvitationStatus::from_str("invalid"), Err(()));
     }
 
     #[test]
@@ -343,7 +348,9 @@ mod tests {
 
         assert!(InvitationValidator::can_revoke(&InvitationStatus::Pending));
         assert!(InvitationValidator::can_revoke(&InvitationStatus::Expired));
-        assert!(!InvitationValidator::can_revoke(&InvitationStatus::Accepted));
+        assert!(!InvitationValidator::can_revoke(
+            &InvitationStatus::Accepted
+        ));
         assert!(!InvitationValidator::can_revoke(&InvitationStatus::Revoked));
     }
 

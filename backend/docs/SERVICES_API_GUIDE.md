@@ -9,11 +9,14 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
 | **Users** | `register_user`, `login_user`, `validate_session`, `logout_user`, `get_user_by_id`, `update_password` |
 | **Workspaces** | `create_workspace`, `get_workspace`, `list_user_workspaces`, `update_workspace_owner`, `can_access_workspace` |
 | **Members** | `list_members`, `get_my_membership`, `add_member_by_email`, `update_member_role`, `remove_member` |
+| **Files** | `create_file_with_content`, `create_version`, `get_file_with_content`, `move_or_rename_file`, `soft_delete_file`, `restore_file`, `list_trash` |
+| **Network** | `add_tag`, `remove_tag`, `list_files_by_tag`, `link_files`, `remove_link`, `get_file_network` |
+| **AI Engine** | `process_file_for_ai`, `semantic_search` |
 | **Permissions** | `validate_workspace_permission`, `require_workspace_permission`, `get_user_workspace_permissions` |
 | **Roles** | `create_default_roles`, `get_role_by_name`, `list_workspace_roles`, `get_role` |
 | **Invitations** | `create_invitation`, `accept_invitation`, `revoke_invitation`, `bulk_create_invitations`, `get_invitation_by_token` |
 | **Sessions** | `cleanup_expired_sessions`, `revoke_all_user_sessions`, `revoke_session_by_token`, `user_has_active_sessions` |
-| **Validation** | `validate_email`, `validate_password`, `validate_workspace_name`, `validate_session_token` |
+| **Validation** | `validate_email`, `validate_password`, `validate_workspace_name`, `validate_session_token`, `validate_file_slug` |
 
 ---
 
@@ -302,6 +305,39 @@ pub struct CreateInvitationRequest {
     pub role_name: String,
     pub expires_in_hours: Option<i64>,
 }
+```
+
+### File Management & AI
+```rust
+// Create file with initial content (Transactional)
+pub async fn create_file_with_content(
+    conn: &mut DbConn,
+    request: CreateFileRequest, // Includes 'name' and optional 'slug'
+) -> Result<FileWithContent>
+
+// Append new version (Deduplicated)
+pub async fn create_version(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    request: CreateVersionRequest,
+) -> Result<FileVersion>
+
+// File Lifecycle
+pub async fn move_or_rename_file(conn: &mut DbConn, file_id: Uuid, request: UpdateFileHttp) -> Result<File>
+pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()>
+pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File>
+
+// Knowledge Graph
+pub async fn add_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()>
+pub async fn link_files(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> Result<()>
+pub async fn get_file_network(conn: &mut DbConn, file_id: Uuid) -> Result<FileNetworkSummary>
+
+// AI Engine
+pub async fn semantic_search(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    request: SemanticSearchHttp
+) -> Result<Vec<SearchResult>>
 ```
 
 ## Essential Usage Examples

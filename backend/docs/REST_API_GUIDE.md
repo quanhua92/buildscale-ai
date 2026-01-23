@@ -12,6 +12,9 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Login](#user-login)
   - [Refresh Access Token](#refresh-access-token)
   - [User Logout](#user-logout)
+  - [Workspaces](#workspaces)
+  - [Members](#members)
+  - [Files & AI](#files-and-ai)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 
@@ -32,10 +35,89 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id` | GET | Get workspace details | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id` | PATCH | Update workspace | Yes (JWT + Owner) |
 | `/api/v1/workspaces/:id` | DELETE | Delete workspace | Yes (JWT + Owner) |
+| `/api/v1/workspaces/:id/files` | POST | Create file/folder | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid` | GET | Get file content | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/search` | POST | Semantic search | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
 **API Version**: `v1` (all endpoints are prefixed with `/api/v1`)
+
+---
+
+## Files and AI
+
+Manage the "Everything is a File" system and use the AI Engine.
+
+### Create File
+Create a new file or folder.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/files`
+
+**Authentication**: Required
+
+#### Request
+```json
+{
+  "parent_id": "optional-folder-uuid",
+  "name": "My Document.md",
+  "slug": "optional-custom-slug.md",
+  "file_type": "document",
+  "content": { "text": "Hello world" },
+  "app_data": { "cursor": 0 }
+}
+```
+
+### Get File
+Retrieve file metadata and its latest content version.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/files/:file_id`
+
+**Authentication**: Required
+
+#### Response
+```json
+{
+  "file": {
+    "id": "...",
+    "name": "My Document.md",
+    "slug": "my-document.md",
+    "file_type": "document",
+    "status": "ready"
+  },
+  "latest_version": {
+    "id": "...",
+    "content_raw": { "text": "Hello world" },
+    "hash": "..."
+  }
+}
+```
+
+### Semantic Search
+Search for content across all files in the workspace using vector similarity.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/search`
+
+**Authentication**: Required
+
+#### Request
+```json
+{
+  "query_vector": [0.1, 0.2, ...], // 1536-dim vector
+  "limit": 5
+}
+```
+
+#### Response
+```json
+[
+  {
+    "file": { ... },
+    "chunk_content": "Relevant text snippet...",
+    "similarity": 0.89
+  }
+]
+```
 
 ---
 

@@ -1,4 +1,4 @@
-use axum::{Router, routing::{get, post}};
+use axum::Router;
 use buildscale::{load_config, Cache, CacheConfig, AppState, DbPool, create_api_router};
 use reqwest::{Client, redirect::Policy};
 use secrecy::ExposeSecret;
@@ -55,6 +55,8 @@ pub struct TestApp {
     pub config: buildscale::Config,
     /// Cache instance
     pub cache: Cache<String>,
+    /// Database pool
+    pub pool: DbPool,
 }
 
 impl TestApp {
@@ -117,7 +119,7 @@ impl TestApp {
             .expect("Failed to connect to database");
 
         // Build application state with cache, user_cache, and database pool
-        let app_state = AppState::new(cache.clone(), user_cache, pool);
+        let app_state = AppState::new(cache.clone(), user_cache, pool.clone());
 
         // Build API v1 routes using the shared router function
         let api_routes = create_api_router(app_state.clone());
@@ -160,7 +162,13 @@ impl TestApp {
             client,
             config,
             cache,
+            pool,
         }
+    }
+
+    /// Get a database connection
+    pub async fn get_connection(&self) -> sqlx::pool::PoolConnection<sqlx::Postgres> {
+        self.pool.acquire().await.expect("Failed to acquire connection")
     }
 
     /// Get the full URL for an API endpoint

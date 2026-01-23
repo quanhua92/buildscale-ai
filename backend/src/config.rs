@@ -11,6 +11,7 @@ pub struct Config {
     pub cache: CacheConfig,
     pub cookies: crate::services::cookies::CookieConfig,
     pub server: ServerConfig,
+    pub ai: AiConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -36,7 +37,7 @@ impl Config {
             .add_source(
                 config::Environment::with_prefix("BUILDSCALE")
                     .prefix_separator("__")
-                    .separator("__"),  // Use double underscore consistently for prefix and nesting
+                    .separator("__"), // Use double underscore consistently for prefix and nesting
             )
             .build()?;
 
@@ -59,7 +60,8 @@ impl Config {
                 "BUILDSCALE__JWT__SECRET must be at least 32 characters (got {} chars). \
                  Set a strong secret in your .env file or environment.",
                 secret.len()
-            ).into());
+            )
+            .into());
         }
 
         // Validate JWT refresh token secret
@@ -73,13 +75,7 @@ impl Config {
         }
 
         // Check for default/weak patterns in both secrets
-        let weak_patterns = vec![
-            "change-this",
-            "secret",
-            "password",
-            "123456",
-            "example",
-        ];
+        let weak_patterns = vec!["change-this", "secret", "password", "123456", "example"];
 
         for pattern in weak_patterns {
             if secret.to_lowercase().contains(pattern) {
@@ -129,7 +125,7 @@ pub struct SessionsConfig {
 impl Default for SessionsConfig {
     fn default() -> Self {
         Self {
-            expiration_hours: 720, // 30 days
+            expiration_hours: 720,                 // 30 days
             revoked_token_retention_minutes: 1440, // 1 day
         }
     }
@@ -170,7 +166,10 @@ impl fmt::Debug for JwtConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JwtConfig")
             .field("secret", &"<REDACTED>")
-            .field("access_token_expiration_minutes", &self.access_token_expiration_minutes)
+            .field(
+                "access_token_expiration_minutes",
+                &self.access_token_expiration_minutes,
+            )
             .field("refresh_token_secret", &"<REDACTED>")
             .finish()
     }
@@ -196,6 +195,26 @@ pub struct ServerConfig {
     /// Set to "/app/web" in Docker, "./web" for local development
     /// Empty string disables web frontend serving (security feature)
     pub web_build_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AiConfig {
+    /// Default window size for AI text chunking (in characters)
+    pub chunk_window_size: usize,
+    /// Default overlap for AI text chunking (in characters)
+    pub chunk_overlap: usize,
+    /// Dimension for AI embeddings
+    pub embedding_dimension: usize,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            chunk_window_size: 1000,
+            chunk_overlap: 200,
+            embedding_dimension: 1536,
+        }
+    }
 }
 
 impl Default for ServerConfig {

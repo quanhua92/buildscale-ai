@@ -59,13 +59,11 @@ pub async fn create_single_role(conn: &mut DbConn, new_role: NewRole) -> Result<
     }
 
     // Validate description length if provided (maximum 500 characters)
-    if let Some(ref description) = new_role.description {
-        if description.len() > 500 {
-            return Err(Error::Validation(ValidationErrors::Single {
-                field: "description".to_string(),
-                message: "Role description must be less than 500 characters".to_string(),
-            }));
-        }
+    if new_role.description.as_ref().is_some_and(|d| d.len() > 500) {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "description".to_string(),
+            message: "Role description must be less than 500 characters".to_string(),
+        }));
     }
 
     // Create the role

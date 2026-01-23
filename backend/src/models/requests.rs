@@ -1,3 +1,9 @@
+use crate::models::{
+    files::{File, FileType, FileVersion},
+    roles::Role,
+    workspace_members::WorkspaceMember,
+    workspaces::Workspace,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -42,10 +48,10 @@ pub struct UserWorkspaceRegistrationRequest {
 /// Result of a complete workspace creation operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteWorkspaceResult {
-    pub workspace: super::workspaces::Workspace,
-    pub roles: Vec<super::roles::Role>,
-    pub owner_membership: super::workspace_members::WorkspaceMember,
-    pub members: Vec<super::workspace_members::WorkspaceMember>,
+    pub workspace: Workspace,
+    pub roles: Vec<Role>,
+    pub owner_membership: WorkspaceMember,
+    pub members: Vec<WorkspaceMember>,
 }
 
 /// Result of user registration with workspace
@@ -59,4 +65,109 @@ pub struct UserWorkspaceResult {
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateWorkspaceRequest {
     pub name: String,
+}
+
+/// Request for creating a new file with initial content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFileRequest {
+    pub workspace_id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub author_id: Uuid,
+    pub name: String,
+    pub slug: Option<String>,
+    pub file_type: FileType,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// Request for creating a new version of an existing file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateVersionRequest {
+    pub author_id: Option<Uuid>,
+    pub branch: Option<String>,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// HTTP API request for creating a file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFileHttp {
+    pub parent_id: Option<Uuid>,
+    pub name: String,
+    pub slug: Option<String>,
+    pub file_type: FileType,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// HTTP API request for creating a new version
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateVersionHttp {
+    pub branch: Option<String>,
+    pub content: serde_json::Value,
+    pub app_data: Option<serde_json::Value>,
+}
+
+/// Combined model for a file and its latest content version
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWithContent {
+    pub file: File,
+    pub latest_version: FileVersion,
+}
+
+/// HTTP API request for updating file metadata (move/rename)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateFileHttp {
+    /// New parent folder.
+    /// - `None`: Field not present, do not change.
+    /// - `Some(None)`: Move to root.
+    /// - `Some(Some(uuid))`: Move to folder.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub parent_id: Option<Option<Uuid>>,
+    pub name: Option<String>,
+    pub slug: Option<String>,
+}
+
+/// Helper to deserialize double options (None = missing, Some(None) = null, Some(Some) = value)
+fn deserialize_double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// HTTP API request for adding a tag to a file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddTagHttp {
+    pub tag: String,
+}
+
+/// HTTP API request for creating a link between files
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddLinkHttp {
+    pub target_file_id: Uuid,
+}
+
+/// Summary of a file's network relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileNetworkSummary {
+    pub tags: Vec<String>,
+    pub outbound_links: Vec<File>,
+    pub backlinks: Vec<File>,
+}
+
+/// Request for semantic search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticSearchHttp {
+    pub query_vector: Vec<f32>,
+    pub limit: Option<i32>,
+}
+
+/// Single result from a semantic search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub file: File,
+    pub chunk_content: String,
+    pub similarity: f32,
 }

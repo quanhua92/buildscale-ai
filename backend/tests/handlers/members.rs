@@ -1,5 +1,4 @@
 use crate::common::{TestApp, TestAppOptions, create_workspace, generate_test_email, register_and_login};
-use uuid::Uuid;
 
 // ============================================================================
 // LIST MEMBERS TESTS

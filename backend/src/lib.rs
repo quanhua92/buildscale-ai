@@ -15,7 +15,15 @@ pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use error::{Error, Result, ValidationErrors};
-pub use handlers::{auth::login, auth::logout, auth::me, auth::register, auth::refresh, health::health_check, health::health_cache, members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member, workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace};
+pub use handlers::{
+    auth::login, auth::logout, auth::me, auth::register, auth::refresh,
+    health::health_check, health::health_cache,
+    members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
+    workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
+    files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::list_trash,
+    files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
+    files::semantic_search,
+};
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
 pub use workers::revoked_token_cleanup_worker;
@@ -35,9 +43,7 @@ pub fn load_config() -> Result<Config> {
 /// ```
 /// use buildscale::init_tracing;
 ///
-/// fn main() {
-///     init_tracing();
-/// }
+/// init_tracing();
 /// ```
 pub fn init_tracing() {
     tracing_subscriber::fmt()
@@ -55,23 +61,20 @@ pub fn init_tracing() {
 /// (e.g., in Docker builds), or falls back to running git command.
 fn get_git_commit_hash() -> String {
     // Check environment variable first (set in Docker builds)
-    if let Ok(commit) = std::env::var("GIT_COMMIT") {
-        if !commit.is_empty() {
-            return commit;
-        }
+    if let Some(commit) = std::env::var("GIT_COMMIT").ok().filter(|c| !c.is_empty()) {
+        return commit;
     }
 
     // Fallback: try to get the short commit hash from git
     use std::process::Command;
-    if let Ok(output) = Command::new("git")
+    if let Some(hash) = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
     {
-        if output.status.success() {
-            if let Ok(hash) = String::from_utf8(output.stdout) {
-                return hash.trim().to_string();
-            }
-        }
+        return hash.trim().to_string();
     }
 
     // Final fallback if git is not available or not in a git repo
@@ -83,15 +86,13 @@ fn get_git_commit_hash() -> String {
 /// Returns the build date from the BUILD_DATE environment variable if set
 /// (e.g., in Docker builds), or "unknown".
 fn get_build_date() -> String {
-    if let Ok(date) = std::env::var("BUILD_DATE") {
-        if !date.is_empty() {
-            return date;
-        }
+    if let Some(date) = std::env::var("BUILD_DATE").ok().filter(|d| !d.is_empty()) {
+        return date;
     }
     "unknown".to_string()
 }
 
-use axum::{Router, routing::{get, post, patch}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
+use axum::{Router, routing::{get, post, patch, delete}, middleware as axum_middleware, response::Response, extract::Request, http::HeaderName};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
@@ -179,6 +180,7 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::workspaces as workspace_handlers;
     use crate::handlers::members as member_handlers;
+    use crate::handlers::files as file_handlers;
     use crate::middleware::workspace_access::workspace_access_middleware;
 
     Router::new()
@@ -215,6 +217,105 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
             "/{id}/members/{user_id}",
             patch(member_handlers::update_member_role)
                 .delete(member_handlers::remove_member)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        // File routes
+        .route(
+            "/{id}/files",
+            post(file_handlers::create_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}",
+            get(file_handlers::get_file)
+                .patch(file_handlers::update_file)
+                .delete(file_handlers::delete_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/restore",
+            post(file_handlers::restore_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/trash",
+            get(file_handlers::list_trash)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/search",
+            post(file_handlers::semantic_search)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/tags/{tag}",
+            get(file_handlers::list_files_by_tag)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/tags",
+            post(file_handlers::add_tag)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/tags/{tag}",
+            delete(file_handlers::remove_tag)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/links",
+            post(file_handlers::create_link)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/links/{target_id}",
+            delete(file_handlers::remove_link)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/network",
+            get(file_handlers::get_file_network)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/files/{file_id}/versions",
+            post(file_handlers::create_version)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

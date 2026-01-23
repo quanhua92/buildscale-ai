@@ -50,8 +50,8 @@ impl Default for CookieConfig {
             access_token_name: "access_token".to_string(),
             refresh_token_name: "refresh_token".to_string(),
             http_only: true,
-            secure: is_production, // Auto-enable in production
-            same_site: SameSite::Lax,  // Allows top-level navigations from emails, Slack, OAuth, etc.
+            secure: is_production,    // Auto-enable in production
+            same_site: SameSite::Lax, // Allows top-level navigations from emails, Slack, OAuth, etc.
             path: "/".to_string(),
             domain: None,
         }
@@ -81,29 +81,23 @@ impl Default for CookieConfig {
 ///     Some("cookie_token_value")
 /// ).unwrap();
 /// ```
-pub fn extract_jwt_token(
-    auth_header: Option<&str>,
-    cookie_value: Option<&str>,
-) -> Result<String> {
+pub fn extract_jwt_token(auth_header: Option<&str>, cookie_value: Option<&str>) -> Result<String> {
     // Priority 1: Authorization header
-    if let Some(header) = auth_header {
-        if header.starts_with("Bearer ") {
-            let token = header[7..].to_string();
-            if !token.is_empty() {
-                return Ok(token);
-            }
-        }
+    if let Some(token) = auth_header
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(|t| t.to_string())
+        .filter(|t| !t.is_empty())
+    {
+        return Ok(token);
     }
 
     // Priority 2: Cookie
-    if let Some(cookie) = cookie_value {
-        if !cookie.is_empty() {
-            return Ok(cookie.to_string());
-        }
+    if let Some(cookie) = cookie_value.filter(|c| !c.is_empty()) {
+        return Ok(cookie.to_string());
     }
 
     Err(Error::Authentication(
-        "No valid token found in Authorization header or cookie".to_string()
+        "No valid token found in Authorization header or cookie".to_string(),
     ))
 }
 
@@ -126,14 +120,12 @@ pub fn extract_jwt_token(
 /// ).unwrap();
 /// ```
 pub fn extract_refresh_token(cookie_value: Option<&str>) -> Result<String> {
-    if let Some(cookie) = cookie_value {
-        if !cookie.is_empty() {
-            return Ok(cookie.to_string());
-        }
+    if let Some(cookie) = cookie_value.filter(|c| !c.is_empty()) {
+        return Ok(cookie.to_string());
     }
 
     Err(Error::Authentication(
-        "No valid refresh token found in cookie".to_string()
+        "No valid refresh token found in cookie".to_string(),
     ))
 }
 
@@ -281,7 +273,6 @@ pub fn build_clear_token_cookie(token_name: &str) -> String {
         "/" // Always use root path for clearing
     )
 }
-
 
 #[cfg(test)]
 mod tests {

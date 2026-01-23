@@ -93,7 +93,7 @@ pub async fn jwt_auth_middleware(
     let user_id = authenticate_jwt_token_from_anywhere(
         auth_header,
         access_token.as_deref(),
-        &config.jwt.secret.expose_secret(),
+        config.jwt.secret.expose_secret(),
     )?;
 
     // 2. Check cache for user details

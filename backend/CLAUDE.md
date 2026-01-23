@@ -165,6 +165,19 @@ Tests use a sophisticated isolation system:
 - **No Session Revocation on Password Change**: Manual revocation required for security operations
 - **Database Dependency**: Session validation requires database connectivity
 
+#### File System Implementation Patterns
+- **Transactional Services**: Use `conn.begin().await?` in services; pass `&mut tx` to queries for atomicity.
+- **Content Addressing**: Use `sha2::Sha256` + `hex::encode` for all content hashing (consistent with session tokens).
+- **Three-Layer Flow**: `Request Model` → `Validation` → `Service (Transaction)` → `Query`.
+- **Folders First**: Always sort file listings with `(file_type = 'folder') DESC`.
+
+#### Handler Implementation Patterns
+- **Thin Handlers**: 3-5 lines maximum. Orchestrate extraction, validation, service call, and response.
+- **Locality Rule**: Keep `log_handler_error` and `acquire_db_connection` helpers inside each handler file to maintain modularity.
+- **Explicit Extraction**: Use `Extension<AuthenticatedUser>` for user context and `Extension<WorkspaceAccess>` for workspace permissions.
+- **Decoupling**: Use dedicated `Http` request models (e.g., `CreateFileHttp`) to separate API surface from internal service logic.
+- **Instrumentation**: Use `tracing` spans and `.inspect_err()` for idiomatic side-effect logging.
+
 ## Database Schema
 
 ### Core Tables

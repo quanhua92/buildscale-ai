@@ -1,4 +1,4 @@
-use crate::common::{TestApp, TestAppOptions, create_workspace, generate_test_email, register_and_login};
+use crate::common::{TestApp, TestAppOptions, create_workspace, register_and_login};
 
 // ============================================================================
 // CREATE WORKSPACE TESTS

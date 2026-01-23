@@ -1,3 +1,4 @@
+pub mod files;
 pub mod invitations;
 pub mod permissions;
 pub mod requests;

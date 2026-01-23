@@ -716,7 +716,7 @@ where
             .last_worker_time
             .write()
             .await
-            .replace(now.clone());
+            .replace(now);
         // Accumulate cleaned count (total entries cleaned since cache creation)
         if cleaned_count > 0 {
             metrics.cleaned_count.fetch_add(cleaned_count, Ordering::SeqCst);

@@ -1,7 +1,7 @@
+use crate::models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
-use serde::{Deserialize, Serialize};
-use crate::models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE};
 
 /// Workspace permission constants
 pub mod workspace_permissions {
@@ -66,52 +66,62 @@ pub const ALL_PERMISSIONS: &[&str] = &[
 ///
 /// This static mapping defines which permissions each role has.
 /// The hierarchy is: Admin > Editor > Member > Viewer
-pub static ROLE_PERMISSIONS: LazyLock<HashMap<&'static str, HashSet<&'static str>>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
+pub static ROLE_PERMISSIONS: LazyLock<HashMap<&'static str, HashSet<&'static str>>> =
+    LazyLock::new(|| {
+        let mut map = HashMap::new();
 
-    // Admin: All permissions
-    map.insert(ADMIN_ROLE, ALL_PERMISSIONS.iter().copied().collect::<HashSet<_>>());
+        // Admin: All permissions
+        map.insert(
+            ADMIN_ROLE,
+            ALL_PERMISSIONS.iter().copied().collect::<HashSet<_>>(),
+        );
 
-    // Editor: Read, write, and manage most content, but not workspace administration
-    let editor_permissions = vec![
-        workspace_permissions::READ,
-        workspace_permissions::WRITE,
-        member_permissions::VIEW_MEMBERS,
-        workspace_permissions::EXPORT_DATA,
-        content_permissions::CREATE,
-        content_permissions::READ_OWN,
-        content_permissions::READ_ALL,
-        content_permissions::UPDATE_OWN,
-        content_permissions::UPDATE_ALL,
-        content_permissions::DELETE_OWN,
-        content_permissions::DELETE_ALL,
-        content_permissions::COMMENT,
-    ].into_iter().collect::<HashSet<_>>();
-    map.insert(EDITOR_ROLE, editor_permissions);
+        // Editor: Read, write, and manage most content, but not workspace administration
+        let editor_permissions = vec![
+            workspace_permissions::READ,
+            workspace_permissions::WRITE,
+            member_permissions::VIEW_MEMBERS,
+            workspace_permissions::EXPORT_DATA,
+            content_permissions::CREATE,
+            content_permissions::READ_OWN,
+            content_permissions::READ_ALL,
+            content_permissions::UPDATE_OWN,
+            content_permissions::UPDATE_ALL,
+            content_permissions::DELETE_OWN,
+            content_permissions::DELETE_ALL,
+            content_permissions::COMMENT,
+        ]
+        .into_iter()
+        .collect::<HashSet<_>>();
+        map.insert(EDITOR_ROLE, editor_permissions);
 
-    // Member: Can create and edit own content, participate
-    let member_permissions = vec![
-        workspace_permissions::READ,
-        member_permissions::VIEW_MEMBERS,
-        content_permissions::CREATE,
-        content_permissions::READ_OWN,
-        content_permissions::READ_ALL,
-        content_permissions::UPDATE_OWN,
-        content_permissions::DELETE_OWN,
-        content_permissions::COMMENT,
-    ].into_iter().collect::<HashSet<_>>();
-    map.insert(MEMBER_ROLE, member_permissions);
+        // Member: Can create and edit own content, participate
+        let member_permissions = vec![
+            workspace_permissions::READ,
+            member_permissions::VIEW_MEMBERS,
+            content_permissions::CREATE,
+            content_permissions::READ_OWN,
+            content_permissions::READ_ALL,
+            content_permissions::UPDATE_OWN,
+            content_permissions::DELETE_OWN,
+            content_permissions::COMMENT,
+        ]
+        .into_iter()
+        .collect::<HashSet<_>>();
+        map.insert(MEMBER_ROLE, member_permissions);
 
-    // Viewer: Read-only access
-    let viewer_permissions = vec![
-        workspace_permissions::READ,
-        content_permissions::READ_OWN,
-        content_permissions::READ_ALL,
-    ].into_iter().collect::<HashSet<_>>();
-    map.insert(VIEWER_ROLE, viewer_permissions);
+        // Viewer: Read-only access
+        let viewer_permissions = vec![
+            workspace_permissions::READ,
+            content_permissions::READ_OWN,
+            content_permissions::READ_ALL,
+        ]
+        .into_iter()
+        .collect::<HashSet<_>>();
+        map.insert(VIEWER_ROLE, viewer_permissions);
 
-    map
-});
+        map
+    });
 
 /// Permission categories for organization
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,37 +266,74 @@ mod tests {
 
     #[test]
     fn test_editor_permissions() {
-        assert!(PermissionValidator::role_has_permission(EDITOR_ROLE, workspace_permissions::WRITE));
-        assert!(PermissionValidator::role_has_permission(EDITOR_ROLE, content_permissions::CREATE));
-        assert!(!PermissionValidator::role_has_permission(EDITOR_ROLE, workspace_permissions::MANAGE_MEMBERS));
+        assert!(PermissionValidator::role_has_permission(
+            EDITOR_ROLE,
+            workspace_permissions::WRITE
+        ));
+        assert!(PermissionValidator::role_has_permission(
+            EDITOR_ROLE,
+            content_permissions::CREATE
+        ));
+        assert!(!PermissionValidator::role_has_permission(
+            EDITOR_ROLE,
+            workspace_permissions::MANAGE_MEMBERS
+        ));
     }
 
     #[test]
     fn test_member_permissions() {
-        assert!(PermissionValidator::role_has_permission(MEMBER_ROLE, content_permissions::CREATE));
-        assert!(PermissionValidator::role_has_permission(MEMBER_ROLE, content_permissions::UPDATE_OWN));
-        assert!(!PermissionValidator::role_has_permission(MEMBER_ROLE, workspace_permissions::MANAGE_SETTINGS));
+        assert!(PermissionValidator::role_has_permission(
+            MEMBER_ROLE,
+            content_permissions::CREATE
+        ));
+        assert!(PermissionValidator::role_has_permission(
+            MEMBER_ROLE,
+            content_permissions::UPDATE_OWN
+        ));
+        assert!(!PermissionValidator::role_has_permission(
+            MEMBER_ROLE,
+            workspace_permissions::MANAGE_SETTINGS
+        ));
     }
 
     #[test]
     fn test_viewer_permissions() {
-        assert!(PermissionValidator::role_has_permission(VIEWER_ROLE, workspace_permissions::READ));
-        assert!(PermissionValidator::role_has_permission(VIEWER_ROLE, content_permissions::READ_ALL));
-        assert!(!PermissionValidator::role_has_permission(VIEWER_ROLE, content_permissions::CREATE));
+        assert!(PermissionValidator::role_has_permission(
+            VIEWER_ROLE,
+            workspace_permissions::READ
+        ));
+        assert!(PermissionValidator::role_has_permission(
+            VIEWER_ROLE,
+            content_permissions::READ_ALL
+        ));
+        assert!(!PermissionValidator::role_has_permission(
+            VIEWER_ROLE,
+            content_permissions::CREATE
+        ));
     }
 
     #[test]
     fn test_permission_validation_utilities() {
-        assert!(PermissionValidator::is_valid_permission(workspace_permissions::READ));
-        assert!(!PermissionValidator::is_valid_permission("invalid:permission"));
+        assert!(PermissionValidator::is_valid_permission(
+            workspace_permissions::READ
+        ));
+        assert!(!PermissionValidator::is_valid_permission(
+            "invalid:permission"
+        ));
     }
 
     #[test]
     fn test_common_permission_sets() {
         let basic_access = common_permission_sets::basic_workspace_access();
-        assert!(PermissionValidator::role_has_all_permissions(VIEWER_ROLE, &basic_access));
+        assert!(PermissionValidator::role_has_all_permissions(
+            VIEWER_ROLE,
+            &basic_access
+        ));
 
         let content_mgmt = common_permission_sets::content_management();
-        assert!(PermissionValidator::role_has_all_permissions(EDITOR_ROLE, &content_mgmt));
+        assert!(PermissionValidator::role_has_all_permissions(
+            EDITOR_ROLE,
+            &content_mgmt
+        ));
     }
 }

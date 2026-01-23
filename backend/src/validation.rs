@@ -165,9 +165,8 @@ pub fn validate_password(password: &str) -> Result<()> {
 
     // Check for common weak patterns
     let common_patterns = vec![
-        "password", "123456", "qwerty", "abc123",
-        "monkey", "master", "dragon", "letmein",
-        "login", "admin", "welcome", "football",
+        "password", "123456", "qwerty", "abc123", "monkey", "master", "dragon", "letmein", "login",
+        "admin", "welcome", "football",
     ];
 
     let password_lower = password.to_lowercase();
@@ -187,7 +186,11 @@ pub fn validate_password(password: &str) -> Result<()> {
     // Check if any character repeats 5 or more times consecutively
     let chars: Vec<char> = password.chars().collect();
     for i in 0..chars.len().saturating_sub(4) {
-        if chars[i] == chars[i+1] && chars[i] == chars[i+2] && chars[i] == chars[i+3] && chars[i] == chars[i+4] {
+        if chars[i] == chars[i + 1]
+            && chars[i] == chars[i + 2]
+            && chars[i] == chars[i + 3]
+            && chars[i] == chars[i + 4]
+        {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "password".to_string(),
                 message: "Password contains repetitive characters. Use more variation.".to_string(),
@@ -232,10 +235,15 @@ pub fn validate_workspace_name(name: &str) -> Result<()> {
     }
 
     // Check for valid characters (letters, numbers, spaces, hyphens, underscores)
-    if !name.chars().all(|c| c.is_alphanumeric() || c.is_whitespace() || c == '-' || c == '_') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c.is_whitespace() || c == '-' || c == '_')
+    {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "workspace_name".to_string(),
-            message: "Workspace name can only contain letters, numbers, spaces, hyphens, and underscores".to_string(),
+            message:
+                "Workspace name can only contain letters, numbers, spaces, hyphens, and underscores"
+                    .to_string(),
         }));
     }
 
@@ -271,7 +279,9 @@ pub fn validate_full_name(full_name: &Option<String>) -> Result<()> {
             }
 
             // Check for valid characters (letters, spaces, hyphens, apostrophes, periods)
-            if !name.chars().all(|c| c.is_alphabetic() || c.is_whitespace() || c == '-' || c == '\'' || c == '.') {
+            if !name.chars().all(|c| {
+                c.is_alphabetic() || c.is_whitespace() || c == '-' || c == '\'' || c == '.'
+            }) {
                 return Err(Error::Validation(ValidationErrors::Single {
                     field: "full_name".to_string(),
                     message: "Full name can only contain letters, spaces, hyphens, apostrophes, and periods".to_string(),
@@ -328,8 +338,9 @@ pub fn validate_session_token(token: &str) -> Result<()> {
         }
 
         // Verify both parts are valid hex
-        if !parts[0].chars().all(|c| c.is_ascii_hexdigit()) ||
-           !parts[1].chars().all(|c| c.is_ascii_hexdigit()) {
+        if !parts[0].chars().all(|c| c.is_ascii_hexdigit())
+            || !parts[1].chars().all(|c| c.is_ascii_hexdigit())
+        {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "session_token".to_string(),
                 message: "Token must be hex-encoded".to_string(),
@@ -364,11 +375,12 @@ pub fn validate_uuid(uuid_str: &str) -> Result<uuid::Uuid> {
         }));
     }
 
-    uuid::Uuid::parse_str(uuid_str)
-        .map_err(|_| Error::Validation(ValidationErrors::Single {
+    uuid::Uuid::parse_str(uuid_str).map_err(|_| {
+        Error::Validation(ValidationErrors::Single {
             field: "uuid".to_string(),
             message: "Invalid UUID format".to_string(),
-        }))
+        })
+    })
 }
 
 /// Sanitizes string input by trimming whitespace
@@ -403,6 +415,48 @@ pub fn validate_required_string(input: &str, field_name: &str) -> Result<String>
     }
 
     Ok(sanitized)
+}
+
+/// Validates file slug format and constraints
+pub fn validate_file_slug(slug: &str) -> Result<()> {
+    let slug = slug.trim();
+
+    if slug.is_empty() {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "slug".to_string(),
+            message: "File name/slug cannot be empty".to_string(),
+        }));
+    }
+
+    if slug.len() > 255 {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "slug".to_string(),
+            message: "File name/slug must be less than 255 characters".to_string(),
+        }));
+    }
+
+    // Check for valid characters: alphanumeric, hyphens, underscores, dots
+    // Whitespace is disallowed to ensure URL-safety.
+    if !slug
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "slug".to_string(),
+            message: "File name can only contain letters, numbers, hyphens, underscores, and dots"
+                .to_string(),
+        }));
+    }
+
+    // Check for control characters
+    if slug.chars().any(|c| c.is_control()) {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "slug".to_string(),
+            message: "File name cannot contain control characters".to_string(),
+        }));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

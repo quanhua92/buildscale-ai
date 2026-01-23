@@ -111,16 +111,12 @@ impl IntoResponse for RefreshResponse {
         // Only set cookies if refresh token came from cookie (browser client)
         if self.from_cookie {
             // Set access_token cookie
-            if let Some(access_cookie) = self.access_cookie {
-                if let Ok(cookie) = HeaderValue::from_str(&access_cookie) {
-                    parts.headers.append(SET_COOKIE, cookie);
-                }
+            if let Some(cookie) = self.access_cookie.and_then(|c| HeaderValue::from_str(&c).ok()) {
+                parts.headers.append(SET_COOKIE, cookie);
             }
             // Set refresh_token cookie (rotation)
-            if let Some(refresh_cookie) = self.refresh_cookie {
-                if let Ok(cookie) = HeaderValue::from_str(&refresh_cookie) {
-                    parts.headers.append(SET_COOKIE, cookie);
-                }
+            if let Some(cookie) = self.refresh_cookie.and_then(|c| HeaderValue::from_str(&c).ok()) {
+                parts.headers.append(SET_COOKIE, cookie);
             }
         }
 
@@ -500,39 +496,33 @@ fn extract_refresh_token(headers: &HeaderMap) -> Result<(String, bool)> {
     let config = CookieConfig::default();
 
     // Priority 1: Authorization header (API/mobile clients)
-    if let Some(auth_header) = headers.get(AUTHORIZATION) {
-        if let Ok(auth_str) = auth_header.to_str() {
-            let token = if auth_str.starts_with("Bearer ") {
-                auth_str[7..].trim()
-            } else {
-                auth_str.trim()
-            };
-
-            if !token.is_empty() {
-                return Ok((token.to_string(), false));
-            }
-        }
+    if let Some(token) = headers
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|auth_str| auth_str.strip_prefix("Bearer "))
+        .map(|token| token.trim())
+        .filter(|token| !token.is_empty())
+    {
+        return Ok((token.to_string(), false));
     }
 
     // Priority 2: Cookie (browser clients)
-    if let Some(cookie_header) = headers.get(COOKIE) {
-        if let Ok(cookie_str) = cookie_header.to_str() {
-            let cookie_pattern = format!("{}=", config.refresh_token_name);
+    if let Some(cookie_str) = headers.get(COOKIE).and_then(|h| h.to_str().ok()) {
+        let cookie_pattern = format!("{}=", config.refresh_token_name);
 
-            for cookie_pair in cookie_str.split(';') {
-                let cookie_pair = cookie_pair.trim();
-                if cookie_pair.starts_with(&cookie_pattern) {
-                    let token = cookie_pair[cookie_pattern.len()..].trim();
-                    if !token.is_empty() {
-                        return Ok((token.to_string(), true));
-                    }
+        for cookie_pair in cookie_str.split(';') {
+            let cookie_pair = cookie_pair.trim();
+            if let Some(token) = cookie_pair.strip_prefix(&cookie_pattern) {
+                let token = token.trim();
+                if !token.is_empty() {
+                    return Ok((token.to_string(), true));
                 }
             }
         }
     }
 
     Err(crate::error::Error::Authentication(
-        "No valid refresh token found in Authorization header or cookie".to_string()
+        "No valid refresh token found in Authorization header or cookie".to_string(),
     ))
 }
 
