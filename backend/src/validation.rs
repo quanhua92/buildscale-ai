@@ -435,14 +435,16 @@ pub fn validate_file_slug(slug: &str) -> Result<()> {
         }));
     }
 
-    // Check for valid characters: alphanumeric, spaces, hyphens, underscores, dots
+    // Check for valid characters: alphanumeric, hyphens, underscores, dots
+    // Whitespace is disallowed to ensure URL-safety.
     if !slug
         .chars()
-        .all(|c| c.is_alphanumeric() || c.is_whitespace() || c == '-' || c == '_' || c == '.')
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "slug".to_string(),
-            message: "File name can only contain letters, numbers, spaces, hyphens, underscores, and dots".to_string(),
+            message: "File name can only contain letters, numbers, hyphens, underscores, and dots"
+                .to_string(),
         }));
     }
 

@@ -356,6 +356,6 @@ async fn acquire_db_connection(state: &AppState, operation: &'static str) -> Res
             error = %e,
             "Failed to acquire database connection",
         );
-        Error::Internal(format!("Failed to acquire database connection: {}", e))
+        Error::Sqlx(e)
     })
 }

@@ -3,7 +3,10 @@ use crate::{
     error::{Error, Result},
     models::{
         files::{File, FileStatus, FileType, NewFile, NewFileVersion},
-        requests::{CreateFileRequest, CreateVersionRequest, FileNetworkSummary, FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileHttp},
+        requests::{
+            CreateFileRequest, CreateVersionRequest, FileNetworkSummary,
+            FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileHttp,
+        },
     },
     queries::files,
     validation::validate_file_slug,
