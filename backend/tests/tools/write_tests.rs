@@ -1,0 +1,85 @@
+//! Tests for write tool
+
+use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
+use crate::tools::common::{execute_tool, write_file, read_file};
+
+#[tokio::test]
+async fn test_write_new_file() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Write Test").await;
+    
+    let content = serde_json::json!({"text": "new file content"});
+    let file_id = write_file(&app, &workspace_id, &token, "/new.txt", content.clone()).await;
+    
+    assert!(!file_id.is_empty());
+    
+    let read_content = read_file(&app, &workspace_id, &token, "/new.txt").await;
+    assert_eq!(read_content, content);
+}
+
+#[tokio::test]
+async fn test_write_update_existing_file() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Write Update Test").await;
+    
+    let initial_content = serde_json::json!({"text": "initial"});
+    write_file(&app, &workspace_id, &token, "/test.txt", initial_content).await;
+    
+    let updated_content = serde_json::json!({"text": "updated"});
+    let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
+        "path": "/test.txt",
+        "content": updated_content.clone()
+    })).await;
+    
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+    assert!(!body["result"]["version_id"].as_str().unwrap().is_empty());
+    
+    let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
+    assert_eq!(read_content, updated_content);
+}
+
+#[tokio::test]
+async fn test_write_nested_path() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Write Nested Test").await;
+    
+    let content = serde_json::json!({"text": "nested content"});
+    write_file(&app, &workspace_id, &token, "/folder/subfolder/nested.txt", content.clone()).await;
+    
+    let read_content = read_file(&app, &workspace_id, &token, "/folder/subfolder/nested.txt").await;
+    assert_eq!(read_content, content);
+}
+
+#[tokio::test]
+async fn test_write_duplicate_content() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Write Dedup Test").await;
+    
+    let content = serde_json::json!({"text": "same content"});
+    
+    let first_write = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
+        "path": "/test.txt",
+        "content": content.clone()
+    })).await;
+    
+    assert_eq!(first_write.status(), 200);
+    let first_body: serde_json::Value = first_write.json().await.unwrap();
+    let first_version_id = first_body["result"]["version_id"].as_str().unwrap();
+    
+    let second_write = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
+        "path": "/test.txt",
+        "content": content.clone()
+    })).await;
+    
+    assert_eq!(second_write.status(), 200);
+    let second_body: serde_json::Value = second_write.json().await.unwrap();
+    let second_version_id = second_body["result"]["version_id"].as_str().unwrap();
+    
+    assert_eq!(first_version_id, second_version_id);
+}

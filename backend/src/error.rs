@@ -1,6 +1,6 @@
-use thiserror::Error;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use thiserror::Error;
 
 // Import Axum types for HTTP response conversion
 use axum::{
@@ -95,6 +95,10 @@ pub enum Error {
     /// A cache serialization error (for Redis compatibility).
     #[error("Cache serialization error: {0}")]
     CacheSerialization(String),
+
+    /// A JSON serialization error.
+    #[error("JSON serialization error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.
@@ -159,16 +163,49 @@ impl IntoResponse for Error {
             Error::NotFound(msg) => (create_error_body(msg, "NOT_FOUND"), StatusCode::NOT_FOUND),
             Error::Forbidden(msg) => (create_error_body(msg, "FORBIDDEN"), StatusCode::FORBIDDEN),
             Error::Conflict(msg) => (create_error_body(msg, "CONFLICT"), StatusCode::CONFLICT),
-            Error::Authentication(msg) => (create_error_body(msg, "AUTHENTICATION_FAILED"), StatusCode::UNAUTHORIZED),
-            Error::InvalidToken(msg) => (create_error_body(msg, "INVALID_TOKEN"), StatusCode::UNAUTHORIZED),
-            Error::SessionExpired(msg) => (create_error_body(msg, "SESSION_EXPIRED"), StatusCode::UNAUTHORIZED),
-            Error::TokenTheftDetected(msg) => (create_error_body(msg, "TOKEN_THEFT"), StatusCode::FORBIDDEN),
-            Error::Sqlx(_) => (create_error_body("Database error".to_string(), "INTERNAL_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
-            Error::Internal(msg) => (create_error_body(msg, "INTERNAL_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
-            Error::Config(_) => (create_error_body("Configuration error".to_string(), "CONFIG_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
-            Error::Cache(msg) => (create_error_body(msg, "CACHE_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
-            Error::CacheSerialization(msg) => (create_error_body(msg, "CACHE_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
-            Error::Io(_) => (create_error_body("IO error".to_string(), "INTERNAL_ERROR"), StatusCode::INTERNAL_SERVER_ERROR),
+            Error::Authentication(msg) => (
+                create_error_body(msg, "AUTHENTICATION_FAILED"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            Error::InvalidToken(msg) => (
+                create_error_body(msg, "INVALID_TOKEN"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            Error::SessionExpired(msg) => (
+                create_error_body(msg, "SESSION_EXPIRED"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            Error::TokenTheftDetected(msg) => {
+                (create_error_body(msg, "TOKEN_THEFT"), StatusCode::FORBIDDEN)
+            }
+            Error::Sqlx(_) => (
+                create_error_body("Database error".to_string(), "INTERNAL_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::Internal(msg) => (
+                create_error_body(msg, "INTERNAL_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::Config(_) => (
+                create_error_body("Configuration error".to_string(), "CONFIG_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::Cache(msg) => (
+                create_error_body(msg, "CACHE_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::CacheSerialization(msg) => (
+                create_error_body(msg, "CACHE_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::Io(_) => (
+                create_error_body("IO error".to_string(), "INTERNAL_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::Json(_) => (
+                create_error_body("JSON error".to_string(), "INTERNAL_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         };
 
         (status, Json(body)).into_response()
@@ -185,6 +222,7 @@ impl Error {
             Error::Conflict(_) => 409,
             Error::Authentication(_) | Error::InvalidToken(_) | Error::SessionExpired(_) => 401,
             Error::TokenTheftDetected(_) => 403,
+            Error::Json(_) => 422,
             _ => 500,
         }
     }
@@ -206,6 +244,7 @@ impl Error {
             Error::Cache(_) => "CACHE_ERROR",
             Error::CacheSerialization(_) => "CACHE_ERROR",
             Error::Io(_) => "INTERNAL_ERROR",
+            Error::Json(_) => "JSON_ERROR",
         }
     }
 }

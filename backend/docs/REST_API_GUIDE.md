@@ -94,7 +94,6 @@ Create a new file or folder.
 **Note on `path`:** If provided, `path` overrides `parent_id` and `slug`. The system will recursively create any missing folders in the path.
 
 ---
-
 ### Get File
 Retrieve file metadata and its latest content version.
 

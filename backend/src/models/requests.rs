@@ -173,3 +173,79 @@ pub struct SearchResult {
     pub chunk_content: String,
     pub similarity: f32,
 }
+
+// ============================================================================
+// TOOL REQUEST AND RESPONSE MODELS
+// ============================================================================
+
+/// Unified tool request structure
+#[derive(Debug, Clone, Deserialize)]
+pub struct ToolRequest {
+    pub tool: String,
+    pub args: serde_json::Value,
+}
+
+/// Tool-specific argument structures
+#[derive(Debug, Clone, Deserialize)]
+pub struct LsArgs {
+    pub path: Option<String>,
+    pub recursive: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReadArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WriteArgs {
+    pub path: String,
+    pub content: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RmArgs {
+    pub path: String,
+}
+
+/// Unified tool response structure
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolResponse {
+    pub success: bool,
+    pub result: serde_json::Value,
+    pub error: Option<String>,
+}
+
+/// Tool-specific result structures
+#[derive(Debug, Clone, Serialize)]
+pub struct LsResult {
+    pub path: String,
+    pub entries: Vec<LsEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LsEntry {
+    pub name: String,
+    pub path: String,
+    pub file_type: FileType,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReadResult {
+    pub path: String,
+    pub content: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WriteResult {
+    pub path: String,
+    pub file_id: Uuid,
+    pub version_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RmResult {
+    pub path: String,
+    pub file_id: Uuid,
+}

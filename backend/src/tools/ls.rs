@@ -1,0 +1,84 @@
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, LsArgs, LsResult, LsEntry}, queries::files};
+use uuid::Uuid;
+use serde_json::Value;
+use super::Tool;
+
+/// List directory contents tool
+///
+/// Lists files and folders in a directory within a workspace.
+pub struct LsTool;
+
+impl Tool for LsTool {
+    fn name(&self) -> &'static str {
+        "ls"
+    }
+    
+    async fn execute(
+        &self,
+        conn: &mut DbConn,
+        workspace_id: Uuid,
+        _user_id: Uuid,
+        args: Value,
+    ) -> Result<ToolResponse> {
+        let ls_args: LsArgs = serde_json::from_value(args)?;
+        let path = ls_args.path.unwrap_or_else(|| "/".to_string());
+        let recursive = ls_args.recursive.unwrap_or(false);
+        
+        let parent_file = files::get_file_by_path(conn, workspace_id, &path).await?;
+        
+        let parent_id = parent_file.map(|f| f.id);
+        
+        let files = if recursive {
+            Self::list_files_recursive(conn, workspace_id, &path).await?
+        } else {
+            files::list_files_in_folder(conn, workspace_id, parent_id).await?
+        };
+        
+        let entries: Vec<LsEntry> = files.into_iter().map(|f| LsEntry {
+            name: f.name,
+            path: f.path,
+            file_type: f.file_type,
+            updated_at: f.updated_at,
+        }).collect();
+        
+        let result = LsResult { path, entries };
+        
+        Ok(ToolResponse {
+            success: true,
+            result: serde_json::to_value(result)?,
+            error: None,
+        })
+    }
+}
+
+impl LsTool {
+    async fn list_files_recursive(
+        conn: &mut DbConn,
+        workspace_id: Uuid,
+        path_prefix: &str,
+    ) -> Result<Vec<crate::models::files::File>> {
+        let files = sqlx::query_as!(
+            crate::models::files::File,
+            r#"
+            SELECT 
+                id, workspace_id, parent_id, author_id, 
+                file_type as "file_type: crate::models::files::FileType", 
+                status as "status: crate::models::files::FileStatus", 
+                name, slug, path, latest_version_id,
+                deleted_at, created_at, updated_at
+            FROM files
+            WHERE workspace_id = $1 
+              AND path LIKE $2 || '%'
+              AND deleted_at IS NULL
+            ORDER BY path ASC
+            "#,
+            workspace_id,
+            path_prefix
+        )
+        .fetch_all(conn)
+        .await
+        .map_err(Error::Sqlx)?;
+        
+        Ok(files)
+    }
+}
