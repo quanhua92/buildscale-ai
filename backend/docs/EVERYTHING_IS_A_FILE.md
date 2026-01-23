@@ -6,13 +6,8 @@ This document details the "Everything is a file" philosophy and database impleme
 
 In BuildScale.ai, **Identity** is separated from **Content**.
 
-1.  **Identity (`files`)**: The permanent anchor. It has an ID, a name (`slug`), a location (`parent_id`), and an owner. It doesn't change when you edit the document.
+1.  **Identity (`files`)**: The permanent anchor. It has an ID, a human name (`name`), a machine identifier (`slug`), a location (`parent_id`), and an owner. It doesn't change when you edit the document content.
 2.  **Content (`file_versions`)**: The immutable history. Every "Save" creates a new version. We never update existing content; we only append new versions.
-
-This enables:
-*   **Time Travel**: Instantly view the document as it existed at any point in time.
-*   **Sync**: Easier conflict resolution (CRDT-friendly).
-*   **Audit**: Complete history of who changed what and when.
 
 ## Schema Overview
 
@@ -25,9 +20,11 @@ The `files` table is the central registry for all objects in the system.
 | `id` | UUID (v7) | Unique identifier. |
 | `workspace_id` | UUID | Tenant isolation. |
 | `parent_id` | UUID | **The Folder Structure.** Points to the parent folder file. `NULL` = Root. |
+| `author_id` | UUID | **Creator.** Nullable to support user deletion (`ON DELETE SET NULL`). |
 | `file_type` | TEXT | `document`, `folder`, `canvas`, `chat`, `whiteboard`. |
 | `status` | TEXT | `pending`, `uploading`, `waiting`, `processing`, `ready`, `failed`. |
-| `slug` | TEXT | URL-safe name. Unique among **active** files in a specific folder. |
+| `name` | TEXT | **Display Name.** Supports spaces, emojis, mixed case (e.g., "My Plan ✨"). |
+| `slug` | TEXT | **URL-safe Name.** Lowercase, hyphens (e.g., "my-plan"). Unique per folder. |
 | `latest_version_id` | UUID | **Cache.** Points to the most recent version in `file_versions`. |
 | `deleted_at` | TIMESTAMPTZ | **Trash Bin.** If not NULL, the file is in the trash. |
 | `created_at` | TIMESTAMPTZ | Creation timestamp. |
@@ -39,7 +36,7 @@ The `files` table is the central registry for all objects in the system.
 
 **Trash Logic:**
 *   **Soft Delete**: When a file is deleted, `deleted_at` is set to the current timestamp.
-*   **Unique Constraints**: A deleted file releases its claim on the `slug`. You can create a new file with the same name as a deleted one.
+*   **Unique Constraints**: A deleted file releases its claim on the `slug`. You can create a new file with the same slug as a deleted one.
 *   **Retention**: A background job permanently deletes files where `deleted_at < NOW() - INTERVAL '30 days'`.
 
 ### 2. The Content: `file_versions`
@@ -51,6 +48,7 @@ Stores the actual data.
 | `id` | UUID | Unique version identifier. |
 | `file_id` | UUID | Link to the Identity. |
 | `workspace_id` | UUID | **Tenant isolation.** Denormalized for performance. |
+| `author_id` | UUID | Who created this specific version. Supports user deletion. |
 | `content_raw` | JSONB | The payload (Markdown AST, Excalidraw JSON, Chat Array). |
 | `app_data` | JSONB | Machine metadata (AI tags, linguistic scores, view settings). |
 | `hash` | TEXT | SHA-256 hash of content. Used for deduplication. |
@@ -84,7 +82,7 @@ High-performance categorization.
 
 ### 5. Semantic Memory: `file_chunks` & `file_version_chunks`
 
-Optimized RAG storage with deduplication.
+Optimized RAG storage with deduplication and model upgrade support.
 
 **`file_chunks` (The Pool):**
 Stores unique text snippets and embeddings.
@@ -94,7 +92,7 @@ Stores unique text snippets and embeddings.
 | `workspace_id` | UUID | Tenant isolation. |
 | `chunk_hash` | TEXT | SHA-256 of content. Unique per workspace. |
 | `chunk_content`| TEXT | The text snippet. |
-| `embedding` | vector | 1536d OpenAI embedding. |
+| `embedding` | vector | AI-generated embedding (e.g., 1536d). Updated on conflict. |
 
 **`file_version_chunks` (The Map):**
 Links versions to their chunks.
@@ -114,7 +112,32 @@ Links versions to their chunks.
 SELECT * FROM files 
 WHERE parent_id = 'uuid-of-marketing-folder' 
   AND deleted_at IS NULL
-ORDER BY (file_type = 'folder') DESC, slug ASC;
+ORDER BY (file_type = 'folder') DESC, name ASC;
+```
+
+### B. Latest Content (Opening a File)
+"Get the current content for file X."
+
+```sql
+-- O(1) Lookup using the cache
+SELECT fv.* 
+FROM file_versions fv
+JOIN files f ON f.latest_version_id = fv.id
+WHERE f.id = 'uuid-of-file-x';
+```
+
+### C. Semantic Search (AI)
+"Find files related to 'Quarterly Goals'."
+
+```sql
+SELECT f.name, f.slug, fc.chunk_content, (1 - (fc.embedding <=> '[vector]')) as similarity
+FROM file_chunks fc
+INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
+INNER JOIN files f ON fvc.file_version_id = f.latest_version_id
+WHERE fc.workspace_id = 'current-workspace'
+  AND f.deleted_at IS NULL
+ORDER BY fc.embedding <=> '[vector]' 
+LIMIT 5;
 ```
 
 ### B. Latest Content (Opening a File)

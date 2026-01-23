@@ -61,12 +61,18 @@ APIs are too slow for massive data processing (like a 5GB CSV file).
 
 Because we are a platform, our "File System" does things a normal disk cannot.
 
+### Human Names, Machine Slugs
+Humans are messy; machines are precise.
+*   **The Feature**: Every file has a `name` (e.g., "Draft: My Awesome Plan ✨") and a `slug` (e.g., "my-awesome-plan").
+*   **The Benefit**: Users get a beautiful UI with full emoji and space support, while AI agents get clean, stable, and URL-safe identifiers for linking and indexing.
+
 ### Parallel Agent Coordination
 We can have 10 agents working on the same project at once.
-*   **The Signal**: They use the file `status` field (`Pending`, `Processing`, `Ready`) as a traffic light.
-*   **The Flow**: Agent A writes a "Plan" file. Agent B reads it and starts working on Task 1. Agent C sees Task 1 is `Processing` and moves to Task 2.
+*   **The Signal**: They use the file `status` field (`Pending`, `Processing`, `Ready`, `Failed`) as a traffic light.
+*   **The Flow**: Agent A writes a "Plan" file. Agent B reads it and starts working on Task 1. Agent C sees Task 1 is `Processing` and moves to Task 2. If an agent fails, the status becomes `Failed`, triggering an automated retry or human alert.
 
 ### Multimodal Ingestion
 The AI can "read" things that aren't text.
-*   **The Hook**: When you upload a PDF or Excel file, our background workers (using LlamaParse) automatically create a "Shadow Version" in Markdown.
+*   **The Hook**: When you upload a PDF or Excel file, our background workers automatically create a "Shadow Version" in Markdown through recursive text extraction.
 *   **The Result**: The AI can seamlessly read, search, and quote from complex documents as if they were simple text files.
+
