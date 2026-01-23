@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE files\n        SET parent_id = $2, slug = $3, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            slug, \n            deleted_at, \n            created_at, \n            updated_at\n        ",
+  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.slug, \n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_tags ft ON f.id = ft.file_id\n        WHERE f.workspace_id = $1 \n          AND ft.tag = $2\n          AND f.deleted_at IS NULL\n        ORDER BY f.updated_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -40,23 +40,27 @@
       },
       {
         "ordinal": 7,
+        "name": "latest_version_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid",
         "Text"
       ]
@@ -70,9 +74,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "5af123c46310c589f7620fc8f1b3a6501b696a1e5277c869faf896d6f11aae28"
+  "hash": "0d727de430e6ede910977dc2816b9556b3975ce328e36353d96d12355842bcce"
 }

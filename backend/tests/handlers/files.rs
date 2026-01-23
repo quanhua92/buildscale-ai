@@ -181,6 +181,7 @@ async fn test_move_rename_lifecycle() {
             app_data: None,
         }).send().await.unwrap();
     let folder_id = folder_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+    let folder_uuid = uuid::Uuid::parse_str(&folder_id).unwrap();
 
     // 2. Create a file in root
     let file_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
@@ -195,10 +196,11 @@ async fn test_move_rename_lifecycle() {
     let file_id = file_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
 
     // 3. Move file into folder and rename it
+    // Use the struct directly to avoid JSON serialization ambiguity
     let patch_resp = app.client.patch(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
         .header("Authorization", format!("Bearer {}", token))
         .json(&UpdateFileHttp {
-            parent_id: Some(uuid::Uuid::parse_str(&folder_id).unwrap()),
+            parent_id: Some(Some(folder_uuid)),
             slug: Some("renamed.md".to_string()),
         }).send().await.unwrap();
     
@@ -206,6 +208,18 @@ async fn test_move_rename_lifecycle() {
     let patched_body: serde_json::Value = patch_resp.json().await.unwrap();
     assert_eq!(patched_body["slug"], "renamed.md");
     assert_eq!(patched_body["parent_id"], folder_id);
+
+    // 4. Move file back to root
+    let root_move_resp = app.client.patch(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&UpdateFileHttp {
+            parent_id: Some(None), // Explicitly move to root
+            slug: None,
+        }).send().await.unwrap();
+    
+    assert_eq!(root_move_resp.status(), 200);
+    let root_body: serde_json::Value = root_move_resp.json().await.unwrap();
+    assert!(root_body["parent_id"].is_null(), "Expected parent_id to be null after moving to root, got: {:?}", root_body["parent_id"]);
 }
 
 #[tokio::test]
@@ -372,11 +386,11 @@ async fn test_semantic_search_flow() {
     assert_eq!(file_body["file"]["status"], "ready");
 
     // 4. Perform search
-    // Since we used dummy vectors [0.0; 1536], searching with any vector will return it
+    // Since we used dummy vectors [0.1; 1536], searching with any vector will return it
     let search_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/search", workspace_id)))
         .header("Authorization", format!("Bearer {}", token))
         .json(&SemanticSearchHttp {
-            query_vector: vec![0.0; 1536],
+            query_vector: vec![0.1; 1536],
             limit: Some(5),
         }).send().await.unwrap();
     

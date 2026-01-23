@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO file_version_chunks (file_version_id, chunk_id, workspace_id, chunk_index)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (file_version_id, chunk_index) DO UPDATE \n        SET chunk_id = EXCLUDED.chunk_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fc76ea02dbd1cce4d7af7844b075b79b6a3108fe9f5088a89f1893fcf0ab5423"
+}

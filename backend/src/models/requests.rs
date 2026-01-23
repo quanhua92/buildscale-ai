@@ -114,10 +114,24 @@ pub struct FileWithContent {
 }
 
 /// HTTP API request for updating file metadata (move/rename)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateFileHttp {
-    pub parent_id: Option<Uuid>,
+    /// New parent folder.
+    /// - `None`: Field not present, do not change.
+    /// - `Some(None)`: Move to root.
+    /// - `Some(Some(uuid))`: Move to folder.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub parent_id: Option<Option<Uuid>>,
     pub slug: Option<String>,
+}
+
+/// Helper to deserialize double options (None = missing, Some(None) = null, Some(Some) = value)
+fn deserialize_double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 /// HTTP API request for adding a tag to a file

@@ -55,7 +55,7 @@ pub async fn create_file_with_content(
         status: FileStatus::Ready, // Set to Ready since we are providing content immediately
         slug: request.slug,
     };
-    let file = files::create_file_identity(&mut tx, new_file).await?;
+    let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
     // 4. Calculate content hash
     let hash = hash_content(&request.content)?;
@@ -63,6 +63,7 @@ pub async fn create_file_with_content(
     // 5. Create first version record
     let new_version = NewFileVersion {
         file_id: file.id,
+        workspace_id: file.workspace_id,
         branch: "main".to_string(),
         content_raw: request.content,
         app_data: request.app_data.unwrap_or(serde_json::json!({})),
@@ -71,7 +72,11 @@ pub async fn create_file_with_content(
     };
     let latest_version = files::create_version(&mut tx, new_version).await?;
 
-    // 6. Commit transaction
+    // 6. Update file with latest version ID cache
+    files::update_latest_version_id(&mut tx, file.id, latest_version.id).await?;
+    file.latest_version_id = Some(latest_version.id);
+
+    // 7. Commit transaction
     tx.commit().await.map_err(|e| {
         Error::Internal(format!("Failed to commit transaction: {}", e))
     })?;
@@ -99,9 +104,18 @@ pub async fn create_version(
         return Ok(v);
     }
 
-    // 2. Insert new version
+    // 2. Get file to obtain workspace_id
+    let file = files::get_file_by_id(conn, file_id).await?;
+
+    // 3. Start transaction
+    let mut tx = conn.begin().await.map_err(|e| {
+        Error::Internal(format!("Failed to begin transaction: {}", e))
+    })?;
+
+    // 4. Insert new version
     let new_version = NewFileVersion {
         file_id,
+        workspace_id: file.workspace_id,
         branch: request.branch.unwrap_or_else(|| "main".to_string()),
         content_raw: request.content,
         app_data: request.app_data.unwrap_or(serde_json::json!({})),
@@ -109,7 +123,17 @@ pub async fn create_version(
         author_id: request.author_id,
     };
 
-    files::create_version(conn, new_version).await
+    let version = files::create_version(&mut tx, new_version).await?;
+
+    // 5. Update cache
+    files::update_latest_version_id(&mut tx, file_id, version.id).await?;
+
+    // 6. Commit
+    tx.commit().await.map_err(|e| {
+        Error::Internal(format!("Failed to commit transaction: {}", e))
+    })?;
+
+    Ok(version)
 }
 
 /// Gets a file and its latest version together
@@ -133,7 +157,11 @@ pub async fn move_or_rename_file(
     let current_file = files::get_file_by_id(conn, file_id).await?;
 
     // 2. Determine target values
-    let target_parent_id = request.parent_id.or(current_file.parent_id);
+    // Handle tri-state parent_id
+    let target_parent_id = match request.parent_id {
+        Some(new_parent) => new_parent, // Some(Some(uuid)) or Some(None) for root
+        None => current_file.parent_id, // Field omitted
+    };
     let target_slug = request.slug.as_deref().unwrap_or(&current_file.slug);
 
     // 3. Validation
@@ -152,7 +180,7 @@ pub async fn move_or_rename_file(
     })?;
 
     // 6. Cycle Detection (if moving)
-    if let Some(new_parent_id) = request.parent_id {
+    if let Some(new_parent_id) = target_parent_id {
         // Cannot move to itself
         if new_parent_id == file_id {
             return Err(Error::Validation(crate::error::ValidationErrors::Single {
@@ -249,7 +277,8 @@ pub async fn add_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()> 
         }));
     }
 
-    files::add_tag(conn, file_id, &tag).await
+    let file = files::get_file_by_id(conn, file_id).await?;
+    files::add_tag(conn, file_id, file.workspace_id, &tag).await
 }
 
 /// Removes a tag from a file
@@ -289,7 +318,7 @@ pub async fn link_files(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> 
         ));
     }
 
-    files::add_link(conn, source_id, target_id).await
+    files::add_link(conn, source_id, target_id, source.workspace_id).await
 }
 
 /// Removes a link between two files
@@ -367,7 +396,7 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
         )
         .await?;
 
-        files::link_version_to_chunk(conn, latest_version.id, chunk.id, i as i32).await?;
+        files::link_version_to_chunk(conn, latest_version.id, chunk.id, file.workspace_id, i as i32).await?;
     }
 
     // 6. Final status: Ready
@@ -430,6 +459,7 @@ pub async fn semantic_search(
                 file_type: r.file_type,
                 status: r.status,
                 slug: r.slug,
+                latest_version_id: r.latest_version_id,
                 deleted_at: r.deleted_at,
                 created_at: r.created_at,
                 updated_at: r.updated_at,

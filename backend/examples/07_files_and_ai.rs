@@ -52,6 +52,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bind(&email).execute(&mut *conn).await.ok();
     sqlx::query("DELETE FROM file_versions WHERE author_id IN (SELECT id FROM users WHERE email = $1)")
         .bind(&email).execute(&mut *conn).await.ok();
+    sqlx::query("UPDATE files SET latest_version_id = NULL WHERE author_id IN (SELECT id FROM users WHERE email = $1)")
+        .bind(&email).execute(&mut *conn).await.ok();
     sqlx::query("DELETE FROM files WHERE author_id IN (SELECT id FROM users WHERE email = $1)")
         .bind(&email).execute(&mut *conn).await.ok();
     sqlx::query("DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email = $1)")
@@ -159,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔄 STEP 4: Moving and Renaming");
     
     let move_request = UpdateFileHttp {
-        parent_id: None, // Move to root
+        parent_id: Some(None), // Move to root
         slug: Some("ai_agents_handbook.md".to_string()), // Rename
     };
     let doc2_updated = move_or_rename_file(&mut conn, doc2.file.id, move_request).await?;

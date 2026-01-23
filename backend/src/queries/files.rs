@@ -21,6 +21,7 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -44,11 +45,12 @@ pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> R
     let version = sqlx::query_as!(
         FileVersion,
         r#"
-        INSERT INTO file_versions (file_id, branch, content_raw, app_data, hash, author_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO file_versions (file_id, workspace_id, branch, content_raw, app_data, hash, author_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING 
             id, 
             file_id, 
+            workspace_id,
             branch as "branch!", 
             content_raw, 
             app_data, 
@@ -58,6 +60,7 @@ pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> R
             updated_at
         "#,
         new_version.file_id,
+        new_version.workspace_id,
         new_version.branch,
         new_version.content_raw,
         new_version.app_data,
@@ -69,6 +72,26 @@ pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> R
     .map_err(Error::Sqlx)?;
 
     Ok(version)
+}
+
+/// Updates the latest version ID for a file.
+pub async fn update_latest_version_id(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    version_id: Uuid,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE files SET latest_version_id = $2, updated_at = NOW() WHERE id = $1
+        "#,
+        file_id,
+        version_id
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
 }
 
 /// Gets a file by its ID.
@@ -84,6 +107,7 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -105,19 +129,19 @@ pub async fn get_latest_version(conn: &mut DbConn, file_id: Uuid) -> Result<File
         FileVersion,
         r#"
         SELECT 
-            id, 
-            file_id, 
-            branch as "branch!", 
-            content_raw, 
-            app_data, 
-            hash, 
-            author_id as "author_id?", 
-            created_at, 
-            updated_at
-        FROM file_versions
-        WHERE file_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
+            fv.id, 
+            fv.file_id, 
+            fv.workspace_id,
+            fv.branch as "branch!", 
+            fv.content_raw, 
+            fv.app_data, 
+            fv.hash, 
+            fv.author_id as "author_id?", 
+            fv.created_at, 
+            fv.updated_at
+        FROM file_versions fv
+        INNER JOIN files f ON fv.id = f.latest_version_id
+        WHERE f.id = $1
         "#,
         file_id
     )
@@ -137,19 +161,19 @@ pub async fn get_latest_version_optional(
         FileVersion,
         r#"
         SELECT 
-            id, 
-            file_id, 
-            branch as "branch!", 
-            content_raw, 
-            app_data, 
-            hash, 
-            author_id as "author_id?", 
-            created_at, 
-            updated_at
-        FROM file_versions
-        WHERE file_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
+            fv.id, 
+            fv.file_id, 
+            fv.workspace_id,
+            fv.branch as "branch!", 
+            fv.content_raw, 
+            fv.app_data, 
+            fv.hash, 
+            fv.author_id as "author_id?", 
+            fv.created_at, 
+            fv.updated_at
+        FROM file_versions fv
+        INNER JOIN files f ON fv.id = f.latest_version_id
+        WHERE f.id = $1
         "#,
         file_id
     )
@@ -178,6 +202,7 @@ pub async fn get_file_by_slug(
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -215,6 +240,7 @@ pub async fn list_files_in_folder(
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -333,6 +359,7 @@ pub async fn update_file_metadata(
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -381,6 +408,7 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -407,6 +435,7 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
             slug, 
+            latest_version_id,
             deleted_at, 
             created_at, 
             updated_at
@@ -429,14 +458,15 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
 // ============================================================================
 
 /// Adds a tag to a file.
-pub async fn add_tag(conn: &mut DbConn, file_id: Uuid, tag: &str) -> Result<()> {
+pub async fn add_tag(conn: &mut DbConn, file_id: Uuid, workspace_id: Uuid, tag: &str) -> Result<()> {
     sqlx::query!(
         r#"
-        INSERT INTO file_tags (file_id, tag)
-        VALUES ($1, $2)
+        INSERT INTO file_tags (file_id, workspace_id, tag)
+        VALUES ($1, $2, $3)
         ON CONFLICT DO NOTHING
         "#,
         file_id,
+        workspace_id,
         tag
     )
     .execute(conn)
@@ -500,6 +530,7 @@ pub async fn list_files_by_tag(
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
             f.slug, 
+            f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
             f.updated_at
@@ -525,15 +556,21 @@ pub async fn list_files_by_tag(
 // ============================================================================
 
 /// Adds a link between two files.
-pub async fn add_link(conn: &mut DbConn, source_id: Uuid, target_id: Uuid) -> Result<()> {
+pub async fn add_link(
+    conn: &mut DbConn,
+    source_id: Uuid,
+    target_id: Uuid,
+    workspace_id: Uuid,
+) -> Result<()> {
     sqlx::query!(
         r#"
-        INSERT INTO file_links (source_file_id, target_file_id)
-        VALUES ($1, $2)
+        INSERT INTO file_links (source_file_id, target_file_id, workspace_id)
+        VALUES ($1, $2, $3)
         ON CONFLICT DO NOTHING
         "#,
         source_id,
-        target_id
+        target_id,
+        workspace_id
     )
     .execute(conn)
     .await
@@ -572,6 +609,7 @@ pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
             f.slug, 
+            f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
             f.updated_at
@@ -603,6 +641,7 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
             f.slug, 
+            f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
             f.updated_at
@@ -659,17 +698,19 @@ pub async fn link_version_to_chunk(
     conn: &mut DbConn,
     version_id: Uuid,
     chunk_id: Uuid,
+    workspace_id: Uuid,
     index: i32,
 ) -> Result<()> {
     sqlx::query!(
         r#"
-        INSERT INTO file_version_chunks (file_version_id, chunk_id, chunk_index)
-        VALUES ($1, $2, $3)
+        INSERT INTO file_version_chunks (file_version_id, chunk_id, workspace_id, chunk_index)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (file_version_id, chunk_index) DO UPDATE 
         SET chunk_id = EXCLUDED.chunk_id
         "#,
         version_id,
         chunk_id,
+        workspace_id,
         index
     )
     .execute(conn)
@@ -688,30 +729,22 @@ pub async fn semantic_search(
 ) -> Result<Vec<SearchResultRow>> {
     // Note: cosine similarity = 1 - cosine distance
     // pgvector <=> is cosine distance
+    // Optimized: uses latest_version_id cache and workspace_id for O(1) tenant lookup
     let results = sqlx::query_as!(
         SearchResultRow,
         r#"
-        WITH latest_versions AS (
-            SELECT DISTINCT ON (f.id) 
-                f.id, f.workspace_id, f.parent_id, f.author_id, 
-                f.file_type, f.status, f.slug, f.deleted_at, f.created_at, f.updated_at,
-                fv.id as version_id
-            FROM files f
-            INNER JOIN file_versions fv ON f.id = fv.file_id
-            WHERE f.workspace_id = $1 AND f.deleted_at IS NULL
-            ORDER BY f.id, fv.created_at DESC
-        )
         SELECT 
-            lv.id, lv.workspace_id, lv.parent_id, lv.author_id, 
-            lv.file_type as "file_type: FileType", 
-            lv.status as "status: FileStatus", 
-            lv.slug, lv.deleted_at, lv.created_at, lv.updated_at,
+            f.id, f.workspace_id, f.parent_id, f.author_id, 
+            f.file_type as "file_type: FileType", 
+            f.status as "status: FileStatus", 
+            f.slug, f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
             fc.chunk_content,
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
         FROM file_chunks fc
-        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
-        INNER JOIN latest_versions lv ON fvc.file_version_id = lv.version_id
+        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id AND fc.workspace_id = fvc.workspace_id
+        INNER JOIN files f ON fvc.file_version_id = f.latest_version_id AND fvc.workspace_id = f.workspace_id
         WHERE fc.workspace_id = $1
+          AND f.deleted_at IS NULL
         ORDER BY fc.embedding <=> $2
         LIMIT $3
         "#,
@@ -736,6 +769,7 @@ pub struct SearchResultRow {
     pub file_type: FileType,
     pub status: FileStatus,
     pub slug: String,
+    pub latest_version_id: Option<Uuid>,
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

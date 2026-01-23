@@ -41,6 +41,10 @@ pub struct File {
     pub file_type: FileType,
     pub status: FileStatus,
     pub slug: String,
+
+    /// Cache for the latest version to avoid expensive JOINs/CTEs
+    pub latest_version_id: Option<Uuid>,
+
     pub deleted_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -60,6 +64,7 @@ pub struct NewFile {
 pub struct FileVersion {
     pub id: Uuid,
     pub file_id: Uuid,
+    pub workspace_id: Uuid,
     pub branch: String,
     pub content_raw: serde_json::Value,
     pub app_data: serde_json::Value,
@@ -72,6 +77,7 @@ pub struct FileVersion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewFileVersion {
     pub file_id: Uuid,
+    pub workspace_id: Uuid,
     pub branch: String,
     pub content_raw: serde_json::Value,
     pub app_data: serde_json::Value,
@@ -93,6 +99,7 @@ pub struct FileChunk {
 pub struct FileLink {
     pub source_file_id: Uuid,
     pub target_file_id: Uuid,
+    pub workspace_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -100,6 +107,7 @@ pub struct FileLink {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileTag {
     pub file_id: Uuid,
+    pub workspace_id: Uuid,
     pub tag: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
