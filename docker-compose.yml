@@ -6,12 +6,12 @@ services:
     user: "${UID:-999}:${GID:-999}"
     environment:
       - POSTGRES_USER=buildscale
-      - POSTGRES_PASSWORD=PASSWORD
+      - POSTGRES_PASSWORD=hellobuildscale
       - POSTGRES_DB=buildscale
     volumes:
       - postgres_data:/var/lib/postgresql
-    # ports:
-    #   - "5432:5432"
+    ports:
+      - "5432:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U buildscale"]
@@ -46,7 +46,7 @@ services:
       - BUILDSCALE__SERVER__WEB_BUILD_PATH=/app/web
       # Database Configuration
       - BUILDSCALE__DATABASE__USER=buildscale
-      - BUILDSCALE__DATABASE__PASSWORD=PASSWORD
+      - BUILDSCALE__DATABASE__PASSWORD=hellobuildscale
       - BUILDSCALE__DATABASE__HOST=postgres
       - BUILDSCALE__DATABASE__PORT=5432
       - BUILDSCALE__DATABASE__DATABASE=buildscale
