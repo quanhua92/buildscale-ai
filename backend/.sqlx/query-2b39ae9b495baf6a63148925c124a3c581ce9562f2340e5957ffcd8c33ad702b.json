@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, workspace_id, parent_id, author_id,\n                file_type as \"file_type: crate::models::files::FileType\",\n                status as \"status: crate::models::files::FileStatus\",\n                name, slug, path, latest_version_id,\n                deleted_at, created_at, updated_at\n            FROM files\n            WHERE workspace_id = $1\n              AND path LIKE $2 || '%'\n              AND path != $2\n              AND deleted_at IS NULL\n            ORDER BY path ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_type: crate::models::files::FileType",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: crate::models::files::FileStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "latest_version_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2b39ae9b495baf6a63148925c124a3c581ce9562f2340e5957ffcd8c33ad702b"
+}

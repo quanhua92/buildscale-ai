@@ -18,7 +18,8 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [Workspaces](#workspaces)
   - [Members](#members)
   - [Files & AI](#files-and-ai)
-    - [Knowledge Graph (Tags & Links)](#knowledge-graph)
+  - [Knowledge Graph (Tags & Links)](#knowledge-graph)
+  - [Tools API](#tools-api)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 - [Production Considerations](#production-considerations)
@@ -60,6 +61,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/links` | POST | Link two files | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm) | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -94,7 +96,6 @@ Create a new file or folder.
 **Note on `path`:** If provided, `path` overrides `parent_id` and `slug`. The system will recursively create any missing folders in the path.
 
 ---
-
 ### Get File
 Retrieve file metadata and its latest content version.
 
@@ -232,6 +233,45 @@ Search for content across all files in the workspace using vector similarity.
   "limit": 5
 }
 ```
+
+---
+
+## Tools API
+
+Execute filesystem tools (ls, read, write, rm) within a workspace through a unified endpoint. This API provides an extensible interface for AI agents, automation scripts, and CLI tools.
+
+### Execute Tool
+
+**Endpoint**: `POST /api/v1/workspaces/:id/tools`
+
+**Authentication**: Required (JWT + Workspace Member)
+
+#### Request
+```json
+{
+  "tool": "read",
+  "args": { "path": "/file.txt" }
+}
+```
+
+#### Available Tools
+| Tool | Description | Arguments |
+|------|-------------|-----------|
+| `ls` | List directory contents | `path` (optional), `recursive` (optional, default: false) |
+| `read` | Read file contents | `path` (required) |
+| `write` | Create or update file | `path` (required), `content` (required) |
+| `rm` | Delete file or folder | `path` (required) |
+
+#### Response
+```json
+{
+  "success": true,
+  "result": { ... },
+  "error": null
+}
+```
+
+**See**: [Tools API Guide](./TOOLS_API_GUIDE.md) for complete documentation.
 
 ---
 

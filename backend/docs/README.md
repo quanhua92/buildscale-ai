@@ -20,6 +20,7 @@ Welcome to the BuildScale.ai Backend documentation. This directory contains comp
 
 ## 🔌 API References
 - **[REST API Guide](./REST_API_GUIDE.md)**: HTTP endpoints, request formats, and dual-token usage.
+- **[Tools API Guide](./TOOLS_API_GUIDE.md)**: Extensible tool execution system (ls, read, write, rm).
 - **[Services API Guide](./SERVICES_API_GUIDE.md)**: Internal Rust service layer functions and usage examples.
 
 ---
