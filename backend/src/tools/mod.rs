@@ -63,9 +63,19 @@ pub struct ToolContext {
 /// # Example
 /// ```no_run
 /// use buildscale::tools::get_tool_executor;
+/// use buildscale::DbConn;
+/// use uuid::Uuid;
+/// use serde_json::Value;
 ///
+/// # async fn example() -> buildscale::error::Result<()> {
+/// # let conn: &mut DbConn = unsafe { std::mem::zeroed() };
+/// # let workspace_id = Uuid::new_v4();
+/// # let user_id = Uuid::new_v4();
+/// # let args = Value::Null;
 /// let executor = get_tool_executor("read")?;
 /// executor.execute(conn, workspace_id, user_id, args).await?;
+/// # Ok(())
+/// # }
 /// ```
 pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
     match tool_name {
