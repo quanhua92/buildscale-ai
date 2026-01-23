@@ -202,9 +202,9 @@ impl IntoResponse for Error {
                 create_error_body("IO error".to_string(), "INTERNAL_ERROR"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
-            Error::Json(_) => (
-                create_error_body("JSON error".to_string(), "INTERNAL_ERROR"),
-                StatusCode::INTERNAL_SERVER_ERROR,
+            Error::Json(e) => (
+                create_error_body(format!("Invalid JSON payload: {}", e), "VALIDATION_ERROR"),
+                StatusCode::BAD_REQUEST,
             ),
         };
 
@@ -222,7 +222,7 @@ impl Error {
             Error::Conflict(_) => 409,
             Error::Authentication(_) | Error::InvalidToken(_) | Error::SessionExpired(_) => 401,
             Error::TokenTheftDetected(_) => 403,
-            Error::Json(_) => 422,
+            Error::Json(_) => 400,
             _ => 500,
         }
     }
