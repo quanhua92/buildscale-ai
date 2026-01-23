@@ -1,10 +1,11 @@
-use crate::{DbConn, error::Result, Error};
+use crate::{DbConn, error::Result};
 use crate::models::requests::{ToolResponse, WriteArgs, WriteResult, CreateFileRequest, CreateVersionRequest};
 use crate::models::files::FileType;
 use crate::services::files;
 use crate::queries::files as file_queries;
 use uuid::Uuid;
 use serde_json::Value;
+use async_trait::async_trait;
 use super::Tool;
 
 /// Write file contents tool
@@ -12,6 +13,7 @@ use super::Tool;
 /// Creates a new file or updates an existing file with new content.
 pub struct WriteTool;
 
+#[async_trait]
 impl Tool for WriteTool {
     fn name(&self) -> &'static str {
         "write"

@@ -1,6 +1,7 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, RmArgs, RmResult}, services::files, queries::files as file_queries};
 use uuid::Uuid;
 use serde_json::Value;
+use async_trait::async_trait;
 use super::Tool;
 
 /// Delete file tool
@@ -8,6 +9,7 @@ use super::Tool;
 /// Soft deletes a file or empty folder within a workspace.
 pub struct RmTool;
 
+#[async_trait]
 impl Tool for RmTool {
     fn name(&self) -> &'static str {
         "rm"

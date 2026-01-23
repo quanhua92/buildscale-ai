@@ -1,6 +1,7 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, LsArgs, LsResult, LsEntry}, queries::files};
 use uuid::Uuid;
 use serde_json::Value;
+use async_trait::async_trait;
 use super::Tool;
 
 /// List directory contents tool
@@ -8,6 +9,7 @@ use super::Tool;
 /// Lists files and folders in a directory within a workspace.
 pub struct LsTool;
 
+#[async_trait]
 impl Tool for LsTool {
     fn name(&self) -> &'static str {
         "ls"

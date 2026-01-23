@@ -12,15 +12,17 @@ pub mod rm;
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse};
 use uuid::Uuid;
 use serde_json::Value;
+use async_trait::async_trait;
 
 /// Tool trait for extensible toolset
 ///
 /// All tools implement this trait to provide a unified execution interface.
 /// This allows for easy addition of new tools to the system.
+#[async_trait]
 pub trait Tool: Send + Sync {
     /// Returns the name of this tool
     fn name(&self) -> &'static str;
-    
+
     /// Executes the tool with given arguments
     ///
     /// # Arguments
