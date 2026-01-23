@@ -15,12 +15,13 @@ use uuid::Uuid;
 
 
 /// Hashes JSON content using SHA-256 for content-addressing
-pub fn hash_content(content: &serde_json::Value) -> String {
-    let content_str = content.to_string();
+pub fn hash_content(content: &serde_json::Value) -> Result<String> {
+    let content_str = serde_jcs::to_string(content)
+        .map_err(|e| Error::Internal(format!("Failed to serialize to canonical JSON: {}", e)))?;
     let mut hasher = Sha256::new();
     hasher.update(content_str.as_bytes());
     let result = hasher.finalize();
-    hex::encode(result)
+    Ok(hex::encode(result))
 }
 
 /// Creates a new file with its initial content version in a single transaction
@@ -48,7 +49,7 @@ pub async fn create_file_with_content(
     let file = files::create_file_identity(&mut tx, new_file).await?;
 
     // 4. Calculate content hash
-    let hash = hash_content(&request.content);
+    let hash = hash_content(&request.content)?;
 
     // 5. Create first version record
     let new_version = NewFileVersion {
@@ -81,7 +82,7 @@ pub async fn create_version(
     file_id: Uuid,
     request: CreateVersionRequest,
 ) -> Result<crate::models::files::FileVersion> {
-    let hash = hash_content(&request.content);
+    let hash = hash_content(&request.content)?;
 
     // 1. Check if the latest version already has this hash (deduplication)
     let latest = files::get_latest_version_optional(conn, file_id).await?;

@@ -690,6 +690,13 @@ pub async fn semantic_search(
     // pgvector <=> is cosine distance
     let results = sqlx::query!(
         r#"
+        WITH latest_versions AS (
+            SELECT DISTINCT ON (fv.file_id) fv.id, fv.file_id
+            FROM file_versions fv
+            INNER JOIN files f_meta ON fv.file_id = f_meta.id
+            WHERE f_meta.workspace_id = $1 AND f_meta.deleted_at IS NULL
+            ORDER BY fv.file_id, fv.created_at DESC
+        )
         SELECT 
             f.id, f.workspace_id, f.parent_id, f.author_id, 
             f.file_type as "file_type: FileType", 
@@ -699,17 +706,9 @@ pub async fn semantic_search(
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
         FROM file_chunks fc
         INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
-        INNER JOIN file_versions fv ON fvc.file_version_id = fv.id
+        INNER JOIN latest_versions fv ON fvc.file_version_id = fv.id
         INNER JOIN files f ON fv.file_id = f.id
-        -- Ensure we only search against the LATEST version of each file
         WHERE fc.workspace_id = $1
-          AND f.deleted_at IS NULL
-          AND fv.id = (
-              SELECT id FROM file_versions 
-              WHERE file_id = f.id 
-              ORDER BY created_at DESC 
-              LIMIT 1
-          )
         ORDER BY fc.embedding <=> $2
         LIMIT $3
         "#,
