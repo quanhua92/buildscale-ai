@@ -45,6 +45,10 @@ The `files` table is the central registry for all objects in the system.
 
 Stores the actual data.
 
+**Architectural Note**:
+*   Small content (Markdown, Code, JSON) is stored directly in `content_raw` (JSONB) in PostgreSQL for atomic versioning and instant access.
+*   Large blobs (Images, Videos, Archives) are typically stored in S3/Object Storage, with only the reference URL and metadata stored in PostgreSQL. This hybrid approach enables both high-performance metadata operations and infinite storage scaling.
+
 | Column | Type | Description |
 |---|---|---|
 | `id` | UUID | Unique version identifier. |
