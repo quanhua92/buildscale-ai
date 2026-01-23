@@ -500,6 +500,9 @@ The Tools API is built on an extensible trait-based architecture.
 All tools implement the `Tool` trait:
 
 ```rust
+use async_trait::async_trait;
+
+#[async_trait]
 pub trait Tool: Send + Sync {
     /// Returns the name of this tool
     fn name(&self) -> &'static str;
@@ -517,6 +520,7 @@ pub trait Tool: Send + Sync {
 
 **Trait Constraints**:
 - `Send + Sync`: Required for async execution across threads
+- `#[async_trait]`: Required macro for async functions in traits
 - `execute()`: Receives database connection, context, and JSON arguments
 - Returns: Standardized `ToolResponse` with success/result/error
 
@@ -576,10 +580,12 @@ Create a new file in `backend/src/tools/your_tool.rs`:
 use crate::{DbConn, error::Result, models::requests::{ToolResponse, YourToolArgs, YourToolResult}};
 use uuid::Uuid;
 use serde_json::Value;
+use async_trait::async_trait;
 use super::Tool;
 
 pub struct YourTool;
 
+#[async_trait]
 impl Tool for YourTool {
     fn name(&self) -> &'static str {
         "your_tool"
@@ -926,7 +932,7 @@ await client.rm(workspaceId, '/notes/old-file.md');
 ### Rust Integration Example
 
 ```rust
-use buildscale::tools::{get_tool_executor, ToolContext};
+use buildscale::tools::get_tool_executor;
 use serde_json::json;
 
 async fn execute_ls_tool(
