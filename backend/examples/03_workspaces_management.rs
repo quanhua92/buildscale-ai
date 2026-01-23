@@ -127,8 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_owner@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "ownerpass123".to_string(),
-            confirm_password: "ownerpass123".to_string(),
+            password: "BuildScaleAI!Owner!2026".to_string(),
+            confirm_password: "BuildScaleAI!Owner!2026".to_string(),
             full_name: Some("Workspace Owner".to_string()),
         },
     )
@@ -140,8 +140,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_admin@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "adminpass123".to_string(),
-            confirm_password: "adminpass123".to_string(),
+            password: "BuildScaleAI!PowerUser!2026".to_string(),
+            confirm_password: "BuildScaleAI!PowerUser!2026".to_string(),
             full_name: Some("Admin User".to_string()),
         },
     )
@@ -152,8 +152,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_editor@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "editorpass123".to_string(),
-            confirm_password: "editorpass123".to_string(),
+            password: "BuildScaleAI!Editor!2026".to_string(),
+            confirm_password: "BuildScaleAI!Editor!2026".to_string(),
             full_name: Some("Editor User".to_string()),
         },
     )
@@ -164,8 +164,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_viewer@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "viewerpass123".to_string(),
-            confirm_password: "viewerpass123".to_string(),
+            password: "BuildScaleAI!Viewer!2026".to_string(),
+            confirm_password: "BuildScaleAI!Viewer!2026".to_string(),
             full_name: Some("Viewer User".to_string()),
         },
     )
@@ -176,8 +176,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_member@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "memberpass123".to_string(),
-            confirm_password: "memberpass123".to_string(),
+            password: "BuildScaleAI!Member!2026".to_string(),
+            confirm_password: "BuildScaleAI!Member!2026".to_string(),
             full_name: Some("Member User".to_string()),
         },
     )
@@ -188,8 +188,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_member1@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "member1pass123".to_string(),
-            confirm_password: "member1pass123".to_string(),
+            password: "BuildScaleAI!Member1!2026".to_string(),
+            confirm_password: "BuildScaleAI!Member1!2026".to_string(),
             full_name: Some("Member One".to_string()),
         },
     )
@@ -200,8 +200,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut conn,
         RegisterUser {
             email: format!("{}_member2@{}", EXAMPLE_PREFIX, "example.com"),
-            password: "member2pass123".to_string(),
-            confirm_password: "member2pass123".to_string(),
+            password: "BuildScaleAI!Member2!2026".to_string(),
+            confirm_password: "BuildScaleAI!Member2!2026".to_string(),
             full_name: Some("Member Two".to_string()),
         },
     )
@@ -260,8 +260,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let new_user_request = UserWorkspaceRegistrationRequest {
         email: format!("{}_new_user@{}", EXAMPLE_PREFIX, "example.com"),
-        password: "newuserpass123".to_string(),
-        confirm_password: "newuserpass123".to_string(),
+        password: "BuildScaleAI!NewUser!2026".to_string(),
+        confirm_password: "BuildScaleAI!NewUser!2026".to_string(),
         full_name: Some("New User with Workspace".to_string()),
         workspace_name: format!("{}_personal_workspace", EXAMPLE_PREFIX),
     };
