@@ -161,7 +161,7 @@ pub async fn create_file_with_content(
                 if s.is_empty() {
                     return Err(Error::Validation(crate::error::ValidationErrors::Single {
                         field: "name".to_string(),
-                        message: "File name must contain alphanumeric characters".to_string(),
+                        message: "File name must contain alphanumeric characters to generate a valid URL slug".to_string(),
                     }));
                 }
                 s
