@@ -691,23 +691,25 @@ pub async fn semantic_search(
     let results = sqlx::query!(
         r#"
         WITH latest_versions AS (
-            SELECT DISTINCT ON (fv.file_id) fv.id, fv.file_id
-            FROM file_versions fv
-            INNER JOIN files f_meta ON fv.file_id = f_meta.id
-            WHERE f_meta.workspace_id = $1 AND f_meta.deleted_at IS NULL
-            ORDER BY fv.file_id, fv.created_at DESC
+            SELECT DISTINCT ON (f.id) 
+                f.id, f.workspace_id, f.parent_id, f.author_id, 
+                f.file_type, f.status, f.slug, f.deleted_at, f.created_at, f.updated_at,
+                fv.id as version_id
+            FROM files f
+            INNER JOIN file_versions fv ON f.id = fv.file_id
+            WHERE f.workspace_id = $1 AND f.deleted_at IS NULL
+            ORDER BY f.id, fv.created_at DESC
         )
         SELECT 
-            f.id, f.workspace_id, f.parent_id, f.author_id, 
-            f.file_type as "file_type: FileType", 
-            f.status as "status: FileStatus", 
-            f.slug, f.deleted_at, f.created_at, f.updated_at,
+            lv.id, lv.workspace_id, lv.parent_id, lv.author_id, 
+            lv.file_type as "file_type: FileType", 
+            lv.status as "status: FileStatus", 
+            lv.slug, lv.deleted_at, lv.created_at, lv.updated_at,
             fc.chunk_content,
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
         FROM file_chunks fc
         INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
-        INNER JOIN latest_versions fv ON fvc.file_version_id = fv.id
-        INNER JOIN files f ON fv.file_id = f.id
+        INNER JOIN latest_versions lv ON fvc.file_version_id = lv.version_id
         WHERE fc.workspace_id = $1
         ORDER BY fc.embedding <=> $2
         LIMIT $3
@@ -719,6 +721,7 @@ pub async fn semantic_search(
     .fetch_all(conn)
     .await
     .map_err(Error::Sqlx)?;
+
 
     let mapped = results
         .into_iter()

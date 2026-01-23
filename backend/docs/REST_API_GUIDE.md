@@ -1876,3 +1876,63 @@ The example demonstrates:
      "password": "testpass123"
    }
    ```
+
+---
+
+## Production Considerations
+
+### Environment Variables
+
+```bash
+# Database Configuration
+BUILDSCALE__DATABASE__USER=your_db_user
+BUILDSCALE__DATABASE__PASSWORD=your_db_password
+BUILDSCALE__DATABASE__HOST=localhost
+BUILDSCALE__DATABASE__PORT=5432
+BUILDSCALE__DATABASE__DATABASE=your_db_name
+
+# JWT Configuration
+BUILDSCALE__JWT__SECRET=your-jwt-secret-min-32-chars
+BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES=15
+
+# Session Configuration
+BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720
+
+# Cookie Configuration
+BUILDSCALE__COOKIE__SECURE=true  # Enable for HTTPS (production)
+```
+
+### Security Best Practices
+
+1. **Always use HTTPS in production**
+   - Set `BUILDSCALE__COOKIE__SECURE=true`
+   - Cookies will only be sent over HTTPS
+
+2. **Protect your JWT secret**
+   - Use strong, random secret (minimum 32 characters)
+   - Never commit to version control
+   - Rotate periodically
+
+3. **Implement rate limiting**
+   - Prevent brute force attacks on login
+   - Limit registration attempts per IP
+
+4. **Monitor and log**
+   - Track failed login attempts
+   - Monitor for suspicious activity
+   - Implement account lockout after N failed attempts
+
+5. **Token storage**
+   - Browser: HttpOnly cookies (automatic)
+   - Mobile: Encrypted keychain/keystore
+   - Never store tokens in localStorage (XSS vulnerable)
+
+---
+
+## Next Steps
+
+- **Member Management API**: Add/remove members with role assignments
+- **Permission System**: Role-based access control (RBAC)
+- **Invitation System**: Invite users to workspaces via email
+
+See `docs/SERVICES_API_GUIDE.md` for complete service layer API reference.
