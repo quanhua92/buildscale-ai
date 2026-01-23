@@ -42,15 +42,6 @@ pub trait Tool: Send + Sync {
     ) -> Result<ToolResponse>;
 }
 
-/// Tool context passed to execute()
-///
-/// Contains workspace and user context for tool execution.
-#[derive(Debug, Clone)]
-pub struct ToolContext {
-    pub workspace_id: Uuid,
-    pub user_id: Uuid,
-}
-
 /// Get tool by name from registry
 ///
 /// Returns a closure that executes the tool when called with the appropriate arguments

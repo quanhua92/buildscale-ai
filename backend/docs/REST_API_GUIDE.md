@@ -257,10 +257,10 @@ Execute filesystem tools (ls, read, write, rm) within a workspace through a unif
 #### Available Tools
 | Tool | Description | Arguments |
 |------|-------------|-----------|
-| `ls` | List directory contents | `{ "path": "/folder"?, "recursive": false? }` |
-| `read` | Read file contents | `{ "path": "/file.txt" }` |
-| `write` | Create or update file | `{ "path": "/file.txt", "content": {...} }` |
-| `rm` | Delete file or folder | `{ "path": "/file.txt" }` |
+| `ls` | List directory contents | `path` (optional), `recursive` (optional, default: false) |
+| `read` | Read file contents | `path` (required) |
+| `write` | Create or update file | `path` (required), `content` (required) |
+| `rm` | Delete file or folder | `path` (required) |
 
 #### Response
 ```json
