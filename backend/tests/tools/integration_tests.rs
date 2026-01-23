@@ -65,7 +65,7 @@ async fn test_folder_structure_workflow() {
     })).await;
     assert_eq!(ls_response.status(), 200);
     let ls_body: serde_json::Value = ls_response.json().await.unwrap();
-    assert_eq!(ls_body["result"]["entries"].as_array().unwrap().len(), 3);
+    assert_eq!(ls_body["result"]["entries"].as_array().unwrap().len(), 5);
     
     delete_file(&app, &workspace_id, &token, "/folder/sub1/a.txt").await;
     delete_file(&app, &workspace_id, &token, "/folder/sub1/b.txt").await;

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT \n                id, workspace_id, parent_id, author_id, \n                file_type as \"file_type: crate::models::files::FileType\", \n                status as \"status: crate::models::files::FileStatus\", \n                name, slug, path, latest_version_id,\n                deleted_at, created_at, updated_at\n            FROM files\n            WHERE workspace_id = $1 \n              AND path LIKE $2 || '%'\n              AND deleted_at IS NULL\n            ORDER BY path ASC\n            ",
+  "query": "\n            SELECT\n                id, workspace_id, parent_id, author_id,\n                file_type as \"file_type: crate::models::files::FileType\",\n                status as \"status: crate::models::files::FileStatus\",\n                name, slug, path, latest_version_id,\n                deleted_at, created_at, updated_at\n            FROM files\n            WHERE workspace_id = $1\n              AND path LIKE $2 || '%'\n              AND path != $2\n              AND deleted_at IS NULL\n            ORDER BY path ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -91,5 +91,5 @@
       false
     ]
   },
-  "hash": "1a4dcc11e241ae2cf5582233fc86e7659510dfaed4dba72f7f96e5a9b5c630a6"
+  "hash": "2b39ae9b495baf6a63148925c124a3c581ce9562f2340e5957ffcd8c33ad702b"
 }

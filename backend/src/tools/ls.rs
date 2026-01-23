@@ -60,15 +60,16 @@ impl LsTool {
         let files = sqlx::query_as!(
             crate::models::files::File,
             r#"
-            SELECT 
-                id, workspace_id, parent_id, author_id, 
-                file_type as "file_type: crate::models::files::FileType", 
-                status as "status: crate::models::files::FileStatus", 
+            SELECT
+                id, workspace_id, parent_id, author_id,
+                file_type as "file_type: crate::models::files::FileType",
+                status as "status: crate::models::files::FileStatus",
                 name, slug, path, latest_version_id,
                 deleted_at, created_at, updated_at
             FROM files
-            WHERE workspace_id = $1 
+            WHERE workspace_id = $1
               AND path LIKE $2 || '%'
+              AND path != $2
               AND deleted_at IS NULL
             ORDER BY path ASC
             "#,
@@ -78,7 +79,7 @@ impl LsTool {
         .fetch_all(conn)
         .await
         .map_err(Error::Sqlx)?;
-        
+
         Ok(files)
     }
 }
