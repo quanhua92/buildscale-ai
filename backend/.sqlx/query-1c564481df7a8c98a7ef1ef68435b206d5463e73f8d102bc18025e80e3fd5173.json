@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.path,\n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_tags ft ON f.id = ft.file_id\n        WHERE f.workspace_id = $1 \n          AND ft.tag = $2\n          AND f.deleted_at IS NULL\n        ORDER BY f.updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_type: FileType",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: FileStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "latest_version_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "1c564481df7a8c98a7ef1ef68435b206d5463e73f8d102bc18025e80e3fd5173"
+}

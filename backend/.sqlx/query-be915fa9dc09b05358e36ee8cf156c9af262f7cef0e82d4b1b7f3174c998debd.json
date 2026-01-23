@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE files\n        SET deleted_at = NULL, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        ",
+  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND slug = $3\n          AND deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -45,28 +45,35 @@
       },
       {
         "ordinal": 8,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -78,11 +85,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "2f8fc06f064c7cde27f6626b0bfe2c440e35973482ebd71cb1204973e8e4faaa"
+  "hash": "be915fa9dc09b05358e36ee8cf156c9af262f7cef0e82d4b1b7f3174c998debd"
 }

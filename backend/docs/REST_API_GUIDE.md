@@ -64,11 +64,14 @@ Create a new file or folder.
   "parent_id": "optional-folder-uuid",
   "name": "My Document.md",
   "slug": "optional-custom-slug.md",
+  "path": "optional/path/to/create/folders/recursively.md",
   "file_type": "document",
   "content": { "text": "Hello world" },
   "app_data": { "cursor": 0 }
 }
 ```
+
+**Note on `path`:** If provided, `path` overrides `parent_id` and `slug`. The system will recursively create any missing folders in the path.
 
 ### Get File
 Retrieve file metadata and its latest content version.
@@ -84,6 +87,7 @@ Retrieve file metadata and its latest content version.
     "id": "...",
     "name": "My Document.md",
     "slug": "my-document.md",
+    "path": "/my-document.md",
     "file_type": "document",
     "status": "ready"
   },

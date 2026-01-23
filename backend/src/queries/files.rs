@@ -11,8 +11,8 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
     let file = sqlx::query_as!(
         File,
         r#"
-        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING 
             id, 
             workspace_id, 
@@ -22,6 +22,7 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -33,7 +34,8 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
         new_file.file_type as FileType,
         new_file.status as FileStatus,
         new_file.name,
-        new_file.slug
+        new_file.slug,
+        new_file.path
     )
     .fetch_one(conn)
     .await
@@ -110,6 +112,7 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -206,6 +209,7 @@ pub async fn get_file_by_slug(
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -245,6 +249,7 @@ pub async fn list_files_in_folder(
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -315,6 +320,75 @@ pub async fn check_slug_collision(
     Ok(result.exists)
 }
 
+/// Resolves a file by its materialized path.
+pub async fn get_file_by_path(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    path: &str,
+) -> Result<Option<File>> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        SELECT 
+            id, 
+            workspace_id, 
+            parent_id, 
+            author_id, 
+            file_type as "file_type: FileType", 
+            status as "status: FileStatus", 
+            name,
+            slug, 
+            path,
+            latest_version_id,
+            deleted_at, 
+            created_at, 
+            updated_at
+        FROM files
+        WHERE workspace_id = $1 
+          AND path = $2
+          AND deleted_at IS NULL
+        "#,
+        workspace_id,
+        path
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(file)
+}
+
+/// Updates paths for all descendants of a folder.
+/// This acts as a "rebase" operation: replacing the old prefix with the new prefix.
+pub async fn update_descendant_paths(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    old_path_prefix: &str,
+    new_path_prefix: &str,
+) -> Result<()> {
+    // We add a trailing slash to avoid partial matches (e.g. /foo matching /food)
+    // But we need to be careful with string concatenation in SQL
+    let old_prefix_slash = format!("{}/", old_path_prefix);
+
+    sqlx::query!(
+        r#"
+        UPDATE files
+        SET path = $2 || SUBSTRING(path FROM LENGTH($3) + 1), updated_at = NOW()
+        WHERE workspace_id = $1
+          AND path LIKE $4 || '%'
+        "#,
+        workspace_id,
+        new_path_prefix,
+        old_path_prefix, // Use original prefix for length calculation
+        old_prefix_slash // Use prefix with slash for LIKE matching
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
 /// Checks if one file is a descendant of another using a recursive CTE.
 pub async fn is_descendant_of(
     conn: &mut DbConn,
@@ -343,19 +417,20 @@ pub async fn is_descendant_of(
     Ok(result.exists)
 }
 
-/// Updates file metadata (parent_id, name, and slug).
+/// Updates file metadata (parent_id, name, slug, and path).
 pub async fn update_file_metadata(
     conn: &mut DbConn,
     file_id: Uuid,
     parent_id: Option<Uuid>,
     name: &str,
     slug: &str,
+    path: &str,
 ) -> Result<File> {
     let file = sqlx::query_as!(
         File,
         r#"
         UPDATE files
-        SET parent_id = $2, name = $3, slug = $4, updated_at = NOW()
+        SET parent_id = $2, name = $3, slug = $4, path = $5, updated_at = NOW()
         WHERE id = $1
         RETURNING 
             id, 
@@ -366,6 +441,7 @@ pub async fn update_file_metadata(
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -374,7 +450,8 @@ pub async fn update_file_metadata(
         file_id,
         parent_id,
         name,
-        slug
+        slug,
+        path
     )
     .fetch_one(conn)
     .await
@@ -417,6 +494,7 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -445,6 +523,7 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
             status as "status: FileStatus", 
             name,
             slug, 
+            path,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -541,6 +620,7 @@ pub async fn list_files_by_tag(
             f.status as "status: FileStatus", 
             f.name,
             f.slug, 
+            f.path,
             f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
@@ -621,6 +701,7 @@ pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<
             f.status as "status: FileStatus", 
             f.name,
             f.slug, 
+            f.path,
             f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
@@ -654,6 +735,7 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
             f.status as "status: FileStatus", 
             f.name,
             f.slug, 
+            f.path,
             f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
@@ -750,7 +832,7 @@ pub async fn semantic_search(
             f.id, f.workspace_id, f.parent_id, f.author_id, 
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
-            f.name, f.slug, f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
+            f.name, f.slug, f.path, f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
             fc.chunk_content,
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
         FROM file_chunks fc
@@ -783,6 +865,7 @@ pub struct SearchResultRow {
     pub status: FileStatus,
     pub name: String,
     pub slug: String,
+    pub path: String,
     pub latest_version_id: Option<Uuid>,
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,

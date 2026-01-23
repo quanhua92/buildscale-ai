@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND slug = $3\n          AND deleted_at IS NULL\n        ",
+  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND deleted_at IS NULL\n        ORDER BY (file_type = 'folder') DESC, name ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -45,21 +45,26 @@
       },
       {
         "ordinal": 8,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -67,8 +72,7 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -80,11 +84,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "7c5467f55f5bc7042ae8274e7ce3be9e0495e6497dcb54a24894ae105f35f36a"
+  "hash": "fdca911531c81d71e23b7c73b3578f8e02c7d64eb2e7bb6ed7458a2a3546446b"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_tags ft ON f.id = ft.file_id\n        WHERE f.workspace_id = $1 \n          AND ft.tag = $2\n          AND f.deleted_at IS NULL\n        ORDER BY f.updated_at DESC\n        ",
+  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.path,\n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_links fl ON f.id = fl.source_file_id\n        WHERE fl.target_file_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY f.name ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -45,29 +45,33 @@
       },
       {
         "ordinal": 8,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -79,11 +83,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "c0e0b4dcf0ea0e3ae34f4b5f3239818cc185b19c77de2a2dfe1988bc1ff653e7"
+  "hash": "6940e0c0b0802812a6a387faebcc15a879ca717840da97e31d872f289a545237"
 }

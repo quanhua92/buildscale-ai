@@ -42,6 +42,7 @@ pub struct File {
     pub status: FileStatus,
     pub name: String,
     pub slug: String,
+    pub path: String,
 
     /// Cache for the latest version to avoid expensive JOINs/CTEs
     pub latest_version_id: Option<Uuid>,
@@ -60,6 +61,7 @@ pub struct NewFile {
     pub status: FileStatus,
     pub name: String,
     pub slug: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
