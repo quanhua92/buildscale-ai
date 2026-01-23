@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO file_chunks (workspace_id, chunk_hash, chunk_content, embedding)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (workspace_id, chunk_hash) DO UPDATE \n        SET chunk_content = EXCLUDED.chunk_content\n        RETURNING id, workspace_id, chunk_hash, chunk_content, embedding as \"embedding: Vector\", created_at\n        ",
+  "query": "\n        INSERT INTO file_chunks (workspace_id, chunk_hash, chunk_content, embedding)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (workspace_id, chunk_hash) DO UPDATE \n        SET chunk_content = EXCLUDED.chunk_content, embedding = EXCLUDED.embedding\n        RETURNING id, workspace_id, chunk_hash, chunk_content, embedding as \"embedding: Vector\", created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -61,5 +61,5 @@
       false
     ]
   },
-  "hash": "8674b3aed1c2f25b5adfd598fd7e8197dbca26fa57879c149e30ce46b29bac49"
+  "hash": "8cc1b109c98ee6996dff57c9b25cd89f5d5744f5e06f60b497fec20b7c224fca"
 }

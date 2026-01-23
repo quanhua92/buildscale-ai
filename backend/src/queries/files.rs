@@ -678,7 +678,7 @@ pub async fn upsert_chunk(
         INSERT INTO file_chunks (workspace_id, chunk_hash, chunk_content, embedding)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (workspace_id, chunk_hash) DO UPDATE 
-        SET chunk_content = EXCLUDED.chunk_content
+        SET chunk_content = EXCLUDED.chunk_content, embedding = EXCLUDED.embedding
         RETURNING id, workspace_id, chunk_hash, chunk_content, embedding as "embedding: Vector", created_at
         "#,
         workspace_id,
@@ -765,7 +765,7 @@ pub struct SearchResultRow {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub parent_id: Option<Uuid>,
-    pub author_id: Uuid,
+    pub author_id: Option<Uuid>,
     pub file_type: FileType,
     pub status: FileStatus,
     pub slug: String,

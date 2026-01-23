@@ -43,21 +43,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Cleaning up any existing example data...");
     let email = format!("{}@example.com", EXAMPLE_PREFIX);
     
-    // Cleanup in order of foreign keys
-    sqlx::query("DELETE FROM file_tags WHERE file_id IN (SELECT id FROM files WHERE author_id IN (SELECT id FROM users WHERE email = $1))")
-        .bind(&email).execute(&mut *conn).await.ok();
-    sqlx::query("DELETE FROM file_links WHERE source_file_id IN (SELECT id FROM files WHERE author_id IN (SELECT id FROM users WHERE email = $1))")
-        .bind(&email).execute(&mut *conn).await.ok();
-    sqlx::query("DELETE FROM file_version_chunks WHERE file_version_id IN (SELECT id FROM file_versions WHERE author_id IN (SELECT id FROM users WHERE email = $1))")
-        .bind(&email).execute(&mut *conn).await.ok();
-    sqlx::query("DELETE FROM file_versions WHERE author_id IN (SELECT id FROM users WHERE email = $1)")
-        .bind(&email).execute(&mut *conn).await.ok();
-    sqlx::query("UPDATE files SET latest_version_id = NULL WHERE author_id IN (SELECT id FROM users WHERE email = $1)")
-        .bind(&email).execute(&mut *conn).await.ok();
-    sqlx::query("DELETE FROM files WHERE author_id IN (SELECT id FROM users WHERE email = $1)")
-        .bind(&email).execute(&mut *conn).await.ok();
-    sqlx::query("DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email = $1)")
-        .bind(&email).execute(&mut *conn).await.ok();
+    // Cleanup: In a production environment with proper ON DELETE CASCADE/SET NULL,
+    // deleting the workspace (or user) would automatically clean up all associated data.
+    // Here we leverage our newly added ON DELETE SET NULL for author_id and existing
+    // cascades for workspace_id.
     sqlx::query("DELETE FROM workspaces WHERE owner_id IN (SELECT id FROM users WHERE email = $1)")
         .bind(&email).execute(&mut *conn).await.ok();
     sqlx::query("DELETE FROM users WHERE email = $1")

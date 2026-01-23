@@ -4,7 +4,7 @@ CREATE TABLE files (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     parent_id UUID REFERENCES files(id) ON DELETE CASCADE, -- Hierarchical structure (Folders)
-    author_id UUID NOT NULL REFERENCES users(id),
+    author_id UUID REFERENCES users(id) ON DELETE SET NULL,
     file_type TEXT NOT NULL,         -- e.g., 'folder', 'document', 'canvas', 'chat'
     status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'uploading', 'waiting', 'processing', 'ready', 'failed'
     slug TEXT NOT NULL,              -- The unique identifier/filename within the folder
@@ -44,7 +44,7 @@ CREATE TABLE file_versions (
     app_data JSONB DEFAULT '{}',     -- Machine metadata (e.g., AI tags, cursor pos, view settings)
     
     hash TEXT NOT NULL,              -- SHA-256 fingerprint for Content-Addressing
-    author_id UUID REFERENCES users(id),
+    author_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

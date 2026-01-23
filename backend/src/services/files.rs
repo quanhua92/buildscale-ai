@@ -353,19 +353,7 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
     files::update_file_status(conn, file_id, FileStatus::Processing).await?;
 
     // 3. Extract text content (from JSONB)
-    let text = if let Some(content) = latest_version.content_raw.as_str() {
-        content.to_string()
-    } else if let Some(obj) = latest_version.content_raw.as_object() {
-        // Fallback for structured JSON: flatten all strings
-        obj.values()
-            .filter_map(|v| v.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-    } else {
-        // If it's not text or an object, we can't chunk it yet
-        files::update_file_status(conn, file_id, FileStatus::Ready).await?;
-        return Ok(());
-    };
+    let text = extract_text_recursively(&latest_version.content_raw);
 
     if text.trim().is_empty() {
         files::update_file_status(conn, file_id, FileStatus::Ready).await?;
@@ -435,6 +423,25 @@ pub fn chunk_text(text: &str, window_size: usize, overlap: usize) -> Vec<String>
     }
 
     chunks
+}
+
+/// Recursively extracts all string values from a JSON structure.
+/// This preserves some order by traversing arrays and objects sequentially.
+pub fn extract_text_recursively(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .map(extract_text_recursively)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        serde_json::Value::Object(obj) => obj
+            .values()
+            .map(extract_text_recursively)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
 }
 
 /// Performs semantic search across the workspace.

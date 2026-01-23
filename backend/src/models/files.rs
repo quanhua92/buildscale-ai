@@ -37,7 +37,7 @@ pub struct File {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub parent_id: Option<Uuid>,
-    pub author_id: Uuid,
+    pub author_id: Option<Uuid>,
     pub file_type: FileType,
     pub status: FileStatus,
     pub slug: String,
