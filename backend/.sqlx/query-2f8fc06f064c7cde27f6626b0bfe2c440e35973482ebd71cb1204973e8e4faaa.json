@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.slug, \n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_links fl ON f.id = fl.source_file_id\n        WHERE fl.target_file_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY f.slug ASC\n        ",
+  "query": "\n        UPDATE files\n        SET deleted_at = NULL, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -35,26 +35,31 @@
       },
       {
         "ordinal": 6,
-        "name": "slug",
+        "name": "name",
         "type_info": "Text"
       },
       {
         "ordinal": 7,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -72,11 +77,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "ba051cf39add449e6a74bdae087bdf846fef8de0fa4dac3512edd4f9401f35fc"
+  "hash": "2f8fc06f064c7cde27f6626b0bfe2c440e35973482ebd71cb1204973e8e4faaa"
 }

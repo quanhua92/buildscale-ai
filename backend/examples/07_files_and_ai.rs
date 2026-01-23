@@ -92,39 +92,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         workspace_id,
         parent_id: None,
         author_id: user.id,
-        slug: "research".to_string(),
+        name: "Research".to_string(),
+        slug: None,
         file_type: FileType::Folder,
         content: serde_json::json!({}),
         app_data: None,
     };
     let folder = create_file_with_content(&mut conn, folder_request).await?.file;
-    println!("✓ Created Folder: /{}", folder.slug);
+    println!("✓ Created Folder: {} (Slug: /{})", folder.name, folder.slug);
 
     // 2.2 Create a Document inside the folder
     let doc1_request = CreateFileRequest {
         workspace_id,
         parent_id: Some(folder.id),
         author_id: user.id,
-        slug: "rag_guide.md".to_string(),
+        name: "RAG Guide".to_string(),
+        slug: Some("rag_guide.md".to_string()),
         file_type: FileType::Document,
         content: serde_json::json!("Retrieval-Augmented Generation (RAG) is a technique used to give LLMs access to external data."),
         app_data: Some(serde_json::json!({"tags": ["ai", "guide"]})),
     };
     let doc1 = create_file_with_content(&mut conn, doc1_request).await?;
-    println!("✓ Created Document: /{}/{}", folder.slug, doc1.file.slug);
+    println!("✓ Created Document: {} (Slug: /{}/{})", doc1.file.name, folder.slug, doc1.file.slug);
 
     // 2.3 Create another Document
     let doc2_request = CreateFileRequest {
         workspace_id,
         parent_id: Some(folder.id),
         author_id: user.id,
-        slug: "agents.md".to_string(),
+        name: "Agents".to_string(),
+        slug: Some("agents.md".to_string()),
         file_type: FileType::Document,
         content: serde_json::json!("Autonomous agents use files as their toolbox to perform actions and remember context."),
         app_data: None,
     };
     let doc2 = create_file_with_content(&mut conn, doc2_request).await?;
-    println!("✓ Created Document: /{}/{}", folder.slug, doc2.file.slug);
+    println!("✓ Created Document: {} (Slug: /{}/{})", doc2.file.name, folder.slug, doc2.file.slug);
     println!();
 
     // ========================================================
@@ -151,10 +154,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let move_request = UpdateFileHttp {
         parent_id: Some(None), // Move to root
-        slug: Some("ai_agents_handbook.md".to_string()), // Rename
+        name: Some("AI Agents Handbook".to_string()),
+        slug: None,
     };
     let doc2_updated = move_or_rename_file(&mut conn, doc2.file.id, move_request).await?;
-    println!("✓ Moved and Renamed 'agents.md' -> /{}", doc2_updated.slug);
+    println!("✓ Moved and Renamed: {} (Slug: /{})", doc2_updated.name, doc2_updated.slug);
     println!();
 
     // ========================================================

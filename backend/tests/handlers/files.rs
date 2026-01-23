@@ -31,7 +31,8 @@ async fn test_file_api_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "api_test.md".to_string(),
+            name: "api_test.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({"text": "initial content"}),
             app_data: None,
@@ -105,7 +106,8 @@ async fn test_file_api_permission_denied() {
         .header("Authorization", format!("Bearer {}", token1))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "secret.md".to_string(),
+            name: "secret.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({"text": "secret"}),
             app_data: None,
@@ -132,7 +134,8 @@ async fn test_folder_delete_safeguard() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "my_folder".to_string(),
+            name: "my_folder".to_string(),
+            slug: None,
             file_type: FileType::Folder,
             content: serde_json::json!({}),
             app_data: None,
@@ -144,7 +147,8 @@ async fn test_folder_delete_safeguard() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: Some(uuid::Uuid::parse_str(&folder_id).unwrap()),
-            slug: "inside.md".to_string(),
+            name: "inside.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({"text": "hello"}),
             app_data: None,
@@ -175,7 +179,8 @@ async fn test_move_rename_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "target_folder".to_string(),
+            name: "target_folder".to_string(),
+            slug: None,
             file_type: FileType::Folder,
             content: serde_json::json!({}),
             app_data: None,
@@ -188,7 +193,8 @@ async fn test_move_rename_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "move_me.md".to_string(),
+            name: "move_me.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({"text": "original"}),
             app_data: None,
@@ -201,7 +207,8 @@ async fn test_move_rename_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&UpdateFileHttp {
             parent_id: Some(Some(folder_uuid)),
-            slug: Some("renamed.md".to_string()),
+            name: Some("renamed.md".to_string()),
+            slug: None,
         }).send().await.unwrap();
     
     assert_eq!(patch_resp.status(), 200);
@@ -214,6 +221,7 @@ async fn test_move_rename_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&UpdateFileHttp {
             parent_id: Some(None), // Explicitly move to root
+            name: None,
             slug: None,
         }).send().await.unwrap();
     
@@ -233,7 +241,8 @@ async fn test_trash_restore_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "trash_me.md".to_string(),
+            name: "trash_me.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({}),
             app_data: None,
@@ -277,7 +286,8 @@ async fn test_tagging_lifecycle() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "tag_me.md".to_string(),
+            name: "tag_me.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({}),
             app_data: None,
@@ -321,7 +331,8 @@ async fn test_backlink_discovery() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "file_a.md".to_string(),
+            name: "file_a.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({}),
             app_data: None,
@@ -333,7 +344,8 @@ async fn test_backlink_discovery() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "file_b.md".to_string(),
+            name: "file_b.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!({}),
             app_data: None,
@@ -367,7 +379,8 @@ async fn test_semantic_search_flow() {
         .header("Authorization", format!("Bearer {}", token))
         .json(&CreateFileHttp {
             parent_id: None,
-            slug: "ai_doc.md".to_string(),
+            name: "ai_doc.md".to_string(),
+            slug: None,
             file_type: FileType::Document,
             content: serde_json::json!("This is a document about machine learning and artificial intelligence."),
             app_data: None,
@@ -399,4 +412,57 @@ async fn test_semantic_search_flow() {
     assert!(!results.is_empty());
     assert_eq!(results[0]["file"]["id"], file_id_str);
     assert!(results[0]["chunk_content"].as_str().unwrap().contains("machine learning"));
+}
+
+#[tokio::test]
+async fn test_slug_normalization() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Normalization WS").await;
+
+    // 1. Create a file with mixed case and spaces in NAME
+    let create_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            name: " My Document.MD ".to_string(),
+            slug: None,
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+
+    assert_eq!(create_resp.status(), 200);
+    let created_body: serde_json::Value = create_resp.json().await.unwrap();
+    assert_eq!(created_body["file"]["name"], "My Document.MD");
+    assert_eq!(created_body["file"]["slug"], "my-document.md");
+    let file_id = created_body["file"]["id"].as_str().unwrap();
+
+    // 2. Try to create a collision with different case in NAME (resulting in same SLUG)
+    let collision_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            name: "my document.md".to_string(),
+            slug: None,
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+
+    assert_eq!(collision_resp.status(), 409); // Conflict
+
+    // 3. Rename with normalization
+    let rename_resp = app.client.patch(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&UpdateFileHttp {
+            parent_id: None,
+            name: Some(" RENAMED DOC.md ".to_string()),
+            slug: None,
+        }).send().await.unwrap();
+
+    assert_eq!(rename_resp.status(), 200);
+    let renamed_body: serde_json::Value = rename_resp.json().await.unwrap();
+    assert_eq!(renamed_body["name"], "RENAMED DOC.md");
+    assert_eq!(renamed_body["slug"], "renamed-doc.md");
 }

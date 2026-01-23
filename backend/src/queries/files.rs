@@ -11,8 +11,8 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
     let file = sqlx::query_as!(
         File,
         r#"
-        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, slug)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING 
             id, 
             workspace_id, 
@@ -20,6 +20,7 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -31,6 +32,7 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
         new_file.author_id,
         new_file.file_type as FileType,
         new_file.status as FileStatus,
+        new_file.name,
         new_file.slug
     )
     .fetch_one(conn)
@@ -106,6 +108,7 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -201,6 +204,7 @@ pub async fn get_file_by_slug(
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -239,6 +243,7 @@ pub async fn list_files_in_folder(
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -248,7 +253,7 @@ pub async fn list_files_in_folder(
         WHERE workspace_id = $1 
           AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))
           AND deleted_at IS NULL
-        ORDER BY (file_type = 'folder') DESC, slug ASC
+        ORDER BY (file_type = 'folder') DESC, name ASC
         "#,
         workspace_id,
         parent_id
@@ -338,18 +343,19 @@ pub async fn is_descendant_of(
     Ok(result.exists)
 }
 
-/// Updates file metadata (parent_id and/or slug).
+/// Updates file metadata (parent_id, name, and slug).
 pub async fn update_file_metadata(
     conn: &mut DbConn,
     file_id: Uuid,
     parent_id: Option<Uuid>,
+    name: &str,
     slug: &str,
 ) -> Result<File> {
     let file = sqlx::query_as!(
         File,
         r#"
         UPDATE files
-        SET parent_id = $2, slug = $3, updated_at = NOW()
+        SET parent_id = $2, name = $3, slug = $4, updated_at = NOW()
         WHERE id = $1
         RETURNING 
             id, 
@@ -358,6 +364,7 @@ pub async fn update_file_metadata(
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -366,6 +373,7 @@ pub async fn update_file_metadata(
         "#,
         file_id,
         parent_id,
+        name,
         slug
     )
     .fetch_one(conn)
@@ -407,6 +415,7 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -434,6 +443,7 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
             author_id, 
             file_type as "file_type: FileType", 
             status as "status: FileStatus", 
+            name,
             slug, 
             latest_version_id,
             deleted_at, 
@@ -529,6 +539,7 @@ pub async fn list_files_by_tag(
             f.author_id, 
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
+            f.name,
             f.slug, 
             f.latest_version_id,
             f.deleted_at, 
@@ -608,6 +619,7 @@ pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<
             f.author_id, 
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
+            f.name,
             f.slug, 
             f.latest_version_id,
             f.deleted_at, 
@@ -617,7 +629,7 @@ pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<
         INNER JOIN file_links fl ON f.id = fl.target_file_id
         WHERE fl.source_file_id = $1
           AND f.deleted_at IS NULL
-        ORDER BY f.slug ASC
+        ORDER BY f.name ASC
         "#,
         file_id
     )
@@ -640,6 +652,7 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
             f.author_id, 
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
+            f.name,
             f.slug, 
             f.latest_version_id,
             f.deleted_at, 
@@ -649,7 +662,7 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
         INNER JOIN file_links fl ON f.id = fl.source_file_id
         WHERE fl.target_file_id = $1
           AND f.deleted_at IS NULL
-        ORDER BY f.slug ASC
+        ORDER BY f.name ASC
         "#,
         file_id
     )
@@ -737,7 +750,7 @@ pub async fn semantic_search(
             f.id, f.workspace_id, f.parent_id, f.author_id, 
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
-            f.slug, f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
+            f.name, f.slug, f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
             fc.chunk_content,
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
         FROM file_chunks fc
@@ -768,6 +781,7 @@ pub struct SearchResultRow {
     pub author_id: Option<Uuid>,
     pub file_type: FileType,
     pub status: FileStatus,
+    pub name: String,
     pub slug: String,
     pub latest_version_id: Option<Uuid>,
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,

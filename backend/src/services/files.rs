@@ -33,34 +33,90 @@ pub fn hash_content(content: &serde_json::Value) -> Result<String> {
     Ok(hex::encode(result))
 }
 
+/// Converts a display name into a URL-safe slug.
+pub fn slugify(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    let mut last_was_separator = true;
+
+    for c in name.chars() {
+        if c.is_alphanumeric() || c == '.' || c == '_' {
+            slug.push(c.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !last_was_separator {
+            slug.push('-');
+            last_was_separator = true;
+        }
+    }
+
+    // Trim trailing separator
+    if slug.ends_with('-') || slug.ends_with('.') || slug.ends_with('_') {
+        slug.pop();
+    }
+
+    slug
+}
+
 /// Creates a new file with its initial content version in a single transaction
 pub async fn create_file_with_content(
     conn: &mut DbConn,
     request: CreateFileRequest,
 ) -> Result<FileWithContent> {
-    // 1. Validate inputs
-    validate_file_slug(&request.slug)?;
+    // 1. Determine and validate name and slug
+    let name = request.name.trim().to_string();
+    if name.is_empty() {
+        return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "name".to_string(),
+            message: "File name cannot be empty".to_string(),
+        }));
+    }
 
-    // 2. Start transaction
+    let slug = match request.slug {
+        Some(s) => {
+            let s = s.trim().to_lowercase();
+            validate_file_slug(&s)?;
+            s
+        }
+        None => {
+            let s = slugify(&name);
+            if s.is_empty() {
+                return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                    field: "name".to_string(),
+                    message: "File name must contain alphanumeric characters to generate a valid URL slug".to_string(),
+                }));
+            }
+            s
+        }
+    };
+
+    // 2. Collision Check
+    if files::check_slug_collision(conn, request.workspace_id, request.parent_id, &slug).await? {
+        return Err(Error::Conflict(format!(
+            "A file with slug '{}' already exists in the target folder",
+            slug
+        )));
+    }
+
+    // 3. Start transaction
     let mut tx = conn.begin().await.map_err(|e| {
         Error::Internal(format!("Failed to begin transaction: {}", e))
     })?;
 
-    // 3. Create file identity record
+    // 4. Create file identity record
     let new_file = NewFile {
         workspace_id: request.workspace_id,
         parent_id: request.parent_id,
         author_id: request.author_id,
         file_type: request.file_type,
         status: FileStatus::Ready, // Set to Ready since we are providing content immediately
-        slug: request.slug,
+        name,
+        slug,
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
-    // 4. Calculate content hash
+    // 5. Calculate content hash
     let hash = hash_content(&request.content)?;
 
-    // 5. Create first version record
+    // 6. Create first version record
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
@@ -72,11 +128,11 @@ pub async fn create_file_with_content(
     };
     let latest_version = files::create_version(&mut tx, new_version).await?;
 
-    // 6. Update file with latest version ID cache
+    // 7. Update file with latest version ID cache
     files::update_latest_version_id(&mut tx, file.id, latest_version.id).await?;
     file.latest_version_id = Some(latest_version.id);
 
-    // 7. Commit transaction
+    // 8. Commit transaction
     tx.commit().await.map_err(|e| {
         Error::Internal(format!("Failed to commit transaction: {}", e))
     })?;
@@ -162,15 +218,32 @@ pub async fn move_or_rename_file(
         Some(new_parent) => new_parent, // Some(Some(uuid)) or Some(None) for root
         None => current_file.parent_id, // Field omitted
     };
-    let target_slug = request.slug.as_deref().unwrap_or(&current_file.slug);
-
-    // 3. Validation
-    if let Some(new_slug) = &request.slug {
-        validate_file_slug(new_slug)?;
+    
+    let target_name = request.name.as_deref().unwrap_or(&current_file.name).trim().to_string();
+    if target_name.is_empty() {
+        return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "name".to_string(),
+            message: "File name cannot be empty".to_string(),
+        }));
     }
 
+    let target_slug = if let Some(s) = request.slug {
+        let s = s.trim().to_lowercase();
+        validate_file_slug(&s)?;
+        s
+    } else if request.name.is_some() {
+        // Name changed, update slug
+        slugify(&target_name)
+    } else {
+        // Nothing changed regarding name/slug
+        current_file.slug.clone()
+    };
+
     // 4. Check if anything actually changed
-    if target_parent_id == current_file.parent_id && target_slug == current_file.slug {
+    if target_parent_id == current_file.parent_id 
+        && target_name == current_file.name 
+        && target_slug == current_file.slug 
+    {
         return Ok(current_file);
     }
 
@@ -199,15 +272,15 @@ pub async fn move_or_rename_file(
     }
 
     // 7. Collision Check
-    if files::check_slug_collision(&mut tx, current_file.workspace_id, target_parent_id, target_slug).await? {
+    if files::check_slug_collision(&mut tx, current_file.workspace_id, target_parent_id, &target_slug).await? {
         return Err(Error::Conflict(format!(
-            "A file with name '{}' already exists in the target folder",
+            "A file with slug '{}' already exists in the target folder",
             target_slug
         )));
     }
 
     // 8. Update metadata
-    let updated_file = files::update_file_metadata(&mut tx, file_id, target_parent_id, target_slug).await?;
+    let updated_file = files::update_file_metadata(&mut tx, file_id, target_parent_id, &target_name, &target_slug).await?;
 
     // 9. Commit
     tx.commit().await.map_err(|e| {
@@ -352,45 +425,64 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
     // 2. Set status to Processing
     files::update_file_status(conn, file_id, FileStatus::Processing).await?;
 
-    // 3. Extract text content (from JSONB)
-    let text = extract_text_recursively(&latest_version.content_raw);
+    // 3. Process with error handling to avoid stuck status
+    let process_result: Result<()> = async {
+        // Extract text content (from JSONB)
+        let text = extract_text_recursively(&latest_version.content_raw);
 
-    if text.trim().is_empty() {
-        files::update_file_status(conn, file_id, FileStatus::Ready).await?;
-        return Ok(());
+        if text.trim().is_empty() {
+            return Ok(());
+        }
+
+        // 4. Chunk text
+        let chunks = chunk_text(&text, DEFAULT_CHUNK_WINDOW_SIZE, DEFAULT_CHUNK_OVERLAP);
+
+        // 5. Upsert chunks and link them
+        for (i, chunk_text) in chunks.into_iter().enumerate() {
+            // Hashing for semantic deduplication
+            let mut hasher = Sha256::new();
+            hasher.update(chunk_text.as_bytes());
+            let chunk_hash = hex::encode(hasher.finalize());
+
+            // Placeholder embedding: until OpenAI is integrated, we store a dummy vector
+            // Dimension is AI_EMBEDDING_DIMENSION
+            // Using a non-zero vector to avoid NaN similarity results
+            let dummy_vector = Vector::from(vec![0.1; AI_EMBEDDING_DIMENSION]);
+
+            let chunk = files::upsert_chunk(
+                conn,
+                file.workspace_id,
+                &chunk_hash,
+                &chunk_text,
+                dummy_vector,
+            )
+            .await?;
+
+            files::link_version_to_chunk(
+                conn,
+                latest_version.id,
+                chunk.id,
+                file.workspace_id,
+                i as i32,
+            )
+            .await?;
+        }
+        Ok(())
     }
+    .await;
 
-    // 4. Chunk text
-    let chunks = chunk_text(&text, DEFAULT_CHUNK_WINDOW_SIZE, DEFAULT_CHUNK_OVERLAP);
-
-    // 5. Upsert chunks and link them
-    for (i, chunk_text) in chunks.into_iter().enumerate() {
-        // Hashing for semantic deduplication
-        let mut hasher = Sha256::new();
-        hasher.update(chunk_text.as_bytes());
-        let chunk_hash = hex::encode(hasher.finalize());
-
-        // Placeholder embedding: until OpenAI is integrated, we store a dummy vector
-        // Dimension is AI_EMBEDDING_DIMENSION
-        // Using a non-zero vector to avoid NaN similarity results
-        let dummy_vector = Vector::from(vec![0.1; AI_EMBEDDING_DIMENSION]);
-
-        let chunk = files::upsert_chunk(
-            conn,
-            file.workspace_id,
-            &chunk_hash,
-            &chunk_text,
-            dummy_vector,
-        )
-        .await?;
-
-        files::link_version_to_chunk(conn, latest_version.id, chunk.id, file.workspace_id, i as i32).await?;
+    // 6. Update final status
+    match process_result {
+        Ok(_) => {
+            files::update_file_status(conn, file_id, FileStatus::Ready).await?;
+            Ok(())
+        }
+        Err(e) => {
+            // Log error or at least mark as failed
+            files::update_file_status(conn, file_id, FileStatus::Failed).await?;
+            Err(e)
+        }
     }
-
-    // 6. Final status: Ready
-    files::update_file_status(conn, file_id, FileStatus::Ready).await?;
-
-    Ok(())
 }
 
 /// Splits text into overlapping semantic windows.
@@ -465,6 +557,7 @@ pub async fn semantic_search(
                 author_id: r.author_id,
                 file_type: r.file_type,
                 status: r.status,
+                name: r.name,
                 slug: r.slug,
                 latest_version_id: r.latest_version_id,
                 deleted_at: r.deleted_at,

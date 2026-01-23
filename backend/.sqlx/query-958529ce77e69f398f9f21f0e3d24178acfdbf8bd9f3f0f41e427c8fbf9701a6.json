@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            slug, \n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND deleted_at IS NULL\n        ORDER BY (file_type = 'folder') DESC, slug ASC\n        ",
+  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND deleted_at IS NOT NULL\n        ORDER BY deleted_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -35,33 +35,37 @@
       },
       {
         "ordinal": 6,
-        "name": "slug",
+        "name": "name",
         "type_info": "Text"
       },
       {
         "ordinal": 7,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -73,11 +77,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "60402417ae51f7bc8e690429de644f283b912d4afd9d08ccf844d18154e57dee"
+  "hash": "958529ce77e69f398f9f21f0e3d24178acfdbf8bd9f3f0f41e427c8fbf9701a6"
 }

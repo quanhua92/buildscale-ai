@@ -73,7 +73,8 @@ pub struct CreateFileRequest {
     pub workspace_id: Uuid,
     pub parent_id: Option<Uuid>,
     pub author_id: Uuid,
-    pub slug: String,
+    pub name: String,
+    pub slug: Option<String>,
     pub file_type: FileType,
     pub content: serde_json::Value,
     pub app_data: Option<serde_json::Value>,
@@ -92,7 +93,8 @@ pub struct CreateVersionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateFileHttp {
     pub parent_id: Option<Uuid>,
-    pub slug: String,
+    pub name: String,
+    pub slug: Option<String>,
     pub file_type: FileType,
     pub content: serde_json::Value,
     pub app_data: Option<serde_json::Value>,
@@ -122,6 +124,7 @@ pub struct UpdateFileHttp {
     /// - `Some(Some(uuid))`: Move to folder.
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub parent_id: Option<Option<Uuid>>,
+    pub name: Option<String>,
     pub slug: Option<String>,
 }
 

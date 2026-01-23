@@ -60,7 +60,8 @@ Create a new file or folder.
 ```json
 {
   "parent_id": "optional-folder-uuid",
-  "slug": "document.md",
+  "name": "My Document.md",
+  "slug": "optional-custom-slug.md",
   "file_type": "document",
   "content": { "text": "Hello world" },
   "app_data": { "cursor": 0 }
@@ -79,7 +80,8 @@ Retrieve file metadata and its latest content version.
 {
   "file": {
     "id": "...",
-    "slug": "document.md",
+    "name": "My Document.md",
+    "slug": "my-document.md",
     "file_type": "document",
     "status": "ready"
   },

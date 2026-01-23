@@ -39,7 +39,7 @@ pub async fn create_file(
         operation = "create_file",
         workspace_id = %workspace_access.workspace_id,
         user_id = %auth_user.id,
-        slug = %request.slug,
+        name = %request.name,
         "Creating new file",
     );
 
@@ -51,6 +51,7 @@ pub async fn create_file(
             workspace_id: workspace_access.workspace_id,
             parent_id: request.parent_id,
             author_id: auth_user.id,
+            name: request.name,
             slug: request.slug,
             file_type: request.file_type,
             content: request.content,

@@ -40,6 +40,7 @@ pub struct File {
     pub author_id: Option<Uuid>,
     pub file_type: FileType,
     pub status: FileStatus,
+    pub name: String,
     pub slug: String,
 
     /// Cache for the latest version to avoid expensive JOINs/CTEs
@@ -57,6 +58,7 @@ pub struct NewFile {
     pub author_id: Uuid,
     pub file_type: FileType,
     pub status: FileStatus,
+    pub name: String,
     pub slug: String,
 }
 

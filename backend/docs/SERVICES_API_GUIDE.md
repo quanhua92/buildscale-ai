@@ -312,7 +312,7 @@ pub struct CreateInvitationRequest {
 // Create file with initial content (Transactional)
 pub async fn create_file_with_content(
     conn: &mut DbConn,
-    request: CreateFileRequest,
+    request: CreateFileRequest, // Includes 'name' and optional 'slug'
 ) -> Result<FileWithContent>
 
 // Append new version (Deduplicated)

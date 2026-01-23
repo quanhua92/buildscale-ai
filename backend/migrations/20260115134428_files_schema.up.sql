@@ -7,7 +7,8 @@ CREATE TABLE files (
     author_id UUID REFERENCES users(id) ON DELETE SET NULL,
     file_type TEXT NOT NULL,         -- e.g., 'folder', 'document', 'canvas', 'chat'
     status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'uploading', 'waiting', 'processing', 'ready', 'failed'
-    slug TEXT NOT NULL,              -- The unique identifier/filename within the folder
+    name TEXT NOT NULL,              -- Display name (e.g., 'My Document.md')
+    slug TEXT NOT NULL,              -- URL-safe identifier (e.g., 'my-document.md')
     
     -- Cache for the latest version to avoid expensive JOINs/CTEs
     latest_version_id UUID,          -- Populated after the first version is created
@@ -29,6 +30,7 @@ WHERE parent_id IS NULL AND deleted_at IS NULL;
 -- Indexes for performance
 CREATE INDEX idx_files_parent ON files(parent_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_files_workspace ON files(workspace_id);
+CREATE INDEX idx_files_name ON files(workspace_id, name);
 CREATE INDEX idx_files_status ON files(status);
 CREATE INDEX idx_files_deleted_at ON files(deleted_at);
 
