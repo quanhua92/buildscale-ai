@@ -10,18 +10,12 @@ use crate::{
     },
     queries::files,
     validation::validate_file_slug,
+    config::AiConfig,
 };
 use pgvector::Vector;
 use sha2::{Digest, Sha256};
 use sqlx::Acquire;
 use uuid::Uuid;
-
-/// Default window size for AI text chunking (in characters)
-pub const DEFAULT_CHUNK_WINDOW_SIZE: usize = 1000;
-/// Default overlap for AI text chunking (in characters)
-pub const DEFAULT_CHUNK_OVERLAP: usize = 200;
-/// Dimension for OpenAI text-embedding-3-small
-pub const AI_EMBEDDING_DIMENSION: usize = 1536;
 
 /// Hashes JSON content using SHA-256 for content-addressing
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
@@ -417,7 +411,11 @@ pub async fn get_file_network(conn: &mut DbConn, file_id: Uuid) -> Result<FileNe
 // ============================================================================
 
 /// Orchestrates the AI ingestion pipeline for a file.
-pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+pub async fn process_file_for_ai(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    ai_config: &AiConfig,
+) -> Result<()> {
     // 1. Get file and its latest version
     let file = files::get_file_by_id(conn, file_id).await?;
     let latest_version = files::get_latest_version(conn, file_id).await?;
@@ -435,7 +433,7 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
         }
 
         // 4. Chunk text
-        let chunks = chunk_text(&text, DEFAULT_CHUNK_WINDOW_SIZE, DEFAULT_CHUNK_OVERLAP);
+        let chunks = chunk_text(&text, ai_config.chunk_window_size, ai_config.chunk_overlap);
 
         // 5. Upsert chunks and link them
         for (i, chunk_text) in chunks.into_iter().enumerate() {
@@ -445,9 +443,9 @@ pub async fn process_file_for_ai(conn: &mut DbConn, file_id: Uuid) -> Result<()>
             let chunk_hash = hex::encode(hasher.finalize());
 
             // Placeholder embedding: until OpenAI is integrated, we store a dummy vector
-            // Dimension is AI_EMBEDDING_DIMENSION
+            // Dimension is configured in ai_config
             // Using a non-zero vector to avoid NaN similarity results
-            let dummy_vector = Vector::from(vec![0.1; AI_EMBEDDING_DIMENSION]);
+            let dummy_vector = Vector::from(vec![0.1; ai_config.embedding_dimension]);
 
             let chunk = files::upsert_chunk(
                 conn,

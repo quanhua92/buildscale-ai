@@ -389,7 +389,8 @@ async fn test_semantic_search_flow() {
     let file_id = uuid::Uuid::parse_str(&file_id_str).unwrap();
 
     // 2. Trigger AI ingestion (manually for test)
-    process_file_for_ai(&mut conn, file_id).await.expect("AI ingestion failed");
+    let ai_config = buildscale::config::AiConfig::default();
+    process_file_for_ai(&mut conn, file_id, &ai_config).await.expect("AI ingestion failed");
 
     // 3. Verify status is Ready
     let get_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
