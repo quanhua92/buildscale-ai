@@ -9,6 +9,7 @@ CREATE TABLE files (
     status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'uploading', 'waiting', 'processing', 'ready', 'failed'
     name TEXT NOT NULL,              -- Display name (e.g., 'My Document.md')
     slug TEXT NOT NULL,              -- URL-safe identifier (e.g., 'my-document.md')
+    path TEXT NOT NULL,              -- Materialized path for fast tree queries (e.g., '/folder/doc')
     
     -- Cache for the latest version to avoid expensive JOINs/CTEs
     latest_version_id UUID,          -- Populated after the first version is created
@@ -27,8 +28,14 @@ CREATE UNIQUE INDEX idx_files_slug_active_root
 ON files(workspace_id, slug) 
 WHERE parent_id IS NULL AND deleted_at IS NULL;
 
+-- Path uniqueness: Paths must be unique within a workspace among ACTIVE files.
+CREATE UNIQUE INDEX idx_files_path_active
+ON files(workspace_id, path)
+WHERE deleted_at IS NULL;
+
 -- Indexes for performance
 CREATE INDEX idx_files_parent ON files(parent_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_files_path_prefix ON files(path text_pattern_ops);
 CREATE INDEX idx_files_workspace ON files(workspace_id);
 CREATE INDEX idx_files_name ON files(workspace_id, name);
 CREATE INDEX idx_files_status ON files(status);

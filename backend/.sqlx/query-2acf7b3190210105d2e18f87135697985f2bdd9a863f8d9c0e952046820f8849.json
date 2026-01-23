@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE files\n        SET path = $2 || SUBSTRING(path FROM LENGTH($3) + 1), updated_at = NOW()\n        WHERE workspace_id = $1\n          AND path LIKE $4 || '%'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2acf7b3190210105d2e18f87135697985f2bdd9a863f8d9c0e952046820f8849"
+}

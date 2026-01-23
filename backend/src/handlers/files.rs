@@ -53,6 +53,7 @@ pub async fn create_file(
             author_id: auth_user.id,
             name: request.name,
             slug: request.slug,
+            path: request.path,
             file_type: request.file_type,
             content: request.content,
             app_data: request.app_data,

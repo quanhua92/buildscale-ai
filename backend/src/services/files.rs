@@ -50,60 +50,153 @@ pub fn slugify(name: &str) -> String {
     slug
 }
 
+/// Helper to construct full path
+pub fn calculate_path(parent_path: Option<&str>, slug: &str) -> String {
+    match parent_path {
+        Some(p) => format!("{}/{}", p.trim_end_matches('/'), slug),
+        None => format!("/{}", slug),
+    }
+}
+
+/// Recursively creates folders to ensure a path exists.
+/// Returns the id of the last folder in the path.
+pub async fn ensure_path_exists(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    path: &str,
+    author_id: Uuid,
+) -> Result<Option<Uuid>> {
+    let path = path.trim().trim_matches('/');
+    if path.is_empty() {
+        return Ok(None);
+    }
+
+    let segments: Vec<&str> = path.split('/').collect();
+    let mut current_parent_id: Option<Uuid> = None;
+    let mut current_path_prefix = String::new();
+
+    for segment in segments {
+        let slug = slugify(segment);
+        current_path_prefix.push('/');
+        current_path_prefix.push_str(&slug);
+
+        // Check if folder exists at this path
+        if let Some(file) = files::get_file_by_path(conn, workspace_id, &current_path_prefix).await? {
+             if !matches!(file.file_type, FileType::Folder) {
+                 return Err(Error::Conflict(format!("Path collision: '{}' is not a folder", current_path_prefix)));
+             }
+             current_parent_id = Some(file.id);
+        } else {
+            // Create folder
+             let new_folder = NewFile {
+                workspace_id,
+                parent_id: current_parent_id,
+                author_id,
+                file_type: FileType::Folder,
+                status: FileStatus::Ready,
+                name: segment.to_string(),
+                slug: slug.clone(),
+                path: current_path_prefix.clone(),
+            };
+            let folder = files::create_file_identity(conn, new_folder).await?;
+            current_parent_id = Some(folder.id);
+        }
+    }
+
+    Ok(current_parent_id)
+}
+
 /// Creates a new file with its initial content version in a single transaction
 pub async fn create_file_with_content(
     conn: &mut DbConn,
     request: CreateFileRequest,
 ) -> Result<FileWithContent> {
-    // 1. Determine and validate name and slug
-    let name = request.name.trim().to_string();
-    if name.is_empty() {
-        return Err(Error::Validation(crate::error::ValidationErrors::Single {
-            field: "name".to_string(),
-            message: "File name cannot be empty".to_string(),
-        }));
-    }
-
-    let slug = match request.slug {
-        Some(s) => {
-            let s = s.trim().to_lowercase();
-            validate_file_slug(&s)?;
-            s
-        }
-        None => {
-            let s = slugify(&name);
-            if s.is_empty() {
-                return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                    field: "name".to_string(),
-                    message: "File name must contain alphanumeric characters to generate a valid URL slug".to_string(),
-                }));
-            }
-            s
-        }
-    };
-
-    // 2. Collision Check
-    if files::check_slug_collision(conn, request.workspace_id, request.parent_id, &slug).await? {
-        return Err(Error::Conflict(format!(
-            "A file with slug '{}' already exists in the target folder",
-            slug
-        )));
-    }
-
-    // 3. Start transaction
+    // 1. Start transaction
     let mut tx = conn.begin().await.map_err(|e| {
         Error::Internal(format!("Failed to begin transaction: {}", e))
     })?;
 
+    // 2. Resolve parent_id, slug, and path
+    let (parent_id, name, slug, path) = if let Some(req_path) = request.path {
+        // Path-based creation
+        let req_path = req_path.trim().trim_matches('/');
+        let (dir, filename) = match req_path.rsplit_once('/') {
+            Some((d, f)) => (d, f),
+            None => ("", req_path),
+        };
+
+        let parent_id = ensure_path_exists(&mut tx, request.workspace_id, dir, request.author_id).await?;
+        let slug = slugify(filename);
+        // Use provided name if valid, otherwise filename
+        let name = if !request.name.trim().is_empty() { request.name } else { filename.to_string() };
+        
+        // Re-calculate path to be sure (canonical)
+        let parent_path = if let Some(pid) = parent_id {
+            let p_file = files::get_file_by_id(&mut tx, pid).await?;
+            Some(p_file.path)
+        } else {
+            None
+        };
+        let final_path = calculate_path(parent_path.as_deref(), &slug);
+        
+        (parent_id, name, slug, final_path)
+    } else {
+        // Classic ID-based creation
+        let name = request.name.trim().to_string();
+        if name.is_empty() {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "name".to_string(),
+                message: "File name cannot be empty".to_string(),
+            }));
+        }
+        
+        let slug = match request.slug {
+            Some(s) => {
+                let s = s.trim().to_lowercase();
+                validate_file_slug(&s)?;
+                s
+            }
+            None => {
+                let s = slugify(&name);
+                if s.is_empty() {
+                    return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                        field: "name".to_string(),
+                        message: "File name must contain alphanumeric characters".to_string(),
+                    }));
+                }
+                s
+            }
+        };
+
+        let parent_path = if let Some(pid) = request.parent_id {
+             let p_file = files::get_file_by_id(&mut tx, pid).await?;
+             Some(p_file.path)
+        } else {
+            None
+        };
+        let final_path = calculate_path(parent_path.as_deref(), &slug);
+
+        (request.parent_id, name, slug, final_path)
+    };
+
+    // 3. Collision Check
+    if files::get_file_by_path(&mut tx, request.workspace_id, &path).await?.is_some() {
+        return Err(Error::Conflict(format!(
+            "A file with path '{}' already exists",
+            path
+        )));
+    }
+
     // 4. Create file identity record
     let new_file = NewFile {
         workspace_id: request.workspace_id,
-        parent_id: request.parent_id,
+        parent_id,
         author_id: request.author_id,
         file_type: request.file_type,
         status: FileStatus::Ready, // Set to Ready since we are providing content immediately
         name,
         slug,
+        path,
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
@@ -233,50 +326,71 @@ pub async fn move_or_rename_file(
         current_file.slug.clone()
     };
 
-    // 4. Check if anything actually changed
-    if target_parent_id == current_file.parent_id 
-        && target_name == current_file.name 
-        && target_slug == current_file.slug 
-    {
-        return Ok(current_file);
-    }
-
-    // 5. Start transaction
+    // 3. Start transaction for complex check and update
     let mut tx = conn.begin().await.map_err(|e| {
         Error::Internal(format!("Failed to begin transaction: {}", e))
     })?;
 
-    // 6. Cycle Detection (if moving)
-    if let Some(new_parent_id) = target_parent_id {
-        // Cannot move to itself
-        if new_parent_id == file_id {
-            return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                field: "parent_id".to_string(),
-                message: "Cannot move a folder into itself".to_string(),
-            }));
-        }
+    // 4. Calculate new path
+    let parent_path = if let Some(pid) = target_parent_id {
+         let p_file = files::get_file_by_id(&mut tx, pid).await?;
+         Some(p_file.path)
+    } else {
+        None
+    };
+    let target_path = calculate_path(parent_path.as_deref(), &target_slug);
 
-        // Cannot move to a descendant
-        if files::is_descendant_of(&mut tx, new_parent_id, file_id).await? {
-            return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                field: "parent_id".to_string(),
-                message: "Cannot move a folder into one of its own subfolders".to_string(),
-            }));
-        }
+    // 5. Check if anything actually changed
+    if target_parent_id == current_file.parent_id 
+        && target_name == current_file.name 
+        && target_slug == current_file.slug 
+        && target_path == current_file.path
+    {
+        return Ok(current_file);
+    }
+
+    // 6. Cycle Detection (if moving)
+    // Optimized: Check if new path starts with old path
+    // e.g. Moving /A to /A/B -> New path /A/B starts with /A -> Error
+    if current_file.file_type == FileType::Folder && target_path.starts_with(&format!("{}/", current_file.path)) {
+         return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "parent_id".to_string(),
+            message: "Cannot move a folder into one of its own subfolders".to_string(),
+        }));
     }
 
     // 7. Collision Check
-    if files::check_slug_collision(&mut tx, current_file.workspace_id, target_parent_id, &target_slug).await? {
-        return Err(Error::Conflict(format!(
-            "A file with slug '{}' already exists in the target folder",
-            target_slug
-        )));
+    // We exclude the current file from collision check (in case of rename to same name/path? filtered in step 5)
+    if target_path != current_file.path {
+        if files::get_file_by_path(&mut tx, current_file.workspace_id, &target_path).await?.is_some() {
+            return Err(Error::Conflict(format!(
+                "A file with path '{}' already exists",
+                target_path
+            )));
+        }
     }
 
     // 8. Update metadata
-    let updated_file = files::update_file_metadata(&mut tx, file_id, target_parent_id, &target_name, &target_slug).await?;
+    let updated_file = files::update_file_metadata(
+        &mut tx, 
+        file_id, 
+        target_parent_id, 
+        &target_name, 
+        &target_slug,
+        &target_path
+    ).await?;
 
-    // 9. Commit
+    // 9. If folder, update descendants (REBASE)
+    if current_file.file_type == FileType::Folder && current_file.path != target_path {
+        files::update_descendant_paths(
+            &mut tx, 
+            current_file.workspace_id, 
+            &current_file.path, 
+            &target_path
+        ).await?;
+    }
+
+    // 10. Commit
     tx.commit().await.map_err(|e| {
         Error::Internal(format!("Failed to commit transaction: {}", e))
     })?;
@@ -557,6 +671,7 @@ pub async fn semantic_search(
                 status: r.status,
                 name: r.name,
                 slug: r.slug,
+                path: r.path,
                 latest_version_id: r.latest_version_id,
                 deleted_at: r.deleted_at,
                 created_at: r.created_at,

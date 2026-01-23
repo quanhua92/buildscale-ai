@@ -27,6 +27,7 @@ The `files` table is the central registry for all objects in the system.
 | `status` | TEXT | `pending`, `uploading`, `waiting`, `processing`, `ready`, `failed`. |
 | `name` | TEXT | **Display Name.** Supports spaces, emojis, mixed case (e.g., "My Plan ✨"). |
 | `slug` | TEXT | **URL-safe Name.** Lowercase, hyphens (e.g., "my-plan"). Unique per folder. |
+| `path` | TEXT | **Materialized Path.** Absolute path for fast tree queries (e.g., "/my-plan/doc"). Unique per workspace. |
 | `latest_version_id` | UUID | **Cache.** Points to the most recent version in `file_versions`. |
 | `deleted_at` | TIMESTAMPTZ | **Trash Bin.** If not NULL, the file is in the trash. |
 | `created_at` | TIMESTAMPTZ | Creation timestamp. |
@@ -38,7 +39,7 @@ The `files` table is the central registry for all objects in the system.
 
 **Trash Logic:**
 *   **Soft Delete**: When a file is deleted, `deleted_at` is set to the current timestamp.
-*   **Unique Constraints**: A deleted file releases its claim on the `slug`. You can create a new file with the same slug as a deleted one.
+*   **Unique Constraints**: A deleted file releases its claim on the `slug` and `path`. You can create a new file with the same path as a deleted one.
 *   **Retention**: A background job permanently deletes files where `deleted_at < NOW() - INTERVAL '30 days'`.
 
 ### 2. The Content: `file_versions`
