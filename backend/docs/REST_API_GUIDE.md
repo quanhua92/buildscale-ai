@@ -12,13 +12,16 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [Health Check](#health-check)
   - [User Registration](#user-registration)
   - [User Login](#user-login)
+  - [User Profile](#user-profile)
   - [Refresh Access Token](#refresh-access-token)
   - [User Logout](#user-logout)
   - [Workspaces](#workspaces)
   - [Members](#members)
   - [Files & AI](#files-and-ai)
+    - [Knowledge Graph (Tags & Links)](#knowledge-graph)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
+- [Production Considerations](#production-considerations)
 
 ---
 
@@ -32,14 +35,31 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/auth/login` | POST | Login and get tokens | No |
 | `/api/v1/auth/refresh` | POST | Refresh access token | No (uses refresh token) |
 | `/api/v1/auth/logout` | POST | Logout and invalidate session | No (uses refresh token) |
+| `/api/v1/auth/me` | GET | Get current user profile | Yes (JWT) |
 | `/api/v1/workspaces` | POST | Create new workspace | Yes (JWT) |
 | `/api/v1/workspaces` | GET | List my workspaces | Yes (JWT) |
 | `/api/v1/workspaces/:id` | GET | Get workspace details | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id` | PATCH | Update workspace | Yes (JWT + Owner) |
 | `/api/v1/workspaces/:id` | DELETE | Delete workspace | Yes (JWT + Owner) |
+| `/api/v1/workspaces/:id/members` | GET | List workspace members | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/members` | POST | Add member by email | Yes (JWT + Admin) |
+| `/api/v1/workspaces/:id/members/me` | GET | Get my membership details | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/members/:uid` | PATCH | Update member role | Yes (JWT + Admin) |
+| `/api/v1/workspaces/:id/members/:uid` | DELETE | Remove member / Leave | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files` | POST | Create file/folder | Yes (JWT + Member) |
-| `/api/v1/workspaces/:id/files/:fid` | GET | Get file content | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid` | GET | Get file & latest version | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid` | PATCH | Move or rename file | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid` | DELETE | Soft delete file | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/restore` | POST | Restore file from trash | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/trash` | GET | List trash items | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/versions` | POST | Create new version | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/search` | POST | Semantic search | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/tags/:tag` | GET | List files by tag | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/tags` | POST | Add tag to file | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/tags/:tag` | DELETE | Remove tag from file | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/links` | POST | Link two files | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -56,7 +76,7 @@ Create a new file or folder.
 
 **Endpoint**: `POST /api/v1/workspaces/:id/files`
 
-**Authentication**: Required
+**Authentication**: Required (JWT access token)
 
 #### Request
 ```json
@@ -73,12 +93,14 @@ Create a new file or folder.
 
 **Note on `path`:** If provided, `path` overrides `parent_id` and `slug`. The system will recursively create any missing folders in the path.
 
+---
+
 ### Get File
 Retrieve file metadata and its latest content version.
 
 **Endpoint**: `GET /api/v1/workspaces/:id/files/:file_id`
 
-**Authentication**: Required
+**Authentication**: Required (JWT access token)
 
 #### Response
 ```json
@@ -99,12 +121,109 @@ Retrieve file metadata and its latest content version.
 }
 ```
 
+---
+
+### Update File
+Move or rename a file or folder.
+
+**Endpoint**: `PATCH /api/v1/workspaces/:id/files/:file_id`
+
+**Authentication**: Required (JWT access token)
+
+#### Request
+```json
+{
+  "parent_id": "new-folder-uuid-or-null-for-root",
+  "name": "New Name.md",
+  "slug": "new-slug.md"
+}
+```
+
+---
+
+### Delete File
+Soft delete a file or folder. Folders must be empty before deletion.
+
+**Endpoint**: `DELETE /api/v1/workspaces/:id/files/:file_id`
+
+**Authentication**: Required (JWT access token)
+
+---
+
+### Restore File
+Restore a soft-deleted file from the trash.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/files/:file_id/restore`
+
+**Authentication**: Required (JWT access token)
+
+---
+
+### List Trash
+List all soft-deleted files in the workspace.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/files/trash`
+
+**Authentication**: Required (JWT access token)
+
+---
+
+### Create Version
+Append a new content version to an existing file. Content is automatically deduplicated.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/files/:file_id/versions`
+
+**Authentication**: Required (JWT access token)
+
+#### Request
+```json
+{
+  "content": { "text": "Updated content" },
+  "app_data": { "cursor": 42 },
+  "branch": "main"
+}
+```
+
+---
+
+### Knowledge Graph
+
+Build a networked knowledge base using tags and bidirectional links.
+
+#### Add Tag
+`POST /api/v1/workspaces/:id/files/:file_id/tags`
+```json
+{ "tag": "research" }
+```
+
+#### Remove Tag
+`DELETE /api/v1/workspaces/:id/files/:file_id/tags/:tag`
+
+#### List Files by Tag
+`GET /api/v1/workspaces/:id/files/tags/:tag`
+
+#### Link Files
+Create a bidirectional link between two files.
+`POST /api/v1/workspaces/:id/files/:file_id/links`
+```json
+{ "target_file_id": "target-uuid" }
+```
+
+#### Remove Link
+`DELETE /api/v1/workspaces/:id/files/:file_id/links/:target_id`
+
+#### Get File Network
+Retrieve all tags, outbound links, and backlinks for a file.
+`GET /api/v1/workspaces/:id/files/:file_id/network`
+
+---
+
 ### Semantic Search
 Search for content across all files in the workspace using vector similarity.
 
 **Endpoint**: `POST /api/v1/workspaces/:id/search`
 
-**Authentication**: Required
+**Authentication**: Required (JWT access token)
 
 #### Request
 ```json
@@ -112,17 +231,6 @@ Search for content across all files in the workspace using vector similarity.
   "query_vector": [0.1, 0.2, ...], // 1536-dim vector
   "limit": 5
 }
-```
-
-#### Response
-```json
-[
-  {
-    "file": { ... },
-    "chunk_content": "Relevant text snippet...",
-    "similarity": 0.89
-  }
-]
 ```
 
 ---
@@ -821,6 +929,27 @@ const apiResponse = await fetch('http://localhost:3000/api/v1/protected', {
     'Authorization': `Bearer ${access_token}`
   }
 });
+```
+
+---
+
+### User Profile
+
+Retrieve the currently authenticated user's profile.
+
+**Endpoint**: `GET /api/v1/auth/me`
+
+**Authentication**: Required (JWT access token)
+
+#### Response (200 OK)
+```json
+{
+  "user": {
+    "id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "email": "user@example.com",
+    "full_name": "John Doe"
+  }
+}
 ```
 
 ---
@@ -1662,27 +1791,15 @@ Lists all members in a workspace with detailed user and role information.
 **Endpoint**: `GET /api/v1/workspaces/:id/members`
 
 **Authentication**: Required (JWT access token)
-
 **Permission**: User must be a member of workspace with `members:read` permission.
 
-#### Request
-
-**Headers**:
-```
-Authorization: Bearer <access_token>
-```
-
-**Path Parameters**:
-- `id`: Workspace UUID
-
 #### Response (200 OK)
-
 ```json
 {
   "members": [
     {
-      "workspace_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
-      "user_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+      "workspace_id": "...",
+      "user_id": "...",
       "email": "user@example.com",
       "full_name": "John Doe",
       "role_id": "...",
@@ -1693,36 +1810,78 @@ Authorization: Bearer <access_token>
 }
 ```
 
-#### Response Fields
+---
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `members` | array | Array of member details |
-| `members[].workspace_id` | UUID | Workspace identifier |
-| `members[].user_id` | UUID | User's unique identifier |
-| `members[].email` | string | User's email address |
-| `members[].full_name` | string or null | User's full name |
-| `members[].role_id` | UUID | Role's unique identifier |
-| `members[].role_name` | string | Role name (e.g., "admin", "editor", "member", "viewer") |
-| `count` | integer | Total number of members |
+### Add Member
 
-#### Error Responses
+Add a new member to the workspace by email. The user must already exist in the system.
 
-**403 Forbidden** - Insufficient Permissions
+**Endpoint**: `POST /api/v1/workspaces/:id/members`
+
+**Authentication**: Required (JWT access token)
+**Permission**: User must have `members:write` permission.
+
+#### Request
 ```json
 {
-  "error": "Access forbidden: User is not a member of this workspace",
-  "code": "FORBIDDEN"
+  "email": "teammate@example.com",
+  "role_name": "member"
 }
 ```
 
-**404 Not Found** - Workspace Not Found
+---
+
+### Get My Membership
+
+Get the authenticated user's membership details for a specific workspace.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/members/me`
+
+**Authentication**: Required (JWT access token)
+
+#### Response (200 OK)
 ```json
 {
-  "error": "Workspace not found",
-  "code": "NOT_FOUND"
+  "member": {
+    "workspace_id": "...",
+    "user_id": "...",
+    "email": "...",
+    "full_name": "...",
+    "role_id": "...",
+    "role_name": "admin"
+  }
 }
 ```
+
+---
+
+### Update Member Role
+
+Update a member's role in the workspace.
+
+**Endpoint**: `PATCH /api/v1/workspaces/:id/members/:user_id`
+
+**Authentication**: Required (JWT access token)
+**Permission**: User must have `members:write` permission.
+
+#### Request
+```json
+{
+  "role_name": "editor"
+}
+```
+
+---
+
+### Remove Member
+
+Remove a member from the workspace or leave the workspace (if removing yourself).
+
+**Endpoint**: `DELETE /api/v1/workspaces/:id/members/:user_id`
+
+**Authentication**: Required (JWT access token)
+**Permission**: User must have `members:write` permission OR be removing themselves.
+**Note**: The workspace owner cannot be removed.
 
 ---
 
@@ -1934,12 +2093,5 @@ BUILDSCALE__COOKIE__SECURE=true  # Enable for HTTPS (production)
    - Never store tokens in localStorage (XSS vulnerable)
 
 ---
-
-## Next Steps
-
-- **Member Management API**: Add/remove members with role assignments
-- **Permission System**: Role-based access control (RBAC)
-
-- **Invitation System**: Invite users to workspaces via email
 
 See `docs/SERVICES_API_GUIDE.md` for complete service layer API reference.

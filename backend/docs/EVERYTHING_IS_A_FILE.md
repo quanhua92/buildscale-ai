@@ -137,7 +137,7 @@ WHERE f.id = 'uuid-of-file-x';
 "Find files related to 'Quarterly Goals'."
 
 ```sql
-SELECT f.name, f.slug, fc.chunk_content, (1 - (fc.embedding <=> '[vector]')) as similarity
+SELECT f.name, f.slug, f.path, fc.chunk_content, (1 - (fc.embedding <=> '[vector]')) as similarity
 FROM file_chunks fc
 INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
 INNER JOIN files f ON fvc.file_version_id = f.latest_version_id
@@ -147,27 +147,15 @@ ORDER BY fc.embedding <=> '[vector]'
 LIMIT 5;
 ```
 
-### B. Latest Content (Opening a File)
-"Get the current content for file X."
+### D. Hierarchy Lookup (Materialized Path)
+"Get all files in the 'Projects' folder and all its subfolders."
 
 ```sql
--- O(1) Lookup using the cache
-SELECT fv.* 
-FROM file_versions fv
-JOIN files f ON f.latest_version_id = fv.id
-WHERE f.id = 'uuid-of-file-x';
+-- Fast O(log N) lookup without recursion
+SELECT * FROM files
+WHERE workspace_id = 'current-workspace'
+  AND (path = '/projects' OR path LIKE '/projects/%')
+  AND deleted_at IS NULL
+ORDER BY path ASC;
 ```
 
-### C. Semantic Search (AI)
-"Find files related to 'Quarterly Goals'."
-
-```sql
-SELECT f.slug, fc.chunk_content, (1 - (fc.embedding <=> '[vector]')) as similarity
-FROM file_chunks fc
-INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id
-INNER JOIN files f ON f.latest_version_id = fvc.file_version_id
-WHERE fc.workspace_id = 'current-workspace'
-  AND f.deleted_at IS NULL
-ORDER BY fc.embedding <=> '[vector]' 
-LIMIT 5;
-```
