@@ -205,6 +205,9 @@ pub struct AiConfig {
     pub chunk_overlap: usize,
     /// Dimension for AI embeddings
     pub embedding_dimension: usize,
+    /// OpenAI API key
+    #[serde(skip_serializing)]
+    pub openai_api_key: SecretString,
 }
 
 impl Default for AiConfig {
@@ -213,6 +216,7 @@ impl Default for AiConfig {
             chunk_window_size: 1000,
             chunk_overlap: 200,
             embedding_dimension: 1536,
+            openai_api_key: SecretString::from(String::new()),
         }
     }
 }

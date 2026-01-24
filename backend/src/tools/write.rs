@@ -22,6 +22,14 @@ impl Tool for WriteTool {
     fn name(&self) -> &'static str {
         "write"
     }
+
+    fn description(&self) -> &'static str {
+        "Creates or updates a file at the specified path with the provided content."
+    }
+
+    fn definition(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(WriteArgs)).unwrap_or(Value::Null)
+    }
     
     async fn execute(
         &self,

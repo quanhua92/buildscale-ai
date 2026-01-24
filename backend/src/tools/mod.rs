@@ -23,6 +23,12 @@ pub trait Tool: Send + Sync {
     /// Returns the name of this tool
     fn name(&self) -> &'static str;
 
+    /// Returns a description of what this tool does
+    fn description(&self) -> &'static str;
+
+    /// Returns the JSON schema definition for this tool's arguments
+    fn definition(&self) -> Value;
+
     /// Executes the tool with given arguments
     ///
     /// # Arguments

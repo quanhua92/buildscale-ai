@@ -1,4 +1,7 @@
 pub mod context;
+pub mod rig_engine;
+pub mod rig_tools;
+
 #[cfg(test)]
 mod tests;
 

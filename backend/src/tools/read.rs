@@ -17,6 +17,14 @@ impl Tool for ReadTool {
     fn name(&self) -> &'static str {
         "read"
     }
+
+    fn description(&self) -> &'static str {
+        "Reads the content of a file at the specified path."
+    }
+
+    fn definition(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(ReadArgs)).unwrap_or(Value::Null)
+    }
     
     async fn execute(
         &self,
