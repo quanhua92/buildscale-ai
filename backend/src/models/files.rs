@@ -16,6 +16,8 @@ pub enum FileType {
     Canvas,
     Chat,
     Whiteboard,
+    Agent,
+    Skill,
 }
 
 #[derive(
