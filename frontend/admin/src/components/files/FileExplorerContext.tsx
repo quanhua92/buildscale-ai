@@ -42,7 +42,7 @@ export function FileExplorerProvider({
 
   const refresh = useCallback(async (path?: string) => {
     setIsLoading(true)
-    const targetPath = path || currentPath
+    const targetPath = path || initialPath
     const result = await callTool<LsResult>('ls', { path: targetPath })
     if (result) {
       // Sort: Folders first, then files
@@ -54,34 +54,24 @@ export function FileExplorerProvider({
       setFiles(sorted)
     }
     setIsLoading(false)
-  }, [callTool, currentPath])
+  }, [callTool, initialPath])
 
-  // Initial load
+  // Fetch when path changes
   useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  // Sync state with prop change (e.g. browser back button)
-  useEffect(() => {
-    if (initialPath !== currentPath) {
-      setCurrentPath(initialPath)
-      refresh(initialPath)
-    }
-  }, [initialPath, currentPath, refresh])
+    refresh(initialPath)
+    setCurrentPath(initialPath)
+    setRowSelection({})
+  }, [initialPath, refresh])
 
   const routerNavigate = useNavigate()
 
   const navigate = (path: string) => {
-    setCurrentPath(path)
-    setRowSelection({}) // Clear selection on navigation
-    // Update URL
+    // Just update URL, effect will handle fetching and state sync
     routerNavigate({
       to: '.',
       search: (prev: any) => ({ ...prev, path }),
-      replace: true, // Replace history entry to avoid clutter
+      replace: true,
     })
-    // Fetch immediately
-    refresh(path)
   }
 
   const createFile = async (name: string, content: string) => {
