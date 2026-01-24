@@ -50,7 +50,7 @@ export function FileExplorerToolbar() {
                 <Home className="h-4 w-4" />
               </BreadcrumbLink>
             </BreadcrumbItem>
-            {pathParts.map((part, index) => {
+            {pathParts.map((part: string, index: number) => {
               const isLast = index === pathParts.length - 1
               return (
                 <React.Fragment key={`${index}-${part}`}>

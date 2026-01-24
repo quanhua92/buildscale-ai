@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { LsEntry, LsResult, ReadResult, ToolResponse, FileExplorerContextType, ViewMode } from './types'
-import { toast } from '@buildscale/sdk'
+import type { LsEntry, LsResult, ReadResult, FileExplorerContextType, ViewMode } from './types'
+import { toast, useAuth } from '@buildscale/sdk'
 
 const FileExplorerContext = createContext<FileExplorerContextType | undefined>(undefined)
 
@@ -16,19 +16,7 @@ export function FileExplorerProvider({
   workspaceId,
   initialPath = '/' 
 }: FileExplorerProviderProps) {
-  // Removed useAuth as we are using fetch with credentials: include for now
-  
-  // Checking SDK exports again... it exports ApiClient class but we need the instance configured with tokens.
-  // Ideally, the SDK should expose a way to make generic authenticated requests or specific tool requests.
-  // Since we saw `ApiClient` exported in SDK, we can import it, but we need tokens.
-  // The SDK's ApiClient handles token refresh automatically if configured. 
-  // However, we are inside the admin app which uses the SDK.
-  // Let's assume we can use `fetch` and the browser's cookies (since we are on the same domain or using credentials: include)
-  // Or better, let's use the `useAuth` hook if it provided a generic `request` method, but it doesn't seem to.
-  
-  // Checking SDK exports again... it exports ApiClient class but we need the instance configured with tokens.
-  // The AuthContext uses an instance of ApiClient.
-  // For now, let's implement a simple fetcher that assumes browser cookies or we'll assume the `apiBaseUrl` from environment.
+  const { executeTool } = useAuth()
 
   const [currentPath, setCurrentPath] = useState(initialPath)
   const [files, setFiles] = useState<LsEntry[]>([])
@@ -44,45 +32,13 @@ export function FileExplorerProvider({
 
   // API Helper
   const callTool = useCallback(async <T,>(tool: string, args: any): Promise<T | null> => {
-    try {
-      // Assuming /api/v1 is the prefix, we need to construct the URL
-      // The SDK context probably knows the base URL, but let's assume standard relative path for now
-      // or use environment variable if available.
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
-      
-      // Get access token from storage if needed, but if using cookies we might not need to manually attach
-      // if the backend expects cookies. The SDK doc says "Browser Clients (Cookie): Cookies are set automatically".
-      // So we just need `credentials: 'include'`.
-      
-      const response = await fetch(`${baseUrl}/workspaces/${workspaceId}/tools`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          tool,
-          args
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Tool ${tool} failed: ${response.statusText}`)
-      }
-
-      const data: ToolResponse<T> = await response.json()
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Unknown tool error')
-      }
-
-      return data.result
-    } catch (error) {
-      console.error(`Error calling tool ${tool}:`, error)
-      toast.error(error instanceof Error ? error.message : 'Tool execution failed')
+    const result = await executeTool<T>(workspaceId, tool, args)
+    if (!result.success) {
+      toast.error(result.error?.message || 'Tool execution failed')
       return null
     }
-  }, [workspaceId])
+    return result.data || null
+  }, [executeTool, workspaceId])
 
   const refresh = useCallback(async () => {
     setIsLoading(true)

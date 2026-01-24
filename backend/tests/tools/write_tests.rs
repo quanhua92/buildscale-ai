@@ -103,3 +103,21 @@ async fn test_write_invalid_file_type() {
     assert!(body["error"].as_str().unwrap().contains("Validation failed"));
     assert!(body["fields"]["file_type"].as_str().unwrap().contains("Invalid file type"));
 }
+
+#[tokio::test]
+async fn test_write_folder() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Write Folder Test").await;
+    
+    let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
+        "path": "/my-folder",
+        "content": {},
+        "file_type": "folder"
+    })).await;
+    
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+    assert!(!body["result"]["file_id"].as_str().unwrap().is_empty());
+}
