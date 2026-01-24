@@ -51,29 +51,43 @@ impl ChatActor {
     async fn run(mut self) {
         tracing::info!("ChatActor started for chat {}", self.chat_id);
 
-        while let Some(command) = self.command_rx.recv().await {
-            match command {
-                AgentCommand::ProcessInteraction { user_id, content } => {
-                    // Send initial thought to signal activity immediately
-                    let _ = self.event_tx.send(SseEvent::Thought {
-                        agent_id: None,
-                        text: "Initializing context and connecting to AI brain...".to_string(),
-                    });
+        // Periodic heartbeat ping (every 10 seconds)
+        let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
 
-                    if let Err(e) = self.process_interaction(user_id, content).await {
-                        tracing::error!(
-                            "Error processing interaction for chat {}: {:?}",
-                            self.chat_id,
-                            e
-                        );
-                        let _ = self.event_tx.send(SseEvent::Error {
-                            message: format!("AI Engine Error: {}", e),
-                        });
-                    }
+        loop {
+            tokio::select! {
+                _ = heartbeat_interval.tick() => {
+                    let _ = self.event_tx.send(SseEvent::Ping);
                 }
-                AgentCommand::Shutdown => {
-                    tracing::info!("ChatActor shutting down for chat {}", self.chat_id);
-                    break;
+                command = self.command_rx.recv() => {
+                    if let Some(cmd) = command {
+                        match cmd {
+                            AgentCommand::ProcessInteraction { user_id, content } => {
+                                // Send initial thought to signal activity immediately
+                                let _ = self.event_tx.send(SseEvent::Thought {
+                                    agent_id: None,
+                                    text: "Initializing context and connecting to AI brain...".to_string(),
+                                });
+
+                                if let Err(e) = self.process_interaction(user_id, content).await {
+                                    tracing::error!(
+                                        "Error processing interaction for chat {}: {:?}",
+                                        self.chat_id,
+                                        e
+                                    );
+                                    let _ = self.event_tx.send(SseEvent::Error {
+                                        message: format!("AI Engine Error: {}", e),
+                                    });
+                                }
+                            }
+                            AgentCommand::Shutdown => {
+                                tracing::info!("ChatActor shutting down for chat {}", self.chat_id);
+                                break;
+                            }
+                        }
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -97,7 +111,7 @@ impl ChatActor {
             serde_json::from_value(version.app_data).unwrap_or_else(|_| {
                 crate::models::chat::AgentConfig {
                     agent_id: None,
-                    model: "gpt-4o".to_string(),
+                    model: "gpt-4o-mini".to_string(),
                     temperature: 0.7,
                     persona_override: None,
                 }
@@ -105,11 +119,12 @@ impl ChatActor {
         } else {
             crate::models::chat::AgentConfig {
                 agent_id: None,
-                model: "gpt-4o".to_string(),
+                model: "gpt-4o-mini".to_string(),
                 temperature: 0.7,
                 persona_override: None,
             }
         };
+
 
         let session = crate::models::chat::ChatSession {
             file_id: self.chat_id,

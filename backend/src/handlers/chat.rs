@@ -49,7 +49,7 @@ pub async fn create_chat(
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
-        "model": "gpt-4o",
+        "model": "gpt-4o-mini",
         "temperature": 0.7
     });
 
