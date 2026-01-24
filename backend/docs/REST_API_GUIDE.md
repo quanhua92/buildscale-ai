@@ -259,8 +259,10 @@ Execute filesystem tools (ls, read, write, rm) within a workspace through a unif
 |------|-------------|-----------|
 | `ls` | List directory contents | `path` (optional), `recursive` (optional, default: false) |
 | `read` | Read file contents | `path` (required) |
-| `write` | Create or update file | `path` (required), `content` (required) |
+| `write` | Create or update file | `path` (required), `content` (required), `file_type` (optional, defaults to `document`) |
 | `rm` | Delete file or folder | `path` (required) |
+
+**Note on `document` types**: If `file_type` is `document` (or omitted), the `content` must follow the schema `{ "text": "string content" }`. Invalid structures will be rejected with a 400 error.
 
 #### Response
 ```json

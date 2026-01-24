@@ -47,6 +47,7 @@ export interface AuthContextType {
   updateWorkspace: (id: string, name: string) => Promise<ApiResult<Workspace>>
   deleteWorkspace: (id: string) => Promise<ApiResult<{ message: string }>>
   getMembership: (workspaceId: string) => Promise<ApiResult<WorkspaceMemberDetailed>>
+  executeTool: <T>(workspaceId: string, tool: string, args: any) => Promise<ApiResult<T>>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -196,6 +197,21 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [apiClient, handleError])
 
+  const executeTool = useCallback(async <T,>(workspaceId: string, tool: string, args: any): Promise<ApiResult<T>> => {
+    try {
+      const response = await apiClient.post<{ success: boolean, result: T, error?: string }>(
+        `/workspaces/${workspaceId}/tools`,
+        { tool, args }
+      )
+      if (!response.success) {
+        return { success: false, error: { message: response.error || 'Tool execution failed' } }
+      }
+      return { success: true, data: response.result }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, handleError])
+
   // Restore session on mount (only once)
   useEffect(() => {
     if (restoreAttempted) {
@@ -236,6 +252,7 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     updateWorkspace,
     deleteWorkspace,
     getMembership,
+    executeTool,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

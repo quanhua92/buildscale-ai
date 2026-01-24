@@ -105,6 +105,15 @@ export {
   TableHeader,
   TableRow,
 } from './components/ui/table'
+export {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  BreadcrumbEllipsis,
+} from './components/ui/breadcrumb'
 
 // API client
 export { ApiClient } from './api'

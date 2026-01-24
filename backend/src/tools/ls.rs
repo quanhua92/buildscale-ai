@@ -23,12 +23,25 @@ impl Tool for LsTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let ls_args: LsArgs = serde_json::from_value(args)?;
-        let path = ls_args.path.unwrap_or_else(|| "/".to_string());
+        let path = super::normalize_path(&ls_args.path.unwrap_or_else(|| "/".to_string()));
         let recursive = ls_args.recursive.unwrap_or(false);
         
-        let parent_file = files::get_file_by_path(conn, workspace_id, &path).await?;
-        
-        let parent_id = parent_file.map(|f| f.id);
+        let parent_id = if path == "/" {
+            None
+        } else {
+            let parent_file = files::get_file_by_path(conn, workspace_id, &path)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("Directory not found: {}", path)))?;
+            
+            if !matches!(parent_file.file_type, crate::models::files::FileType::Folder) {
+                return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                    field: "path".to_string(),
+                    message: format!("Path is not a directory: {}", path),
+                }));
+            }
+            
+            Some(parent_file.id)
+        };
         
         let files = if recursive {
             Self::list_files_recursive(conn, workspace_id, &path).await?

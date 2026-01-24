@@ -23,15 +23,16 @@ impl Tool for RmTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let rm_args: RmArgs = serde_json::from_value(args)?;
+        let path = super::normalize_path(&rm_args.path);
         
-        let file = file_queries::get_file_by_path(conn, workspace_id, &rm_args.path)
+        let file = file_queries::get_file_by_path(conn, workspace_id, &path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("File not found: {}", rm_args.path)))?;
+            .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
         
         files::soft_delete_file(conn, file.id).await?;
         
         let result = RmResult {
-            path: rm_args.path,
+            path,
             file_id: file.id,
         };
         

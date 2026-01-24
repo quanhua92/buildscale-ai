@@ -28,7 +28,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 |------|-------------|-----------|---------|
 | `ls` | List directory contents | `path?`, `recursive?` | `entries[]` |
 | `read` | Read file contents | `path` | `content` |
-| `write` | Create or update file | `path`, `content` | `file_id`, `version_id` |
+| `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
 | `rm` | Delete file or folder | `path` | `file_id` |
 
 **Base URL**: `http://localhost:3000` (default)
@@ -219,6 +219,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Non-recursive mode** (default): Returns immediate children only
 - **Recursive mode**: Returns all descendants with paths matching the prefix
+- **Directory Validation**: Returns `400 Bad Request` if the target path is a file
 - **Path resolution**: Uses `get_file_by_path()` to resolve the directory
 - **Sorting**: Entries sorted by path in ascending order
 
@@ -293,14 +294,16 @@ Creates a new file or updates an existing file with new content. Automatically c
 ```json
 {
   "path": "/file.txt",
-  "content": { ... }
+  "content": { ... },
+  "file_type": "document"
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | Yes | Full path to the file |
-| `content` | object | Yes | File content as JSON value |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `path` | string | Yes | - | Full path to the file |
+| `content` | object | Yes | - | File content as JSON value |
+| `file_type` | string | No | `document` | Type: `document`, `folder`, `canvas`, `chat`, `whiteboard` |
 
 #### Request Example (Create New File)
 
@@ -314,7 +317,27 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
       "path": "/documents/notes.md",
       "content": {
         "text": "# My Notes\n\nCreated via Tools API"
-      }
+      },
+      "file_type": "document"
+    }
+  }'
+```
+
+#### Request Example (Create Specialized Type)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "write",
+    "args": {
+      "path": "/dashboards/main.canvas",
+      "content": {
+        "elements": [],
+        "version": 1
+      },
+      "file_type": "canvas"
     }
   }'
 ```
@@ -362,9 +385,11 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Create mode**: If file doesn't exist, creates new file with content
 - **Update mode**: If file exists, creates new version with updated content
+- **Schema Validation**: For `document` types, `content` must contain a `text` field with a string value
 - **Auto-folder creation**: Uses `create_file_with_content()` with path to create nested folders
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
-- **File type**: Defaults to `Document` type
+- **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`. Defaults to `document`.
+- **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path
 
 ---
 
@@ -424,6 +449,16 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Safety checks**: Underlying service applies safety checks
 - **Not found error**: Returns 404 if path does not exist
 - **Recovery**: Soft-deleted files can be restored via the files API
+
+---
+
+### Path Normalization
+
+All tools automatically normalize provided paths to ensure consistency:
+- **Whitespace**: Leading and trailing whitespace is trimmed.
+- **Slashes**: Multiple consecutive slashes are collapsed (e.g., `//folder///file` → `/folder/file`).
+- **Relative Segments**: Resolves `.` (current) and `..` (parent) segments.
+- **Formatting**: Ensures path starts with `/` and has no trailing `/` (except for root).
 
 ---
 

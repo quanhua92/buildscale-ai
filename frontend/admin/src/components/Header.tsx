@@ -43,22 +43,18 @@ export default function Header() {
                     <NavigationMenu.Item 
                       to="/workspaces/$workspaceId/files" 
                       params={{ workspaceId }}
-                      disabled
-                      className="opacity-50 cursor-not-allowed"
                       icon={<File size={20} />}
                     >
                       Files
                     </NavigationMenu.Item>
                     <NavigationMenu.Item 
                       disabled 
-                      className="opacity-50 cursor-not-allowed"
                       icon={<Images size={20} />}
                     >
                       Images
                     </NavigationMenu.Item>
                     <NavigationMenu.Item 
                       disabled 
-                      className="opacity-50 cursor-not-allowed"
                       icon={<Users size={20} />}
                     >
                       Members
