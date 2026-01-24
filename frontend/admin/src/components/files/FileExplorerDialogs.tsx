@@ -7,12 +7,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetFooter,
   Button,
   Input,
   Label,
@@ -106,15 +100,15 @@ function FileEditor() {
   }
 
   return (
-    <Sheet open={isEditorOpen} onOpenChange={setEditorOpen}>
-      <SheetContent className="w-full sm:max-w-[90vw]">
-        <SheetHeader>
-          <SheetTitle>{activeFile ? 'Edit File' : 'New File'}</SheetTitle>
-          <SheetDescription>
+    <Dialog open={isEditorOpen} onOpenChange={setEditorOpen}>
+      <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0 sm:p-6 sm:gap-4">
+        <DialogHeader className="p-4 sm:p-0 border-b sm:border-0">
+          <DialogTitle>{activeFile ? 'Edit File' : 'New File'}</DialogTitle>
+          <DialogDescription className="break-all">
             {activeFile ? `Editing ${activeFile.path}` : `Create a new file in ${currentPath}`}
-          </SheetDescription>
-        </SheetHeader>
-        <div className="grid gap-4 py-4 h-[calc(100vh-180px)]">
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-0 flex flex-col gap-4">
           {!activeFile && (
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor={nameId} className="text-right">
@@ -129,25 +123,25 @@ function FileEditor() {
               />
             </div>
           )}
-          <div className="flex flex-col gap-2 h-full">
+          <div className="flex flex-col gap-2 flex-1 min-h-[200px]">
             <Label htmlFor={contentId}>Content</Label>
             <textarea
               id={contentId}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="flex-1 min-h-[300px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+              className="flex-1 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 font-mono resize-none"
             />
           </div>
         </div>
-        <SheetFooter>
+        <DialogFooter className="p-4 sm:p-0 border-t sm:border-0 mt-auto">
           <Button variant="outline" onClick={() => setEditorOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={isSaving || (!activeFile && !name)}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save
           </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
