@@ -66,51 +66,55 @@ export function FileExplorerProvider({
 
   const routerNavigate = useNavigate()
 
-  const navigate = (path: string) => {
+  const navigate = useCallback((path: string) => {
     // Just update URL, effect will handle fetching and state sync
     routerNavigate({
       to: '.',
       search: (prev: { path?: string }) => ({ ...prev, path }),
       replace: true,
     })
-  }
+  }, [routerNavigate])
 
-  const createFile = async (name: string, content: any, fileType: string = 'document') => {
-    const cleanPath = initialPath.endsWith('/') ? initialPath : `${initialPath}/`
-    const filePath = `${cleanPath}${name}`
+  const createFile = useCallback(async (name: string, content: any, fileType: string = 'document') => {
+    const base = initialPath || '/'
+    const cleanPath = base.endsWith('/') ? base : `${base}/`
+    const filePath = `${cleanPath}${name}`.replace(/\/+/g, '/')
+    
     await callTool('write', { 
       path: filePath, 
       content,
       file_type: fileType
     })
     await refresh()
-  }
+  }, [initialPath, callTool, refresh])
 
-  const createFolder = async (name: string) => {
-    const cleanPath = initialPath.endsWith('/') ? initialPath : `${initialPath}/`
-    const filePath = `${cleanPath}${name}`
+  const createFolder = useCallback(async (name: string) => {
+    const base = initialPath || '/'
+    const cleanPath = base.endsWith('/') ? base : `${base}/`
+    const filePath = `${cleanPath}${name}`.replace(/\/+/g, '/')
+
     await callTool('write', { 
       path: filePath, 
       content: {}, 
       file_type: 'folder' 
     })
     await refresh()
-  }
+  }, [initialPath, callTool, refresh])
 
-  const updateFile = async (path: string, content: any) => {
+  const updateFile = useCallback(async (path: string, content: any) => {
     await callTool('write', { path, content })
     await refresh()
-  }
+  }, [callTool, refresh])
 
-  const deleteItem = async (path: string) => {
+  const deleteItem = useCallback(async (path: string) => {
     await callTool('rm', { path })
     await refresh()
     setRowSelection({})
-  }
+  }, [callTool, refresh])
 
-  const readFile = async (path: string) => {
+  const readFile = useCallback(async (path: string) => {
     return await callTool<ReadResult>('read', { path })
-  }
+  }, [callTool])
 
   return (
     <FileExplorerContext.Provider value={{
