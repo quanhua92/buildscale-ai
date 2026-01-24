@@ -15,6 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  toast,
 } from "@buildscale/sdk"
 import { Loader2 } from "lucide-react"
 import { getContentAsString } from './utils'
@@ -123,7 +124,7 @@ function FileEditor() {
       if (isEditorOpen && activeFile && activeFile.file_type !== 'folder') {
         const result = await readFile(activeFile.path)
         if (mounted && result) {
-          setContent(getContentAsString(result.content))
+          setContent(getContentAsString(result.content, activeFile.file_type))
         }
       }
     }
@@ -135,18 +136,18 @@ function FileEditor() {
     setIsSaving(true)
     try {
       // Construct appropriate content structure based on file type
-      let structuredContent: any = { text: content }
+      let structuredContent: any
       
-      if (fileType !== 'document') {
+      if (fileType === 'document') {
+        structuredContent = { text: content }
+      } else {
         try {
-          // If it's a specialized type, try to parse textarea as JSON
-          // If it fails, fallback to wrapping in text object
+          // For specialized types, content must be valid JSON
           structuredContent = JSON.parse(content)
         } catch (e) {
-          if (import.meta.env.DEV) {
-            console.warn('Failed to parse content as JSON for type:', fileType, 'falling back to text wrapper')
-          }
-          structuredContent = { text: content }
+          toast.error(`Invalid JSON content for ${fileType}. Please check your syntax.`)
+          setIsSaving(false)
+          return
         }
       }
 
@@ -233,7 +234,7 @@ function FileViewer() {
         try {
           const result = await readFile(activeFile.path)
           if (mounted && result) {
-            setContent(getContentAsString(result.content))
+            setContent(getContentAsString(result.content, activeFile.file_type))
           }
         } finally {
           if (mounted) setIsLoading(false)

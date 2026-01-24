@@ -69,6 +69,14 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
+            // Validation: Document must have a "text" field in content
+            if matches!(file_type, FileType::Document) && write_args.content.get("text").is_none() {
+                return Err(Error::Validation(ValidationErrors::Single {
+                    field: "content".to_string(),
+                    message: "Document content must contain a 'text' field".to_string(),
+                }));
+            }
+
             let file_result = files::create_file_with_content(conn, CreateFileRequest {
                 workspace_id,
                 parent_id: None,

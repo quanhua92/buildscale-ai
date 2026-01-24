@@ -12,6 +12,16 @@ import {
   DropdownMenuTrigger,
 } from "@buildscale/sdk"
 
+import '@tanstack/react-table'
+
+declare module '@tanstack/react-table' {
+  interface TableMeta<TData> {
+    onEdit: (file: TData) => void
+    onDelete: (file: TData) => void
+    onView: (file: TData) => void
+  }
+}
+
 export const columns: ColumnDef<LsEntry>[] = [
   {
     id: "select",
@@ -89,14 +99,7 @@ export const columns: ColumnDef<LsEntry>[] = [
     id: "actions",
     cell: ({ row, table }) => {
       const entry = row.original
-      // We need a way to call the context functions. 
-      // Since columns are defined outside the component, we can pass handlers via table.options.meta 
-      // OR we can rely on the row actions in the parent component.
-      // A common pattern is to just use a standard dropdown here that triggers events.
-      // But we can't easily access the `deleteItem` from the context here without passing it down.
-      // For simplicity, we will emit custom events or rely on the `meta` feature of TanStack Table.
-      
-      const meta = table.options.meta as any
+      const meta = table.options.meta
       
       return (
         <DropdownMenu>
@@ -106,35 +109,36 @@ export const columns: ColumnDef<LsEntry>[] = [
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(e) => {
+              e.stopPropagation()
+              meta?.onView(entry)
+            }}>
+              <Eye className="mr-2 h-4 w-4" />
+              {entry.file_type === 'folder' ? 'Open' : 'View'}
+            </DropdownMenuItem>
+            {entry.file_type !== 'folder' && (
               <DropdownMenuItem onClick={(e) => {
                 e.stopPropagation()
-                meta?.onView(entry)
+                meta?.onEdit(entry)
               }}>
-                <Eye className="mr-2 h-4 w-4" />
-                {entry.file_type === 'folder' ? 'Open' : 'View'}
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
               </DropdownMenuItem>
-              {entry.file_type !== 'folder' && (
-                <DropdownMenuItem onClick={(e) => {
-                  e.stopPropagation()
-                  meta?.onEdit(entry)
-                }}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation()
-                meta?.onDelete(entry)
-              }} className="text-destructive focus:text-destructive">
-                <Trash className="mr-2 h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={(e) => {
+              e.stopPropagation()
+              meta?.onDelete(entry)
+            }} className="text-destructive focus:text-destructive">
+              <Trash className="mr-2 h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
         </DropdownMenu>
       )
     },
     size: 50,
   },
 ]
+

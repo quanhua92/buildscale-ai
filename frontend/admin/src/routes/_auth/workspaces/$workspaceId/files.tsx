@@ -16,7 +16,7 @@ function FilesRoute() {
   const { path } = Route.useSearch()
 
   return (
-    <div className="h-[calc(100vh-4rem)] p-4">
+    <div className="h-[calc(100vh-var(--header-height))] p-4">
       <FileExplorer workspaceId={workspaceId} initialPath={path || '/'}>
         <div className="flex flex-col h-full space-y-4">
           <FileExplorer.Toolbar />
