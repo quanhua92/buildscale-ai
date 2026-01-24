@@ -36,12 +36,8 @@ impl Tool for WriteTool {
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
         
         let result = if let Some(file) = existing_file {
-            if matches!(file.file_type, FileType::Folder) && write_args.file_type.as_deref() != Some("folder") {
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "path".to_string(),
-                    message: "Cannot write text content to a folder path".to_string(),
-                }));
-            }
+            // Validation: Ensure content matches existing file type
+            Self::validate_content_for_type(file.file_type, &write_args.content, write_args.file_type.as_deref())?;
 
             let version = files::create_version(conn, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
@@ -69,16 +65,8 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
-            // Validation: Document must have a "text" field with a string value
-            if matches!(file_type, FileType::Document)
-                && !write_args.content.get("text").map_or(false, |v| v.is_string())
-            {
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "content".to_string(),
-                    message: "Document content must contain a 'text' field with a string value"
-                        .to_string(),
-                }));
-            }
+            // Validation: Ensure content matches new file type
+            Self::validate_content_for_type(file_type, &write_args.content, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, CreateFileRequest {
                 workspace_id,
@@ -104,5 +92,35 @@ impl Tool for WriteTool {
             result: serde_json::to_value(result)?,
             error: None,
         })
+    }
+}
+
+impl WriteTool {
+    /// Validates that the content structure matches the requirements for the given file type.
+    fn validate_content_for_type(
+        actual_type: FileType,
+        content: &Value,
+        requested_type_str: Option<&str>,
+    ) -> Result<()> {
+        // 1. Prevent writing text content to a folder path unless explicitly creating a folder
+        if matches!(actual_type, FileType::Folder) && requested_type_str != Some("folder") {
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "path".to_string(),
+                message: "Cannot write text content to a folder path".to_string(),
+            }));
+        }
+
+        // 2. Validate Document schema (must have a "text" field with a string value)
+        if matches!(actual_type, FileType::Document) {
+            if !content.get("text").map_or(false, |v| v.is_string()) {
+                return Err(Error::Validation(ValidationErrors::Single {
+                    field: "content".to_string(),
+                    message: "Document content must contain a 'text' field with a string value"
+                        .to_string(),
+                }));
+            }
+        }
+
+        Ok(())
     }
 }
