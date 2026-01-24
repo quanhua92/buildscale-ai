@@ -12,8 +12,9 @@ This document serves as the self-contained execution guide for implementing the 
 - [x] **Phase 1.1**: Data Structures & Schema (Committed)
 - [x] **Phase 1.1b**: Data Access Layer (Committed)
 - [x] **Phase 1.2**: Context Construction & Orchestration (Committed)
-- [ ] **Phase 1.3**: The LLM Client (Next)
-- [ ] **Phase 1.4**: The SSE Endpoint
+- [x] **Phase 1.3**: Rig Integration & Execution Runtime (Committed)
+- [x] **Phase 1.4**: Decoupled Command/Event Loop (Committed)
+- [x] **Phase 2**: Tool Execution (Committed)
 
 ---
 
@@ -38,30 +39,28 @@ This document serves as the self-contained execution guide for implementing the 
     - [x] `build_system_prompt(agent_id)`: Load the Agent's specific instruction file from `/system/agents/`.
     - [x] `hydrate_context(file_ids)`: Read content of attached files and format for the LLM.
     - [x] `get_chat_history(chat_file_id)`: Query `chat_messages` table.
-- [ ] **1.3 The LLM Client (`src/services/llm.rs`)**
-    - [ ] Implement generic Client trait (OpenAI compatible).
-    - [ ] Implement `stream_completion` method supporting SSE.
-- [ ] **1.4 The SSE Endpoint (`src/handlers/chat.rs`)**
-    - [ ] `POST /api/v1/workspaces/:id/chats`: Initialize session (Create `.chat` file with `is_virtual: true`).
-    - [ ] `POST /api/v1/workspaces/:id/chats/:chat_id`: The Follow-up Loop.
-        1.  User sends message -> Insert into `chat_messages`.
-        2.  Server rebuilds full context (System + Files + History + User Msg).
-        3.  Server calls LLM Stream.
-        4.  Server pushes SSE events (`thought`, `chunk`, `done`).
-        5.  Server appends Assistant message -> Insert into `chat_messages`.
+- [x] **1.3 Rig Integration & Execution Runtime (`src/services/chat/rig_*`)**
+    - [x] Integrate `rig-core` and `rig-openai`.
+    - [x] Implement `RigTool` wrappers for native filesystem tools (`ls`, `read`, `write`, `rm`).
+    - [x] Implement `RigService` for agent orchestration and history conversion.
+- [x] **1.4 Decoupled Command/Event Loop (`src/handlers/chat.rs`)**
+    - [x] `POST /api/v1/workspaces/:id/chats`: Initialize session (Create `.chat` file with `is_virtual: true`).
+    - [x] `GET /api/v1/workspaces/:id/chats/:chat_id/events`: The Event Pipe (SSE stream from `ChatActor`).
+    - [x] `POST /api/v1/workspaces/:id/chats/:chat_id`: The Command Bus (Appends message and signals actor).
+    - [x] `ChatActor`: Background worker for autonomous execution and persistence.
 
 ## Phase 2: Tool Execution (The Hands)
 **Goal**: Allow the LLM to call `read`, `write`, `ls` commands to interact with the environment.
 
-- [ ] **2.1 Tool Definitions**
-    - [ ] Define JSON schemas for `read`, `write`, `ls`, `grep`.
-    - [ ] Inject schemas into LLM context.
-- [ ] **2.2 Parser & Dispatcher**
-    - [ ] Parse tool calls from LLM stream.
-    - [ ] Dispatch to `FilesService` (reusing logic from File System phases).
-- [ ] **2.3 The Observation Loop**
-    - [ ] Feed tool outputs back to LLM as a new "User" or "Tool" message.
-    - [ ] Recursively call LLM until final answer.
+- [x] **2.1 Tool Definitions**
+    - [x] Define JSON schemas for `read`, `write`, `ls`, `rm` via `schemars`.
+    - [x] Inject schemas into Rig tools via `definition()` method.
+- [x] **2.2 Parser & Dispatcher**
+    - [x] Rig natively parses tool calls from LLM stream.
+    - [x] `RigTool` implementation dispatches to native OS tools.
+- [x] **2.3 The Observation Loop**
+    - [x] Rig handles feeding tool outputs back to LLM.
+    - [x] `ChatActor` streams `thought`, `call`, and `observation` events to SSE.
 
 ## Phase 3: The Planner (The Cortex)
 **Goal**: Implement the "Plan -> Execute" workflow using `.plan.md` files.
