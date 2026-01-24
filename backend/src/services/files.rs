@@ -17,6 +17,9 @@ use sha2::{Digest, Sha256};
 use sqlx::Acquire;
 use uuid::Uuid;
 
+pub const DEFAULT_FOLDER_PERMISSION: i32 = 755;
+pub const DEFAULT_FILE_PERMISSION: i32 = 600;
+
 /// Hashes JSON content using SHA-256 for content-addressing
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
     let content_str = serde_jcs::to_string(content)
@@ -99,7 +102,7 @@ pub async fn ensure_path_exists(
                 path: current_path_prefix.clone(),
                 is_virtual: false,
                 is_remote: false,
-                permission: 755,
+                permission: DEFAULT_FOLDER_PERMISSION,
             };
             let folder = files::create_file_identity(conn, new_folder).await?;
             current_parent_id = Some(folder.id);
@@ -202,14 +205,12 @@ pub async fn create_file_with_content(
         path,
         is_virtual: request.is_virtual.unwrap_or(false),
         is_remote: request.is_remote.unwrap_or(false),
-        permission: request.permission.unwrap_or(600),
+        permission: request.permission.unwrap_or(DEFAULT_FILE_PERMISSION),
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
-    // 5. Calculate content hash
+    // 5. Create first version record (Physical anchor for both real and virtual files)
     let hash = hash_content(&request.content)?;
-
-    // 6. Create first version record
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
@@ -221,11 +222,11 @@ pub async fn create_file_with_content(
     };
     let latest_version = files::create_version(&mut tx, new_version).await?;
 
-    // 7. Update file with latest version ID cache
+    // 6. Update file with latest version ID cache
     files::update_latest_version_id(&mut tx, file.id, latest_version.id).await?;
     file.latest_version_id = Some(latest_version.id);
 
-    // 8. Commit transaction
+    // 7. Commit transaction
     tx.commit().await.map_err(|e| {
         Error::Internal(format!("Failed to commit transaction: {}", e))
     })?;
