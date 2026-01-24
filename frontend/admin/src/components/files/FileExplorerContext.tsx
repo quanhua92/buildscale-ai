@@ -40,9 +40,10 @@ export function FileExplorerProvider({
     return result.data || null
   }, [executeTool, workspaceId])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (path?: string) => {
     setIsLoading(true)
-    const result = await callTool<LsResult>('ls', { path: currentPath })
+    const targetPath = path || currentPath
+    const result = await callTool<LsResult>('ls', { path: targetPath })
     if (result) {
       // Sort: Folders first, then files
       const sorted = result.entries.sort((a, b) => {
@@ -64,8 +65,9 @@ export function FileExplorerProvider({
   useEffect(() => {
     if (initialPath !== currentPath) {
       setCurrentPath(initialPath)
+      refresh(initialPath)
     }
-  }, [initialPath, currentPath])
+  }, [initialPath, currentPath, refresh])
 
   const routerNavigate = useNavigate()
 
@@ -78,6 +80,8 @@ export function FileExplorerProvider({
       search: (prev: any) => ({ ...prev, path }),
       replace: true, // Replace history entry to avoid clutter
     })
+    // Fetch immediately
+    refresh(path)
   }
 
   const createFile = async (name: string, content: string) => {

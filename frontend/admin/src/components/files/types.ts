@@ -30,7 +30,7 @@ export interface FileExplorerContextType {
   workspaceId: string
   currentPath: string
   navigate: (path: string) => void
-  refresh: () => void
+  refresh: (path?: string) => void
   files: LsEntry[]
   isLoading: boolean
   viewMode: ViewMode

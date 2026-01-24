@@ -77,7 +77,7 @@ export function FileExplorerToolbar() {
       </div>
       
       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-        <Button variant="ghost" size="icon" onClick={refresh} disabled={isLoading}>
+        <Button variant="ghost" size="icon" onClick={() => refresh()} disabled={isLoading}>
           <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
         </Button>
         <Button variant="outline" size="sm" onClick={handleNewFolder} className="h-8 w-8 sm:w-auto px-0 sm:px-3">

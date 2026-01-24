@@ -32,15 +32,24 @@ export function FileExplorerList() {
     setDeleteOpen(true)
   }
 
-  const handleRowDoubleClick = (file: LsEntry) => {
+  const handleView = (file: LsEntry) => {
+    if (file.file_type === 'folder') {
+      const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
+      navigate(newPath)
+    } else {
+      setActiveFile(file)
+      setViewerOpen(true)
+    }
+  }
+
+  const handleRowClick = (file: LsEntry) => {
     if (file.file_type === 'folder') {
       // Navigate to folder
       const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
       navigate(newPath)
     } else {
       // View file
-      setActiveFile(file)
-      setViewerOpen(true)
+      handleView(file)
     }
   }
 
@@ -58,6 +67,7 @@ export function FileExplorerList() {
     meta: {
       onEdit: handleEdit,
       onDelete: handleDelete,
+      onView: handleView,
     },
   })
 
@@ -104,7 +114,7 @@ export function FileExplorerList() {
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  onDoubleClick={() => handleRowDoubleClick(row.original)}
+                  onClick={() => handleRowClick(row.original)}
                   className="cursor-pointer hover:bg-muted/50"
                 >
                   {row.getVisibleCells().map((cell) => (

@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { LsEntry } from "./types"
-import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash } from "lucide-react"
+import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye } from "lucide-react"
 import { formatDateTime } from "@buildscale/sdk"
 import { Button } from "@buildscale/sdk"
 import {
@@ -86,17 +86,30 @@ export const columns: ColumnDef<LsEntry>[] = [
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => meta?.onEdit(entry)}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => meta?.onDelete(entry)} className="text-destructive focus:text-destructive">
-              <Trash className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation()
+                meta?.onView(entry)
+              }}>
+                <Eye className="mr-2 h-4 w-4" />
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation()
+                meta?.onEdit(entry)
+              }}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation()
+                meta?.onDelete(entry)
+              }} className="text-destructive focus:text-destructive">
+                <Trash className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
         </DropdownMenu>
       )
     },
