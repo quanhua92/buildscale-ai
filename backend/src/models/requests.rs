@@ -201,6 +201,7 @@ pub struct ReadArgs {
 pub struct WriteArgs {
     pub path: String,
     pub content: serde_json::Value,
+    pub file_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

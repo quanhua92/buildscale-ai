@@ -1,11 +1,15 @@
-use crate::{DbConn, error::Result};
-use crate::models::requests::{ToolResponse, WriteArgs, WriteResult, CreateFileRequest, CreateVersionRequest};
+use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
-use crate::services::files;
+use crate::models::requests::{
+    CreateFileRequest, CreateVersionRequest, ToolResponse, WriteArgs, WriteResult,
+};
 use crate::queries::files as file_queries;
-use uuid::Uuid;
-use serde_json::Value;
+use crate::services::files;
+use crate::DbConn;
 use async_trait::async_trait;
+use serde_json::Value;
+use std::str::FromStr;
+use uuid::Uuid;
 use super::Tool;
 
 /// Write file contents tool
@@ -46,6 +50,17 @@ impl Tool for WriteTool {
         } else {
             let filename = write_args.path.rsplit('/').next().unwrap_or("untitled");
             
+            let file_type = if let Some(ft_str) = write_args.file_type.as_deref() {
+                FileType::from_str(ft_str).map_err(|_| {
+                    Error::Validation(ValidationErrors::Single {
+                        field: "file_type".to_string(),
+                        message: format!("Invalid file type: {}", ft_str),
+                    })
+                })?
+            } else {
+                FileType::Document
+            };
+
             let file_result = files::create_file_with_content(conn, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
@@ -53,7 +68,7 @@ impl Tool for WriteTool {
                 name: filename.to_string(),
                 slug: None,
                 path: Some(write_args.path.clone()),
-                file_type: FileType::Document,
+                file_type,
                 content: write_args.content,
                 app_data: None,
             }).await?;

@@ -83,3 +83,23 @@ async fn test_write_duplicate_content() {
     
     assert_eq!(first_version_id, second_version_id);
 }
+
+#[tokio::test]
+async fn test_write_invalid_file_type() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Write Invalid Type Test").await;
+    
+    let content = serde_json::json!({"text": "content"});
+    let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
+        "path": "/test.txt",
+        "content": content,
+        "file_type": "invalid_type"
+    })).await;
+    
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+    assert!(body["error"].as_str().unwrap().contains("Validation failed"));
+    assert!(body["fields"]["file_type"].as_str().unwrap().contains("Invalid file type"));
+}

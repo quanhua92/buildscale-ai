@@ -131,33 +131,13 @@ export function FileExplorerProvider({
   }
 
   const createFolder = async (name: string) => {
-    try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
-      const parentPath = currentPath === '/' ? '' : currentPath
-      
-      const response = await fetch(`${baseUrl}/workspaces/${workspaceId}/files`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          path: `${parentPath}/${name}`,
-          file_type: 'folder',
-          name: name, // Required field
-          content: {}, // Required by some handlers, though empty for folder
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to create folder: ${response.statusText}`)
-      }
-
-      refresh()
-    } catch (error) {
-      console.error('Error creating folder:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create folder')
-    }
+    const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
+    await callTool('write', { 
+      path: filePath, 
+      content: {}, 
+      file_type: 'folder' 
+    })
+    refresh()
   }
 
   const updateFile = async (path: string, content: string) => {
