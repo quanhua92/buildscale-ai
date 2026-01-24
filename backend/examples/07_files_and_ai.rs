@@ -2,13 +2,13 @@ use buildscale::{
     load_config,
     models::{
         files::FileType,
-        requests::{CreateFileRequest, CreateVersionRequest, SemanticSearchHttp, UpdateFileHttp},
+        requests::{CreateFileRequest, CreateVersionRequest, SemanticSearchHttp, UpdateFileRequest},
         users::RegisterUser,
     },
     services::{
         files::{
             add_tag, create_file_with_content, create_version, get_file_network, link_files,
-            move_or_rename_file, process_file_for_ai, semantic_search,
+            update_file, process_file_for_ai, semantic_search,
         },
         users::register_user,
         workspaces::create_workspace,
@@ -95,6 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: "Research".to_string(),
         slug: None,
         path: None,
+        is_virtual: None,
+        permission: None,
         file_type: FileType::Folder,
         content: serde_json::json!({}),
         app_data: None,
@@ -110,6 +112,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: "RAG Guide".to_string(),
         slug: Some("rag_guide.md".to_string()),
         path: None,
+        is_virtual: None,
+        permission: None,
         file_type: FileType::Document,
         content: serde_json::json!("Retrieval-Augmented Generation (RAG) is a technique used to give LLMs access to external data."),
         app_data: Some(serde_json::json!({"tags": ["ai", "guide"]})),
@@ -125,6 +129,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: "Agents".to_string(),
         slug: Some("agents.md".to_string()),
         path: None,
+        is_virtual: None,
+        permission: None,
         file_type: FileType::Document,
         content: serde_json::json!("Autonomous agents use files as their toolbox to perform actions and remember context."),
         app_data: None,
@@ -155,12 +161,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ========================================================
     println!("🔄 STEP 4: Moving and Renaming");
     
-    let move_request = UpdateFileHttp {
+    let move_request = UpdateFileRequest {
         parent_id: Some(None), // Move to root
         name: Some("AI Agents Handbook".to_string()),
         slug: None,
+        is_virtual: None,
+        permission: None,
     };
-    let doc2_updated = move_or_rename_file(&mut conn, doc2.file.id, move_request).await?;
+    let doc2_updated = update_file(&mut conn, doc2.file.id, move_request).await?;
     println!("✓ Moved and Renamed: {} (Slug: /{})", doc2_updated.name, doc2_updated.slug);
     println!();
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE files\n        SET deleted_at = NULL, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        ",
+  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.path,\n            f.is_virtual,\n            f.permission,\n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_tags ft ON f.id = ft.file_id\n        WHERE f.workspace_id = $1 \n          AND ft.tag = $2\n          AND f.deleted_at IS NULL\n        ORDER BY f.updated_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -50,28 +50,39 @@
       },
       {
         "ordinal": 9,
+        "name": "is_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "permission",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -84,11 +95,13 @@
       false,
       false,
       false,
+      false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "3d7a9e8c840546e8ecb8d5d50ec717256f6f1cbf95d858a0535ba7c9353ba639"
+  "hash": "dbfb732953750b4df8c4ac54476e3f87b6fd9b65451dbac013918c4171f199d7"
 }

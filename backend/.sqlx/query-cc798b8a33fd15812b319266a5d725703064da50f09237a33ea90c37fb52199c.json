@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE id = $1\n        ",
+  "query": "\n            SELECT\n                id, workspace_id, parent_id, author_id,\n                file_type as \"file_type: crate::models::files::FileType\",\n                status as \"status: crate::models::files::FileStatus\",\n                name, slug, path,\n                is_virtual, permission,\n                latest_version_id,\n                deleted_at, created_at, updated_at\n            FROM files\n            WHERE workspace_id = $1\n              AND path LIKE $2 || '%'\n              AND path != $2\n              AND deleted_at IS NULL\n            ORDER BY path ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -25,12 +25,12 @@
       },
       {
         "ordinal": 4,
-        "name": "file_type: FileType",
+        "name": "file_type: crate::models::files::FileType",
         "type_info": "Text"
       },
       {
         "ordinal": 5,
-        "name": "status: FileStatus",
+        "name": "status: crate::models::files::FileStatus",
         "type_info": "Text"
       },
       {
@@ -50,28 +50,39 @@
       },
       {
         "ordinal": 9,
+        "name": "is_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "permission",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -84,11 +95,13 @@
       false,
       false,
       false,
+      false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "0da27fcf38701c7019c2eaf08c223f40b3abee13b7d1e7f271dbc86ecd902618"
+  "hash": "cc798b8a33fd15812b319266a5d725703064da50f09237a33ea90c37fb52199c"
 }

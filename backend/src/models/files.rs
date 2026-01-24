@@ -44,6 +44,8 @@ pub struct File {
     pub name: String,
     pub slug: String,
     pub path: String,
+    pub is_virtual: bool,
+    pub permission: i32,
 
     /// Cache for the latest version to avoid expensive JOINs/CTEs
     pub latest_version_id: Option<Uuid>,
@@ -63,6 +65,8 @@ pub struct NewFile {
     pub name: String,
     pub slug: String,
     pub path: String,
+    pub is_virtual: bool,
+    pub permission: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

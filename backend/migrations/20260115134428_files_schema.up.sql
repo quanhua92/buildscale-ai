@@ -10,6 +10,8 @@ CREATE TABLE files (
     name TEXT NOT NULL,              -- Display name (e.g., 'My Document.md')
     slug TEXT NOT NULL,              -- URL-safe identifier (e.g., 'my-document.md')
     path TEXT NOT NULL,              -- Materialized path for fast tree queries (e.g., '/folder/doc')
+    is_virtual BOOLEAN NOT NULL DEFAULT FALSE, -- If true, content is materialized on read
+    permission INT NOT NULL DEFAULT 600,       -- Unix-style permissions (Owner/Group/World)
     
     -- Cache for the latest version to avoid expensive JOINs/CTEs
     latest_version_id UUID,          -- Populated after the first version is created

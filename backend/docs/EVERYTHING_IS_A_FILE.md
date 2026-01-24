@@ -34,6 +34,8 @@ The `files` table is the central registry for all objects in the system.
 | `name` | TEXT | **Display Name.** Supports spaces, emojis, mixed case (e.g., "My Plan ✨"). |
 | `slug` | TEXT | **URL-safe Name.** Lowercase, hyphens (e.g., "my-plan"). Unique per folder. |
 | `path` | TEXT | **Materialized Path.** Absolute path for fast tree queries (e.g., "/my-plan/doc"). Unique per workspace. |
+| `is_virtual` | BOOLEAN | **Dynamic Content.** If true, content is generated on-the-fly (e.g. from `chat_messages` table) rather than stored in `file_versions`. |
+| `permission` | INT | **Unix-style Mode.** Access control (e.g. 600 for private, 755 for shared). Defaults to 600. |
 | `latest_version_id` | UUID | **Cache.** Points to the most recent version in `file_versions`. |
 | `deleted_at` | TIMESTAMPTZ | **Trash Bin.** If not NULL, the file is in the trash. |
 | `created_at` | TIMESTAMPTZ | Creation timestamp. |
@@ -115,6 +117,14 @@ Links versions to their chunks.
 | `chunk_id` | UUID | The chunk. |
 | `workspace_id` | UUID | **Tenant isolation.** |
 | `chunk_index` | INT | Order of the chunk in the document. |
+
+### 6. Virtual Files (Dynamic Content)
+
+For high-volume data like Chat Sessions, storing every single message as a new `file_version` blob would be inefficient.
+
+*   **`is_virtual = true`**: Indicates the file's content is not stored in `file_versions`.
+*   **Mechanism**: When read, the system dynamically materializes the content from a specialized source (e.g., a `chat_messages` table).
+*   **Use Case**: Infinite chat histories, real-time logs, or computed views.
 
 ## Common Access Patterns
 

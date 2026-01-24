@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND slug = $3\n          AND deleted_at IS NULL\n        ",
+  "query": "\n        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path, is_virtual, permission)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            is_virtual,\n            permission,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -50,21 +50,31 @@
       },
       {
         "ordinal": 9,
+        "name": "is_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "permission",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -73,7 +83,14 @@
       "Left": [
         "Uuid",
         "Uuid",
-        "Text"
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Int4"
       ]
     },
     "nullable": [
@@ -86,11 +103,13 @@
       false,
       false,
       false,
+      false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "be915fa9dc09b05358e36ee8cf156c9af262f7cef0e82d4b1b7f3174c998debd"
+  "hash": "c19e90b05e21d31e64174cc92560599a7242d4e31df882cd2c23a5d84a9bf848"
 }

@@ -76,6 +76,8 @@ pub struct CreateFileRequest {
     pub name: String,
     pub slug: Option<String>,
     pub path: Option<String>,
+    pub is_virtual: Option<bool>,
+    pub permission: Option<i32>,
     pub file_type: FileType,
     pub content: serde_json::Value,
     pub app_data: Option<serde_json::Value>,
@@ -97,6 +99,8 @@ pub struct CreateFileHttp {
     pub name: String,
     pub slug: Option<String>,
     pub path: Option<String>,
+    pub is_virtual: Option<bool>,
+    pub permission: Option<i32>,
     pub file_type: FileType,
     pub content: serde_json::Value,
     pub app_data: Option<serde_json::Value>,
@@ -128,6 +132,18 @@ pub struct UpdateFileHttp {
     pub parent_id: Option<Option<Uuid>>,
     pub name: Option<String>,
     pub slug: Option<String>,
+    pub is_virtual: Option<bool>,
+    pub permission: Option<i32>,
+}
+
+/// Service request for updating file metadata
+#[derive(Debug, Clone, Default)]
+pub struct UpdateFileRequest {
+    pub parent_id: Option<Option<Uuid>>,
+    pub name: Option<String>,
+    pub slug: Option<String>,
+    pub is_virtual: Option<bool>,
+    pub permission: Option<i32>,
 }
 
 /// Helper to deserialize double options (None = missing, Some(None) = null, Some(Some) = value)

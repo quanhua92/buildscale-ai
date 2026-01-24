@@ -75,6 +75,8 @@ impl Tool for WriteTool {
                 name: filename.to_string(),
                 slug: None,
                 path: Some(path.clone()),
+                is_virtual: None,
+                permission: None,
                 file_type,
                 content: write_args.content,
                 app_data: None,

@@ -5,7 +5,7 @@ use crate::{
         files::{File, FileStatus, FileType, NewFile, NewFileVersion},
         requests::{
             CreateFileRequest, CreateVersionRequest, FileNetworkSummary,
-            FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileHttp,
+            FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileRequest,
         },
     },
     queries::files,
@@ -97,6 +97,8 @@ pub async fn ensure_path_exists(
                 name: segment.to_string(),
                 slug: slug.clone(),
                 path: current_path_prefix.clone(),
+                is_virtual: false,
+                permission: 755,
             };
             let folder = files::create_file_identity(conn, new_folder).await?;
             current_parent_id = Some(folder.id);
@@ -197,6 +199,8 @@ pub async fn create_file_with_content(
         name,
         slug,
         path,
+        is_virtual: request.is_virtual.unwrap_or(false),
+        permission: request.permission.unwrap_or(600),
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
@@ -290,11 +294,11 @@ pub async fn get_file_with_content(conn: &mut DbConn, file_id: Uuid) -> Result<F
     })
 }
 
-/// Updates a file's metadata (move and/or rename)
-pub async fn move_or_rename_file(
+/// Updates a file's metadata (move, rename, virtual status, permissions)
+pub async fn update_file(
     conn: &mut DbConn,
     file_id: Uuid,
-    request: UpdateFileHttp,
+    request: UpdateFileRequest,
 ) -> Result<File> {
     // 1. Get current file state
     let current_file = files::get_file_by_id(conn, file_id).await?;
@@ -326,6 +330,9 @@ pub async fn move_or_rename_file(
         current_file.slug.clone()
     };
 
+    let target_is_virtual = request.is_virtual.unwrap_or(current_file.is_virtual);
+    let target_permission = request.permission.unwrap_or(current_file.permission);
+
     // 3. Start transaction for complex check and update
     let mut tx = conn.begin().await.map_err(|e| {
         Error::Internal(format!("Failed to begin transaction: {}", e))
@@ -345,6 +352,8 @@ pub async fn move_or_rename_file(
         && target_name == current_file.name 
         && target_slug == current_file.slug 
         && target_path == current_file.path
+        && target_is_virtual == current_file.is_virtual
+        && target_permission == current_file.permission
     {
         return Ok(current_file);
     }
@@ -377,7 +386,9 @@ pub async fn move_or_rename_file(
         target_parent_id, 
         &target_name, 
         &target_slug,
-        &target_path
+        &target_path,
+        target_is_virtual,
+        target_permission
     ).await?;
 
     // 9. If folder, update descendants (REBASE)
@@ -672,6 +683,8 @@ pub async fn semantic_search(
                 name: r.name,
                 slug: r.slug,
                 path: r.path,
+                is_virtual: r.is_virtual,
+                permission: r.permission,
                 latest_version_id: r.latest_version_id,
                 deleted_at: r.deleted_at,
                 created_at: r.created_at,
