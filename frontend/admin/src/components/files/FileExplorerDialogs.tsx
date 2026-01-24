@@ -10,6 +10,11 @@ import {
   Button,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@buildscale/sdk"
 import { Loader2 } from "lucide-react"
 
@@ -27,8 +32,10 @@ function FileEditor() {
   const { isEditorOpen, setEditorOpen, activeFile, createFile, updateFile, currentPath } = useFileExplorer()
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
+  const [fileType, setFileType] = useState('document')
   const [isSaving, setIsSaving] = useState(false)
   const nameId = React.useId()
+  const typeId = React.useId()
   const contentId = React.useId()
 
   // Reset form when opening
@@ -36,41 +43,22 @@ function FileEditor() {
     if (isEditorOpen) {
       if (activeFile) {
         setName(activeFile.name)
-        // Ideally we fetch content here if editing, but for "write" tool we overwrite.
-        // If we want to edit existing file content, we need to read it first.
-        // Let's defer that logic to the Viewer or implement fetch-on-edit here.
-        // For now, let's assume activeFile means we want to edit, so we should fetch content.
+        setFileType(activeFile.file_type)
       } else {
         setName('')
         setContent('')
+        setFileType('document')
       }
     }
   }, [isEditorOpen, activeFile])
   
-  // Fetch content for editing
-  useEffect(() => {
-    const fetchContent = async () => {
-      if (isEditorOpen && activeFile) {
-        // Implementation note: we need a way to read file content.
-        // But we can't easily access the `readFile` from context inside useEffect if it's not stable or if we don't want to trigger loops.
-        // Actually, we can.
-      }
-    }
-    fetchContent()
-  }, [isEditorOpen, activeFile])
-
-  // We need to access readFile from context, but we can't use `useFileExplorer` inside this component again if we already destructured it.
-  // Actually we can, or just use the props passed down if we unified it.
-  // But `FileEditor` is inside `FileExplorerDialogs` which is inside `FileExplorer`.
-  // So `useFileExplorer` works.
-  
-  // Let's handle the read inside the component body
+  // We need to access readFile from context
   const { readFile } = useFileExplorer()
   
   useEffect(() => {
     let mounted = true
     const loadContent = async () => {
-      if (isEditorOpen && activeFile) {
+      if (isEditorOpen && activeFile && activeFile.file_type !== 'folder') {
         const result = await readFile(activeFile.path)
         if (mounted && result && result.content) {
           // Handle content: could be string or object
@@ -91,7 +79,7 @@ function FileEditor() {
       if (activeFile) {
         await updateFile(activeFile.path, content)
       } else {
-        await createFile(name, content)
+        await createFile(name, content, fileType)
       }
       setEditorOpen(false)
     } finally {
@@ -110,17 +98,30 @@ function FileEditor() {
         </DialogHeader>
         <div className="flex-1 overflow-y-auto p-4 sm:p-0 flex flex-col gap-4">
           {!activeFile && (
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor={nameId} className="text-right">
-                Name
-              </Label>
-              <Input
-                id={nameId}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="col-span-3"
-                placeholder="filename.txt"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={nameId}>Name</Label>
+                <Input
+                  id={nameId}
+                  value={name}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+                  placeholder="filename.txt"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={typeId}>Type</Label>
+                <Select value={fileType} onValueChange={setFileType}>
+                  <SelectTrigger id={typeId}>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="document">Document</SelectItem>
+                    <SelectItem value="canvas">Canvas</SelectItem>
+                    <SelectItem value="chat">Chat</SelectItem>
+                    <SelectItem value="whiteboard">Whiteboard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
           <div className="flex flex-col gap-2 flex-1 min-h-[200px]">

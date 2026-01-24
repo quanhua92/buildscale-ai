@@ -19,7 +19,7 @@ import { columns } from "./columns"
 import type { LsEntry } from "./types"
 
 export function FileExplorerList() {
-  const { files, rowSelection, setRowSelection, setEditorOpen, setDeleteOpen, setActiveFile, navigate, currentPath, setViewerOpen } = useFileExplorer()
+  const { files, rowSelection, setRowSelection, setEditorOpen, setDeleteOpen, setActiveFile, navigate, setViewerOpen } = useFileExplorer()
   const [sorting, setSorting] = React.useState<SortingState>([])
 
   const handleEdit = (file: LsEntry) => {

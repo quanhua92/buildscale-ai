@@ -74,10 +74,14 @@ export function FileExplorerProvider({
     })
   }
 
-  const createFile = async (name: string, content: string) => {
+  const createFile = async (name: string, content: string, fileType: string = 'document') => {
     const cleanPath = initialPath.endsWith('/') ? initialPath : `${initialPath}/`
     const filePath = `${cleanPath}${name}`
-    await callTool('write', { path: filePath, content: { text: content } })
+    await callTool('write', { 
+      path: filePath, 
+      content: { text: content },
+      file_type: fileType
+    })
     refresh()
   }
 

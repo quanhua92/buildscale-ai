@@ -37,7 +37,7 @@ export interface FileExplorerContextType {
   setViewMode: (mode: ViewMode) => void
   
   // Actions
-  createFile: (name: string, content: string) => Promise<void>
+  createFile: (name: string, content: string, fileType?: FileType | string) => Promise<void>
   createFolder: (name: string) => Promise<void>
   updateFile: (path: string, content: string) => Promise<void>
   deleteItem: (path: string) => Promise<void>

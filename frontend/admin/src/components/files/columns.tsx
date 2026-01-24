@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { LsEntry } from "./types"
-import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye } from "lucide-react"
+import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor } from "lucide-react"
 import { formatDateTime } from "@buildscale/sdk"
 import { Button } from "@buildscale/sdk"
 import {
@@ -39,11 +39,31 @@ export const columns: ColumnDef<LsEntry>[] = [
     header: "Name",
     cell: ({ row }) => {
       const fileType = row.original.file_type
-      const Icon = fileType === 'folder' ? FolderIcon : FileTextIcon
+      let Icon = FileTextIcon
+      let iconColor = "text-gray-500"
+
+      switch (fileType) {
+        case 'folder':
+          Icon = FolderIcon
+          iconColor = "text-blue-500"
+          break
+        case 'canvas':
+          Icon = Presentation
+          iconColor = "text-purple-500"
+          break
+        case 'chat':
+          Icon = MessageSquare
+          iconColor = "text-green-500"
+          break
+        case 'whiteboard':
+          Icon = Monitor
+          iconColor = "text-orange-500"
+          break
+      }
       
       return (
         <div className="flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${fileType === 'folder' ? 'text-blue-500' : 'text-gray-500'}`} />
+          <Icon className={`h-4 w-4 ${iconColor}`} />
           <span className="font-medium">{row.getValue("name")}</span>
         </div>
       )
