@@ -205,7 +205,11 @@ pub async fn create_file_with_content(
         path,
         is_virtual: request.is_virtual.unwrap_or(false),
         is_remote: request.is_remote.unwrap_or(false),
-        permission: request.permission.unwrap_or(DEFAULT_FILE_PERMISSION),
+        permission: request.permission.unwrap_or(if request.file_type == FileType::Folder {
+            DEFAULT_FOLDER_PERMISSION
+        } else {
+            DEFAULT_FILE_PERMISSION
+        }),
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
