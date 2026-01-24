@@ -32,6 +32,14 @@ impl Tool for LsTool {
             let parent_file = files::get_file_by_path(conn, workspace_id, &path)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("Directory not found: {}", path)))?;
+            
+            if !matches!(parent_file.file_type, crate::models::files::FileType::Folder) {
+                return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                    field: "path".to_string(),
+                    message: format!("Path is not a directory: {}", path),
+                }));
+            }
+            
             Some(parent_file.id)
         };
         

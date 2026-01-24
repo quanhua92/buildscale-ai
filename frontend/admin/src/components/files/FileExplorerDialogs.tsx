@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@buildscale/sdk"
 import { Loader2 } from "lucide-react"
+import { getContentAsString } from './utils'
 
 export function FileExplorerDialogs() {
   return (
@@ -121,12 +122,8 @@ function FileEditor() {
     const loadContent = async () => {
       if (isEditorOpen && activeFile && activeFile.file_type !== 'folder') {
         const result = await readFile(activeFile.path)
-        if (mounted && result && result.content) {
-          // Handle content: could be string or object
-          const text = typeof result.content === 'string' 
-            ? result.content 
-            : result.content.text || JSON.stringify(result.content, null, 2)
-          setContent(text)
+        if (mounted && result) {
+          setContent(getContentAsString(result.content))
         }
       }
     }
@@ -146,7 +143,9 @@ function FileEditor() {
           // If it fails, fallback to wrapping in text object
           structuredContent = JSON.parse(content)
         } catch (e) {
-          console.warn('Failed to parse content as JSON for type:', fileType, 'falling back to text wrapper')
+          if (import.meta.env.DEV) {
+            console.warn('Failed to parse content as JSON for type:', fileType, 'falling back to text wrapper')
+          }
           structuredContent = { text: content }
         }
       }
@@ -234,10 +233,7 @@ function FileViewer() {
         try {
           const result = await readFile(activeFile.path)
           if (mounted && result) {
-            const text = typeof result.content === 'string' 
-              ? result.content 
-              : result.content.text || JSON.stringify(result.content, null, 2)
-            setContent(text)
+            setContent(getContentAsString(result.content))
           }
         } finally {
           if (mounted) setIsLoading(false)
