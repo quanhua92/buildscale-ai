@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chat_res = client.post(&format!("{}/workspaces/{}/chats", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({
-            "goal": "Hello! List the files in the current directory please.",
+            "goal": "Hello! I want to start an engineering session in this workspace.",
             "agents": []
         }))
         .send()
@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("5️⃣  Phase 3: Sending interaction command...");
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "content": "Analyze the current project structure." }))
+        .json(&json!({ "content": "Please create a file named 'buildscale_status.txt' in the root directory with the content 'The Agentic Engine is operational and verified.'" }))
         .send()
         .await?;
 

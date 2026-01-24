@@ -207,10 +207,19 @@ impl RigTool for RigWriteTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(&self, mut args: Self::Args) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
         let pool = self.pool.clone();
         let workspace_id = self.workspace_id;
         let user_id = self.user_id;
+        
+        // Auto-wrap string content into the expected JSON structure for documents
+        if args.content.is_string() {
+            let file_type = args.file_type.as_deref().unwrap_or("document");
+            if file_type == "document" {
+                args.content = serde_json::json!({ "text": args.content.as_str().unwrap() });
+            }
+        }
+
         async move {
             let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
             let tool = tools::write::WriteTool;
