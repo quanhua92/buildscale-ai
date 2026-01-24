@@ -137,10 +137,24 @@ function FileEditor() {
   const handleSave = async () => {
     setIsSaving(true)
     try {
+      // Construct appropriate content structure based on file type
+      let structuredContent: any = { text: content }
+      
+      if (fileType !== 'document') {
+        try {
+          // If it's a specialized type, try to parse textarea as JSON
+          // If it fails, fallback to wrapping in text object
+          structuredContent = JSON.parse(content)
+        } catch (e) {
+          console.warn('Failed to parse content as JSON for type:', fileType, 'falling back to text wrapper')
+          structuredContent = { text: content }
+        }
+      }
+
       if (activeFile) {
-        await updateFile(activeFile.path, content)
+        await updateFile(activeFile.path, structuredContent)
       } else {
-        await createFile(name, content, fileType)
+        await createFile(name, structuredContent, fileType)
       }
       setEditorOpen(false)
     } finally {

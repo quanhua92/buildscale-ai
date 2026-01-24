@@ -70,17 +70,17 @@ export function FileExplorerProvider({
     // Just update URL, effect will handle fetching and state sync
     routerNavigate({
       to: '.',
-      search: (prev: any) => ({ ...prev, path }),
+      search: (prev: { path?: string }) => ({ ...prev, path }),
       replace: true,
     })
   }
 
-  const createFile = async (name: string, content: string, fileType: string = 'document') => {
+  const createFile = async (name: string, content: any, fileType: string = 'document') => {
     const cleanPath = initialPath.endsWith('/') ? initialPath : `${initialPath}/`
     const filePath = `${cleanPath}${name}`
     await callTool('write', { 
       path: filePath, 
-      content: { text: content },
+      content,
       file_type: fileType
     })
     await refresh()
@@ -97,8 +97,8 @@ export function FileExplorerProvider({
     await refresh()
   }
 
-  const updateFile = async (path: string, content: string) => {
-    await callTool('write', { path, content: { text: content } })
+  const updateFile = async (path: string, content: any) => {
+    await callTool('write', { path, content })
     await refresh()
   }
 
