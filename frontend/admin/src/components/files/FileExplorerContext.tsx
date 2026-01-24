@@ -66,6 +66,12 @@ export function FileExplorerProvider({
 
   const routerNavigate = useNavigate()
 
+  const buildNewItemPath = useCallback((name: string) => {
+    const base = initialPath || '/'
+    const cleanPath = base.endsWith('/') ? base : `${base}/`
+    return `${cleanPath}${name}`.replace(/\/+/g, '/')
+  }, [initialPath])
+
   const navigate = useCallback((path: string) => {
     // Just update URL, effect will handle fetching and state sync
     routerNavigate({
@@ -76,9 +82,7 @@ export function FileExplorerProvider({
   }, [routerNavigate])
 
   const createFile = useCallback(async (name: string, content: any, fileType: string = 'document') => {
-    const base = initialPath || '/'
-    const cleanPath = base.endsWith('/') ? base : `${base}/`
-    const filePath = `${cleanPath}${name}`.replace(/\/+/g, '/')
+    const filePath = buildNewItemPath(name)
     
     await callTool('write', { 
       path: filePath, 
@@ -86,12 +90,10 @@ export function FileExplorerProvider({
       file_type: fileType
     })
     await refresh()
-  }, [initialPath, callTool, refresh])
+  }, [buildNewItemPath, callTool, refresh])
 
   const createFolder = useCallback(async (name: string) => {
-    const base = initialPath || '/'
-    const cleanPath = base.endsWith('/') ? base : `${base}/`
-    const filePath = `${cleanPath}${name}`.replace(/\/+/g, '/')
+    const filePath = buildNewItemPath(name)
 
     await callTool('write', { 
       path: filePath, 
@@ -99,7 +101,7 @@ export function FileExplorerProvider({
       file_type: 'folder' 
     })
     await refresh()
-  }, [initialPath, callTool, refresh])
+  }, [buildNewItemPath, callTool, refresh])
 
   const updateFile = useCallback(async (path: string, content: any) => {
     await callTool('write', { path, content })
