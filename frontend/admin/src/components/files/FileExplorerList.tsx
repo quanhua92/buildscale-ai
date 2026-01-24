@@ -44,9 +44,8 @@ export function FileExplorerList() {
 
   const handleRowClick = (file: LsEntry) => {
     if (file.file_type === 'folder') {
-      // Navigate to folder
-      const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
-      navigate(newPath)
+      // Navigate to folder using its absolute path from the backend
+      navigate(file.path)
     } else {
       // View file
       handleView(file)

@@ -26,9 +26,17 @@ impl Tool for LsTool {
         let path = ls_args.path.unwrap_or_else(|| "/".to_string());
         let recursive = ls_args.recursive.unwrap_or(false);
         
-        let parent_file = files::get_file_by_path(conn, workspace_id, &path).await?;
-        
-        let parent_id = parent_file.map(|f| f.id);
+        let parent_id = if path == "/" || path.is_empty() {
+            None
+        } else {
+            let parent_file = files::get_file_by_path(conn, workspace_id, &path).await?;
+            match parent_file {
+                Some(f) => Some(f.id),
+                None => {
+                    return Err(Error::NotFound(format!("Directory not found: {}", path)));
+                }
+            }
+        };
         
         let files = if recursive {
             Self::list_files_recursive(conn, workspace_id, &path).await?
