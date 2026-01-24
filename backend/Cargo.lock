@@ -251,6 +251,7 @@ dependencies = [
  "hex",
  "hmac",
  "http",
+ "indexmap",
  "jsonwebtoken",
  "nanoid",
  "password-hash",
@@ -1347,6 +1348,8 @@ checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

@@ -52,7 +52,7 @@ pub struct ChatMessage {
     pub workspace_id: Uuid,
     pub role: ChatMessageRole,
     pub content: String,
-    pub metadata: ChatMessageMetadata,
+    pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
@@ -64,7 +64,7 @@ pub struct NewChatMessage {
     pub workspace_id: Uuid,
     pub role: ChatMessageRole,
     pub content: String,
-    pub metadata: ChatMessageMetadata,
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

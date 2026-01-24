@@ -104,6 +104,21 @@ pub async fn update_latest_version_id(
     Ok(())
 }
 
+/// Updates the `updated_at` timestamp for a file.
+pub async fn touch_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE files SET updated_at = NOW() WHERE id = $1
+        "#,
+        file_id
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(())
+}
+
 /// Gets a file by its ID.
 pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
     let file = sqlx::query_as!(

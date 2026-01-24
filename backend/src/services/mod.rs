@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod cookies;
 pub mod files;
 pub mod invitations;
