@@ -131,28 +131,33 @@ export function FileExplorerProvider({
   }
 
   const createFolder = async (name: string) => {
-    // The write tool might handle folder creation if the path implies it, 
-    // or we might need a specific way to create folders. 
-    // Looking at backend docs: "Create File" endpoint handles folders. 
-    // But "Tools API" has `write`. 
-    // The `write` tool description says "Create or update file". 
-    // Does `write` support creating empty folders? Maybe not directly via `write` tool if it expects content.
-    // The `ls` tool just lists.
-    // If we strictly stick to the 4 tools, we use `write` to create files. 
-    // To create a folder, we might need to use the `POST /files` endpoint directly if the `write` tool doesn't support folder creation explicitly.
-    // However, the backend doc says "Everything is a File". 
-    // Let's assume for now we create a file. If we MUST create a folder, we might need to use the REST API `create_file` instead of the tool.
-    // For this implementation, let's focus on files first, or maybe `write` with specific content creates a folder?
-    // Checking `backend/src/tools/write.rs` would verify this, but let's stick to files for now or use a hack like creating a .keep file.
-    
-    // Actually, let's look at the `create_file` handler. It supports `file_type`.
-    // The `write` tool uses `file_services::create_version` or `create_file_with_content`.
-    // Let's assume we can only create files via `write` for now unless we extend the tools.
-    // We will implement "New File" primarily.
-    
-    const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
-     await callTool('write', { path: filePath, content: { text: "" } }) // Create empty file
-     refresh()
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
+      const parentPath = currentPath === '/' ? '' : currentPath
+      
+      const response = await fetch(`${baseUrl}/workspaces/${workspaceId}/files`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          path: `${parentPath}/${name}`,
+          file_type: 'folder',
+          name: name, // Required field
+          content: {}, // Required by some handlers, though empty for folder
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to create folder: ${response.statusText}`)
+      }
+
+      refresh()
+    } catch (error) {
+      console.error('Error creating folder:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create folder')
+    }
   }
 
   const updateFile = async (path: string, content: string) => {
