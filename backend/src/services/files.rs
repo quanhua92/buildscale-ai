@@ -213,7 +213,7 @@ pub async fn create_file_with_content(
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
-    // 5. Create first version record (Physical anchor for both real and virtual files)
+    // 5. Create initial version record (Ensures structural consistency for all file types)
     let hash = hash_content(&request.content)?;
     let new_version = NewFileVersion {
         file_id: file.id,
