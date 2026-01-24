@@ -1,18 +1,16 @@
 use crate::error::Error;
 use crate::tools::{self, Tool};
-use crate::DbConn;
+use crate::DbPool;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool as RigTool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 use std::future::Future;
 
 /// A Rig-compatible wrapper for BuildScale tools.
 pub struct RigLsTool {
-    pub conn: Arc<Mutex<DbConn>>,
+    pub pool: DbPool,
     pub workspace_id: Uuid,
     pub user_id: Uuid,
 }
@@ -45,11 +43,11 @@ impl RigTool for RigLsTool {
     }
 
     fn call(&self, args: Self::Args) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
-        let conn = self.conn.clone();
+        let pool = self.pool.clone();
         let workspace_id = self.workspace_id;
         let user_id = self.user_id;
         async move {
-            let mut conn = conn.lock().await;
+            let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
             let tool = tools::ls::LsTool;
             let response = tool
                 .execute(
@@ -71,7 +69,7 @@ impl RigTool for RigLsTool {
 }
 
 pub struct RigReadTool {
-    pub conn: Arc<Mutex<DbConn>>,
+    pub pool: DbPool,
     pub workspace_id: Uuid,
     pub user_id: Uuid,
 }
@@ -102,11 +100,11 @@ impl RigTool for RigReadTool {
     }
 
     fn call(&self, args: Self::Args) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
-        let conn = self.conn.clone();
+        let pool = self.pool.clone();
         let workspace_id = self.workspace_id;
         let user_id = self.user_id;
         async move {
-            let mut conn = conn.lock().await;
+            let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
             let tool = tools::read::ReadTool;
             let response = tool
                 .execute(
@@ -128,7 +126,7 @@ impl RigTool for RigReadTool {
 }
 
 pub struct RigWriteTool {
-    pub conn: Arc<Mutex<DbConn>>,
+    pub pool: DbPool,
     pub workspace_id: Uuid,
     pub user_id: Uuid,
 }
@@ -164,11 +162,11 @@ impl RigTool for RigWriteTool {
     }
 
     fn call(&self, args: Self::Args) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
-        let conn = self.conn.clone();
+        let pool = self.pool.clone();
         let workspace_id = self.workspace_id;
         let user_id = self.user_id;
         async move {
-            let mut conn = conn.lock().await;
+            let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
             let tool = tools::write::WriteTool;
             let response = tool
                 .execute(
@@ -190,7 +188,7 @@ impl RigTool for RigWriteTool {
 }
 
 pub struct RigRmTool {
-    pub conn: Arc<Mutex<DbConn>>,
+    pub pool: DbPool,
     pub workspace_id: Uuid,
     pub user_id: Uuid,
 }
@@ -221,11 +219,11 @@ impl RigTool for RigRmTool {
     }
 
     fn call(&self, args: Self::Args) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
-        let conn = self.conn.clone();
+        let pool = self.pool.clone();
         let workspace_id = self.workspace_id;
         let user_id = self.user_id;
         async move {
-            let mut conn = conn.lock().await;
+            let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
             let tool = tools::rm::RmTool;
             let response = tool
                 .execute(

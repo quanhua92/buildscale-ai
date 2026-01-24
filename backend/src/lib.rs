@@ -183,6 +183,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::workspaces as workspace_handlers;
     use crate::handlers::members as member_handlers;
     use crate::handlers::files as file_handlers;
+    use crate::handlers::chat as chat_handlers;
     use crate::handlers::tools as tool_handlers;
     use crate::middleware::workspace_access::workspace_access_middleware;
 
@@ -327,6 +328,31 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/tools",
             post(tool_handlers::execute_tool)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        // Chat routes
+        .route(
+            "/{id}/chats",
+            post(chat_handlers::create_chat)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/chats/{chat_id}",
+            post(chat_handlers::post_chat_message)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/chats/{chat_id}/events",
+            get(chat_handlers::get_chat_events)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

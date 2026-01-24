@@ -1,11 +1,9 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
 use crate::services::chat::rig_tools::{RigLsTool, RigReadTool, RigRmTool, RigWriteTool};
-use crate::DbConn;
+use crate::DbPool;
 use crate::error::Result;
 use rig::providers::openai::{self, responses_api::ResponsesCompletionModel};
 use rig::completion::Message;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 pub struct RigService {
@@ -29,7 +27,7 @@ impl RigService {
     /// Creates a Rig agent configured for the given chat session.
     pub async fn create_agent(
         &self,
-        conn: Arc<Mutex<DbConn>>,
+        pool: DbPool,
         workspace_id: Uuid,
         user_id: Uuid,
         session: &ChatSession,
@@ -47,22 +45,22 @@ impl RigService {
         let agent = self.client.agent(model_name)
             .preamble("You are BuildScale AI, a professional software engineering assistant.")
             .tool(RigLsTool {
-                conn: conn.clone(),
+                pool: pool.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigReadTool {
-                conn: conn.clone(),
+                pool: pool.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigWriteTool {
-                conn: conn.clone(),
+                pool: pool.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigRmTool {
-                conn: conn.clone(),
+                pool: pool.clone(),
                 workspace_id,
                 user_id,
             })

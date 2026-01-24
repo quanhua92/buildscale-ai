@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE files SET updated_at = NOW() WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "82a9dd34e5c585da69e7cfbc7332cd7943ca1ef8c814a6c8514d550bac8e4525"
+}

@@ -206,6 +206,18 @@ pub struct ToolRequest {
     pub args: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateChatRequest {
+    pub goal: String,
+    pub files: Option<Vec<Uuid>>,
+    pub agents: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PostChatMessageRequest {
+    pub content: String,
+}
+
 /// Tool-specific argument structures
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct LsArgs {

@@ -1,4 +1,7 @@
-use crate::{cache::Cache, database::DbPool, models::users::User};
+use crate::{
+    cache::Cache, database::DbPool, models::users::User, services::chat::registry::AgentRegistry,
+};
+use std::sync::Arc;
 
 /// Application state shared across all HTTP handlers
 ///
@@ -12,6 +15,8 @@ pub struct AppState {
     pub user_cache: Cache<User>,
     /// Database connection pool for accessing the database
     pub pool: DbPool,
+    /// Registry for active AI agents
+    pub agents: Arc<AgentRegistry>,
 }
 
 impl AppState {
@@ -22,6 +27,11 @@ impl AppState {
     /// * `user_cache` - User cache instance to use
     /// * `pool` - Database connection pool
     pub fn new(cache: Cache<String>, user_cache: Cache<User>, pool: DbPool) -> Self {
-        Self { cache, user_cache, pool }
+        Self {
+            cache,
+            user_cache,
+            pool,
+            agents: Arc::new(AgentRegistry::new()),
+        }
     }
 }

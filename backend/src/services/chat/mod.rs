@@ -1,4 +1,6 @@
+pub mod actor;
 pub mod context;
+pub mod registry;
 pub mod rig_engine;
 pub mod rig_tools;
 

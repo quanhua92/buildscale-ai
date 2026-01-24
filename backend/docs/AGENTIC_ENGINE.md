@@ -34,25 +34,16 @@ Used to start a conversation, attach files, or define a goal.
 }
 ```
 
-### B. Server Handshake (SSE Initialization)
-The server returns an SSE stream. The first event (`session_init`) provides the file anchors.
-*   **chat_id:** The UUID of the **Agentic Engine** `.chat` file.
-*   **plan_id:** The UUID of the **Agentic Engine** `.plan.md` file.
-*   **agents:** The final list of active agents (including server-injected agents like a Planner).
+### B. Server Handshake (The Event Pipe)
+The client connects to the event stream to receive real-time updates. This pipe is decoupled from commands to allow background execution.
+**Endpoint:** `GET /api/v1/workspaces/:id/chats/:chat_id/events`
+*   **Response:** `text/event-stream`
+*   **Events:** `thought`, `call`, `observation`, `chunk`, `done`.
 
-### C. Subsequent Requests (The Follow-up)
-Once anchored, the client sends only the newest interaction. The **Agentic Engine** reads the chat file to reconstruct the deep history.
+### C. Subsequent Requests (The Command Bus)
+Once anchored, the client sends new interactions via standard POST requests. The backend processes these in a persistent background actor.
 **Endpoint:** `POST /api/v1/workspaces/:workspace_id/chats/:chat_id`
-
-```json
-{
-  "chat_id": "uuid-chat-file",
-  "plan_id": "uuid-plan-file",
-  "recent_messages": [
-    { "role": "user", "content": "Actually, use Stripe for the billing." }
-  ]
-}
-```
+*   **Response:** `202 Accepted`
 
 ## 3. Execution Scenarios & Workflows
 
