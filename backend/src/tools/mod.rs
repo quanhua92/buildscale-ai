@@ -81,21 +81,30 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
 }
 
 /// Normalizes a file system path for consistency.
-/// Trims whitespace and ensures it starts with a / and has no trailing /.
-/// Collapses multiple consecutive slashes into one.
+/// Trims whitespace, ensures it starts with a / and has no trailing /.
+/// Collapses multiple consecutive slashes into one and handles . and .. segments.
 pub fn normalize_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "/" {
         return "/".to_string();
     }
 
-    let normalized = trimmed
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("/");
+    let mut components = Vec::new();
+    for segment in trimmed.split('/') {
+        match segment {
+            "" | "." => continue,
+            ".." => {
+                components.pop();
+            }
+            _ => components.push(segment),
+        }
+    }
 
-    format!("/{}", normalized)
+    if components.is_empty() {
+        return "/".to_string();
+    }
+
+    format!("/{}", components.join("/"))
 }
 
 /// Tool executor enum for dispatching tool execution

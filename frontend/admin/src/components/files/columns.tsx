@@ -49,31 +49,19 @@ export const columns: ColumnDef<LsEntry>[] = [
     header: "Name",
     cell: ({ row }) => {
       const fileType = row.original.file_type
-      let Icon = FileTextIcon
-      let iconColor = "text-gray-500"
-
-      switch (fileType) {
-        case 'folder':
-          Icon = FolderIcon
-          iconColor = "text-blue-500"
-          break
-        case 'canvas':
-          Icon = Presentation
-          iconColor = "text-purple-500"
-          break
-        case 'chat':
-          Icon = MessageSquare
-          iconColor = "text-green-500"
-          break
-        case 'whiteboard':
-          Icon = Monitor
-          iconColor = "text-orange-500"
-          break
+      
+      const config: Record<string, { Icon: any; color: string }> = {
+        folder: { Icon: FolderIcon, color: "text-blue-500" },
+        canvas: { Icon: Presentation, color: "text-purple-500" },
+        chat: { Icon: MessageSquare, color: "text-green-500" },
+        whiteboard: { Icon: Monitor, color: "text-orange-500" },
       }
+
+      const { Icon, color } = config[fileType] || { Icon: FileTextIcon, color: "text-gray-500" }
       
       return (
         <div className="flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${iconColor}`} />
+          <Icon className={`h-4 w-4 ${color}`} />
           <span className="font-medium">{row.getValue("name")}</span>
         </div>
       )

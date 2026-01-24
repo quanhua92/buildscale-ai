@@ -142,8 +142,9 @@ function FileEditor() {
         structuredContent = { text: content }
       } else {
         try {
-          // For specialized types, content must be valid JSON
-          structuredContent = JSON.parse(content)
+          // For specialized types, content must be valid JSON. 
+          // Treat empty content as empty object.
+          structuredContent = content.trim() === '' ? {} : JSON.parse(content)
         } catch (e) {
           toast.error(`Invalid JSON content for ${fileType}. Please check your syntax.`)
           setIsSaving(false)
