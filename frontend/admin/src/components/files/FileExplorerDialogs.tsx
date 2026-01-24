@@ -23,8 +23,68 @@ export function FileExplorerDialogs() {
     <>
       <FileEditor />
       <FileViewer />
+      <NewFolderDialog />
       <DeleteDialog />
     </>
+  )
+}
+
+function NewFolderDialog() {
+  const { isFolderOpen, setFolderOpen, createFolder, currentPath } = useFileExplorer()
+  const [name, setName] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const nameId = React.useId()
+
+  useEffect(() => {
+    if (isFolderOpen) {
+      setName('')
+    }
+  }, [isFolderOpen])
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name) return
+    setIsSaving(true)
+    try {
+      await createFolder(name)
+      setFolderOpen(false)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={isFolderOpen} onOpenChange={setFolderOpen}>
+      <DialogContent className="w-[95vw] sm:max-w-md">
+        <form onSubmit={handleSave}>
+          <DialogHeader>
+            <DialogTitle>New Folder</DialogTitle>
+            <DialogDescription>
+              Create a new folder in {currentPath}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={nameId}>Name</Label>
+              <Input
+                id={nameId}
+                value={name}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+                placeholder="Folder name"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setFolderOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={isSaving || !name}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -44,6 +104,7 @@ function FileEditor() {
       if (activeFile) {
         setName(activeFile.name)
         setFileType(activeFile.file_type)
+        setContent('') // Reset content while loading
       } else {
         setName('')
         setContent('')

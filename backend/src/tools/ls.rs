@@ -29,13 +29,10 @@ impl Tool for LsTool {
         let parent_id = if path == "/" {
             None
         } else {
-            let parent_file = files::get_file_by_path(conn, workspace_id, &path).await?;
-            match parent_file {
-                Some(f) => Some(f.id),
-                None => {
-                    return Err(Error::NotFound(format!("Directory not found: {}", path)));
-                }
-            }
+            let parent_file = files::get_file_by_path(conn, workspace_id, &path)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("Directory not found: {}", path)))?;
+            Some(parent_file.id)
         };
         
         let files = if recursive {

@@ -52,6 +52,8 @@ export interface FileExplorerContextType {
   setEditorOpen: (open: boolean) => void
   isViewerOpen: boolean
   setViewerOpen: (open: boolean) => void
+  isFolderOpen: boolean
+  setFolderOpen: (open: boolean) => void
   isDeleteOpen: boolean
   setDeleteOpen: (open: boolean) => void
   

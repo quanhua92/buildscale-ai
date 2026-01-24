@@ -27,6 +27,7 @@ export function FileExplorerProvider({
   // UI States
   const [isEditorOpen, setEditorOpen] = useState(false)
   const [isViewerOpen, setViewerOpen] = useState(false)
+  const [isFolderOpen, setFolderOpen] = useState(false)
   const [isDeleteOpen, setDeleteOpen] = useState(false)
   const [activeFile, setActiveFile] = useState<LsEntry | null>(null)
 
@@ -82,7 +83,7 @@ export function FileExplorerProvider({
       content: { text: content },
       file_type: fileType
     })
-    refresh()
+    await refresh()
   }
 
   const createFolder = async (name: string) => {
@@ -93,17 +94,17 @@ export function FileExplorerProvider({
       content: {}, 
       file_type: 'folder' 
     })
-    refresh()
+    await refresh()
   }
 
   const updateFile = async (path: string, content: string) => {
     await callTool('write', { path, content: { text: content } })
-    refresh()
+    await refresh()
   }
 
   const deleteItem = async (path: string) => {
     await callTool('rm', { path })
-    refresh()
+    await refresh()
     setRowSelection({})
   }
 
@@ -132,6 +133,8 @@ export function FileExplorerProvider({
       setEditorOpen,
       isViewerOpen,
       setViewerOpen,
+      isFolderOpen,
+      setFolderOpen,
       isDeleteOpen,
       setDeleteOpen,
       activeFile,

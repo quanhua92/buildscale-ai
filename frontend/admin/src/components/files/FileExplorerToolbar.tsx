@@ -12,7 +12,7 @@ import {
 import { RefreshCw, FolderPlus, FilePlus, ChevronRight, Home } from "lucide-react"
 
 export function FileExplorerToolbar() {
-  const { currentPath, navigate, refresh, isLoading, setEditorOpen, setActiveFile, createFolder } = useFileExplorer()
+  const { currentPath, navigate, refresh, isLoading, setEditorOpen, setFolderOpen, setActiveFile } = useFileExplorer()
 
   const pathParts = currentPath.split('/').filter(Boolean)
   
@@ -30,11 +30,8 @@ export function FileExplorerToolbar() {
     setEditorOpen(true)
   }
 
-  const handleNewFolder = async () => {
-    const folderName = prompt("Enter folder name:")
-    if (folderName) {
-      await createFolder(folderName)
-    }
+  const handleNewFolder = () => {
+    setFolderOpen(true)
   }
 
   return (
