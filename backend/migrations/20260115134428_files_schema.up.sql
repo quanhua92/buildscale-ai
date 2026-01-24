@@ -11,6 +11,7 @@ CREATE TABLE files (
     slug TEXT NOT NULL,              -- URL-safe identifier (e.g., 'my-document.md')
     path TEXT NOT NULL,              -- Materialized path for fast tree queries (e.g., '/folder/doc')
     is_virtual BOOLEAN NOT NULL DEFAULT FALSE, -- If true, content is materialized on read
+    is_remote BOOLEAN NOT NULL DEFAULT FALSE,  -- If true, content is stored in object storage
     permission INT NOT NULL DEFAULT 600,       -- Unix-style permissions (Owner/Group/World)
     
     -- Cache for the latest version to avoid expensive JOINs/CTEs

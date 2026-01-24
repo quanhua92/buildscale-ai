@@ -96,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         slug: None,
         path: None,
         is_virtual: None,
+        is_remote: None,
         permission: None,
         file_type: FileType::Folder,
         content: serde_json::json!({}),
@@ -113,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         slug: Some("rag_guide.md".to_string()),
         path: None,
         is_virtual: None,
+        is_remote: None,
         permission: None,
         file_type: FileType::Document,
         content: serde_json::json!("Retrieval-Augmented Generation (RAG) is a technique used to give LLMs access to external data."),
@@ -130,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         slug: Some("agents.md".to_string()),
         path: None,
         is_virtual: None,
+        is_remote: None,
         permission: None,
         file_type: FileType::Document,
         content: serde_json::json!("Autonomous agents use files as their toolbox to perform actions and remember context."),
@@ -166,6 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: Some("AI Agents Handbook".to_string()),
         slug: None,
         is_virtual: None,
+        is_remote: None,
         permission: None,
     };
     let doc2_updated = update_file(&mut conn, doc2.file.id, move_request).await?;

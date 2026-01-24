@@ -11,8 +11,8 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
     let file = sqlx::query_as!(
         File,
         r#"
-        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path, is_virtual, permission)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path, is_virtual, is_remote, permission)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING 
             id, 
             workspace_id, 
@@ -24,6 +24,7 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -39,6 +40,7 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
         new_file.slug,
         new_file.path,
         new_file.is_virtual,
+        new_file.is_remote,
         new_file.permission
     )
     .fetch_one(conn)
@@ -118,6 +120,7 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -217,6 +220,7 @@ pub async fn get_file_by_slug(
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -259,6 +263,7 @@ pub async fn list_files_in_folder(
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -350,6 +355,7 @@ pub async fn get_file_by_path(
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -438,13 +444,14 @@ pub async fn update_file_metadata(
     slug: &str,
     path: &str,
     is_virtual: bool,
+    is_remote: bool,
     permission: i32,
 ) -> Result<File> {
     let file = sqlx::query_as!(
         File,
         r#"
         UPDATE files
-        SET parent_id = $2, name = $3, slug = $4, path = $5, is_virtual = $6, permission = $7, updated_at = NOW()
+        SET parent_id = $2, name = $3, slug = $4, path = $5, is_virtual = $6, is_remote = $7, permission = $8, updated_at = NOW()
         WHERE id = $1
         RETURNING 
             id, 
@@ -457,6 +464,7 @@ pub async fn update_file_metadata(
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -469,6 +477,7 @@ pub async fn update_file_metadata(
         slug,
         path,
         is_virtual,
+        is_remote,
         permission
     )
     .fetch_one(conn)
@@ -514,6 +523,7 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -545,6 +555,7 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
             slug, 
             path,
             is_virtual,
+            is_remote,
             permission,
             latest_version_id,
             deleted_at, 
@@ -644,6 +655,7 @@ pub async fn list_files_by_tag(
             f.slug, 
             f.path,
             f.is_virtual,
+            f.is_remote,
             f.permission,
             f.latest_version_id,
             f.deleted_at, 
@@ -727,6 +739,7 @@ pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<
             f.slug, 
             f.path,
             f.is_virtual,
+            f.is_remote,
             f.permission,
             f.latest_version_id,
             f.deleted_at, 
@@ -763,6 +776,7 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
             f.slug, 
             f.path,
             f.is_virtual,
+            f.is_remote,
             f.permission,
             f.latest_version_id,
             f.deleted_at, 
@@ -861,7 +875,7 @@ pub async fn semantic_search(
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
             f.name, f.slug, f.path, 
-            f.is_virtual, f.permission,
+            f.is_virtual, f.is_remote, f.permission,
             f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
             fc.chunk_content,
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
@@ -897,6 +911,7 @@ pub struct SearchResultRow {
     pub slug: String,
     pub path: String,
     pub is_virtual: bool,
+    pub is_remote: bool,
     pub permission: i32,
     pub latest_version_id: Option<Uuid>,
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,

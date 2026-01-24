@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            is_virtual,\n            permission,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND path = $2\n          AND deleted_at IS NULL\n        ",
+  "query": "\n        SELECT \n            f.id, f.workspace_id, f.parent_id, f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name, f.slug, f.path, \n            f.is_virtual, f.is_remote, f.permission,\n            f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,\n            fc.chunk_content,\n            (1 - (fc.embedding <=> $2)) as \"similarity: f64\"\n        FROM file_chunks fc\n        INNER JOIN file_version_chunks fvc ON fc.id = fvc.chunk_id AND fc.workspace_id = fvc.workspace_id\n        INNER JOIN files f ON fvc.file_version_id = f.latest_version_id AND fvc.workspace_id = f.workspace_id\n        WHERE fc.workspace_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY fc.embedding <=> $2\n        LIMIT $3\n        ",
   "describe": {
     "columns": [
       {
@@ -55,34 +55,55 @@
       },
       {
         "ordinal": 10,
+        "name": "is_remote",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
         "name": "permission",
         "type_info": "Int4"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "chunk_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "similarity: f64",
+        "type_info": "Float8"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Text"
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Int8"
       ]
     },
     "nullable": [
@@ -97,11 +118,14 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
-      false
+      false,
+      false,
+      null
     ]
   },
-  "hash": "a107ce5ee071795862b538c610cf1113eb7a54783b9610e8188d61b345fb75ca"
+  "hash": "236afebedfc486b9c963e3f028f4ed06f02d86cb530906a46b832535fc36bdc0"
 }

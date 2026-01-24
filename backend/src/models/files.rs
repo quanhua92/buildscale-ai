@@ -45,6 +45,7 @@ pub struct File {
     pub slug: String,
     pub path: String,
     pub is_virtual: bool,
+    pub is_remote: bool,
     pub permission: i32,
 
     /// Cache for the latest version to avoid expensive JOINs/CTEs
@@ -66,6 +67,7 @@ pub struct NewFile {
     pub slug: String,
     pub path: String,
     pub is_virtual: bool,
+    pub is_remote: bool,
     pub permission: i32,
 }
 

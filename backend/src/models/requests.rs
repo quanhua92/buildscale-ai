@@ -77,6 +77,7 @@ pub struct CreateFileRequest {
     pub slug: Option<String>,
     pub path: Option<String>,
     pub is_virtual: Option<bool>,
+    pub is_remote: Option<bool>,
     pub permission: Option<i32>,
     pub file_type: FileType,
     pub content: serde_json::Value,
@@ -100,6 +101,7 @@ pub struct CreateFileHttp {
     pub slug: Option<String>,
     pub path: Option<String>,
     pub is_virtual: Option<bool>,
+    pub is_remote: Option<bool>,
     pub permission: Option<i32>,
     pub file_type: FileType,
     pub content: serde_json::Value,
@@ -133,6 +135,7 @@ pub struct UpdateFileHttp {
     pub name: Option<String>,
     pub slug: Option<String>,
     pub is_virtual: Option<bool>,
+    pub is_remote: Option<bool>,
     pub permission: Option<i32>,
 }
 
@@ -143,6 +146,7 @@ pub struct UpdateFileRequest {
     pub name: Option<String>,
     pub slug: Option<String>,
     pub is_virtual: Option<bool>,
+    pub is_remote: Option<bool>,
     pub permission: Option<i32>,
 }
 

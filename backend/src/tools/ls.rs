@@ -80,7 +80,7 @@ impl LsTool {
                 file_type as "file_type: crate::models::files::FileType",
                 status as "status: crate::models::files::FileStatus",
                 name, slug, path,
-                is_virtual, permission,
+                is_virtual, is_remote, permission,
                 latest_version_id,
                 deleted_at, created_at, updated_at
             FROM files

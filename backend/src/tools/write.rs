@@ -76,6 +76,7 @@ impl Tool for WriteTool {
                 slug: None,
                 path: Some(path.clone()),
                 is_virtual: None,
+                is_remote: None,
                 permission: None,
                 file_type,
                 content: write_args.content,

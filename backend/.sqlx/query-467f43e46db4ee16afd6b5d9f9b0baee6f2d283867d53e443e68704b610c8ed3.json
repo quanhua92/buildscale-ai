@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.path,\n            f.is_virtual,\n            f.permission,\n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_links fl ON f.id = fl.source_file_id\n        WHERE fl.target_file_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY f.name ASC\n        ",
+  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            is_virtual,\n            is_remote,\n            permission,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND path = $2\n          AND deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -55,33 +55,39 @@
       },
       {
         "ordinal": 10,
+        "name": "is_remote",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
         "name": "permission",
         "type_info": "Int4"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -96,11 +102,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "3a35c947d306a786e99701883ddad5289f4d7104acab956b541674bd5d74e038"
+  "hash": "467f43e46db4ee16afd6b5d9f9b0baee6f2d283867d53e443e68704b610c8ed3"
 }

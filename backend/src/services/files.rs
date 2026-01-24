@@ -98,6 +98,7 @@ pub async fn ensure_path_exists(
                 slug: slug.clone(),
                 path: current_path_prefix.clone(),
                 is_virtual: false,
+                is_remote: false,
                 permission: 755,
             };
             let folder = files::create_file_identity(conn, new_folder).await?;
@@ -200,6 +201,7 @@ pub async fn create_file_with_content(
         slug,
         path,
         is_virtual: request.is_virtual.unwrap_or(false),
+        is_remote: request.is_remote.unwrap_or(false),
         permission: request.permission.unwrap_or(600),
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
@@ -331,6 +333,7 @@ pub async fn update_file(
     };
 
     let target_is_virtual = request.is_virtual.unwrap_or(current_file.is_virtual);
+    let target_is_remote = request.is_remote.unwrap_or(current_file.is_remote);
     let target_permission = request.permission.unwrap_or(current_file.permission);
 
     // 3. Start transaction for complex check and update
@@ -353,6 +356,7 @@ pub async fn update_file(
         && target_slug == current_file.slug 
         && target_path == current_file.path
         && target_is_virtual == current_file.is_virtual
+        && target_is_remote == current_file.is_remote
         && target_permission == current_file.permission
     {
         return Ok(current_file);
@@ -388,6 +392,7 @@ pub async fn update_file(
         &target_slug,
         &target_path,
         target_is_virtual,
+        target_is_remote,
         target_permission
     ).await?;
 
@@ -684,6 +689,7 @@ pub async fn semantic_search(
                 slug: r.slug,
                 path: r.path,
                 is_virtual: r.is_virtual,
+                is_remote: r.is_remote,
                 permission: r.permission,
                 latest_version_id: r.latest_version_id,
                 deleted_at: r.deleted_at,

@@ -35,6 +35,7 @@ The `files` table is the central registry for all objects in the system.
 | `slug` | TEXT | **URL-safe Name.** Lowercase, hyphens (e.g., "my-plan"). Unique per folder. |
 | `path` | TEXT | **Materialized Path.** Absolute path for fast tree queries (e.g., "/my-plan/doc"). Unique per workspace. |
 | `is_virtual` | BOOLEAN | **Dynamic Content.** If true, content is generated on-the-fly (e.g. from `chat_messages` table) rather than stored in `file_versions`. |
+| `is_remote` | BOOLEAN | **Object Storage.** If true, content is fetched from S3/Blob store instead of `file_versions`. |
 | `permission` | INT | **Unix-style Mode.** Access control (e.g. 600 for private, 755 for shared). Defaults to 600. |
 | `latest_version_id` | UUID | **Cache.** Points to the most recent version in `file_versions`. |
 | `deleted_at` | TIMESTAMPTZ | **Trash Bin.** If not NULL, the file is in the trash. |

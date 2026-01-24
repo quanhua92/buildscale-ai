@@ -19,6 +19,7 @@ async fn test_virtual_file_lifecycle() {
             slug: None,
             path: None,
             is_virtual: Some(true),
+            is_remote: Some(false),
             permission: Some(600),
             file_type: FileType::Chat,
             content: serde_json::json!({}), // Virtual files might have empty initial content
@@ -55,6 +56,7 @@ async fn test_virtual_file_lifecycle() {
             name: None,
             slug: None,
             is_virtual: None, // Should remain true
+            is_remote: None,
             permission: Some(755),
         })
         .send()
@@ -74,6 +76,7 @@ async fn test_virtual_file_lifecycle() {
             name: None,
             slug: None,
             is_virtual: Some(false),
+            is_remote: None,
             permission: None,
         })
         .send()

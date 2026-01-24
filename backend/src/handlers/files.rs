@@ -55,6 +55,7 @@ pub async fn create_file(
             slug: request.slug,
             path: request.path,
             is_virtual: request.is_virtual,
+            is_remote: request.is_remote,
             permission: request.permission,
             file_type: request.file_type,
             content: request.content,
@@ -110,6 +111,7 @@ pub async fn update_file(
         name: request.name,
         slug: request.slug,
         is_virtual: request.is_virtual,
+        is_remote: request.is_remote,
         permission: request.permission,
     };
 
