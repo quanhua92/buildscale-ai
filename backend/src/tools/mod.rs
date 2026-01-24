@@ -80,6 +80,18 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
     }
 }
 
+/// Normalizes a file system path for consistency.
+/// Trims whitespace and ensures it starts with a / and has no trailing /.
+pub fn normalize_path(path: &str) -> String {
+    let path = path.trim();
+    if path.is_empty() || path == "/" {
+        return "/".to_string();
+    }
+    
+    let normalized = path.trim_matches('/');
+    format!("/{}", normalized)
+}
+
 /// Tool executor enum for dispatching tool execution
 pub enum ToolExecutor {
     Ls,

@@ -75,13 +75,15 @@ export function FileExplorerProvider({
   }
 
   const createFile = async (name: string, content: string) => {
-    const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
+    const cleanPath = initialPath.endsWith('/') ? initialPath : `${initialPath}/`
+    const filePath = `${cleanPath}${name}`
     await callTool('write', { path: filePath, content: { text: content } })
     refresh()
   }
 
   const createFolder = async (name: string) => {
-    const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
+    const cleanPath = initialPath.endsWith('/') ? initialPath : `${initialPath}/`
+    const filePath = `${cleanPath}${name}`
     await callTool('write', { 
       path: filePath, 
       content: {}, 

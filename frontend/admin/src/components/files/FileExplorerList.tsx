@@ -34,8 +34,7 @@ export function FileExplorerList() {
 
   const handleView = (file: LsEntry) => {
     if (file.file_type === 'folder') {
-      const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
-      navigate(newPath)
+      navigate(file.path)
     } else {
       setActiveFile(file)
       setViewerOpen(true)

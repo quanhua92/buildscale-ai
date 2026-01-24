@@ -92,15 +92,17 @@ export const columns: ColumnDef<LsEntry>[] = [
                 meta?.onView(entry)
               }}>
                 <Eye className="mr-2 h-4 w-4" />
-                View
+                {entry.file_type === 'folder' ? 'Open' : 'View'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation()
-                meta?.onEdit(entry)
-              }}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
+              {entry.file_type !== 'folder' && (
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation()
+                  meta?.onEdit(entry)
+                }}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={(e) => {
                 e.stopPropagation()

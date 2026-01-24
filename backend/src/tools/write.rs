@@ -31,10 +31,18 @@ impl Tool for WriteTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let write_args: WriteArgs = serde_json::from_value(args)?;
+        let path = super::normalize_path(&write_args.path);
         
-        let existing_file = file_queries::get_file_by_path(conn, workspace_id, &write_args.path).await?;
+        let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
         
         let result = if let Some(file) = existing_file {
+            if matches!(file.file_type, FileType::Folder) && write_args.file_type.as_deref() != Some("folder") {
+                return Err(Error::Validation(ValidationErrors::Single {
+                    field: "path".to_string(),
+                    message: "Cannot write text content to a folder path".to_string(),
+                }));
+            }
+
             let version = files::create_version(conn, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
                 branch: Some("main".to_string()),
@@ -43,12 +51,12 @@ impl Tool for WriteTool {
             }).await?;
             
             WriteResult {
-                path: write_args.path.clone(),
+                path,
                 file_id: file.id,
                 version_id: version.id,
             }
         } else {
-            let filename = write_args.path.rsplit('/').next().unwrap_or("untitled");
+            let filename = path.rsplit('/').next().unwrap_or("untitled");
             
             let file_type = if let Some(ft_str) = write_args.file_type.as_deref() {
                 FileType::from_str(ft_str).map_err(|_| {
@@ -67,14 +75,14 @@ impl Tool for WriteTool {
                 author_id: user_id,
                 name: filename.to_string(),
                 slug: None,
-                path: Some(write_args.path.clone()),
+                path: Some(path.clone()),
                 file_type,
                 content: write_args.content,
                 app_data: None,
             }).await?;
             
             WriteResult {
-                path: write_args.path.clone(),
+                path,
                 file_id: file_result.file.id,
                 version_id: file_result.latest_version.id,
             }

@@ -26,15 +26,23 @@ impl Tool for ReadTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let read_args: ReadArgs = serde_json::from_value(args)?;
+        let path = super::normalize_path(&read_args.path);
         
-        let file = file_queries::get_file_by_path(conn, workspace_id, &read_args.path)
+        let file = file_queries::get_file_by_path(conn, workspace_id, &path)
             .await?
-            .ok_or_else(|| crate::error::Error::NotFound(format!("File not found: {}", read_args.path)))?;
+            .ok_or_else(|| crate::error::Error::NotFound(format!("File not found: {}", path)))?;
+        
+        if matches!(file.file_type, crate::models::files::FileType::Folder) {
+            return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
+                field: "path".to_string(),
+                message: "Cannot read content of a folder".to_string(),
+            }));
+        }
         
         let file_with_content = files::get_file_with_content(conn, file.id).await?;
         
         let result = ReadResult {
-            path: read_args.path,
+            path,
             content: file_with_content.latest_version.content_raw,
         };
         

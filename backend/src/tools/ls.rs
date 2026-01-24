@@ -23,10 +23,10 @@ impl Tool for LsTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let ls_args: LsArgs = serde_json::from_value(args)?;
-        let path = ls_args.path.unwrap_or_else(|| "/".to_string());
+        let path = super::normalize_path(&ls_args.path.unwrap_or_else(|| "/".to_string()));
         let recursive = ls_args.recursive.unwrap_or(false);
         
-        let parent_id = if path == "/" || path.is_empty() {
+        let parent_id = if path == "/" {
             None
         } else {
             let parent_file = files::get_file_by_path(conn, workspace_id, &path).await?;
