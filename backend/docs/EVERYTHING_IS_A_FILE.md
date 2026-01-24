@@ -11,6 +11,12 @@ In BuildScale.ai, **Identity** is separated from **Content**.
 1.  **Identity (`files`)**: The permanent anchor. It has an ID, a human name (`name`), a machine identifier (`slug`), a location (`parent_id`), and an owner. It doesn't change when you edit the document content.
 2.  **Content (`file_versions`)**: The immutable history. Every "Save" creates a new version. We never update existing content; we only append new versions.
 
+**Default Type & Validation**:
+*   The system defaults to `file_type = 'document'` if not specified.
+*   **Documents** are strictly validated to ensure they contain a `text` field with string content.
+*   Specialized types like `canvas` or `chat` allow arbitrary JSON structures but must be valid JSON.
+*   **Folders** are identity-only nodes and do not typically hold text content.
+
 ## Schema Overview
 
 ### 1. The Registry: `files`
