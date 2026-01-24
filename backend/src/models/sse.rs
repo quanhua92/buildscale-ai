@@ -33,4 +33,5 @@ pub enum SseEvent {
     Done {
         message: String,
     },
+    Ping,
 }

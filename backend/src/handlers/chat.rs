@@ -16,8 +16,9 @@ use axum::{Extension, Json};
 use futures::stream::{self, Stream};
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
-use tokio_stream::wrappers::BroadcastStream;
 use futures::StreamExt;
 use secrecy::ExposeSecret;
 
@@ -124,8 +125,17 @@ pub async fn get_chat_events(
             }
         });
 
-    // Chain them together
-    let combined_stream = init_stream.chain(broadcast_stream);
+    // 3. Heartbeat stream (Ping every 15 seconds)
+    let heartbeat_stream = IntervalStream::new(tokio::time::interval(Duration::from_secs(15)))
+        .map(|_| {
+            let event = SseEvent::Ping;
+            let data = serde_json::to_string(&event).unwrap_or_default();
+            Ok(Event::default().data(data))
+        });
+
+    // Chain them together and select with heartbeat
+    let main_stream = init_stream.chain(broadcast_stream);
+    let combined_stream = stream::select(main_stream, heartbeat_stream);
 
     Sse::new(combined_stream).keep_alive(KeepAlive::default())
 }

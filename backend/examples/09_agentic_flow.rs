@@ -126,6 +126,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "call" => println!("🛠️  CALL: {} with args {}", event["data"]["tool"], event["data"]["args"]),
                         "observation" => println!("👁️  OBSERVATION: {}", event["data"]["output"]),
                         "chunk" => print!("{}", event["data"]["text"].as_str().unwrap_or("")),
+                        "ping" => {
+                            // Heartbeat - normally silent or small indicator
+                            print!(".");
+                        }
                         "done" => {
                             println!("\n\n✅ DONE: {}", event["data"]["message"]);
                             return Ok(());
