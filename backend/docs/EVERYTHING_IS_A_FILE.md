@@ -34,6 +34,9 @@ The `files` table is the central registry for all objects in the system.
 | `name` | TEXT | **Display Name.** Supports spaces, emojis, mixed case (e.g., "My Plan ✨"). |
 | `slug` | TEXT | **URL-safe Name.** Lowercase, hyphens (e.g., "my-plan"). Unique per folder. |
 | `path` | TEXT | **Materialized Path.** Absolute path for fast tree queries (e.g., "/my-plan/doc"). Unique per workspace. |
+| `is_virtual` | BOOLEAN | **Optimization Flag.** If true, the application logic should minimize database versioning, storing dynamic content in specialized tables instead. |
+| `is_remote` | BOOLEAN | **Storage Flag.** If true, content **must** be fetched from Object Storage using the version's hash; the database `content_raw` is ignored. |
+| `permission` | INT | **Unix-style Mode.** Access control (e.g. 600 for private, 755 for shared). Defaults to 600. |
 | `latest_version_id` | UUID | **Cache.** Points to the most recent version in `file_versions`. |
 | `deleted_at` | TIMESTAMPTZ | **Trash Bin.** If not NULL, the file is in the trash. |
 | `created_at` | TIMESTAMPTZ | Creation timestamp. |
@@ -115,6 +118,22 @@ Links versions to their chunks.
 | `chunk_id` | UUID | The chunk. |
 | `workspace_id` | UUID | **Tenant isolation.** |
 | `chunk_index` | INT | Order of the chunk in the document. |
+
+### 6. Virtual Files (Dynamic Content)
+
+For high-volume data like Chat Sessions, storing every single message as a new `file_version` blob would be inefficient.
+
+*   **Optimization**: If `is_virtual = true`, the system initializes the file with a single version but expects future updates to be handled outside the standard `file_versions` table.
+*   **Mechanism**: Application-layer logic (e.g., a Chat service) manages the dynamic state in high-performance tables.
+*   **Use Case**: Infinite chat histories, real-time logs, or computed views.
+
+### 7. Remote Files (Object Storage)
+
+For large binary assets (Images, Videos, Archives), storing content directly in PostgreSQL is inefficient.
+
+*   **Redirection**: If `is_remote = true`, the database `content_raw` column is considered invalid or merely a placeholder.
+*   **Mechanism**: The system uses the version's hash or metadata to fetch the actual payload from Object Storage (S3/Blob).
+*   **Use Case**: Large datasets, media files, and high-volume archival data.
 
 ## Common Access Patterns
 

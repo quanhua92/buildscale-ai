@@ -5,7 +5,7 @@ use crate::{
         files::{File, FileStatus, FileType, NewFile, NewFileVersion},
         requests::{
             CreateFileRequest, CreateVersionRequest, FileNetworkSummary,
-            FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileHttp,
+            FileWithContent, SearchResult, SemanticSearchHttp, UpdateFileRequest,
         },
     },
     queries::files,
@@ -16,6 +16,9 @@ use pgvector::Vector;
 use sha2::{Digest, Sha256};
 use sqlx::Acquire;
 use uuid::Uuid;
+
+pub const DEFAULT_FOLDER_PERMISSION: i32 = 755;
+pub const DEFAULT_FILE_PERMISSION: i32 = 600;
 
 /// Hashes JSON content using SHA-256 for content-addressing
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
@@ -97,6 +100,9 @@ pub async fn ensure_path_exists(
                 name: segment.to_string(),
                 slug: slug.clone(),
                 path: current_path_prefix.clone(),
+                is_virtual: false,
+                is_remote: false,
+                permission: DEFAULT_FOLDER_PERMISSION,
             };
             let folder = files::create_file_identity(conn, new_folder).await?;
             current_parent_id = Some(folder.id);
@@ -197,13 +203,18 @@ pub async fn create_file_with_content(
         name,
         slug,
         path,
+        is_virtual: request.is_virtual.unwrap_or(false),
+        is_remote: request.is_remote.unwrap_or(false),
+        permission: request.permission.unwrap_or(if request.file_type == FileType::Folder {
+            DEFAULT_FOLDER_PERMISSION
+        } else {
+            DEFAULT_FILE_PERMISSION
+        }),
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
-    // 5. Calculate content hash
+    // 5. Create initial version record (Ensures structural consistency for all file types)
     let hash = hash_content(&request.content)?;
-
-    // 6. Create first version record
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
@@ -215,11 +226,11 @@ pub async fn create_file_with_content(
     };
     let latest_version = files::create_version(&mut tx, new_version).await?;
 
-    // 7. Update file with latest version ID cache
+    // 6. Update file with latest version ID cache
     files::update_latest_version_id(&mut tx, file.id, latest_version.id).await?;
     file.latest_version_id = Some(latest_version.id);
 
-    // 8. Commit transaction
+    // 7. Commit transaction
     tx.commit().await.map_err(|e| {
         Error::Internal(format!("Failed to commit transaction: {}", e))
     })?;
@@ -290,11 +301,11 @@ pub async fn get_file_with_content(conn: &mut DbConn, file_id: Uuid) -> Result<F
     })
 }
 
-/// Updates a file's metadata (move and/or rename)
-pub async fn move_or_rename_file(
+/// Updates a file's metadata (move, rename, virtual status, permissions)
+pub async fn update_file(
     conn: &mut DbConn,
     file_id: Uuid,
-    request: UpdateFileHttp,
+    request: UpdateFileRequest,
 ) -> Result<File> {
     // 1. Get current file state
     let current_file = files::get_file_by_id(conn, file_id).await?;
@@ -326,6 +337,10 @@ pub async fn move_or_rename_file(
         current_file.slug.clone()
     };
 
+    let target_is_virtual = request.is_virtual.unwrap_or(current_file.is_virtual);
+    let target_is_remote = request.is_remote.unwrap_or(current_file.is_remote);
+    let target_permission = request.permission.unwrap_or(current_file.permission);
+
     // 3. Start transaction for complex check and update
     let mut tx = conn.begin().await.map_err(|e| {
         Error::Internal(format!("Failed to begin transaction: {}", e))
@@ -345,6 +360,9 @@ pub async fn move_or_rename_file(
         && target_name == current_file.name 
         && target_slug == current_file.slug 
         && target_path == current_file.path
+        && target_is_virtual == current_file.is_virtual
+        && target_is_remote == current_file.is_remote
+        && target_permission == current_file.permission
     {
         return Ok(current_file);
     }
@@ -377,7 +395,10 @@ pub async fn move_or_rename_file(
         target_parent_id, 
         &target_name, 
         &target_slug,
-        &target_path
+        &target_path,
+        target_is_virtual,
+        target_is_remote,
+        target_permission
     ).await?;
 
     // 9. If folder, update descendants (REBASE)
@@ -672,6 +693,9 @@ pub async fn semantic_search(
                 name: r.name,
                 slug: r.slug,
                 path: r.path,
+                is_virtual: r.is_virtual,
+                is_remote: r.is_remote,
+                permission: r.permission,
                 latest_version_id: r.latest_version_id,
                 deleted_at: r.deleted_at,
                 created_at: r.created_at,

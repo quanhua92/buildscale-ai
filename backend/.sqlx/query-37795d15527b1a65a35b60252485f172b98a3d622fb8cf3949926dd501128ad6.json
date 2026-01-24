@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        ",
+  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            is_virtual,\n            is_remote,\n            permission,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND slug = $3\n          AND deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -50,21 +50,36 @@
       },
       {
         "ordinal": 9,
+        "name": "is_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_remote",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "permission",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -73,11 +88,6 @@
       "Left": [
         "Uuid",
         "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
         "Text"
       ]
     },
@@ -91,11 +101,14 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "8aa1b4107456c30c79fd00e32d7e110a97eb3521d2a9a6825fe4727358dbc597"
+  "hash": "37795d15527b1a65a35b60252485f172b98a3d622fb8cf3949926dd501128ad6"
 }

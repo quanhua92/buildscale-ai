@@ -3,9 +3,86 @@ use buildscale::{
         files::FileType,
         requests::{CreateFileRequest, CreateVersionRequest},
     },
-    services::files::{create_file_with_content, create_version, get_file_with_content},
+    services::files::{
+        create_file_with_content, create_version, get_file_with_content, DEFAULT_FILE_PERMISSION,
+        DEFAULT_FOLDER_PERMISSION,
+    },
 };
 use crate::common::database::TestApp;
+
+#[tokio::test]
+async fn test_default_permissions_by_type() {
+    let test_app = TestApp::new("test_default_permissions_by_type").await;
+    let mut conn = test_app.get_connection().await;
+
+    let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
+
+    // 1. Create a Document (should get 600)
+    let doc_request = CreateFileRequest {
+        workspace_id: workspace.id,
+        parent_id: None,
+        author_id: user.id,
+        name: "default_doc.md".to_string(),
+        slug: None,
+        path: None,
+        is_virtual: None,
+        is_remote: None,
+        permission: None, // Omitted
+        file_type: FileType::Document,
+        content: serde_json::json!({}),
+        app_data: None,
+    };
+    let doc = create_file_with_content(&mut conn, doc_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        doc.file.permission, DEFAULT_FILE_PERMISSION,
+        "Document should have default file permission (600)"
+    );
+
+    // 2. Create a Folder (should get 755)
+    let folder_request = CreateFileRequest {
+        workspace_id: workspace.id,
+        parent_id: None,
+        author_id: user.id,
+        name: "default_folder".to_string(),
+        slug: None,
+        path: None,
+        is_virtual: None,
+        is_remote: None,
+        permission: None, // Omitted
+        file_type: FileType::Folder,
+        content: serde_json::json!({}),
+        app_data: None,
+    };
+    let folder = create_file_with_content(&mut conn, folder_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        folder.file.permission, DEFAULT_FOLDER_PERMISSION,
+        "Folder should have default folder permission (755)"
+    );
+
+    // 3. Override permission (should respect request)
+    let override_request = CreateFileRequest {
+        workspace_id: workspace.id,
+        parent_id: None,
+        author_id: user.id,
+        name: "override.txt".to_string(),
+        slug: None,
+        path: None,
+        is_virtual: None,
+        is_remote: None,
+        permission: Some(777),
+        file_type: FileType::Document,
+        content: serde_json::json!({}),
+        app_data: None,
+    };
+    let over = create_file_with_content(&mut conn, override_request)
+        .await
+        .unwrap();
+    assert_eq!(over.file.permission, 777, "Should respect explicit permission");
+}
 
 #[tokio::test]
 async fn test_create_file_atomic_success() {
@@ -21,6 +98,9 @@ async fn test_create_file_atomic_success() {
         name: "test_file.md".to_string(),
         slug: None,
         path: None,
+        is_virtual: None,
+        is_remote: None,
+        permission: None,
         file_type: FileType::Document,
         content: serde_json::json!({"text": "hello world"}),
         app_data: None,
@@ -49,6 +129,9 @@ async fn test_version_deduplication() {
         name: "dedup_test.md".to_string(),
         slug: None,
         path: None,
+        is_virtual: None,
+        is_remote: None,
+        permission: None,
         file_type: FileType::Document,
         content: serde_json::json!({"text": "original"}),
         app_data: None,
@@ -85,6 +168,9 @@ async fn test_version_history() {
         name: "history_test.md".to_string(),
         slug: None,
         path: None,
+        is_virtual: None,
+        is_remote: None,
+        permission: None,
         file_type: FileType::Document,
         content: serde_json::json!({"v": 1}),
         app_data: None,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.path,\n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_links fl ON f.id = fl.target_file_id\n        WHERE fl.source_file_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY f.name ASC\n        ",
+  "query": "\n        SELECT \n            f.id, \n            f.workspace_id, \n            f.parent_id, \n            f.author_id, \n            f.file_type as \"file_type: FileType\", \n            f.status as \"status: FileStatus\", \n            f.name,\n            f.slug, \n            f.path,\n            f.is_virtual,\n            f.is_remote,\n            f.permission,\n            f.latest_version_id,\n            f.deleted_at, \n            f.created_at, \n            f.updated_at\n        FROM files f\n        INNER JOIN file_links fl ON f.id = fl.target_file_id\n        WHERE fl.source_file_id = $1\n          AND f.deleted_at IS NULL\n        ORDER BY f.name ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -50,21 +50,36 @@
       },
       {
         "ordinal": 9,
+        "name": "is_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_remote",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "permission",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -84,11 +99,14 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "857e6a094589e5e089808fa16d2cd81fee689e35b4e89a8204fe1bc69f3ab261"
+  "hash": "fbfdb6447a23e8687ba29bb937da792a896c4dd849d324b0c67fe507d79c6fe7"
 }

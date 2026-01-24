@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        FROM files\n        WHERE workspace_id = $1 \n          AND (parent_id = $2 OR (parent_id IS NULL AND $2 IS NULL))\n          AND deleted_at IS NULL\n        ORDER BY (file_type = 'folder') DESC, name ASC\n        ",
+  "query": "\n        UPDATE files\n        SET deleted_at = NULL, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            workspace_id, \n            parent_id, \n            author_id, \n            file_type as \"file_type: FileType\", \n            status as \"status: FileStatus\", \n            name,\n            slug, \n            path,\n            is_virtual,\n            is_remote,\n            permission,\n            latest_version_id,\n            deleted_at, \n            created_at, \n            updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -50,28 +50,42 @@
       },
       {
         "ordinal": 9,
+        "name": "is_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_remote",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "permission",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
         "name": "latest_version_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -85,11 +99,14 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "fdca911531c81d71e23b7c73b3578f8e02c7d64eb2e7bb6ed7458a2a3546446b"
+  "hash": "bbe2faa41971650322776f7db92e93351dad1c40b8109ab0a9b0e855a0983167"
 }

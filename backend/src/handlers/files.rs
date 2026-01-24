@@ -54,6 +54,9 @@ pub async fn create_file(
             name: request.name,
             slug: request.slug,
             path: request.path,
+            is_virtual: request.is_virtual,
+            is_remote: request.is_remote,
+            permission: request.permission,
             file_type: request.file_type,
             content: request.content,
             app_data: request.app_data,
@@ -99,9 +102,20 @@ pub async fn update_file(
     Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<UpdateFileHttp>,
 ) -> Result<Json<crate::models::files::File>> {
+    use crate::models::requests::UpdateFileRequest;
+
     let mut conn = acquire_db_connection(&state, "update_file").await?;
 
-    let result = file_services::move_or_rename_file(&mut conn, file_id, request)
+    let update_request = UpdateFileRequest {
+        parent_id: request.parent_id,
+        name: request.name,
+        slug: request.slug,
+        is_virtual: request.is_virtual,
+        is_remote: request.is_remote,
+        permission: request.permission,
+    };
+
+    let result = file_services::update_file(&mut conn, file_id, update_request)
         .await
         .inspect_err(|e| log_handler_error("update_file", e))?;
 

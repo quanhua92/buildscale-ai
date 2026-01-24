@@ -11,8 +11,8 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
     let file = sqlx::query_as!(
         File,
         r#"
-        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO files (workspace_id, parent_id, author_id, file_type, status, name, slug, path, is_virtual, is_remote, permission)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING 
             id, 
             workspace_id, 
@@ -23,6 +23,9 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -35,7 +38,10 @@ pub async fn create_file_identity(conn: &mut DbConn, new_file: NewFile) -> Resul
         new_file.status as FileStatus,
         new_file.name,
         new_file.slug,
-        new_file.path
+        new_file.path,
+        new_file.is_virtual,
+        new_file.is_remote,
+        new_file.permission
     )
     .fetch_one(conn)
     .await
@@ -113,6 +119,9 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -210,6 +219,9 @@ pub async fn get_file_by_slug(
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -250,6 +262,9 @@ pub async fn list_files_in_folder(
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -339,6 +354,9 @@ pub async fn get_file_by_path(
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -417,7 +435,7 @@ pub async fn is_descendant_of(
     Ok(result.exists)
 }
 
-/// Updates file metadata (parent_id, name, slug, and path).
+/// Updates file metadata (parent_id, name, slug, path, virtual status, permissions).
 pub async fn update_file_metadata(
     conn: &mut DbConn,
     file_id: Uuid,
@@ -425,12 +443,15 @@ pub async fn update_file_metadata(
     name: &str,
     slug: &str,
     path: &str,
+    is_virtual: bool,
+    is_remote: bool,
+    permission: i32,
 ) -> Result<File> {
     let file = sqlx::query_as!(
         File,
         r#"
         UPDATE files
-        SET parent_id = $2, name = $3, slug = $4, path = $5, updated_at = NOW()
+        SET parent_id = $2, name = $3, slug = $4, path = $5, is_virtual = $6, is_remote = $7, permission = $8, updated_at = NOW()
         WHERE id = $1
         RETURNING 
             id, 
@@ -442,6 +463,9 @@ pub async fn update_file_metadata(
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -451,7 +475,10 @@ pub async fn update_file_metadata(
         parent_id,
         name,
         slug,
-        path
+        path,
+        is_virtual,
+        is_remote,
+        permission
     )
     .fetch_one(conn)
     .await
@@ -495,6 +522,9 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -524,6 +554,9 @@ pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Fil
             name,
             slug, 
             path,
+            is_virtual,
+            is_remote,
+            permission,
             latest_version_id,
             deleted_at, 
             created_at, 
@@ -621,6 +654,9 @@ pub async fn list_files_by_tag(
             f.name,
             f.slug, 
             f.path,
+            f.is_virtual,
+            f.is_remote,
+            f.permission,
             f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
@@ -702,6 +738,9 @@ pub async fn get_outbound_links(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<
             f.name,
             f.slug, 
             f.path,
+            f.is_virtual,
+            f.is_remote,
+            f.permission,
             f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
@@ -736,6 +775,9 @@ pub async fn get_backlinks(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<File>
             f.name,
             f.slug, 
             f.path,
+            f.is_virtual,
+            f.is_remote,
+            f.permission,
             f.latest_version_id,
             f.deleted_at, 
             f.created_at, 
@@ -832,7 +874,9 @@ pub async fn semantic_search(
             f.id, f.workspace_id, f.parent_id, f.author_id, 
             f.file_type as "file_type: FileType", 
             f.status as "status: FileStatus", 
-            f.name, f.slug, f.path, f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
+            f.name, f.slug, f.path, 
+            f.is_virtual, f.is_remote, f.permission,
+            f.latest_version_id, f.deleted_at, f.created_at, f.updated_at,
             fc.chunk_content,
             (1 - (fc.embedding <=> $2)) as "similarity: f64"
         FROM file_chunks fc
@@ -866,6 +910,9 @@ pub struct SearchResultRow {
     pub name: String,
     pub slug: String,
     pub path: String,
+    pub is_virtual: bool,
+    pub is_remote: bool,
+    pub permission: i32,
     pub latest_version_id: Option<Uuid>,
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
