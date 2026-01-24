@@ -9,10 +9,11 @@ This document serves as the self-contained execution guide for implementing the 
 
 ## 📅 Progress Log
 
-- [ ] **Phase 1**: MVP Chat Mode (The Reactive Core)
-- [ ] **Phase 2**: Tool Execution (The Hands)
-- [ ] **Phase 3**: The Planner (The Cortex)
-- [ ] **Phase 4**: Autonomous Loop (The Agent)
+- [x] **Phase 1.1**: Data Structures & Schema (Committed)
+- [x] **Phase 1.1b**: Data Access Layer (Committed)
+- [x] **Phase 1.2**: Context Construction & Orchestration (Committed)
+- [ ] **Phase 1.3**: The LLM Client (Next)
+- [ ] **Phase 1.4**: The SSE Endpoint
 
 ---
 
@@ -22,15 +23,21 @@ This document serves as the self-contained execution guide for implementing the 
 *   **Storage**: Messages are stored in a high-performance `chat_messages` append-only table.
 *   **Projection**: The system exposes a `.chat` file identity, but its content is dynamically assembled from the table when read. This avoids creating a full `file_version` blob for every message turn.
 
-- [ ] **1.1 Data Structures & Schema**
-    - [ ] Create migration for `chat_messages` table (id, file_id, role, content, created_at).
-    - [ ] Define `ChatSession` struct (`src/models/chat.rs`).
-    - [ ] Define `ChatMessage` struct (User/Assistant/System roles).
-    - [ ] Define `AgentConfig` struct (Persona definition).
-- [ ] **1.2 Context Construction (Service Layer)**
-    - [ ] `build_system_prompt(agent_id)`: Load the Agent's specific instruction file from `/system/agents/`.
-    - [ ] `hydrate_context(file_ids)`: Read content of attached files and format for the LLM.
-    - [ ] `get_chat_history(chat_file_id)`: Query `chat_messages` table.
+- [x] **1.1 Data Structures & Schema**
+    - [x] Create migration for `chat_messages` table (id, file_id, role, content, created_at).
+    - [x] Define `ChatSession` struct (`src/models/chat.rs`).
+    - [x] Define `ChatMessage` struct (User/Assistant/System roles).
+    - [x] Define `AgentConfig` struct (Persona definition).
+- [x] **1.1b Data Access Layer (Dumb Queries)**
+    - [x] Implement `insert_chat_message` (`src/queries/chat.rs`).
+    - [x] Implement `get_messages_by_file_id` (Retrieval).
+    - [x] Implement `update_chat_message` (Editing).
+    - [x] Implement `soft_delete_chat_message` (Lifecycle).
+    - [x] Implement `touch_file` query (`src/queries/files.rs`).
+- [x] **1.2 Context Construction (Service Layer)**
+    - [x] `build_system_prompt(agent_id)`: Load the Agent's specific instruction file from `/system/agents/`.
+    - [x] `hydrate_context(file_ids)`: Read content of attached files and format for the LLM.
+    - [x] `get_chat_history(chat_file_id)`: Query `chat_messages` table.
 - [ ] **1.3 The LLM Client (`src/services/llm.rs`)**
     - [ ] Implement generic Client trait (OpenAI compatible).
     - [ ] Implement `stream_completion` method supporting SSE.
