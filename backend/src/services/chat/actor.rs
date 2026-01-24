@@ -54,14 +54,20 @@ impl ChatActor {
         while let Some(command) = self.command_rx.recv().await {
             match command {
                 AgentCommand::ProcessInteraction { user_id, content } => {
+                    // Send initial thought to signal activity immediately
+                    let _ = self.event_tx.send(SseEvent::Thought {
+                        agent_id: None,
+                        text: "Initializing context and connecting to AI brain...".to_string(),
+                    });
+
                     if let Err(e) = self.process_interaction(user_id, content).await {
                         tracing::error!(
-                            "Error processing interaction for chat {}: {}",
+                            "Error processing interaction for chat {}: {:?}",
                             self.chat_id,
                             e
                         );
                         let _ = self.event_tx.send(SseEvent::Error {
-                            message: e.to_string(),
+                            message: format!("AI Engine Error: {}", e),
                         });
                     }
                 }
@@ -74,6 +80,8 @@ impl ChatActor {
     }
 
     async fn process_interaction(&self, user_id: Uuid, _content: String) -> crate::error::Result<()> {
+        tracing::debug!(chat_id = %self.chat_id, "Processing interaction");
+        
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         // 1. Get full session (messages + config)
@@ -126,27 +134,36 @@ impl ChatActor {
             .convert_history(&messages[..messages.len() - 1]);
 
         // 6. Stream from Rig
+        tracing::info!(chat_id = %self.chat_id, model = %session.agent_config.model, "Requesting AI completion");
         let mut stream = agent
             .stream_chat(&last_message.content, history)
             .await;
 
         let mut full_response = String::new();
+        let mut has_started_responding = false;
 
         while let Some(item) = stream.next().await {
             match item {
                 Ok(rig::agent::MultiTurnStreamItem::StreamAssistantItem(content)) => {
                     match content {
                         rig::streaming::StreamedAssistantContent::Text(text) => {
+                            if !has_started_responding {
+                                tracing::debug!(chat_id = %self.chat_id, "AI started streaming text response");
+                                has_started_responding = true;
+                            }
                             full_response.push_str(&text.text);
                             let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
                         }
                         rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
+                            let text = thought.reasoning.join("\n");
+                            tracing::debug!(chat_id = %self.chat_id, thought = %text, "AI thought");
                             let _ = self.event_tx.send(SseEvent::Thought {
                                 agent_id: None,
-                                text: thought.reasoning.join("\n"),
+                                text,
                             });
                         }
                         rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
+                            tracing::info!(chat_id = %self.chat_id, tool = %tool_call.function.name, "AI calling tool");
                             let _ = self.event_tx.send(SseEvent::Call {
                                 tool: tool_call.function.name,
                                 path: None,
@@ -164,11 +181,13 @@ impl ChatActor {
                             } else {
                                 "Tool execution completed".to_string()
                             };
+                            tracing::info!(chat_id = %self.chat_id, "Tool execution finished");
                             let _ = self.event_tx.send(SseEvent::Observation { output });
                         }
                     }
                 }
                 Err(e) => {
+                    tracing::error!(chat_id = %self.chat_id, error = ?e, "AI stream encountered an error");
                     return Err(crate::error::Error::Llm(e.to_string()));
                 }
                 _ => {}
@@ -176,18 +195,21 @@ impl ChatActor {
         }
 
         // 7. Save Assistant Response
-        let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-        queries::chat::insert_chat_message(
-            &mut final_conn,
-            NewChatMessage {
-                file_id: self.chat_id,
-                workspace_id: self.workspace_id,
-                role: ChatMessageRole::Assistant,
-                content: full_response,
-                metadata: serde_json::Value::Object(serde_json::Map::new()),
-            },
-        )
-        .await?;
+        if !full_response.is_empty() {
+            tracing::info!(chat_id = %self.chat_id, "Saving AI response to database");
+            let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+            queries::chat::insert_chat_message(
+                &mut final_conn,
+                NewChatMessage {
+                    file_id: self.chat_id,
+                    workspace_id: self.workspace_id,
+                    role: ChatMessageRole::Assistant,
+                    content: full_response,
+                    metadata: serde_json::Value::Object(serde_json::Map::new()),
+                },
+            )
+            .await?;
+        }
 
         let _ = self.event_tx.send(SseEvent::Done {
             message: "Turn complete".to_string(),

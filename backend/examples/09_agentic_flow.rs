@@ -100,14 +100,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ Event Pipe Connected. Listening for AI thoughts...\n");
 
     // 5. Phase 3: The Command Bus (Follow-up)
-    // In this example, the initial goal already triggered the actor.
-    // But we could send another message here if we wanted.
-    // println!("5️⃣  Phase 3: Sending Follow-up Command...");
-    // client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
-    //     .header("Authorization", format!("Bearer {}", token))
-    //     .json(&json!({ "content": "Actually, just tell me what time it is." }))
-    //     .send()
-    //     .await?;
+    println!("5️⃣  Phase 3: Sending interaction command...");
+    client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({ "content": "Analyze the current project structure." }))
+        .send()
+        .await?;
+
+    println!("✓ Command Dispatched. Waiting for AI response...\n");
 
     // 6. Process SSE Stream
     println!("--- [ AI OUTPUT STREAM ] ---");
@@ -130,7 +130,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             println!("\n\n✅ DONE: {}", event["data"]["message"]);
                             return Ok(());
                         }
-                        "error" => println!("\n❌ ERROR: {}", event["data"]["message"]),
+                        "error" => {
+                            println!("\n❌ ERROR: {}", event["data"]["message"]);
+                            return Ok(());
+                        }
                         _ => println!("\n📢 EVENT: {:?}", event),
                     }
                     // Flush output

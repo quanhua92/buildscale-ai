@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, ChatAttachment};
 use crate::models::files::{FileType, FileStatus, NewFile};
 use crate::models::requests::{CreateChatRequest, PostChatMessageRequest};
+use crate::models::sse::SseEvent;
 use crate::queries;
 use crate::services::chat::actor::ChatActor;
 use crate::services::chat::registry::AgentCommand;
@@ -12,7 +13,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{Extension, Json};
-use futures::stream::Stream;
+use futures::stream::{self, Stream};
 use std::convert::Infallible;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -90,26 +91,29 @@ pub async fn create_chat(
 pub async fn get_chat_events(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthenticatedUser>,
-    Path((_workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
 ) -> Sse<impl Stream<Item = std::result::Result<Event, Infallible>>> {
     let handle = if let Some(handle) = state.agents.get_handle(&chat_id).await {
         handle
     } else {
-        // Fallback: This endpoint usually expects the actor to be running or rehydrated by a command.
-        // But if someone just opens the event stream, we should probably rehydrate.
-        // However, we need workspace_id which is in the path.
+        // Rehydrate/Spawn actor
         let config = crate::load_config().expect("Failed to load config");
         let rig_service = Arc::new(RigService::new(config.ai.openai_api_key.expose_secret()));
-        
-        // We'll use the workspace_id from the path
-        let workspace_id = _workspace_id; 
-        
         let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), rig_service);
         state.agents.register(chat_id, handle.clone()).await;
         handle
     };
 
-    let stream = BroadcastStream::new(handle.event_tx.subscribe())
+    // 1. Send initial session_init event
+    let init_event = SseEvent::SessionInit {
+        chat_id,
+        plan_id: None,
+    };
+    let init_data = serde_json::to_string(&init_event).unwrap_or_default();
+    let init_stream = stream::once(async move { Ok(Event::default().data(init_data)) });
+
+    // 2. Stream from broadcast channel
+    let broadcast_stream = BroadcastStream::new(handle.event_tx.subscribe())
         .filter_map(|msg| async move {
             match msg {
                 Ok(event) => {
@@ -120,7 +124,10 @@ pub async fn get_chat_events(
             }
         });
 
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    // Chain them together
+    let combined_stream = init_stream.chain(broadcast_stream);
+
+    Sse::new(combined_stream).keep_alive(KeepAlive::default())
 }
 
 pub async fn post_chat_message(
