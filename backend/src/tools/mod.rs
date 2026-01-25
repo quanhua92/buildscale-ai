@@ -2,12 +2,14 @@
 //!
 //! This module provides an extensible toolset that operates on files in workspaces.
 //! Tools follow the "Everything is a File" philosophy, providing filesystem-like
-//! operations (ls, read, write, rm) backed by the database.
+//! operations (ls, read, write, rm, mv, touch) backed by the database.
 
 pub mod ls;
 pub mod read;
 pub mod write;
 pub mod rm;
+pub mod mv;
+pub mod touch;
 
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse};
 use uuid::Uuid;
@@ -53,35 +55,19 @@ pub trait Tool: Send + Sync {
 /// Returns a closure that executes the tool when called with the appropriate arguments
 ///
 /// # Arguments
-/// * `tool_name` - Name of the tool to retrieve (e.g., "ls", "read", "write", "rm")
+/// * `tool_name` - Name of the tool to retrieve (e.g., "ls", "read", "write", "rm", "mv", "touch")
 ///
 /// # Returns
 /// * `Ok(ToolExecutor)` - The tool executor closure
 /// * `Err(Error)` - If tool name is not found
-///
-/// # Example
-/// ```no_run
-/// use buildscale::tools::get_tool_executor;
-/// use buildscale::DbConn;
-/// use uuid::Uuid;
-/// use serde_json::Value;
-///
-/// # async fn example() -> buildscale::error::Result<()> {
-/// # let conn: &mut DbConn = unsafe { std::mem::zeroed() };
-/// # let workspace_id = Uuid::new_v4();
-/// # let user_id = Uuid::new_v4();
-/// # let args = Value::Null;
-/// let executor = get_tool_executor("read")?;
-/// executor.execute(conn, workspace_id, user_id, args).await?;
-/// # Ok(())
-/// # }
-/// ```
 pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
     match tool_name {
         "ls" => Ok(ToolExecutor::Ls),
         "read" => Ok(ToolExecutor::Read),
         "write" => Ok(ToolExecutor::Write),
         "rm" => Ok(ToolExecutor::Rm),
+        "mv" => Ok(ToolExecutor::Mv),
+        "touch" => Ok(ToolExecutor::Touch),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -119,6 +105,8 @@ pub enum ToolExecutor {
     Read,
     Write,
     Rm,
+    Mv,
+    Touch,
 }
 
 impl ToolExecutor {
@@ -134,6 +122,8 @@ impl ToolExecutor {
             ToolExecutor::Read => read::ReadTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Write => write::WriteTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Rm => rm::RmTool.execute(conn, workspace_id, user_id, args).await,
+            ToolExecutor::Mv => mv::MvTool.execute(conn, workspace_id, user_id, args).await,
+            ToolExecutor::Touch => touch::TouchTool.execute(conn, workspace_id, user_id, args).await,
         }
     }
 }

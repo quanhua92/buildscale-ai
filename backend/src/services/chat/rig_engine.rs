@@ -1,5 +1,5 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
-use crate::services::chat::rig_tools::{RigLsTool, RigReadTool, RigRmTool, RigWriteTool};
+use crate::services::chat::rig_tools::{RigLsTool, RigMvTool, RigReadTool, RigRmTool, RigTouchTool, RigWriteTool};
 use crate::DbPool;
 use crate::error::Result;
 use rig::providers::openai::{self, responses_api::ResponsesCompletionModel};
@@ -21,6 +21,13 @@ impl RigService {
         use rig::client::ProviderClient;
         Self {
             client: openai::Client::from_env(),
+        }
+    }
+
+    /// Creates a dummy RigService for testing purposes.
+    pub fn dummy() -> Self {
+        Self {
+            client: openai::Client::new("sk-dummy").expect("Failed to create OpenAI client"),
         }
     }
 
@@ -60,6 +67,16 @@ impl RigService {
                 user_id,
             })
             .tool(RigRmTool {
+                pool: pool.clone(),
+                workspace_id,
+                user_id,
+            })
+            .tool(RigMvTool {
+                pool: pool.clone(),
+                workspace_id,
+                user_id,
+            })
+            .tool(RigTouchTool {
                 pool: pool.clone(),
                 workspace_id,
                 user_id,
