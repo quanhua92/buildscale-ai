@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE chat_messages\n        SET deleted_at = NOW(), updated_at = NOW()\n        WHERE id = $1 AND workspace_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "474110050044e3a7bed36935acda17006f32a83d0cdba8d86fdb7968c3ff50b1"
+}

@@ -9,8 +9,8 @@ async fn test_read_existing_file() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Read Test").await;
     
-    let expected_content = serde_json::json!({"text": "test content"});
-    write_file(&app, &workspace_id, &token, "/test.md", expected_content.clone()).await;
+    let expected_content = "test content";  // Auto-unwrapped for Documents
+    write_file(&app, &workspace_id, &token, "/test.md", serde_json::json!({"text": expected_content})).await;
     
     let actual_content = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
         "path": "/test.md"
@@ -19,7 +19,7 @@ async fn test_read_existing_file() {
     assert_eq!(actual_content.status(), 200);
     let body: serde_json::Value = actual_content.json().await.unwrap();
     assert!(body["success"].as_bool().unwrap());
-    assert_eq!(body["result"]["content"], expected_content);
+    assert_eq!(body["result"]["content"].as_str().unwrap(), expected_content);
 }
 
 #[tokio::test]
@@ -41,7 +41,7 @@ async fn test_read_deleted_file() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Read Deleted Test").await;
     
-    write_file(&app, &workspace_id, &token, "/test.md", serde_json::json!({"text": "test"})).await;
+    write_file(&app, &workspace_id, &token, "/test.md", serde_json::json!({"text": "test content"})).await;
     crate::tools::common::delete_file(&app, &workspace_id, &token, "/test.md").await;
     
     let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({

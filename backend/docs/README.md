@@ -3,6 +3,7 @@
 Welcome to the BuildScale.ai Backend documentation. This directory contains comprehensive guides on the system's architecture, security, and APIs.
 
 ## 🌟 The Vision
+- **[The Agentic Engine](./AGENTIC_ENGINE.md)**: The specification for the Agentic Engine backend and workflows.
 - **[Files Are All You Need](./FILES_ARE_ALL_YOU_NEED.md)**: Our core philosophy on why folders and tools are the future of AI.
 - **[Everything Is A File](./EVERYTHING_IS_A_FILE.md)**: The technical implementation of our unified file-based architecture.
 

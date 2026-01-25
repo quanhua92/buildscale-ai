@@ -22,6 +22,14 @@ impl Tool for WriteTool {
     fn name(&self) -> &'static str {
         "write"
     }
+
+    fn description(&self) -> &'static str {
+        "Creates or updates a file at the specified path with the provided content."
+    }
+
+    fn definition(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(WriteArgs)).unwrap_or(Value::Null)
+    }
     
     async fn execute(
         &self,
@@ -36,13 +44,13 @@ impl Tool for WriteTool {
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
         
         let result = if let Some(file) = existing_file {
-            // Validation: Ensure content matches existing file type
-            Self::validate_content_for_type(file.file_type, &write_args.content, write_args.file_type.as_deref())?;
+            // Prepare content: handle auto-wrapping for documents
+            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content, write_args.file_type.as_deref())?;
 
             let version = files::create_version(conn, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
                 branch: Some("main".to_string()),
-                content: write_args.content,
+                content: final_content,
                 app_data: None,
             }).await?;
             
@@ -65,8 +73,8 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
-            // Validation: Ensure content matches new file type
-            Self::validate_content_for_type(file_type, &write_args.content, write_args.file_type.as_deref())?;
+            // Prepare content: handle auto-wrapping for documents
+            let final_content = Self::prepare_content_for_type(file_type, write_args.content, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, CreateFileRequest {
                 workspace_id,
@@ -79,7 +87,7 @@ impl Tool for WriteTool {
                 is_remote: None,
                 permission: None,
                 file_type,
-                content: write_args.content,
+                content: final_content,
                 app_data: None,
             }).await?;
             
@@ -99,12 +107,13 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    /// Validates that the content structure matches the requirements for the given file type.
-    fn validate_content_for_type(
+    /// Validates and normalizes content based on the file type.
+    /// Handles auto-wrapping raw strings into the expected JSON structure for Documents.
+    fn prepare_content_for_type(
         actual_type: FileType,
-        content: &Value,
+        content: Value,
         requested_type_str: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<Value> {
         // 1. Prevent writing text content to a folder path unless explicitly creating a folder
         if matches!(actual_type, FileType::Folder) && requested_type_str != Some("folder") {
             return Err(Error::Validation(ValidationErrors::Single {
@@ -113,17 +122,30 @@ impl WriteTool {
             }));
         }
 
-        // 2. Validate Document schema (must have a "text" field with a string value)
+        // 2. Handle Document normalization and validation
         if matches!(actual_type, FileType::Document) {
+            // Auto-wrap raw strings: "hello" -> {"text": "hello"}
+            if content.is_string() {
+                return Ok(serde_json::json!({ "text": content.as_str().unwrap() }));
+            }
+
+            // Check if 'text' field exists
             if !content.get("text").map_or(false, |v| v.is_string()) {
+                // If 'text' field is missing entirely
+                if !content.get("text").is_some() {
+                    return Err(Error::Validation(ValidationErrors::Single {
+                        field: "content".to_string(),
+                        message: "Document content must contain a 'text' field".to_string(),
+                    }));
+                }
+                // If 'text' field exists but is not a string
                 return Err(Error::Validation(ValidationErrors::Single {
                     field: "content".to_string(),
-                    message: "Document content must contain a 'text' field with a string value"
-                        .to_string(),
+                    message: "Document content must contain a 'text' field with a string value".to_string(),
                 }));
             }
         }
 
-        Ok(())
+        Ok(content)
     }
 }

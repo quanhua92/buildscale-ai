@@ -810,6 +810,29 @@ pub async fn update_workspace(
 }
 ```
 
+### AI & Tool Architecture
+
+**Core Tools (`src/tools/`)**:
+- **Thick Layer**: Contains ALL execution logic, input normalization, and validation.
+- **Single Source of Truth**: Used by API handlers, CLI, and AI agents alike.
+- **Polymorphic Inputs**: Must handle diverse input shapes (e.g., auto-wrapping raw strings into `{"text": "..."}` for Documents) to ensure consistency across all callers.
+
+**AI Adapters (`src/services/chat/rig_tools.rs`)**:
+- **Thin Layer**: Pure translation from LLM frameworks (e.g., Rig.rs) to Core Tool arguments.
+- **No Hidden Logic**: Should strictly call `Tool::execute` after basic type conversion.
+- **Interface Owner**: Defines the JSON Schema exposed to the AI, but delegates implementation details to the core tools.
+
+### Workflow: Adding a New Workspace Tool
+
+Follow these 6 steps to ensure consistency across code, documentation, and AI orchestration:
+
+1.  **Define Models** (`src/models/requests.rs`): Create `Args` and `Result` structs. Deriving `JsonSchema` is mandatory for AI visibility.
+2.  **Implement Core Logic** (`src/tools/`): Implement the `Tool` trait in the **Thick Layer**. This layer must handle all validation and input normalization (e.g., auto-wrapping raw strings).
+3.  **Register Core Tool** (`src/tools/mod.rs`): Add the new tool to the `ToolExecutor` enum and registry.
+4.  **Implement AI Adapter** (`src/services/chat/rig_tools.rs`): Create a **Thin** Rig adapter (`Rig*Tool`) that simply delegates to the core tool. Use the `enforce_strict_schema` helper.
+5.  **Register AI Tool** (`src/services/chat/rig_engine.rs`): Add the adapter to the Rig agent builder.
+6.  **Test & Document** (`tests/tools/` & `docs/TOOLS_API_GUIDE.md`): Write integration tests and provide full HTTP REST specifications.
+
 ### Code Organization
 - Separate concerns: models (data), services (business logic), queries (data access)
 - Use type-safe enums for role management

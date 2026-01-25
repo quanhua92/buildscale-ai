@@ -14,6 +14,14 @@ impl Tool for RmTool {
     fn name(&self) -> &'static str {
         "rm"
     }
+
+    fn description(&self) -> &'static str {
+        "Deletes a file or folder at the specified path."
+    }
+
+    fn definition(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(RmArgs)).unwrap_or(Value::Null)
+    }
     
     async fn execute(
         &self,

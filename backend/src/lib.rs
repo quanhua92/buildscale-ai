@@ -183,6 +183,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::workspaces as workspace_handlers;
     use crate::handlers::members as member_handlers;
     use crate::handlers::files as file_handlers;
+    use crate::handlers::chat as chat_handlers;
     use crate::handlers::tools as tool_handlers;
     use crate::middleware::workspace_access::workspace_access_middleware;
 
@@ -332,6 +333,31 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
                     workspace_access_middleware,
                 )),
         )
+        // Chat routes
+        .route(
+            "/{id}/chats",
+            post(chat_handlers::create_chat)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/chats/{chat_id}",
+            post(chat_handlers::post_chat_message)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/chats/{chat_id}/events",
+            get(chat_handlers::get_chat_events)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
             jwt_auth_middleware,
@@ -349,19 +375,22 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
 ///
 /// # Example
 /// ```no_run
-/// use buildscale::{Config, Cache, CacheConfig, run_api_server};
+/// use buildscale::{Config, Cache, CacheConfig, run_api_server, services::chat::rig_engine::RigService};
+/// use std::sync::Arc;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let config = Config::load()?;
 ///     let cache: Cache<String> = Cache::new_local(CacheConfig::default());
-///     run_api_server(&config, cache).await?;
+///     let rig_service = Arc::new(RigService::from_env());
+///     run_api_server(&config, cache, rig_service).await?;
 ///     Ok(())
 /// }
 /// ```
 pub async fn run_api_server(
     config: &Config,
     cache: Cache<String>,
+    rig_service: std::sync::Arc<crate::services::chat::rig_engine::RigService>,
 ) -> Result<()> {
     use secrecy::ExposeSecret;
 
@@ -385,8 +414,8 @@ pub async fn run_api_server(
     // Create user cache with configured TTL
     let user_cache = Cache::new_local(CacheConfig::default());
 
-    // Build the application state with cache, user_cache, and database pool
-    let app_state = AppState::new(cache, user_cache, pool);
+    // Build the application state with cache, user_cache, database pool, and config
+    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone());
 
     let api_routes = create_api_router(app_state.clone());
 

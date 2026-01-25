@@ -56,6 +56,8 @@ services:
       - BUILDSCALE__JWT__SECRET=BuildScaleJWT2025SecureRandomKeyForAccessTokensStrong
       - BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES=15
       - BUILDSCALE__JWT__REFRESH_TOKEN_SECRET=BuildScaleRefresh2025SecureRandomKeyForTokensStrong
+      # AI Configuration
+      - BUILDSCALE__AI__OPENAI_API_KEY=sk-placeholder-replace-with-your-key
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]

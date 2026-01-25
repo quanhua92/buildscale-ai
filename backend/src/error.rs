@@ -99,6 +99,10 @@ pub enum Error {
     /// A JSON serialization error.
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// An LLM error.
+    #[error("LLM error: {0}")]
+    Llm(String),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.
@@ -206,6 +210,10 @@ impl IntoResponse for Error {
                 create_error_body(format!("Invalid JSON payload: {}", e), "VALIDATION_ERROR"),
                 StatusCode::BAD_REQUEST,
             ),
+            Error::Llm(msg) => (
+                create_error_body(msg, "LLM_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         };
 
         (status, Json(body)).into_response()
@@ -245,6 +253,7 @@ impl Error {
             Error::CacheSerialization(_) => "CACHE_ERROR",
             Error::Io(_) => "INTERNAL_ERROR",
             Error::Json(_) => "JSON_ERROR",
+            Error::Llm(_) => "LLM_ERROR",
         }
     }
 }

@@ -17,6 +17,14 @@ impl Tool for ReadTool {
     fn name(&self) -> &'static str {
         "read"
     }
+
+    fn description(&self) -> &'static str {
+        "Reads the content of a file at the specified path."
+    }
+
+    fn definition(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(ReadArgs)).unwrap_or(Value::Null)
+    }
     
     async fn execute(
         &self,
@@ -41,9 +49,24 @@ impl Tool for ReadTool {
         
         let file_with_content = files::get_file_with_content(conn, file.id).await?;
         
+        // Normalize output: unwrap simple documents for ease of AI/API access
+        let content = if file.file_type == crate::models::files::FileType::Document {
+            if let Some(obj) = file_with_content.latest_version.content_raw.as_object() {
+                if obj.len() == 1 && obj.contains_key("text") {
+                    obj["text"].clone()
+                } else {
+                    file_with_content.latest_version.content_raw
+                }
+            } else {
+                file_with_content.latest_version.content_raw
+            }
+        } else {
+            file_with_content.latest_version.content_raw
+        };
+
         let result = ReadResult {
             path,
-            content: file_with_content.latest_version.content_raw,
+            content,
         };
         
         Ok(ToolResponse {

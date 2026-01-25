@@ -13,6 +13,8 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [read - Read File Contents](#read---read-file-contents)
   - [write - Create or Update File](#write---create-or-update-file)
   - [rm - Delete File or Folder](#rm---delete-file-or-folder)
+  - [mv - Move or Rename File](#mv---move-or-rename-file)
+  - [touch - Update Timestamp or Create Empty File](#touch---update-timestamp-or-create-empty-file)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
 - [Error Responses](#error-responses)
@@ -30,6 +32,8 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `read` | Read file contents | `path` | `content` |
 | `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
 | `rm` | Delete file or folder | `path` | `file_id` |
+| `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
+| `touch` | Update time or create empty | `path` | `path`, `file_id` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -96,7 +100,7 @@ Authorization: Bearer <access_token>
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `tool` | string | Yes | Tool name (`ls`, `read`, `write`, `rm`) |
+| `tool` | string | Yes | Tool name (`ls`, `read`, `write`, `rm`, `mv`, `touch`) |
 | `args` | object | Yes | Tool-specific arguments (see [Tool Specifications](#tool-specifications)) |
 
 #### Response (200 OK)
@@ -138,6 +142,67 @@ Authorization: Bearer <access_token>
 {
   "error": "Tool 'invalid_tool' not found",
   "code": "NOT_FOUND"
+}
+```
+
+---
+
+## File Type Content Handling
+
+The Tools API handles content differently based on file types to optimize for AI/developer experience:
+
+### Document Files (Auto-Wrap/Unwrap)
+Document files use automatic wrapping and unwrapping for convenience:
+
+**Write Behavior:**
+- Raw strings are auto-wrapped: `"hello"` → `{"text": "hello"}`
+- Explicit objects accepted: `{"text": "hello"}` → stored as-is
+- **Why:** Simplifies AI input - no need to wrap every string in an object
+
+**Read Behavior:**
+- Simple documents auto-unwrapped: `{"text": "hello"}` → `"hello"`
+- Complex documents preserved: `{"text": "hello", "metadata": {}}` → returned as-is
+- **Why:** AI gets clean string content without JSON nesting
+
+**Examples:**
+```json
+// Write - all three work:
+{"content": "raw string"}           // Auto-wrapped
+{"content": {"text": "explicit"}}   // Explicit object
+
+// Read - returns:
+{"result": {"content": "raw string"}}  // Unwrapped for convenience
+```
+
+### Other File Types (Raw JSONB)
+Canvas, Whiteboard, Chat, Agent, Skill files preserve raw JSON:
+
+**Write Behavior:**
+- No auto-wrapping
+- Content must match expected JSON structure for the type
+
+**Read Behavior:**
+- No auto-unwrapping
+- Returns exact stored JSON structure
+
+**Examples (Canvas):**
+```json
+// Write:
+{
+  "content": {
+    "elements": [{"type": "rect", "x": 10}],
+    "version": 1
+  }
+}
+
+// Read - returns same structure:
+{
+  "result": {
+    "content": {
+      "elements": [{"type": "rect", "x": 10}],
+      "version": 1
+    }
+  }
 }
 ```
 
@@ -262,25 +327,27 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "success": true,
   "result": {
     "path": "/documents/report.md",
-    "content": {
-      "text": "# Annual Report\n\nThis is the content..."
-    }
+    "content": "# Annual Report\n\nThis is the content..."
   },
   "error": null
 }
 ```
+
+**Note:** For Document types, the `content` field is auto-unwrapped to return just the text string (not `{"text": "..."}`) for convenience. For other file types, returns the full JSON structure.
 
 #### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was read |
-| `result.content` | object | File content as JSON value (structure depends on file type) |
+| `result.content` | string or object | File content - unwrapped string for Documents, JSON object for other types |
 
 #### Behavior Notes
 
 - **Latest version**: Always returns the most recent file version
-- **Content format**: Returns `content_raw` from the latest `FileVersion`
+- **Auto-unwrap for Documents**: Simple Document files (`{text: "..."}`) are automatically unwrapped to return just the string value
+- **Complex Documents**: Documents with additional fields beyond `text` are returned as-is without unwrapping
+- **Other types**: Canvas, Whiteboard, Chat, etc. return raw JSON without modification
 - **Not found error**: Returns 404 if path does not exist
 
 ---
@@ -315,8 +382,26 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "write",
     "args": {
       "path": "/documents/notes.md",
+      "content": "# My Notes\n\nCreated via Tools API",
+      "file_type": "document"
+    }
+  }'
+```
+
+**Note:** For Document types, you can pass either a raw string (auto-wrapped to `{text: "..."}`) or an explicit `{text: "..."}` object. The example above uses the raw string format for simplicity.
+
+#### Request Example (Create Document with Explicit Object)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "write",
+    "args": {
+      "path": "/docs/report.md",
       "content": {
-        "text": "# My Notes\n\nCreated via Tools API"
+        "text": "# Report\n\nContent here..."
       },
       "file_type": "document"
     }
@@ -385,10 +470,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Create mode**: If file doesn't exist, creates new file with content
 - **Update mode**: If file exists, creates new version with updated content
-- **Schema Validation**: For `document` types, `content` must contain a `text` field with a string value
+- **Auto-wrap for Documents**: Raw strings are automatically wrapped to `{text: "..."}` for Document types
+- **Document validation**: For Document types with explicit objects, must contain a `text` field with a string value
+- **Other types**: Canvas, Whiteboard, Chat, etc. require their specific JSON structure without auto-wrapping
 - **Auto-folder creation**: Uses `create_file_with_content()` with path to create nested folders
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
-- **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`. Defaults to `document`.
+- **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`, `agent`, `skill`. Defaults to `document`.
 - **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path
 
 ---
@@ -449,6 +536,158 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Safety checks**: Underlying service applies safety checks
 - **Not found error**: Returns 404 if path does not exist
 - **Recovery**: Soft-deleted files can be restored via the files API
+
+---
+
+### mv - Move or Rename File
+
+Moves or renames a file within the workspace.
+
+#### Arguments
+
+```json
+{
+  "source": "/old-path.txt",
+  "destination": "/new-path.txt"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | Yes | Current path of the file |
+| `destination` | string | Yes | Target path or target directory (ends with `/`) |
+
+#### Request Example (Rename)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mv",
+    "args": {
+      "source": "/documents/old-name.md",
+      "destination": "/documents/new-name.md"
+    }
+  }'
+```
+
+#### Request Example (Move to Directory)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mv",
+    "args": {
+      "source": "/file.txt",
+      "destination": "/archive/"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "from_path": "/documents/old-name.md",
+    "to_path": "/documents/new-name.md"
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.from_path` | string | The original path of the file |
+| `result.to_path` | string | The new path after move/rename |
+
+#### Behavior Notes
+
+- **Rename**: If `destination` is a path, the file is renamed/moved to that exact path.
+- **Move to Folder**: If `destination` ends with `/` (e.g., `/folder/`), the file is moved into that directory keeping its original name.
+- **Destination as Directory**: If `destination` is an existing directory (no trailing `/`), the file is moved into it.
+- **Validation**: Returns `404 Not Found` if source does not exist.
+- **Conflict**: Returns `409 Conflict` if destination path already exists as a file (prevents accidental overwrites).
+- **Parent Validation**: Destination parent directory must exist.
+
+---
+
+### touch - Update Timestamp or Create Empty File
+
+Updates the modification time of a file or creates a new empty file.
+
+#### Arguments
+
+```json
+{
+  "path": "/new-file.txt"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Path to the file to touch |
+
+#### Request Example (Create New File)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "touch",
+    "args": {
+      "path": "/documents/placeholder.txt"
+    }
+  }'
+```
+
+#### Request Example (Update Timestamp)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "touch",
+    "args": {
+      "path": "/documents/existing-file.txt"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/documents/placeholder.txt",
+    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1"
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.path` | string | The path that was touched |
+| `result.file_id` | UUID | File identifier |
+
+#### Behavior Notes
+
+- **Update**: If file exists, updates its `updated_at` timestamp.
+- **Create**: If file does not exist, creates a new empty `document` file.
+- **Recursive**: Automatically creates parent folders if missing during creation.
+- **File Type**: New files are created with `document` type and empty text content.
 
 ---
 
@@ -733,6 +972,8 @@ match self {
 | read implementation | `backend/src/tools/read.rs` |
 | write implementation | `backend/src/tools/write.rs` |
 | rm implementation | `backend/src/tools/rm.rs` |
+| mv implementation | `backend/src/tools/mv.rs` |
+| touch implementation | `backend/src/tools/touch.rs` |
 | Request/Response models | `backend/src/models/requests.rs` |
 | Route registration | `backend/src/lib.rs:328` |
 
@@ -893,6 +1134,35 @@ curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
   }'
 ```
 
+#### Move/Rename File
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mv",
+    "args": {
+      "source": "/notes/thoughts.md",
+      "destination": "/docs/thoughts.md"
+    }
+  }'
+```
+
+#### Touch File (Update Timestamp or Create)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "touch",
+    "args": {
+      "path": "/notes/placeholder.txt"
+    }
+  }'
+```
+
 ### JavaScript/TypeScript Example
 
 ```typescript
@@ -944,6 +1214,14 @@ class ToolsClient {
   async rm(workspaceId: string, path: string) {
     return this.executeTool(workspaceId, 'rm', { path });
   }
+
+  async mv(workspaceId: string, source: string, destination: string) {
+    return this.executeTool(workspaceId, 'mv', { source, destination });
+  }
+
+  async touch(workspaceId: string, path: string) {
+    return this.executeTool(workspaceId, 'touch', { path });
+  }
 }
 
 // Usage
@@ -962,6 +1240,12 @@ await client.write(workspaceId, '/notes/new-file.md', {
 
 // Delete file
 await client.rm(workspaceId, '/notes/old-file.md');
+
+// Move/rename file
+await client.mv(workspaceId, '/notes/thoughts.md', '/docs/thoughts.md');
+
+// Touch file (create or update timestamp)
+await client.touch(workspaceId, '/notes/placeholder.txt');
 ```
 
 ### Rust Integration Example
@@ -1015,6 +1299,8 @@ cargo test tools::ls_tests
 cargo test tools::read_tests
 cargo test tools::write_tests
 cargo test tools::rm_tests
+cargo test tools::mv_tests
+cargo test tools::touch_tests
 
 # Run integration tests
 cargo test tools::integration_tests
@@ -1033,6 +1319,8 @@ backend/tests/tools/
 ├── read_tests.rs           # read tool tests
 ├── write_tests.rs          # write tool tests
 ├── rm_tests.rs             # rm tool tests
+├── mv_tests.rs             # mv tool tests
+├── touch_tests.rs          # touch tool tests
 └── integration_tests.rs    # Cross-tool integration tests
 ```
 
@@ -1043,6 +1331,8 @@ The test suite covers:
 - ✅ Error handling (file not found, invalid arguments)
 - ✅ Recursive vs non-recursive listing
 - ✅ Create vs update behavior for write tool
+- ✅ Move/rename behavior for mv tool
+- ✅ Touch update vs create behavior for touch tool
 - ✅ Workspace isolation
 - ✅ Authentication and authorization
 - ✅ Edge cases (empty directories, nested folders)
@@ -1064,12 +1354,14 @@ The Tools API leverages existing database query functions:
 
 | Query | Purpose | Used By |
 |-------|---------|---------|
-| `get_file_by_path()` | Resolve path to file | ls, read, write, rm |
+| `get_file_by_path()` | Resolve path to file | ls, read, write, rm, mv, touch |
 | `list_files_in_folder()` | List immediate children | ls (non-recursive) |
 | `get_file_with_content()` | Read with latest version | read |
-| `create_file_with_content()` | Create new file with content | write (create mode) |
+| `create_file_with_content()` | Create new file with content | write (create mode), touch (create mode) |
 | `create_version()` | Create new file version | write (update mode) |
 | `soft_delete_file()` | Soft delete file | rm |
+| `touch_file()` | Update file timestamp | touch (update mode) |
+| `update_file()` | Update file metadata | mv |
 
 All queries are located in `backend/src/queries/files.rs`.
 

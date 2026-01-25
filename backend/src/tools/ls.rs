@@ -14,6 +14,14 @@ impl Tool for LsTool {
     fn name(&self) -> &'static str {
         "ls"
     }
+
+    fn description(&self) -> &'static str {
+        "Lists files and folders in a directory."
+    }
+
+    fn definition(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(LsArgs)).unwrap_or(Value::Null)
+    }
     
     async fn execute(
         &self,

@@ -6,3 +6,4 @@ pub mod workspace_members;
 pub mod files;
 pub mod handlers;
 pub mod tools;
+pub mod services;

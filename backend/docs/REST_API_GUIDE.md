@@ -61,7 +61,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/links` | POST | Link two files | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
-| `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm) | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -238,7 +238,7 @@ Search for content across all files in the workspace using vector similarity.
 
 ## Tools API
 
-Execute filesystem tools (ls, read, write, rm) within a workspace through a unified endpoint. This API provides an extensible interface for AI agents, automation scripts, and CLI tools.
+Execute filesystem tools (ls, read, write, rm, mv, touch) within a workspace through a unified endpoint. This API provides an extensible interface for AI agents, automation scripts, and CLI tools.
 
 ### Execute Tool
 
@@ -261,8 +261,14 @@ Execute filesystem tools (ls, read, write, rm) within a workspace through a unif
 | `read` | Read file contents | `path` (required) |
 | `write` | Create or update file | `path` (required), `content` (required), `file_type` (optional, defaults to `document`) |
 | `rm` | Delete file or folder | `path` (required) |
+| `mv` | Move or rename file | `source` (required), `destination` (required) |
+| `touch` | Update timestamp or create empty file | `path` (required) |
 
-**Note on `document` types**: If `file_type` is `document` (or omitted), the `content` must follow the schema `{ "text": "string content" }`. Invalid structures will be rejected with a 400 error.
+**Content Handling by File Type**:
+- **Documents**: Raw strings are auto-wrapped to `{text: "..."}`. On read, simple documents are auto-unwrapped to return just the string.
+- **Other types** (canvas, whiteboard, etc.): Require and return raw JSON structures without transformation.
+
+For complete tool specifications, examples, and behavior details, see **[Tools API Guide](./TOOLS_API_GUIDE.md)**.
 
 #### Response
 ```json
