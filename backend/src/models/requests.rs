@@ -219,26 +219,37 @@ pub struct PostChatMessageRequest {
 }
 
 /// Tool-specific argument structures
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LsArgs {
     pub path: Option<String>,
     pub recursive: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReadArgs {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WriteArgs {
     pub path: String,
     pub content: serde_json::Value,
     pub file_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RmArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MvArgs {
+    pub source: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TouchArgs {
     pub path: String,
 }
 
@@ -280,6 +291,18 @@ pub struct WriteResult {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RmResult {
+    pub path: String,
+    pub file_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MvResult {
+    pub from_path: String,
+    pub to_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TouchResult {
     pub path: String,
     pub file_id: Uuid,
 }
