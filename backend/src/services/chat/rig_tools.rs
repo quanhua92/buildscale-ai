@@ -95,7 +95,7 @@ impl RigTool for RigReadTool {
         async move {
             ToolDefinition {
                 name,
-                description: "Reads the literal content of a file at the specified path."
+                description: "Reads the content of a file. For Document types, automatically unwraps the text field for convenience. For other types (canvas, whiteboard, etc.), returns the raw JSON structure."
                     .to_string(),
                 parameters: enforce_strict_schema(
                     serde_json::to_value(schemars::schema_for!(ReadArgs)).unwrap_or_default(),
@@ -151,7 +151,7 @@ impl RigTool for RigWriteTool {
         async move {
             ToolDefinition {
                 name,
-                description: "Creates or updates a file at the specified path with the provided content."
+                description: "Creates or updates a file. For Document types, accepts raw strings (auto-wrapped to {text: ...}) or {text: string} objects. For other types (canvas, whiteboard, etc.), requires the appropriate JSON structure."
                     .to_string(),
                 parameters: enforce_strict_schema(
                     serde_json::to_value(schemars::schema_for!(WriteArgs)).unwrap_or_default(),

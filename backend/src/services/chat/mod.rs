@@ -1,3 +1,74 @@
+//! Chat service with AI agent integration
+//!
+//! This module provides the Agentic Engine for AI-powered chat interactions with workspace files.
+//! It integrates Rig.rs AI runtime with native workspace tools for autonomous file operations.
+//!
+//! # Architecture
+//!
+//! - **Rig Engine**: AI runtime (OpenAI GPT-4) with tool-calling capabilities
+//! - **Rig Tools**: Thin adapters that expose workspace tools to the AI
+//! - **Context Manager**: Manages conversation history and file attachments
+//! - **Actor System**: Manages concurrent chat sessions with SSE streaming
+//!
+//! # Tool Behavior for AI
+//!
+//! The AI tools use smart content handling to optimize interactions:
+//!
+//! ## Document Files (Auto-Wrap/Unwrap)
+//!
+//! - **Write**: `"hello"` → stored as `{text: "hello"}` (auto-wrapped)
+//! - **Read**: `{text: "hello"}` → returns `"hello"` (auto-unwrapped)
+//! - **Why**: Simplifies AI input/output - no need for manual JSON wrapping
+//!
+//! ```json
+//! // AI can write:
+//! {"path": "/notes.md", "content": "Hello World"}
+//!
+//! // AI reads back:
+//! {"content": "Hello World"}  // Not {"text": "Hello World"}
+//! ```
+//!
+//! ## Other File Types (Raw JSONB)
+//!
+//! - **Canvas/Whiteboard/Chat**: No transformation
+//! - **Write**: Must provide correct JSON structure
+//! - **Read**: Returns exact stored JSON
+//!
+//! ```json
+//! // AI must write canvas with full structure:
+//! {
+//!   "path": "/design.canvas",
+//!   "content": {
+//!     "elements": [{"type": "rect"}],
+//!     "version": 1
+//!   }
+//! }
+//!
+//! // AI reads back same structure:
+//! {"content": {"elements": [...], "version": 1}}
+//! ```
+//!
+//! # Usage
+//!
+//! ```rust,no_run
+//! use buildscale::services::chat::{rig_engine::RigService, ChatService};
+//! use std::sync::Arc;
+//! use uuid::Uuid;
+//!
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // 1. Create Rig service
+//! let rig_service = Arc::new(RigService::from_env());
+//!
+//! // 2. Build agent with tools (requires pool, workspace_id, user_id)
+//! // let agent = rig_service.create_agent(&pool, workspace_id, user_id).await?;
+//!
+//! // 3. Execute tool calls
+//! // let response = agent.chat("Create a file called hello.txt").await?;
+//! # Ok(())
+//! # }
+//! ```
+
 pub mod actor;
 pub mod context;
 pub mod registry;

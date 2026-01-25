@@ -147,6 +147,67 @@ Authorization: Bearer <access_token>
 
 ---
 
+## File Type Content Handling
+
+The Tools API handles content differently based on file types to optimize for AI/developer experience:
+
+### Document Files (Auto-Wrap/Unwrap)
+Document files use automatic wrapping and unwrapping for convenience:
+
+**Write Behavior:**
+- Raw strings are auto-wrapped: `"hello"` → `{"text": "hello"}`
+- Explicit objects accepted: `{"text": "hello"}` → stored as-is
+- **Why:** Simplifies AI input - no need to wrap every string in an object
+
+**Read Behavior:**
+- Simple documents auto-unwrapped: `{"text": "hello"}` → `"hello"`
+- Complex documents preserved: `{"text": "hello", "metadata": {}}` → returned as-is
+- **Why:** AI gets clean string content without JSON nesting
+
+**Examples:**
+```json
+// Write - all three work:
+{"content": "raw string"}           // Auto-wrapped
+{"content": {"text": "explicit"}}   // Explicit object
+
+// Read - returns:
+{"result": {"content": "raw string"}}  // Unwrapped for convenience
+```
+
+### Other File Types (Raw JSONB)
+Canvas, Whiteboard, Chat, Agent, Skill files preserve raw JSON:
+
+**Write Behavior:**
+- No auto-wrapping
+- Content must match expected JSON structure for the type
+
+**Read Behavior:**
+- No auto-unwrapping
+- Returns exact stored JSON structure
+
+**Examples (Canvas):**
+```json
+// Write:
+{
+  "content": {
+    "elements": [{"type": "rect", "x": 10}],
+    "version": 1
+  }
+}
+
+// Read - returns same structure:
+{
+  "result": {
+    "content": {
+      "elements": [{"type": "rect", "x": 10}],
+      "version": 1
+    }
+  }
+}
+```
+
+---
+
 ## Tool Specifications
 
 ### ls - List Directory Contents
@@ -266,25 +327,27 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "success": true,
   "result": {
     "path": "/documents/report.md",
-    "content": {
-      "text": "# Annual Report\n\nThis is the content..."
-    }
+    "content": "# Annual Report\n\nThis is the content..."
   },
   "error": null
 }
 ```
+
+**Note:** For Document types, the `content` field is auto-unwrapped to return just the text string (not `{"text": "..."}`) for convenience. For other file types, returns the full JSON structure.
 
 #### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was read |
-| `result.content` | object | File content as JSON value (structure depends on file type) |
+| `result.content` | string or object | File content - unwrapped string for Documents, JSON object for other types |
 
 #### Behavior Notes
 
 - **Latest version**: Always returns the most recent file version
-- **Content format**: Returns `content_raw` from the latest `FileVersion`
+- **Auto-unwrap for Documents**: Simple Document files (`{text: "..."}`) are automatically unwrapped to return just the string value
+- **Complex Documents**: Documents with additional fields beyond `text` are returned as-is without unwrapping
+- **Other types**: Canvas, Whiteboard, Chat, etc. return raw JSON without modification
 - **Not found error**: Returns 404 if path does not exist
 
 ---
@@ -319,8 +382,26 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "write",
     "args": {
       "path": "/documents/notes.md",
+      "content": "# My Notes\n\nCreated via Tools API",
+      "file_type": "document"
+    }
+  }'
+```
+
+**Note:** For Document types, you can pass either a raw string (auto-wrapped to `{text: "..."}`) or an explicit `{text: "..."}` object. The example above uses the raw string format for simplicity.
+
+#### Request Example (Create Document with Explicit Object)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "write",
+    "args": {
+      "path": "/docs/report.md",
       "content": {
-        "text": "# My Notes\n\nCreated via Tools API"
+        "text": "# Report\n\nContent here..."
       },
       "file_type": "document"
     }
@@ -389,10 +470,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Create mode**: If file doesn't exist, creates new file with content
 - **Update mode**: If file exists, creates new version with updated content
-- **Schema Validation**: For `document` types, `content` must contain a `text` field with a string value
+- **Auto-wrap for Documents**: Raw strings are automatically wrapped to `{text: "..."}` for Document types
+- **Document validation**: For Document types with explicit objects, must contain a `text` field with a string value
+- **Other types**: Canvas, Whiteboard, Chat, etc. require their specific JSON structure without auto-wrapping
 - **Auto-folder creation**: Uses `create_file_with_content()` with path to create nested folders
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
-- **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`. Defaults to `document`.
+- **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`, `agent`, `skill`. Defaults to `document`.
 - **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path
 
 ---

@@ -264,7 +264,9 @@ Execute filesystem tools (ls, read, write, rm, mv, touch) within a workspace thr
 | `mv` | Move or rename file | `source` (required), `destination` (required) |
 | `touch` | Update timestamp or create empty file | `path` (required) |
 
-**Note on `document` types**: If `file_type` is `document` (or omitted), the `content` must follow the schema `{ "text": "string content" }`. Invalid structures will be rejected with a 400 error.
+**Content Handling by File Type**:
+- **Documents**: Raw strings are auto-wrapped to `{text: "..."}`. On read, simple documents are auto-unwrapped to return just the string.
+- **Other types** (canvas, whiteboard, etc.): Require and return raw JSON structures without transformation.
 
 For complete tool specifications, examples, and behavior details, see **[Tools API Guide](./TOOLS_API_GUIDE.md)**.
 
