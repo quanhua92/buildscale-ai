@@ -172,6 +172,16 @@ Document files use automatic wrapping and unwrapping for convenience:
 - Complex documents preserved: `{"text": "hello", "metadata": {}}` → returned as-is
 - **Why:** AI gets clean string content without JSON nesting
 
+**Edit & Edit-Many Behavior:**
+- Operates on the inner `text` field for `Document` types.
+- Resilient: Automatically handles both wrapped (`{"text": "..."}`) and raw string content.
+- **Result:** Always commits a new version using the standard wrapped structure.
+
+**Grep Behavior:**
+- Searches specifically within the `text` field of `Document` files.
+- High performance: Executes regex directly in the database (PostgreSQL).
+- Returns line-accurate results including line numbers and text chunks.
+
 **Examples:**
 ```json
 // Write - all three work:

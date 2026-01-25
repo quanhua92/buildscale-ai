@@ -30,6 +30,16 @@ pub fn hash_content(content: &serde_json::Value) -> Result<String> {
     Ok(hex::encode(result))
 }
 
+/// Normalizes content for a specific file type.
+/// For Documents, raw strings are auto-wrapped in `{"text": "..."}`.
+pub fn auto_wrap_document_content(file_type: FileType, content: serde_json::Value) -> serde_json::Value {
+    if matches!(file_type, FileType::Document) && content.is_string() {
+        serde_json::json!({ "text": content.as_str().unwrap() })
+    } else {
+        content
+    }
+}
+
 /// Converts a display name into a URL-safe slug.
 pub fn slugify(name: &str) -> String {
     let mut slug = String::with_capacity(name.len());
@@ -214,12 +224,13 @@ pub async fn create_file_with_content(
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
     // 5. Create initial version record (Ensures structural consistency for all file types)
-    let hash = hash_content(&request.content)?;
+    let content = auto_wrap_document_content(file.file_type, request.content);
+    let hash = hash_content(&content)?;
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
         branch: "main".to_string(),
-        content_raw: request.content,
+        content_raw: content,
         app_data: request.app_data.unwrap_or(serde_json::json!({})),
         hash,
         author_id: Some(request.author_id),
@@ -250,16 +261,17 @@ pub async fn create_version(
     file_id: Uuid,
     request: CreateVersionRequest,
 ) -> Result<crate::models::files::FileVersion> {
-    let hash = hash_content(&request.content)?;
+    // 1. Get file to obtain file_type and workspace_id
+    let file = files::get_file_by_id(conn, file_id).await?;
 
-    // 1. Check if the latest version already has this hash (deduplication)
+    let content = auto_wrap_document_content(file.file_type, request.content);
+    let hash = hash_content(&content)?;
+
+    // 2. Check if the latest version already has this hash (deduplication)
     let latest = files::get_latest_version_optional(conn, file_id).await?;
     if let Some(v) = latest.filter(|v| v.hash == hash) {
         return Ok(v);
     }
-
-    // 2. Get file to obtain workspace_id
-    let file = files::get_file_by_id(conn, file_id).await?;
 
     // 3. Start transaction
     let mut tx = conn.begin().await.map_err(|e| {
@@ -271,7 +283,7 @@ pub async fn create_version(
         file_id,
         workspace_id: file.workspace_id,
         branch: request.branch.unwrap_or_else(|| "main".to_string()),
-        content_raw: request.content,
+        content_raw: content,
         app_data: request.app_data.unwrap_or(serde_json::json!({})),
         hash,
         author_id: request.author_id,

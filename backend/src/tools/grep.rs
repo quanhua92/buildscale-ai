@@ -34,11 +34,25 @@ impl Tool for GrepTool {
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
         
+        let path_pattern = grep_args.path_pattern.map(|mut p| {
+            if !p.contains('%') {
+                if p.ends_with('/') {
+                    p.push('%');
+                } else {
+                    p.push_str("/%");
+                }
+            }
+            if !p.starts_with('/') && !p.starts_with('%') {
+                p.insert(0, '/');
+            }
+            p
+        });
+
         let matches = file_queries::grep_files(
             conn, 
             workspace_id, 
             &grep_args.pattern, 
-            grep_args.path_pattern.as_deref(), 
+            path_pattern.as_deref(), 
             grep_args.case_sensitive.unwrap_or(false)
         ).await?;
         

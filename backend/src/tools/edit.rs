@@ -61,7 +61,13 @@ async fn perform_edit(
     // Extract text
     let content_text = match latest_version.content_raw.get("text") {
         Some(Value::String(s)) => s.clone(),
-        _ => return Err(Error::Internal("Document content missing 'text' field".to_string())),
+        _ => {
+            if let Some(s) = latest_version.content_raw.as_str() {
+                s.to_string()
+            } else {
+                return Err(Error::Internal("Document content is not a string and missing 'text' field".to_string()));
+            }
+        },
     };
 
     // Search and Count

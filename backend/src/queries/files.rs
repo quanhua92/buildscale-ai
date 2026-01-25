@@ -930,7 +930,14 @@ pub async fn grep_files(
             t.line_text as "line_text!"
         FROM files f
         JOIN file_versions fv ON f.latest_version_id = fv.id
-        CROSS JOIN LATERAL unnest(string_to_array(fv.content_raw->>'text', E'\n')) 
+        CROSS JOIN LATERAL unnest(string_to_array(
+            CASE 
+                WHEN fv.content_raw ? 'text' THEN fv.content_raw->>'text'
+                WHEN jsonb_typeof(fv.content_raw) = 'string' THEN fv.content_raw #>> '{}'
+                ELSE fv.content_raw::text 
+            END, 
+            E'\n'
+        )) 
             WITH ORDINALITY AS t(line_text, line_number)
         WHERE f.workspace_id = $1
           AND f.deleted_at IS NULL

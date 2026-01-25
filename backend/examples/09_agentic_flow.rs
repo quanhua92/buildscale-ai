@@ -114,41 +114,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("3️⃣  Seeding test project structure...");
     
     // Create src/main.rs with multiple DEBUG tags
+    let main_rs_content = "fn main() {\n    DEBUG: Initializing engine...\n    DEBUG: Loading modules...\n    println!(\"Hello BuildScale!\");\n}";
+    println!("📄 Seeding 'src/main.rs'...");
     let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({ 
             "name": "main.rs",
             "path": "src/main.rs", 
             "file_type": "document", 
-            "content": "fn main() {\n    DEBUG: Initializing engine...\n    DEBUG: Loading modules...\n    println!(\"Hello BuildScale!\");\n}" 
+            "content": main_rs_content
         }))
         .send().await?;
     if !res.status().is_success() {
         panic!("Failed to seed src/main.rs: {}", res.text().await?);
     }
+    println!("✓ 'src/main.rs' seeded with content:\n---\n{}\n---\n", main_rs_content);
     
     // Create config/app.json for precision editing
+    let app_json_content = "{\n  \"env\": \"development\",\n  \"version\": \"1.0.0\"\n}";
+    println!("📄 Seeding 'config/app.json'...");
     let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({ 
             "name": "app.json",
             "path": "config/app.json", 
             "file_type": "document", 
-            "content": "{\n  \"env\": \"development\",\n  \"version\": \"1.0.0\"\n}" 
+            "content": app_json_content
         }))
         .send().await?;
     if !res.status().is_success() {
         panic!("Failed to seed config/app.json: {}", res.text().await?);
     }
+    println!("✓ 'config/app.json' seeded with content:\n---\n{}\n---\n", app_json_content);
 
     // Create a temporary file for deletion demo
+    let temp_notes_content = "This is a temporary note.";
+    println!("📄 Seeding 'temp_notes.txt'...");
     let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "name": "temp_notes.txt", "file_type": "document", "content": "This is a temporary note." }))
+        .json(&json!({ 
+            "name": "temp_notes.txt", 
+            "file_type": "document", 
+            "content": temp_notes_content
+        }))
         .send().await?;
     if !res.status().is_success() {
         panic!("Failed to seed temp_notes.txt: {}", res.text().await?);
     }
+    println!("✓ 'temp_notes.txt' seeded with content:\n---\n{}\n---\n", temp_notes_content);
 
     println!("✓ Project structure seeded.\n");
 
@@ -178,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- TURN 1: Exploration ---
     println!("👉 TURN 1: Exploration (ls, grep)");
-    let prompt = "List all files in the workspace recursively. Then use the 'grep' tool specifically to find all occurrences of 'DEBUG' in the 'src/' directory. Do not use 'read' for searching.";
+    let prompt = "I need to find technical debt. First, list all files recursively. Then, YOU MUST use the 'grep' tool specifically to search for the pattern 'DEBUG' in the '/src' directory. DO NOT read files to find the pattern; use grep.";
     println!("💬 PROMPT: {}", prompt);
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
@@ -188,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- TURN 2: Precision Edit ---
     println!("👉 TURN 2: Precision Edit (read, edit)");
-    let prompt = "I want to change the environment to production. First, 'read' 'config/app.json' to get its content and hash. Then, use the 'edit' tool (NOT 'write') to replace 'development' with 'production'. You MUST pass the 'last_read_hash' you just got.";
+    let prompt = "I want to change the environment to production. First, 'read' 'config/app.json' to get its content and hash. Then, YOU MUST use the 'edit' tool (NOT 'write') to replace 'development' with 'production'. You MUST pass the 'last_read_hash' argument for safety.";
     println!("💬 PROMPT: {}", prompt);
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
@@ -198,7 +211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- TURN 3: Global Refactor ---
     println!("👉 TURN 3: Global Refactor (edit-many)");
-    let prompt = "Now refactor the logging. Use the 'edit-many' tool (NOT 'write') to replace all occurrences of 'DEBUG:' with 'LOG:' in 'src/main.rs'.";
+    let prompt = "Logging refactor time. YOU MUST use the 'edit-many' tool specifically to replace all occurrences of 'DEBUG:' with 'LOG:' in '/src/main.rs'. DO NOT use 'write'; use 'edit-many'.";
     println!("💬 PROMPT: {}", prompt);
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))

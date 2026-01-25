@@ -140,7 +140,7 @@ define_rig_tool!(
     tools::read::ReadTool,
     ReadArgs,
     "read",
-    "Reads the content and hash of a file. For Document types, automatically unwraps the text field. Use this to get the 'hash' before calling 'edit'."
+    "Reads the content and hash of a file. For Document types, automatically unwraps the text field. Use this to get the 'hash' before calling 'edit'. PERFORMANCE WARNING: Do NOT use this tool to search for strings in multiple files; use 'grep' instead for efficiency."
 );
 
 define_rig_tool!(
@@ -148,7 +148,7 @@ define_rig_tool!(
     tools::write::WriteTool,
     WriteArgs,
     "write",
-    "Creates a NEW file or completely OVERWRITES an existing file. For partial modifications or refactoring, use 'edit' or 'edit-many' instead. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
+    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you SHOULD prefer 'edit' or 'edit-many' to ensure safety and preserve surrounding context. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
 );
 
 define_rig_tool!(
@@ -196,7 +196,7 @@ define_rig_tool!(
     tools::grep::GrepTool,
     GrepArgs,
     "grep",
-    "Searches for a regex pattern in all document files within the workspace. Supports optional path filtering."
+    "REQUIRED for searching. Performs a high-performance, workspace-wide regex search across all files. Returns line numbers and matching text. Always use this instead of reading files manually when looking for patterns."
 );
 
 define_rig_tool!(
