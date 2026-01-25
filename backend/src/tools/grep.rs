@@ -35,15 +35,17 @@ impl Tool for GrepTool {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
         
         let path_pattern = grep_args.path_pattern.map(|mut p| {
-            if !p.contains('%') {
-                if p.ends_with('/') {
-                    p.push('%');
-                } else {
-                    p.push_str("/%");
-                }
-            }
+            // Convert glob-like * to SQL LIKE %
+            p = p.replace('*', "%");
+            
+            // If it doesn't look like an absolute path or already a wildcard, make it fuzzy
             if !p.starts_with('/') && !p.starts_with('%') {
-                p.insert(0, '/');
+                p.insert(0, '%');
+            }
+            
+            // Always allow matching children if it looks like a directory
+            if !p.ends_with('%') {
+                p.push('%');
             }
             p
         });

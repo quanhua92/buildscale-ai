@@ -100,3 +100,62 @@ async fn test_grep_regex_pattern() {
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0]["line_text"], "foo123bar");
 }
+
+#[tokio::test]
+async fn test_grep_raw_string_content() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Raw Test").await;
+    
+    // Create a file with raw string content (not wrapped in {"text": ...})
+    // We bypass the tool normalization by using the REST API /files directly with raw string
+    let res = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&serde_json::json!({
+            "name": "raw.txt",
+            "file_type": "document",
+            "content": "raw string match"
+        }))
+        .send().await.unwrap();
+    assert!(res.status().is_success());
+
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "match"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let matches = body["result"]["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0]["path"], "/raw.txt");
+    assert_eq!(matches[0]["line_text"], "raw string match");
+}
+
+#[tokio::test]
+async fn test_grep_path_normalization() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Path Normalization Test").await;
+    
+    write_file(&app, &workspace_id, &token, "/src/lib.rs", serde_json::json!({"text": "findme"})).await;
+
+    // Test with path that needs normalization (no leading slash, no wildcard)
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "findme",
+        "path_pattern": "src"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let matches = body["result"]["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0]["path"], "/src/lib.rs");
+    
+    // Test with * wildcard
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "findme",
+        "path_pattern": "s*c"
+    })).await;
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["result"]["matches"].as_array().unwrap().len(), 1);
+}

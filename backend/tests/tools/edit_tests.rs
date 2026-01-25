@@ -173,3 +173,33 @@ async fn test_edit_correct_hash() {
     let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
     assert_eq!(read_content.as_str().unwrap(), "updated content");
 }
+
+#[tokio::test]
+async fn test_edit_raw_string_content() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Raw Test").await;
+    
+    // Create a file with raw string content
+    let res = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&serde_json::json!({
+            "name": "raw.txt",
+            "file_type": "document",
+            "content": "raw text content"
+        }))
+        .send().await.unwrap();
+    assert!(res.status().is_success());
+
+    // Perform edit on raw content
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/raw.txt",
+        "old_string": "text",
+        "new_string": "updated"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    
+    let read_content = read_file(&app, &workspace_id, &token, "/raw.txt").await;
+    assert_eq!(read_content.as_str().unwrap(), "raw updated content");
+}

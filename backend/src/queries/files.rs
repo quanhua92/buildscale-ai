@@ -942,7 +942,7 @@ pub async fn grep_files(
         WHERE f.workspace_id = $1
           AND f.deleted_at IS NULL
           AND f.file_type = 'document'
-          AND ($3::text IS NULL OR f.path LIKE $3::text)
+          AND ($3::text IS NULL OR f.path ILIKE $3::text)
           AND (CASE WHEN $4::boolean THEN t.line_text ~ $2 ELSE t.line_text ~* $2 END)
         ORDER BY f.path, t.line_number
         LIMIT 1000
