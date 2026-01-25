@@ -12,6 +12,7 @@ pub mod mv;
 pub mod touch;
 pub mod edit;
 pub mod grep;
+pub mod mkdir;
 
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse};
 use uuid::Uuid;
@@ -73,6 +74,7 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "edit" => Ok(ToolExecutor::Edit),
         "edit-many" => Ok(ToolExecutor::EditMany),
         "grep" => Ok(ToolExecutor::Grep),
+        "mkdir" => Ok(ToolExecutor::Mkdir),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -115,6 +117,7 @@ pub enum ToolExecutor {
     Edit,
     EditMany,
     Grep,
+    Mkdir,
 }
 
 impl ToolExecutor {
@@ -135,6 +138,7 @@ impl ToolExecutor {
             ToolExecutor::Edit => edit::EditTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::EditMany => edit::EditManyTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Grep => grep::GrepTool.execute(conn, workspace_id, user_id, args).await,
+            ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, workspace_id, user_id, args).await,
         }
     }
 }

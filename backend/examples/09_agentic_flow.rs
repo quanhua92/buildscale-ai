@@ -1,7 +1,7 @@
 /// Agentic Engine Flow Example: Complex Multi-step Multi-turn Workflow
 ///
 /// This example demonstrates the full suite of Agentic Engine tools:
-/// - Basic: `ls`, `read`, `write`, `rm`, `mv`, `touch`
+/// - Basic: `ls`, `read`, `write`, `rm`, `mv`, `touch`, `mkdir`
 /// - Advanced: `edit` (precision), `edit-many` (global), `grep` (SQL-backed search)
 ///
 /// Workflow:
@@ -46,7 +46,7 @@ async fn wait_for_agent_completion(
                     match event_type {
                         "thought" => println!("🤔 THOUGHT: {}", event["data"]["text"].as_str().unwrap_or("...")),
                         "call" => println!("🛠️  CALL: {} with args {}", event["data"]["tool"], event["data"]["args"]),
-                        "observation" => println!("👁️  OBSERVATION: Tool output received."),
+                        "observation" => println!("👁️  OBSERVATION: {}", event["data"]["output"].as_str().unwrap_or("Tool execution completed")),
                         "chunk" => print!("{}", event["data"]["text"].as_str().unwrap_or("")),
                         "ping" => print!("."),
                         "done" => {
@@ -114,30 +114,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("3️⃣  Seeding test project structure...");
     
     // Create src/main.rs with multiple DEBUG tags
-    client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
+    let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({ 
+            "name": "main.rs",
             "path": "src/main.rs", 
             "file_type": "document", 
             "content": "fn main() {\n    DEBUG: Initializing engine...\n    DEBUG: Loading modules...\n    println!(\"Hello BuildScale!\");\n}" 
         }))
         .send().await?;
+    if !res.status().is_success() {
+        panic!("Failed to seed src/main.rs: {}", res.text().await?);
+    }
     
     // Create config/app.json for precision editing
-    client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
+    let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({ 
+            "name": "app.json",
             "path": "config/app.json", 
             "file_type": "document", 
             "content": "{\n  \"env\": \"development\",\n  \"version\": \"1.0.0\"\n}" 
         }))
         .send().await?;
+    if !res.status().is_success() {
+        panic!("Failed to seed config/app.json: {}", res.text().await?);
+    }
 
     // Create a temporary file for deletion demo
-    client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
+    let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "name": "temp_notes.txt", "content": "This is a temporary note." }))
+        .json(&json!({ "name": "temp_notes.txt", "file_type": "document", "content": "This is a temporary note." }))
         .send().await?;
+    if !res.status().is_success() {
+        panic!("Failed to seed temp_notes.txt: {}", res.text().await?);
+    }
 
     println!("✓ Project structure seeded.\n");
 
@@ -146,19 +157,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chat_res = client.post(&format!("{}/workspaces/{}/chats", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({
-            "goal": "I want to demonstrate all tools in the engine.",
+            "goal": "I want to demonstrate all tools in the engine. IMPORTANT: Always prefer 'edit' or 'edit-many' for partial file changes. Use 'write' only for creating entirely new files.",
             "agents": []
         }))
-        .send().await?.json::<serde_json::Value>().await?;
-    
-    let chat_id = chat_res["chat_id"].as_str().expect("chat_id missing");
-    println!("✓ Session Anchored. Chat ID: {}\n", chat_id);
-
-    // 5. Phase 2: Open Event Pipe
-    println!("5️⃣  Phase 2: Connecting to Event Pipe (SSE)...");
-    let res = client.get(&format!("{}/workspaces/{}/chats/{}/events", api_base_url, workspace_id, chat_id))
-        .header("Authorization", format!("Bearer {}", token))
         .send().await?;
+
 
     let event_stream = res.bytes_stream();
     let mut event_stream = Box::pin(event_stream);
@@ -168,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("👉 TURN 1: Exploration (ls, grep)");
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "content": "List all files in the workspace. Then use 'grep' to find all occurrences of 'DEBUG' in the 'src/' directory." }))
+        .json(&json!({ "content": "List all files in the workspace recursively. Then use the 'grep' tool specifically to find all occurrences of 'DEBUG' in the 'src/' directory. Do not use 'read' for searching." }))
         .send().await?;
     wait_for_agent_completion(&mut event_stream).await?;
 
@@ -176,7 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("👉 TURN 2: Precision Edit (read, edit)");
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "content": "Read 'config/app.json' to get its content and hash. Then, use the 'edit' tool to change 'development' to 'production', passing the last_read_hash for safety." }))
+        .json(&json!({ "content": "I want to change the environment to production. First, 'read' 'config/app.json' to get its content and hash. Then, use the 'edit' tool (NOT 'write') to replace 'development' with 'production'. You MUST pass the 'last_read_hash' you just got." }))
         .send().await?;
     wait_for_agent_completion(&mut event_stream).await?;
 
@@ -184,15 +187,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("👉 TURN 3: Global Refactor (edit-many)");
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "content": "Use 'edit-many' to replace all occurrences of 'DEBUG:' with 'LOG:' in 'src/main.rs'." }))
+        .json(&json!({ "content": "Now refactor the logging. Use the 'edit-many' tool (NOT 'write') to replace all occurrences of 'DEBUG:' with 'LOG:' in 'src/main.rs'." }))
         .send().await?;
     wait_for_agent_completion(&mut event_stream).await?;
 
     // --- TURN 4: Cleanup & Reorg ---
-    println!("👉 TURN 4: Cleanup & Reorg (mv, rm, touch, ls)");
+    println!("👉 TURN 4: Cleanup & Reorg (mkdir, mv, rm, touch, ls)");
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "content": "We are finishing. Rename 'src/main.rs' to 'src/app.rs'. Delete 'temp_notes.txt'. Create an empty 'COMPLETED' file. Finalize by listing the workspace." }))
+        .json(&json!({ "content": "Final cleanup: 1. Use 'mkdir' to create '/backup'. 2. Use 'mv' to move 'src/main.rs' to 'src/app.rs'. 3. Use 'rm' to delete 'temp_notes.txt'. 4. Use 'touch' to create '/backup/SUCCESS'. 5. List everything recursively." }))
         .send().await?;
     wait_for_agent_completion(&mut event_stream).await?;
 

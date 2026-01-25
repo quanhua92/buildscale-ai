@@ -251,6 +251,11 @@ pub struct MvArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MkdirArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EditArgs {
     pub path: String,
     pub old_string: String,
@@ -330,6 +335,12 @@ pub struct RmResult {
 pub struct MvResult {
     pub from_path: String,
     pub to_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MkdirResult {
+    pub path: String,
+    pub file_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize)]

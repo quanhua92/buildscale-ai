@@ -1,8 +1,9 @@
 use crate::error::Error;
 use crate::models::requests::{
-    EditArgs, GrepArgs, LsArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
+    EditArgs, GrepArgs, LsArgs, MkdirArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
 };
 use crate::tools;
+
 use crate::DbPool;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool as RigTool;
@@ -139,7 +140,7 @@ define_rig_tool!(
     tools::read::ReadTool,
     ReadArgs,
     "read",
-    "Reads the content of a file. For Document types, automatically unwraps the text field for convenience. For other types (canvas, whiteboard, etc.), returns the raw JSON structure."
+    "Reads the content and hash of a file. For Document types, automatically unwraps the text field. Use this to get the 'hash' before calling 'edit'."
 );
 
 define_rig_tool!(
@@ -147,7 +148,7 @@ define_rig_tool!(
     tools::write::WriteTool,
     WriteArgs,
     "write",
-    "Creates or updates a file. For Document types, accepts raw strings (auto-wrapped to {text: ...}) or {text: string} objects. For other types (canvas, whiteboard, etc.), requires the appropriate JSON structure."
+    "Creates a NEW file or completely OVERWRITES an existing file. For partial modifications or refactoring, use 'edit' or 'edit-many' instead."
 );
 
 define_rig_tool!(
@@ -179,7 +180,7 @@ define_rig_tool!(
     tools::edit::EditTool,
     EditArgs,
     "edit",
-    "Edits a file by replacing a unique search string with a replacement string. Fails if the search string is not found or found multiple times."
+    "Edits a file by replacing a UNIQUE search string with a replacement string. Use this for precision changes. You SHOULD provide 'last_read_hash' for safety. Fails if the string is not unique."
 );
 
 define_rig_tool!(
@@ -187,7 +188,7 @@ define_rig_tool!(
     tools::edit::EditManyTool,
     EditArgs,
     "edit-many",
-    "Edits a file by replacing all occurrences of a search string with a replacement string. Fails if the search string is not found."
+    "Edits a file by replacing ALL occurrences of a search string. Use this for global refactoring within a file. You SHOULD provide 'last_read_hash' for safety."
 );
 
 define_rig_tool!(
@@ -196,4 +197,12 @@ define_rig_tool!(
     GrepArgs,
     "grep",
     "Searches for a regex pattern in all document files within the workspace. Supports optional path filtering."
+);
+
+define_rig_tool!(
+    RigMkdirTool,
+    tools::mkdir::MkdirTool,
+    MkdirArgs,
+    "mkdir",
+    "Recursively creates folders to ensure the specified path exists."
 );

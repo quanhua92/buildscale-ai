@@ -15,6 +15,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [rm - Delete File or Folder](#rm---delete-file-or-folder)
   - [mv - Move or Rename File](#mv---move-or-rename-file)
   - [touch - Update Timestamp or Create Empty File](#touch---update-timestamp-or-create-empty-file)
+  - [mkdir - Create Directory](#mkdir---create-directory)
   - [edit - Edit File Content](#edit---edit-file-content)
   - [edit-many - Replace All Occurrences](#edit-many---replace-all-occurrences)
   - [grep - Regex Search Files](#grep---regex-search-files)
@@ -37,6 +38,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `rm` | Delete file or folder | `path` | `file_id` |
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
+| `mkdir` | Create directory | `path` | `path`, `file_id` |
 | `edit` | Edit file content | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
 | `edit-many` | Replace all occurrences | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
 | `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
@@ -486,11 +488,63 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Auto-folder creation**: Uses `create_file_with_content()` with path to create nested folders
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
 - **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`, `agent`, `skill`. Defaults to `document`.
-- **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path
+- **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path.
+
+---
+
+### mkdir - Create Directory
+
+Recursively creates folders to ensure the specified path exists.
+
+#### Arguments
+
+```json
+{
+  "path": "/src/components"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Full path to the directory to create |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mkdir",
+    "args": {
+      "path": "/docs/v1/api"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/docs/v1/api",
+    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1"
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Recursive**: Automatically creates all parent folders in the path if they don't exist.
+- **Idempotent**: If the folder already exists, it returns success with the existing folder ID.
+- **Conflict**: Returns `409 Conflict` if a file (not a folder) already exists at any point in the path.
 
 ---
 
 ### rm - Delete File or Folder
+
 
 Soft deletes a file or empty folder within a workspace. Soft delete preserves data for recovery.
 
