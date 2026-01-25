@@ -123,7 +123,7 @@ impl ChatActor {
                 agent_id: None,
                 model: "gpt-4o-mini".to_string(),
                 temperature: 0.7,
-                persona_override: Some(context), // Use built context as persona override
+                persona_override: None, // Context is passed as prompt instead
             }
         };
 
@@ -140,20 +140,11 @@ impl ChatActor {
             .create_agent(self.pool.clone(), self.workspace_id, user_id, &session)
             .await?;
 
-        // 5. Build prompt (the last message is the one we just saved in the handler)
-        let last_message = messages
-            .last()
-            .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
-
-        // 6. Convert history for Rig
-        let history = self
-            .rig_service
-            .convert_history(&messages[..messages.len() - 1]);
-
-        // 7. Stream from Rig
+        // 5. Stream from Rig with full context (persona + history + file attachments)
+        // Note: context already contains conversation history, so we pass empty vec for history
         tracing::info!(chat_id = %self.chat_id, model = %session.agent_config.model, "Requesting AI completion");
         let mut stream = agent
-            .stream_chat(&last_message.content, history)
+            .stream_chat(&context, vec![])
             .await;
 
         let mut full_response = String::new();
