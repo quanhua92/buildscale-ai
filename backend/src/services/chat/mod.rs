@@ -83,10 +83,6 @@ use crate::{
     models::chat::{ChatAttachment, ChatMessage, NewChatMessage},
     queries, DbConn,
 };
-use self::context::{
-    format_file_fragment, format_history_fragment, ContextKey, ContextManager, ContextValue,
-    ESTIMATED_CHARS_PER_TOKEN, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_MEDIUM,
-};
 use uuid::Uuid;
 
 /// Default token limit for the context window in the MVP.
@@ -116,11 +112,16 @@ impl ChatService {
         workspace_id: Uuid,
         chat_file_id: Uuid,
     ) -> Result<String> {
+        use self::context::{
+            format_file_fragment, format_history_fragment, ContextKey, ContextManager, ContextValue,
+            ESTIMATED_CHARS_PER_TOKEN, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_MEDIUM,
+        };
+
         let mut manager = ContextManager::new();
 
         // 1. Load Session Identity & History
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
-        
+
         // 2. Hydrate Persona (from AgentConfig in file app_data - logic to be refined in Phase 1.4)
         // For now, we use a placeholder or system default
         manager.add_fragment(
@@ -153,7 +154,7 @@ impl ChatService {
             let metadata = &last_msg.metadata.0;
             for attachment in &metadata.attachments {
                 match attachment {
-                    ChatAttachment::File { file_id, .. } => {
+                    crate::models::chat::ChatAttachment::File { file_id, .. } => {
                         if let Ok(file_with_content) = crate::services::files::get_file_with_content(conn, *file_id).await {
                             // Security check: Ensure file belongs to the same workspace
                             if file_with_content.file.workspace_id == workspace_id {
@@ -161,7 +162,7 @@ impl ChatService {
                                     &file_with_content.file.path,
                                     &file_with_content.latest_version.content_raw.to_string()
                                 );
-                                
+
                                 manager.add_fragment(
                                     ContextKey::WorkspaceFile(*file_id),
                                     ContextValue {

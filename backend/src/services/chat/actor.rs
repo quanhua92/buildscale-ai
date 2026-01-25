@@ -3,6 +3,7 @@ use crate::models::sse::SseEvent;
 use crate::queries;
 use crate::services::chat::registry::{AgentCommand, AgentHandle};
 use crate::services::chat::rig_engine::RigService;
+use crate::services::chat::ChatService;
 use crate::DbPool;
 use futures::StreamExt;
 use rig::streaming::StreamingChat;
@@ -95,36 +96,36 @@ impl ChatActor {
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
         tracing::debug!(chat_id = %self.chat_id, "Processing interaction");
-        
+
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-        // 1. Get full session (messages + config)
+        // 1. Build context with priority-based fragment management
+        let context = ChatService::build_context(&mut conn, self.workspace_id, self.chat_id).await?;
+        tracing::debug!(chat_id = %self.chat_id, context_len = context.len(), "Built context with ChatService");
+
+        // 2. Get messages for Rig conversion
         let messages =
             queries::chat::get_messages_by_file_id(&mut conn, self.workspace_id, self.chat_id)
                 .await?;
 
-        // 2. Hydrate session model
+        // 3. Hydrate session model
         let file = queries::files::get_file_by_id(&mut conn, self.chat_id).await?;
 
         let agent_config = if let Some(_version_id) = file.latest_version_id {
-            queries::files::get_latest_version(&mut conn, self.chat_id)
-                .await
-                .ok()
-                .and_then(|v| serde_json::from_value(v.app_data).ok())
+            let version = queries::files::get_latest_version(&mut conn, self.chat_id).await?;
+            serde_json::from_value(version.app_data).map_err(crate::error::Error::Json)?
         } else {
-            None
-        }.unwrap_or_else(|| {
             tracing::warn!(
-                "Failed to load or deserialize agent_config for chat {}. Using default.",
+                "Chat file {} has no version, using default agent_config.",
                 self.chat_id
             );
             crate::models::chat::AgentConfig {
                 agent_id: None,
                 model: "gpt-4o-mini".to_string(),
                 temperature: 0.7,
-                persona_override: None,
+                persona_override: Some(context), // Use built context as persona override
             }
-        });
+        };
 
 
         let session = crate::models::chat::ChatSession {
@@ -133,23 +134,23 @@ impl ChatActor {
             messages: messages.clone(),
         };
 
-        // 3. Create Rig Agent
+        // 4. Create Rig Agent
         let agent = self
             .rig_service
             .create_agent(self.pool.clone(), self.workspace_id, user_id, &session)
             .await?;
 
-        // 4. Build prompt (the last message is the one we just saved in the handler)
+        // 5. Build prompt (the last message is the one we just saved in the handler)
         let last_message = messages
             .last()
             .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
 
-        // 5. Convert history for Rig
+        // 6. Convert history for Rig
         let history = self
             .rig_service
             .convert_history(&messages[..messages.len() - 1]);
 
-        // 6. Stream from Rig
+        // 7. Stream from Rig
         tracing::info!(chat_id = %self.chat_id, model = %session.agent_config.model, "Requesting AI completion");
         let mut stream = agent
             .stream_chat(&last_message.content, history)
