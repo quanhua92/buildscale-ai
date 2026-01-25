@@ -6,6 +6,10 @@ use rig::providers::openai::{self, responses_api::ResponsesCompletionModel};
 use rig::completion::Message;
 use uuid::Uuid;
 
+/// Maximum number of tool-calling iterations allowed per user message.
+/// This prevents infinite loops while allowing complex multi-step workflows.
+const DEFAULT_MAX_TOOL_ITERATIONS: usize = 100;
+
 pub struct RigService {
     client: openai::Client,
 }
@@ -81,6 +85,7 @@ impl RigService {
                 workspace_id,
                 user_id,
             })
+            .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS)
             .build();
 
         Ok(agent)
