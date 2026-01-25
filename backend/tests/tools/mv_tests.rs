@@ -55,3 +55,26 @@ async fn test_mv_move_to_folder() {
     assert!(body["success"].as_bool().unwrap());
     assert_eq!(body["result"]["to_path"], "/target-dir/file.txt");
 }
+
+#[tokio::test]
+async fn test_mv_conflict_existing_file() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "MV Conflict Test").await;
+
+    // Create two files
+    write_file(&app, &workspace_id, &token, "/file1.txt", serde_json::json!({"text": "file 1"})).await;
+    write_file(&app, &workspace_id, &token, "/file2.txt", serde_json::json!({"text": "file 2"})).await;
+
+    // Try to rename file1.txt to file2.txt (which already exists)
+    let response = execute_tool(&app, &workspace_id, &token, "mv", serde_json::json!({
+        "source": "/file1.txt",
+        "destination": "/file2.txt"
+    })).await;
+
+    // Should return 409 Conflict
+    assert_eq!(response.status(), 409);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "CONFLICT");
+    assert!(body["error"].as_str().unwrap().contains("already exists"));
+}

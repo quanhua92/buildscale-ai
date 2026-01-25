@@ -37,7 +37,12 @@ pub async fn create_chat(
         author_id: user.id,
         file_type: FileType::Chat,
         status: FileStatus::Ready,
-        name: format!("Chat: {}", &req.goal[..std::cmp::min(req.goal.len(), CHAT_NAME_GOAL_SNIPPET_LENGTH)]),
+        name: {
+            let snippet_end = req.goal.char_indices()
+                .nth(CHAT_NAME_GOAL_SNIPPET_LENGTH)
+                .map_or(req.goal.len(), |(idx, _)| idx);
+            format!("Chat: {}", &req.goal[..snippet_end])
+        },
         slug: format!("chat-{}", Uuid::now_v7()),
         path: format!("/chats/chat-{}", Uuid::now_v7()),
         is_virtual: true,
@@ -173,7 +178,6 @@ pub async fn post_chat_message(
 
     let _ = handle.command_tx.send(AgentCommand::ProcessInteraction {
         user_id: user.id,
-        content: req.content,
     }).await;
 
     Ok((

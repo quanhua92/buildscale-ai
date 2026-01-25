@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub enum AgentCommand {
-    ProcessInteraction { user_id: Uuid, content: String },
+    ProcessInteraction { user_id: Uuid },
     Shutdown,
 }
 

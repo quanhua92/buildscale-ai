@@ -65,23 +65,11 @@ impl Tool for MvTool {
                 if matches!(dest_file.file_type, crate::models::files::FileType::Folder) {
                     (Some(Some(dest_file.id)), source_file.name.clone())
                 } else {
-                    // It's a file. Treat as rename attempt
-                    let filename = destination_path.rsplit('/').next().unwrap_or("untitled").to_string();
-                    let parent_path = if let Some(idx) = destination_path.rsplit_once('/') {
-                        if idx.0.is_empty() { "/" } else { idx.0 }
-                    } else {
-                        "/"
-                    };
-                    
-                    let parent_id = if parent_path == "/" {
-                        Some(None)
-                    } else {
-                        let p = file_queries::get_file_by_path(conn, workspace_id, parent_path)
-                            .await?
-                            .ok_or_else(|| Error::NotFound(format!("Destination parent directory not found: {}", parent_path)))?;
-                        Some(Some(p.id))
-                    };
-                    (parent_id, filename)
+                    // It's a file. This is a conflict.
+                    return Err(Error::Conflict(format!(
+                        "Destination file already exists: {}",
+                        destination_path
+                    )));
                 }
             } else {
                 // Case C: Rename/Move to new path

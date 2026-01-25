@@ -62,14 +62,14 @@ impl ChatActor {
                 command = self.command_rx.recv() => {
                     if let Some(cmd) = command {
                         match cmd {
-                            AgentCommand::ProcessInteraction { user_id, content } => {
+                            AgentCommand::ProcessInteraction { user_id } => {
                                 // Send initial thought to signal activity immediately
                                 let _ = self.event_tx.send(SseEvent::Thought {
                                     agent_id: None,
                                     text: "Initializing context and connecting to AI brain...".to_string(),
                                 });
 
-                                if let Err(e) = self.process_interaction(user_id, content).await {
+                                if let Err(e) = self.process_interaction(user_id).await {
                                     tracing::error!(
                                         "Error processing interaction for chat {}: {:?}",
                                         self.chat_id,
@@ -93,7 +93,7 @@ impl ChatActor {
         }
     }
 
-    async fn process_interaction(&self, user_id: Uuid, _content: String) -> crate::error::Result<()> {
+    async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
         tracing::debug!(chat_id = %self.chat_id, "Processing interaction");
         
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
@@ -180,9 +180,14 @@ impl ChatActor {
                         }
                         rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
                             tracing::info!(chat_id = %self.chat_id, tool = %tool_call.function.name, "AI calling tool");
+                            let path = tool_call.function.arguments.get("path")
+                                .or_else(|| tool_call.function.arguments.get("source"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+
                             let _ = self.event_tx.send(SseEvent::Call {
                                 tool: tool_call.function.name,
-                                path: None,
+                                path,
                                 args: tool_call.function.arguments,
                             });
                         }
