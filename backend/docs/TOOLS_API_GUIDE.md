@@ -613,7 +613,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Move to Folder**: If `destination` ends with `/` (e.g., `/folder/`), the file is moved into that directory keeping its original name.
 - **Destination as Directory**: If `destination` is an existing directory (no trailing `/`), the file is moved into it.
 - **Validation**: Returns `404 Not Found` if source does not exist.
-- **Conflict**: Returns `409 Conflict` if target path already exists.
+- **Conflict**: Returns `409 Conflict` if destination path already exists as a file (prevents accidental overwrites).
 - **Parent Validation**: Destination parent directory must exist.
 
 ---
