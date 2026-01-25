@@ -1,52 +1,96 @@
 # Context Engineering: The Cortex Guide
 
-BuildScale.ai treats LLM context as a dynamically engineered resource, managed through a structured **BuiltContext** architecture. This replaces traditional string concatenation with a properly integrated, multi-modal context system that leverages the Rig.rs AI framework's native capabilities.
+BuildScale.ai treats LLM context as a dynamically engineered resource, managed through a structured **BuiltContext** architecture with separate managers for attachments and history. This replaces traditional string concatenation with a properly integrated, multi-modal context system that leverages the Rig.rs AI framework's native capabilities.
 
 ## 1. The Core Philosophy
 
-The "Workspace is the OS" vision requires that the Agentic Engine can precisely control what an LLM "sees" at any given moment. By using **structured context** instead of string concatenation, we achieve:
+The "Workspace is the OS" vision requires that the Agentic Engine can precisely control what an LLM "sees" at any given moment. By using **structured context** with **dedicated managers**, we achieve:
 
 - **Framework Integration**: Persona, history, and attachments are passed to Rig in their native formats.
 - **Type Safety**: No more string parsing or XML marker escaping issues.
-- **Positional Integrity**: The framework ensures proper ordering (System -> History -> Request with Attachments).
-- **Graceful Degradation**: Foundation for intelligent pruning when hitting token limits (TODO).
+- **Separation of Concerns**: Each manager has a clear responsibility
+- **Graceful Degradation**: **Implemented** - Intelligent pruning when hitting token limits via priority-based fragment management.
 
-## 2. Anatomy of BuiltContext
+## 2. Architecture: BuiltContext with Dedicated Managers
 
-### The Struct (Current Implementation)
+### The BuiltContext Struct
 
 ```rust
 pub struct BuiltContext {
     /// System persona/instructions for the AI
     pub persona: String,
-    /// Conversation history (excluding current message)
-    pub history: Vec<ChatMessage>,
-    /// File attachments with their content
-    pub attachments: Vec<FileAttachment>,
-}
-
-pub struct FileAttachment {
-    pub file_id: Uuid,
-    pub path: String,
-    pub content: String,
+    /// History manager for conversation messages
+    pub history: HistoryManager,
+    /// Attachment manager for file attachments with priority-based pruning
+    pub attachment_manager: AttachmentManager,
 }
 ```
 
-### How Each Component Flows to the AI
+### AttachmentManager - File Attachments
 
-| Component | Source | Destination in Rig Pipeline |
-| :--- | :--- | :--- |
-| **persona** | Hardcoded string or agent config | `AgentBuilder::with_system_prompt()` |
-| **history** | Previous messages from DB | `agent.stream_chat(prompt, history)` |
-| **attachments** | File IDs in message metadata | Appended to user prompt string |
-| **current_message** | Last message in DB | Passed as the `prompt` parameter |
+Manages workspace file attachments with priority-based pruning:
 
-### Why This Structure Works
+```rust
+pub struct AttachmentManager {
+    pub map: IndexMap<AttachmentKey, AttachmentValue>,
+}
 
-1. **Persona**: Set as the system prompt via `persona_override` in agent config
-2. **History**: Converted to Rig's `ChatMessage` format and passed to the multi-turn agent
-3. **Attachments**: Formatted as text blocks and appended to the current user prompt
-4. **Current Message**: The prompt that triggers the AI response
+pub enum AttachmentKey {
+    WorkspaceFile(Uuid),  // Currently used for file attachments
+    // Other variants reserved for future use
+}
+
+pub struct AttachmentValue {
+    pub content: String,
+    pub priority: i32,      // Higher = dropped first during pruning
+    pub tokens: usize,      // Estimated token count
+    pub is_essential: bool, // Never prune if true
+}
+```
+
+**Features:**
+- ✅ Token estimation using `ESTIMATED_CHARS_PER_TOKEN` (4 chars/token)
+- ✅ Priority-based pruning via `optimize_for_limit()`
+- ✅ Keyed addressability via `WorkspaceFile(file_id)`
+- ✅ XML rendering with `<file_context>` markers
+- ✅ Positional sorting for consistent order
+
+### HistoryManager - Conversation History
+
+Manages conversation history with token estimation and future pruning:
+
+```rust
+pub struct HistoryManager {
+    pub messages: Vec<ChatMessage>,
+}
+
+impl HistoryManager {
+    pub fn new(messages: Vec<ChatMessage>) -> Self { ... }
+    pub fn estimate_tokens(&self) -> usize { ... }
+    pub fn len(&self) -> usize { ... }
+    pub fn is_empty(&self) -> bool { ... }
+}
+
+// Implements Deref<Vec<ChatMessage>> for transparent Vec access
+// Implements IntoIterator for iteration
+```
+
+**Features:**
+- ✅ Token estimation via `estimate_tokens()`
+- ✅ Transparent Vec access via Deref implementation
+- ✅ Convenience methods: `len()`, `is_empty()`
+- ✅ Iterator support via IntoIterator
+- 🔄 **Future**: Sliding window, summarization, token-based pruning
+
+### Priority Constants
+
+```rust
+// Pruning Priorities (Higher = dropped first)
+pub const PRIORITY_ESSENTIAL: i32 = 0;  // Never dropped
+pub const PRIORITY_HIGH: i32 = 3;       // Dropped last
+pub const PRIORITY_MEDIUM: i32 = 5;     // User attachments (default)
+pub const PRIORITY_LOW: i32 = 10;       // Dropped first
+```
 
 ## 3. The Lifecycle: From IDs to AI
 
@@ -54,16 +98,19 @@ pub struct FileAttachment {
 
 ```rust
 let context = ChatService::build_context(&mut conn, workspace_id, chat_file_id).await?;
-// Returns BuiltContext { persona, history, attachments }
+// Returns BuiltContext { persona, history, attachment_manager }
 ```
 
 1. **Load Messages**: Fetch all messages for this chat from the database
 2. **Extract Persona**: Use default or load from agent config
-3. **Split History**: Exclude last message (the current prompt)
-4. **Hydrate Attachments**: For each file ID in the last message's metadata:
+3. **Split History**: Exclude last message (the current prompt), wrap in `HistoryManager`
+4. **Hydrate Attachments** using `AttachmentManager`:
    - Fetch file content from database
    - Verify workspace ownership (security)
-   - Store in `attachments` vector
+   - **Estimate tokens**: `content.len() / ESTIMATED_CHARS_PER_TOKEN`
+   - **Add to AttachmentManager**: `AttachmentKey::WorkspaceFile(file_id)` with `PRIORITY_MEDIUM`
+5. **Optimize Attachments**: Call `attachment_manager.optimize_for_limit(DEFAULT_CONTEXT_TOKEN_LIMIT)`
+6. **Sort Attachments**: Call `attachment_manager.sort_by_position()` for consistent rendering order
 
 ### Phase 2: Agent Creation (ChatActor::process_interaction)
 
@@ -81,12 +128,9 @@ The agent is configured with:
 ### Phase 3: Streaming with Context
 
 ```rust
-// Format attachments into the prompt
-let attachments_context = if !context.attachments.is_empty() {
-    let blocks: Vec<String> = context.attachments.iter()
-        .map(|att| format!("File: {}\n---\n{}\n---", att.path, att.content))
-        .collect();
-    format!("\n\nAttached Files:\n{}", blocks.join("\n\n"))
+// Format attachments from AttachmentManager (with XML markers)
+let attachments_context = if !context.attachment_manager.map.is_empty() {
+    context.attachment_manager.render()  // <file_context>...</file_context>
 } else {
     String::new()
 };
@@ -94,8 +138,8 @@ let attachments_context = if !context.attachments.is_empty() {
 // Combine current message + attachments
 let prompt = format!("{}{}", last_message.content, attachments_context);
 
-// Convert history to Rig format
-let history = rig_service.convert_history(&context.history);
+// Convert history to Rig format (via HistoryManager)
+let history = rig_service.convert_history(&context.history.messages);
 
 // Stream with full context
 let mut stream = agent.stream_chat(&prompt, history).await;
@@ -105,8 +149,8 @@ let mut stream = agent.stream_chat(&prompt, history).await;
 
 The AI receives:
 - **System prompt**: "You are BuildScale AI, a professional software engineering assistant."
-- **History**: Previous conversation turns
-- **Current prompt**: User message + formatted file attachments
+- **History**: Previous conversation turns (via `HistoryManager`)
+- **Current prompt**: User message + formatted file attachments (via `AttachmentManager`)
 - **Tools**: Workspace file operations
 
 The AI can then:
@@ -120,7 +164,10 @@ The context builder enforces **workspace isolation** at hydration time:
 
 ```rust
 if file_with_content.file.workspace_id == workspace_id {
-    attachments.push(FileAttachment { ... });
+    attachment_manager.add_fragment(
+        AttachmentKey::WorkspaceFile(*file_id),
+        AttachmentValue { ... }
+    );
 }
 // Files from other workspaces are silently ignored
 ```
@@ -130,80 +177,187 @@ This prevents:
 - **Token theft**: Malicious users can't attach files they don't own
 - **Data exfiltration**: Attachments are validated against workspace membership
 
-## 5. Future Enhancements (TODO)
+## 5. Token Limit Optimization (Implemented)
 
-### Token Limit Optimization
+### Automatic Pruning with AttachmentManager
 
-Currently, all context is passed to the AI without pruning. Future enhancements:
+The `AttachmentManager::optimize_for_limit()` method implements intelligent pruning:
 
 ```rust
-// TODO: Implement smart history truncation based on token limits
-if context.estimate_tokens() > DEFAULT_CONTEXT_TOKEN_LIMIT {
-    // Prune old messages from history
-    // Summarize truncated history
-    // Keep essential attachments only
+pub fn optimize_for_limit(&mut self, max_tokens: usize) {
+    let current_tokens: usize = self.map.values().map(|v| v.tokens).sum();
+
+    if current_tokens <= max_tokens {
+        return;  // No pruning needed
+    }
+
+    // Sort non-essential fragments by priority (descending)
+    let mut candidates: Vec<(AttachmentKey, i32)> = self.map
+        .iter()
+        .filter(|(_, v)| !v.is_essential)
+        .map(|(k, v)| (k.clone(), v.priority))
+        .collect();
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Remove fragments until under the limit
+    for (key, _) in candidates {
+        if let Some(value) = self.map.get(&key) {
+            current_tokens -= value.tokens;
+            self.map.shift_remove(&key);
+            if current_tokens <= max_tokens {
+                break;
+            }
+        }
+    }
 }
 ```
 
-### Priority-Based Fragment Management
+### How It Works
 
-Inspired by the original ContextMap vision, we could add:
+1. **Token Estimation**: Each fragment estimates tokens using `content.len() / 4` (chars per token)
+2. **Priority Check**: Essential fragments (`is_essential = true`) are never pruned
+3. **Sorted Removal**: Non-essential fragments removed from lowest to highest priority
+4. **Early Exit**: Stops as soon as we're under the token limit
 
-- **Attachment priorities**: User can mark files as "essential" vs "optional"
-- **Smart summarization**: Old conversation turns summarized to save tokens
-- **Dynamic pruning**: Drop low-priority context when approaching limits
+### Current Behavior
 
-### Agent & Skill as Files
+- **User-attached files**: Marked with `PRIORITY_MEDIUM` (5)
+- **No essential files**: Currently all files are prunable
+- **Default limit**: `DEFAULT_CONTEXT_TOKEN_LIMIT = 4000` tokens
+- **History pruning**: Not yet implemented (future enhancement)
 
-Because "Everything is a File", we could store:
+## 6. Future Enhancements (TODO)
 
-- **Agent personas**: As `.agent` files in the workspace
-- **Skill definitions**: As `.skill` files with JSON schemas
-- **Context templates**: Reusable prompt snippets
+### History Pruning with HistoryManager
 
-This would allow:
-- **Edit personas in UI**: Treat agent instructions like documents
-- **Version control skills**: Track tool definition changes in git
-- **Zero special cases**: All AI metadata is just files
+Currently, `HistoryManager` only wraps messages and provides token estimation. Future enhancements:
 
-## 6. Why "Structured Context" Beats "String Concatenation"
-
-### Before (String Concatenation)
 ```rust
-let context = format!(
-    "System: {}\n\nHistory: {}\n\nFiles: {}\n\nUser: {}",
-    persona, history_str, files_str, user_msg
+impl HistoryManager {
+    // Future: Sliding window - keep only last N messages
+    pub fn truncate_to_max_messages(&mut self, max: usize) { ... }
+
+    // Future: Token-based pruning
+    pub fn prune_to_limit(&mut self, max_tokens: usize) { ... }
+
+    // Future: Smart summarization
+    pub fn summarize_old_messages(&mut self) { ... }
+}
+```
+
+### Essential File Marking
+
+Allow users to mark files as "essential" to prevent pruning:
+
+```rust
+attachment_manager.add_fragment(
+    AttachmentKey::WorkspaceFile(file_id),
+    AttachmentValue {
+        content,
+        priority: PRIORITY_HIGH,
+        tokens: estimated_tokens,
+        is_essential: true,  // Never prune this file
+    },
 );
-// ❌ No type safety
-// ❌ Hard to modify specific parts
-// ❌ Parsing issues with XML markers
-// ❌ Can't leverage framework features
 ```
 
-### After (Structured Context)
+### Persona Manager
+
+Could extract persona into its own manager:
+
 ```rust
-let BuiltContext { persona, history, attachments } = build_context(...).await?;
-
-let agent = Agent::builder()
-    .with_system_prompt(&persona)
-    .build();
-
-let stream = agent.stream_chat(&prompt, history).await;
-// ✅ Type safe
-// ✅ Framework handles formatting
-// ✅ Easy to extend with new fields
-// ✅ Leverages Rig's native capabilities
+pub struct PersonaManager {
+    pub persona: String,
+    // Future: Multiple persona sources
+    // - System default
+    // - Workspace-specific
+    // - User-defined
+}
 ```
 
-## 7. Testing Strategy
+### Dynamic Priority Adjustment
+
+Allow AI to suggest priority adjustments based on relevance:
+- AI analyzes file content and user query
+- Automatically boosts priority of relevant files
+- Lowers priority of irrelevant context
+
+## 7. Why "Managers" Beat "Simple Structs"
+
+### Before (Simple Structs)
+```rust
+pub struct BuiltContext {
+    pub persona: String,
+    pub history: Vec<ChatMessage>,  // ❌ No token estimation, no pruning
+    pub attachments: Vec<FileAttachment>,  // ❌ No pruning, no priorities
+}
+```
+
+**Limitations:**
+- No token limit optimization
+- No priority system
+- Can't selectively prune files or messages
+- No keyed addressability
+- No token estimation
+
+### After (Dedicated Managers)
+```rust
+pub struct BuiltContext {
+    pub persona: String,
+    pub history: HistoryManager,       // ✅ Token estimation, future pruning
+    pub attachment_manager: AttachmentManager,  // ✅ Pruning, priorities, tokens
+}
+```
+
+**Advantages:**
+- ✅ **Separation of Concerns**: Each manager has a clear responsibility
+- ✅ **AttachmentManager**: Automatic pruning, priority system, token estimation
+- ✅ **HistoryManager**: Token estimation, Deref to Vec, ready for pruning
+- ✅ **Extensibility**: Easy to add PersonaManager, SkillManager, etc.
+- ✅ **Type Safety**: Structured access through manager methods
+
+## 8. Testing Strategy
 
 The build_context tests verify:
 
 1. **Persona presence**: `context.persona.contains("BuildScale AI")`
-2. **History structure**: `context.history.len() == expected_count`
-3. **Attachment content**: `context.attachments[0].content.contains(...)`
-4. **Workspace isolation**: Files from other workspaces are excluded
-5. **Empty chat handling**: Returns empty history/attachments but valid persona
-6. **Large context**: Structure is maintained even with many messages/files
+2. **History structure**: `context.history.len() == expected_count` (via Deref)
+3. **History tokens**: `context.history.estimate_tokens()` (future usage)
+4. **Attachment count**: `context.attachment_manager.map.len() == expected_count`
+5. **Attachment content**: Extract from `context.attachment_manager.map.values()`
+6. **Workspace isolation**: Files from other workspaces excluded (empty `attachment_manager.map`)
+7. **Empty chat handling**: Empty history/attachments but valid persona
+8. **Token optimization**: `AttachmentManager` prunes attachments when over limit
+9. **Key types**: Verify attachments use `AttachmentKey::WorkspaceFile(_)`
 
-All tests use the structured fields directly - no string parsing needed!
+### Example Test Assertions
+
+```rust
+// HistoryManager (transparent Vec access)
+assert!(!context.history.is_empty());
+assert_eq!(context.history.len(), 2);
+assert_eq!(context.history[0].content, "Hello");
+
+// HistoryManager token estimation
+let history_tokens = context.history.estimate_tokens();
+
+// AttachmentManager
+assert!(!context.attachment_manager.map.is_empty());
+assert_eq!(context.attachment_manager.map.len(), 1);
+
+// Extract file content
+let file_content = context.attachment_manager.map
+    .values()
+    .next()
+    .expect("Should have one attachment");
+assert!(file_content.content.contains("Hello World"));
+
+// Verify token optimization
+let total_tokens: usize = context.attachment_manager.map
+    .values()
+    .map(|v| v.tokens)
+    .sum();
+assert!(total_tokens < DEFAULT_CONTEXT_TOKEN_LIMIT * 2);
+```
+
+All tests use the structured managers directly - no string parsing needed!

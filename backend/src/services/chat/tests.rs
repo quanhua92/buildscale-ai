@@ -1,19 +1,19 @@
 #[cfg(test)]
 mod tests {
     use crate::services::chat::context::{
-        ContextKey, ContextManager, ContextValue, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW,
-        PRIORITY_MEDIUM,
+        AttachmentKey, AttachmentManager, AttachmentValue, PRIORITY_ESSENTIAL, PRIORITY_HIGH,
+        PRIORITY_LOW, PRIORITY_MEDIUM,
     };
     use uuid::Uuid;
 
     #[test]
-    fn test_context_ordering() {
-        let mut manager = ContextManager::new();
+    fn test_attachment_ordering() {
+        let mut manager = AttachmentManager::new();
 
         // Add fragments out of order
         manager.add_fragment(
-            ContextKey::UserRequest,
-            ContextValue {
+            AttachmentKey::UserRequest,
+            AttachmentValue {
                 content: "User Request".to_string(),
                 priority: 1,
                 tokens: 10,
@@ -21,8 +21,8 @@ mod tests {
             },
         );
         manager.add_fragment(
-            ContextKey::SystemPersona,
-            ContextValue {
+            AttachmentKey::SystemPersona,
+            AttachmentValue {
                 content: "System Persona".to_string(),
                 priority: 0,
                 tokens: 10,
@@ -30,8 +30,8 @@ mod tests {
             },
         );
         manager.add_fragment(
-            ContextKey::Environment,
-            ContextValue {
+            AttachmentKey::Environment,
+            AttachmentValue {
                 content: "Environment".to_string(),
                 priority: 2,
                 tokens: 10,
@@ -51,12 +51,12 @@ mod tests {
 
     #[test]
     fn test_token_pruning() {
-        let mut manager = ContextManager::new();
+        let mut manager = AttachmentManager::new();
 
         // Essential fragment
         manager.add_fragment(
-            ContextKey::SystemPersona,
-            ContextValue {
+            AttachmentKey::SystemPersona,
+            AttachmentValue {
                 content: "Essential".to_string(),
                 priority: PRIORITY_ESSENTIAL,
                 tokens: 100,
@@ -66,8 +66,8 @@ mod tests {
 
         // Non-essential, low priority (high value)
         manager.add_fragment(
-            ContextKey::ChatHistory,
-            ContextValue {
+            AttachmentKey::ChatHistory,
+            AttachmentValue {
                 content: "Old History".to_string(),
                 priority: PRIORITY_LOW,
                 tokens: 200,
@@ -78,8 +78,8 @@ mod tests {
         // Non-essential, medium priority
         let file_id = Uuid::now_v7();
         manager.add_fragment(
-            ContextKey::WorkspaceFile(file_id),
-            ContextValue {
+            AttachmentKey::WorkspaceFile(file_id),
+            AttachmentValue {
                 content: "Some File".to_string(),
                 priority: PRIORITY_MEDIUM,
                 tokens: 150,
@@ -91,21 +91,21 @@ mod tests {
         // Limit to 300: Should drop Old History (450 - 200 = 250)
         manager.optimize_for_limit(300);
 
-        assert!(manager.map.contains_key(&ContextKey::SystemPersona));
+        assert!(manager.map.contains_key(&AttachmentKey::SystemPersona));
         assert!(manager
             .map
-            .contains_key(&ContextKey::WorkspaceFile(file_id)));
-        assert!(!manager.map.contains_key(&ContextKey::ChatHistory));
+            .contains_key(&AttachmentKey::WorkspaceFile(file_id)));
+        assert!(!manager.map.contains_key(&AttachmentKey::ChatHistory));
     }
 
     #[test]
     fn test_fragment_replacement() {
-        let mut manager = ContextManager::new();
+        let mut manager = AttachmentManager::new();
         let file_id = Uuid::now_v7();
 
         manager.add_fragment(
-            ContextKey::WorkspaceFile(file_id),
-            ContextValue {
+            AttachmentKey::WorkspaceFile(file_id),
+            AttachmentValue {
                 content: "Version 1".to_string(),
                 priority: PRIORITY_HIGH,
                 tokens: 10,
@@ -115,8 +115,8 @@ mod tests {
 
         // Replace with Version 2
         manager.add_fragment(
-            ContextKey::WorkspaceFile(file_id),
-            ContextValue {
+            AttachmentKey::WorkspaceFile(file_id),
+            AttachmentValue {
                 content: "Version 2".to_string(),
                 priority: PRIORITY_HIGH,
                 tokens: 15,
@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(
             manager
                 .map
-                .get(&ContextKey::WorkspaceFile(file_id))
+                .get(&AttachmentKey::WorkspaceFile(file_id))
                 .unwrap()
                 .content,
             "Version 2"
