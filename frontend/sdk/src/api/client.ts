@@ -28,9 +28,9 @@ interface ApiClientConfig {
 }
 
 class ApiClient {
-  private baseURL: string
+  public baseURL: string
   private timeout: number
-  private getAccessToken: () => string | null | Promise<string | null>
+  public getAccessToken: () => string | null | Promise<string | null>
   private getRefreshToken: () => string | null | Promise<string | null>
   private setTokens: (access: string, refresh: string) => void | Promise<void>
   private clearTokens: () => void | Promise<void>
@@ -52,30 +52,31 @@ class ApiClient {
     this.clearTokens = config.clearTokens
   }
 
-  private async request<T>(
+  /**
+   * Performs a raw request and returns the Response object.
+   * Handles authentication headers and 401 retry logic.
+   */
+  public async requestRaw(
     endpoint: string,
     options: RequestInit = {}
-  ): Promise<T> {
-    const url = `${this.baseURL}${endpoint}`
+  ): Promise<Response> {
+    const url = endpoint.startsWith('http') ? endpoint : `${this.baseURL}${endpoint}`
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
     try {
-      let headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        ...options.headers,
+      let headers = new Headers(options.headers)
+      if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+        headers.set('Content-Type', 'application/json')
       }
 
       // Add authorization header if access token exists
       const accessToken = await this.getAccessToken()
-      if (accessToken) {
-        headers = {
-          ...headers,
-          Authorization: `Bearer ${accessToken}`,
-        }
+      if (accessToken && accessToken !== 'null' && accessToken !== 'undefined') {
+        headers.set('Authorization', `Bearer ${accessToken}`)
       }
 
-      const response = await this.fetchWithAuth(url, options, headers, controller.signal)
+      let response = await this.fetchWithAuth(url, options, headers, controller.signal)
 
       clearTimeout(timeoutId)
 
@@ -84,16 +85,12 @@ class ApiClient {
         const newToken = await this.refreshAccessToken()
         if (newToken) {
           // Retry original request with new token
-          const retryHeaders = {
-            ...headers,
-            Authorization: `Bearer ${newToken}`,
-          }
-          const retryResponse = await this.fetchWithAuth(url, options, retryHeaders, controller.signal)
-          return this.handleResponse<T>(retryResponse)
+          headers.set('Authorization', `Bearer ${newToken}`)
+          response = await this.fetchWithAuth(url, options, headers, controller.signal)
         }
       }
 
-      return this.handleResponse<T>(response)
+      return response
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
@@ -102,6 +99,14 @@ class ApiClient {
       }
       throw error
     }
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const response = await this.requestRaw(endpoint, options)
+    return this.handleResponse<T>(response)
   }
 
   private async fetchWithAuth(
