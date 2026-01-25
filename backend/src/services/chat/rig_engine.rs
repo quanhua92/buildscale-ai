@@ -43,7 +43,7 @@ impl RigService {
 
         // 2. Build the Rig Agent with Tools
         let agent = self.client.agent(model_name)
-            .preamble("You are BuildScale AI, a professional software engineering assistant.")
+            .preamble(session.agent_config.persona_override.as_deref().unwrap_or("You are BuildScale AI, a professional software engineering assistant."))
             .tool(RigLsTool {
                 pool: pool.clone(),
                 workspace_id,

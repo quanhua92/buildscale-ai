@@ -56,7 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .json::<serde_json::Value>()
         .await?;
     
-    let token = login_res["access_token"].as_str().unwrap();
+    let token = login_res["access_token"]
+        .as_str()
+        .expect("access_token not found in login response");
     println!("✓ Authenticated as: {}\n", email);
 
     // 2. Get Workspace
@@ -69,7 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .json::<serde_json::Value>()
         .await?;
     
-    let workspace_id = ws_res["workspace"]["id"].as_str().unwrap();
+    let workspace_id = ws_res["workspace"]["id"]
+        .as_str()
+        .expect("workspace id not found in response");
     println!("✓ Workspace Created: {}\n", workspace_id);
 
     // 3. Phase 1: The Seed (Anchor Identity)
@@ -85,7 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .json::<serde_json::Value>()
         .await?;
     
-    let chat_id = chat_res["chat_id"].as_str().unwrap();
+    let chat_id = chat_res["chat_id"]
+        .as_str()
+        .expect("chat_id not found in response");
     println!("✓ Session Anchored. Chat ID: {}\n", chat_id);
 
     // 4. Phase 2: The Event Pipe (Standard Out)
@@ -121,7 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if line.starts_with("data: ") {
                 let data = &line[6..];
                 if let Ok(event) = serde_json::from_str::<serde_json::Value>(data) {
-                    match event["type"].as_str().unwrap() {
+                    let event_type = event["type"].as_str().expect("Event type missing");
+                    match event_type {
                         "thought" => println!("🤔 THOUGHT: {}", event["data"]["text"].as_str().unwrap_or("...")),
                         "call" => println!("🛠️  CALL: {} with args {}", event["data"]["tool"], event["data"]["args"]),
                         "observation" => println!("👁️  OBSERVATION: {}", event["data"]["output"]),

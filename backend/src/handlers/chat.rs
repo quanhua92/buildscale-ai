@@ -1,12 +1,11 @@
 use crate::error::{Error, Result};
-use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, ChatAttachment};
+use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage};
 use crate::models::files::{FileType, FileStatus, NewFile};
 use crate::models::requests::{CreateChatRequest, PostChatMessageRequest};
 use crate::models::sse::SseEvent;
 use crate::queries;
 use crate::services::chat::actor::ChatActor;
 use crate::services::chat::registry::AgentCommand;
-use crate::services::chat::rig_engine::RigService;
 use crate::state::AppState;
 use crate::middleware::auth::AuthenticatedUser;
 use axum::extract::{Path, State};
@@ -15,12 +14,10 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{Extension, Json};
 use futures::stream::{self, Stream};
 use std::convert::Infallible;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
 use futures::StreamExt;
-use secrecy::ExposeSecret;
 
 pub async fn create_chat(
     State(state): State<AppState>,
@@ -71,13 +68,13 @@ pub async fn create_chat(
         workspace_id,
         role: ChatMessageRole::User,
         content: req.goal,
-        metadata: serde_json::to_value(ChatMessageMetadata {
+        metadata: sqlx::types::Json(ChatMessageMetadata {
             attachments: req.files.unwrap_or_default().into_iter().map(|f| ChatAttachment::File {
                 file_id: f,
                 version_id: None,
             }).collect(),
             ..Default::default()
-        })?,
+        }),
     }).await?;
 
     Ok((
@@ -98,9 +95,7 @@ pub async fn get_chat_events(
         handle
     } else {
         // Rehydrate/Spawn actor
-        let config = crate::load_config().expect("Failed to load config");
-        let rig_service = Arc::new(RigService::new(config.ai.openai_api_key.expose_secret()));
-        let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), rig_service);
+        let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), state.rig_service.clone());
         state.agents.register(chat_id, handle.clone()).await;
         handle
     };
@@ -154,7 +149,7 @@ pub async fn post_chat_message(
         workspace_id,
         role: ChatMessageRole::User,
         content: req.content.clone(),
-        metadata: serde_json::Value::Object(serde_json::Map::new()),
+        metadata: sqlx::types::Json(ChatMessageMetadata::default()),
     }).await?;
 
     // 2. Touch file
@@ -165,9 +160,7 @@ pub async fn post_chat_message(
         handle
     } else {
         // Rehydrate actor
-        let config = crate::load_config().expect("Failed to load config");
-        let rig_service = Arc::new(RigService::new(config.ai.openai_api_key.expose_secret()));
-        let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), rig_service);
+        let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), state.rig_service.clone());
         state.agents.register(chat_id, handle.clone()).await;
         handle
     };

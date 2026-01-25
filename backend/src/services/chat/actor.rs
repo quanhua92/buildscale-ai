@@ -108,7 +108,12 @@ impl ChatActor {
 
         let agent_config = if let Some(_version_id) = file.latest_version_id {
             let version = queries::files::get_latest_version(&mut conn, self.chat_id).await?;
-            serde_json::from_value(version.app_data).unwrap_or_else(|_| {
+            serde_json::from_value(version.app_data).unwrap_or_else(|e| {
+                tracing::warn!(
+                    "Failed to deserialize agent_config for chat {}: {}. Using default.",
+                    self.chat_id,
+                    e
+                );
                 crate::models::chat::AgentConfig {
                     agent_id: None,
                     model: "gpt-4o-mini".to_string(),
@@ -220,7 +225,7 @@ impl ChatActor {
                     workspace_id: self.workspace_id,
                     role: ChatMessageRole::Assistant,
                     content: full_response,
-                    metadata: serde_json::Value::Object(serde_json::Map::new()),
+                    metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata::default()),
                 },
             )
             .await?;

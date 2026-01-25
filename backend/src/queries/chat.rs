@@ -1,8 +1,9 @@
 use crate::{
     error::{Error, Result},
-    models::chat::{ChatMessage, ChatMessageRole, NewChatMessage},
+    models::chat::{ChatMessage, ChatMessageRole, NewChatMessage, ChatMessageMetadata},
     DbConn,
 };
+use sqlx::types::Json;
 use uuid::Uuid;
 
 /// Inserts a new chat message into the database.
@@ -18,7 +19,7 @@ pub async fn insert_chat_message(conn: &mut DbConn, new_msg: NewChatMessage) -> 
             workspace_id, 
             role as "role: ChatMessageRole", 
             content, 
-            metadata, 
+            metadata as "metadata: Json<ChatMessageMetadata>", 
             created_at, 
             updated_at, 
             deleted_at
@@ -27,7 +28,7 @@ pub async fn insert_chat_message(conn: &mut DbConn, new_msg: NewChatMessage) -> 
         new_msg.workspace_id,
         new_msg.role as ChatMessageRole,
         new_msg.content,
-        new_msg.metadata
+        Json(new_msg.metadata.0) as _
     )
     .fetch_one(conn)
     .await
@@ -51,7 +52,7 @@ pub async fn get_messages_by_file_id(
             workspace_id, 
             role as "role: ChatMessageRole", 
             content, 
-            metadata, 
+            metadata as "metadata: Json<ChatMessageMetadata>", 
             created_at, 
             updated_at, 
             deleted_at
@@ -75,7 +76,7 @@ pub async fn update_chat_message(
     workspace_id: Uuid,
     message_id: Uuid,
     content: String,
-    metadata: serde_json::Value,
+    metadata: ChatMessageMetadata,
 ) -> Result<ChatMessage> {
     let msg = sqlx::query_as!(
         ChatMessage,
@@ -89,7 +90,7 @@ pub async fn update_chat_message(
             workspace_id, 
             role as "role: ChatMessageRole", 
             content, 
-            metadata, 
+            metadata as "metadata: Json<ChatMessageMetadata>", 
             created_at, 
             updated_at, 
             deleted_at
@@ -97,7 +98,7 @@ pub async fn update_chat_message(
         message_id,
         workspace_id,
         content,
-        metadata
+        Json(metadata) as _
     )
     .fetch_one(conn)
     .await

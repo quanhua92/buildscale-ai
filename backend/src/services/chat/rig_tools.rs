@@ -5,8 +5,21 @@ use rig::completion::ToolDefinition;
 use rig::tool::Tool as RigTool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::future::Future;
+use uuid::Uuid;
+
+fn enforce_strict_schema(mut schema: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = schema.as_object_mut() {
+        obj.insert("additionalProperties".to_string(), serde_json::json!(false));
+        
+        // Ensure all properties are in 'required' list for OpenAI strict mode
+        if let Some(properties) = obj.get("properties").and_then(|p| p.as_object()) {
+            let all_keys: Vec<String> = properties.keys().cloned().collect();
+            obj.insert("required".to_string(), serde_json::json!(all_keys));
+        }
+    }
+    schema
+}
 
 /// A Rig-compatible wrapper for BuildScale tools.
 pub struct RigLsTool {
@@ -33,26 +46,10 @@ impl RigTool for RigLsTool {
     fn definition(&self, _prompt: String) -> impl Future<Output = ToolDefinition> + Send + Sync {
         let name = Self::NAME.to_string();
         async move {
-            let params = serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The path to list. Defaults to root '/' if not provided."
-                    },
-                    "recursive": {
-                        "type": "boolean",
-                        "description": "Whether to list files recursively."
-                    }
-                },
-                "required": ["path", "recursive"],
-                "additionalProperties": false
-            });
-
             ToolDefinition {
                 name,
                 description: "Lists files and folders in a directory within the workspace.".to_string(),
-                parameters: params,
+                parameters: enforce_strict_schema(serde_json::to_value(schemars::schema_for!(LsArgs)).unwrap_or_default()),
             }
         }
     }
@@ -105,22 +102,10 @@ impl RigTool for RigReadTool {
     fn definition(&self, _prompt: String) -> impl Future<Output = ToolDefinition> + Send + Sync {
         let name = Self::NAME.to_string();
         async move {
-            let params = serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The absolute path of the file to read."
-                    }
-                },
-                "required": ["path"],
-                "additionalProperties": false
-            });
-
             ToolDefinition {
                 name,
                 description: "Reads the literal content of a file at the specified path.".to_string(),
-                parameters: params,
+                parameters: enforce_strict_schema(serde_json::to_value(schemars::schema_for!(ReadArgs)).unwrap_or_default()),
             }
         }
     }
@@ -177,32 +162,11 @@ impl RigTool for RigWriteTool {
     fn definition(&self, _prompt: String) -> impl Future<Output = ToolDefinition> + Send + Sync {
         let name = Self::NAME.to_string();
         async move {
-            let params = serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The absolute path where the file should be created or updated."
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "The text content to write to the file."
-                    },
-                    "file_type": {
-                        "type": "string",
-                        "description": "Optional file type (e.g., 'document', 'canvas').",
-                        "enum": ["document", "canvas", "chat", "whiteboard", "agent", "skill"]
-                    }
-                },
-                "required": ["path", "content", "file_type"],
-                "additionalProperties": false
-            });
-
             ToolDefinition {
                 name,
                 description: "Creates or updates a file at the specified path with the provided content."
                     .to_string(),
-                parameters: params,
+                parameters: enforce_strict_schema(serde_json::to_value(schemars::schema_for!(WriteArgs)).unwrap_or_default()),
             }
         }
     }
@@ -264,22 +228,10 @@ impl RigTool for RigRmTool {
     fn definition(&self, _prompt: String) -> impl Future<Output = ToolDefinition> + Send + Sync {
         let name = Self::NAME.to_string();
         async move {
-            let params = serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The absolute path of the file or folder to delete."
-                    }
-                },
-                "required": ["path"],
-                "additionalProperties": false
-            });
-
             ToolDefinition {
                 name,
                 description: "Deletes a file or empty folder at the specified path.".to_string(),
-                parameters: params,
+                parameters: enforce_strict_schema(serde_json::to_value(schemars::schema_for!(RmArgs)).unwrap_or_default()),
             }
         }
     }

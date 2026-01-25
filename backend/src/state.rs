@@ -1,5 +1,6 @@
 use crate::{
     cache::Cache, database::DbPool, models::users::User, services::chat::registry::AgentRegistry,
+    services::chat::rig_engine::RigService,
 };
 use std::sync::Arc;
 
@@ -17,6 +18,8 @@ pub struct AppState {
     pub pool: DbPool,
     /// Registry for active AI agents
     pub agents: Arc<AgentRegistry>,
+    /// Service for interacting with Rig.rs AI runtime
+    pub rig_service: Arc<RigService>,
 }
 
 impl AppState {
@@ -26,12 +29,19 @@ impl AppState {
     /// * `cache` - Cache instance to use
     /// * `user_cache` - User cache instance to use
     /// * `pool` - Database connection pool
-    pub fn new(cache: Cache<String>, user_cache: Cache<User>, pool: DbPool) -> Self {
+    /// * `rig_service` - Rig service instance
+    pub fn new(
+        cache: Cache<String>,
+        user_cache: Cache<User>,
+        pool: DbPool,
+        rig_service: Arc<RigService>,
+    ) -> Self {
         Self {
             cache,
             user_cache,
             pool,
             agents: Arc::new(AgentRegistry::new()),
+            rig_service,
         }
     }
 }

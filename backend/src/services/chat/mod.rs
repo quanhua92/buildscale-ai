@@ -78,34 +78,32 @@ impl ChatService {
 
         // 4. Hydrate Attachments from the LATEST message
         if let Some(last_msg) = messages.last() {
-            // Attempt to parse metadata for attachments
-            // Metadata is serde_json::Value in the model
-            if let Ok(metadata) = serde_json::from_value::<crate::models::chat::ChatMessageMetadata>(last_msg.metadata.clone()) {
-                for attachment in metadata.attachments {
-                    match attachment {
-                        ChatAttachment::File { file_id, .. } => {
-                            if let Ok(file_with_content) = crate::services::files::get_file_with_content(conn, file_id).await {
-                                // Security check: Ensure file belongs to the same workspace
-                                if file_with_content.file.workspace_id == workspace_id {
-                                    let content = format_file_fragment(
-                                        &file_with_content.file.path,
-                                        &file_with_content.latest_version.content_raw.to_string()
-                                    );
-                                    
-                                    manager.add_fragment(
-                                        ContextKey::WorkspaceFile(file_id),
-                                        ContextValue {
-                                            tokens: content.len() / ESTIMATED_CHARS_PER_TOKEN,
-                                            content,
-                                            priority: PRIORITY_HIGH,
-                                            is_essential: false,
-                                        },
-                                    );
-                                }
+            // Access metadata directly as ChatMessageMetadata
+            let metadata = &last_msg.metadata.0;
+            for attachment in &metadata.attachments {
+                match attachment {
+                    ChatAttachment::File { file_id, .. } => {
+                        if let Ok(file_with_content) = crate::services::files::get_file_with_content(conn, *file_id).await {
+                            // Security check: Ensure file belongs to the same workspace
+                            if file_with_content.file.workspace_id == workspace_id {
+                                let content = format_file_fragment(
+                                    &file_with_content.file.path,
+                                    &file_with_content.latest_version.content_raw.to_string()
+                                );
+                                
+                                manager.add_fragment(
+                                    ContextKey::WorkspaceFile(*file_id),
+                                    ContextValue {
+                                        tokens: content.len() / ESTIMATED_CHARS_PER_TOKEN,
+                                        content,
+                                        priority: PRIORITY_HIGH,
+                                        is_essential: false,
+                                    },
+                                );
                             }
-                        },
-                        _ => {} // Other attachments handled in Phase 2
-                    }
+                        }
+                    },
+                    _ => {} // Other attachments handled in Phase 2
                 }
             }
         }

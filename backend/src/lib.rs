@@ -388,6 +388,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
 pub async fn run_api_server(
     config: &Config,
     cache: Cache<String>,
+    rig_service: std::sync::Arc<crate::services::chat::rig_engine::RigService>,
 ) -> Result<()> {
     use secrecy::ExposeSecret;
 
@@ -412,7 +413,7 @@ pub async fn run_api_server(
     let user_cache = Cache::new_local(CacheConfig::default());
 
     // Build the application state with cache, user_cache, and database pool
-    let app_state = AppState::new(cache, user_cache, pool);
+    let app_state = AppState::new(cache, user_cache, pool, rig_service);
 
     let api_routes = create_api_router(app_state.clone());
 
