@@ -13,6 +13,8 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [read - Read File Contents](#read---read-file-contents)
   - [write - Create or Update File](#write---create-or-update-file)
   - [rm - Delete File or Folder](#rm---delete-file-or-folder)
+  - [mv - Move or Rename File](#mv---move-or-rename-file)
+  - [touch - Update Timestamp or Create Empty File](#touch---update-timestamp-or-create-empty-file)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
 - [Error Responses](#error-responses)
@@ -30,6 +32,8 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `read` | Read file contents | `path` | `content` |
 | `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
 | `rm` | Delete file or folder | `path` | `file_id` |
+| `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
+| `touch` | Update time or create empty | `path` | `path`, `file_id` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -96,7 +100,7 @@ Authorization: Bearer <access_token>
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `tool` | string | Yes | Tool name (`ls`, `read`, `write`, `rm`) |
+| `tool` | string | Yes | Tool name (`ls`, `read`, `write`, `rm`, `mv`, `touch`) |
 | `args` | object | Yes | Tool-specific arguments (see [Tool Specifications](#tool-specifications)) |
 
 #### Response (200 OK)
@@ -452,6 +456,158 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ---
 
+### mv - Move or Rename File
+
+Moves or renames a file within the workspace.
+
+#### Arguments
+
+```json
+{
+  "source": "/old-path.txt",
+  "destination": "/new-path.txt"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | Yes | Current path of the file |
+| `destination` | string | Yes | Target path or target directory (ends with `/`) |
+
+#### Request Example (Rename)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mv",
+    "args": {
+      "source": "/documents/old-name.md",
+      "destination": "/documents/new-name.md"
+    }
+  }'
+```
+
+#### Request Example (Move to Directory)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mv",
+    "args": {
+      "source": "/file.txt",
+      "destination": "/archive/"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "from_path": "/documents/old-name.md",
+    "to_path": "/documents/new-name.md"
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.from_path` | string | The original path of the file |
+| `result.to_path` | string | The new path after move/rename |
+
+#### Behavior Notes
+
+- **Rename**: If `destination` is a path, the file is renamed/moved to that exact path.
+- **Move to Folder**: If `destination` ends with `/` (e.g., `/folder/`), the file is moved into that directory keeping its original name.
+- **Destination as Directory**: If `destination` is an existing directory (no trailing `/`), the file is moved into it.
+- **Validation**: Returns `404 Not Found` if source does not exist.
+- **Conflict**: Returns `409 Conflict` if target path already exists.
+- **Parent Validation**: Destination parent directory must exist.
+
+---
+
+### touch - Update Timestamp or Create Empty File
+
+Updates the modification time of a file or creates a new empty file.
+
+#### Arguments
+
+```json
+{
+  "path": "/new-file.txt"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Path to the file to touch |
+
+#### Request Example (Create New File)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "touch",
+    "args": {
+      "path": "/documents/placeholder.txt"
+    }
+  }'
+```
+
+#### Request Example (Update Timestamp)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "touch",
+    "args": {
+      "path": "/documents/existing-file.txt"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/documents/placeholder.txt",
+    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1"
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.path` | string | The path that was touched |
+| `result.file_id` | UUID | File identifier |
+
+#### Behavior Notes
+
+- **Update**: If file exists, updates its `updated_at` timestamp.
+- **Create**: If file does not exist, creates a new empty `document` file.
+- **Recursive**: Automatically creates parent folders if missing during creation.
+- **File Type**: New files are created with `document` type and empty text content.
+
+---
+
 ### Path Normalization
 
 All tools automatically normalize provided paths to ensure consistency:
@@ -733,6 +889,8 @@ match self {
 | read implementation | `backend/src/tools/read.rs` |
 | write implementation | `backend/src/tools/write.rs` |
 | rm implementation | `backend/src/tools/rm.rs` |
+| mv implementation | `backend/src/tools/mv.rs` |
+| touch implementation | `backend/src/tools/touch.rs` |
 | Request/Response models | `backend/src/models/requests.rs` |
 | Route registration | `backend/src/lib.rs:328` |
 
@@ -893,6 +1051,35 @@ curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
   }'
 ```
 
+#### Move/Rename File
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mv",
+    "args": {
+      "source": "/notes/thoughts.md",
+      "destination": "/docs/thoughts.md"
+    }
+  }'
+```
+
+#### Touch File (Update Timestamp or Create)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "touch",
+    "args": {
+      "path": "/notes/placeholder.txt"
+    }
+  }'
+```
+
 ### JavaScript/TypeScript Example
 
 ```typescript
@@ -944,6 +1131,14 @@ class ToolsClient {
   async rm(workspaceId: string, path: string) {
     return this.executeTool(workspaceId, 'rm', { path });
   }
+
+  async mv(workspaceId: string, source: string, destination: string) {
+    return this.executeTool(workspaceId, 'mv', { source, destination });
+  }
+
+  async touch(workspaceId: string, path: string) {
+    return this.executeTool(workspaceId, 'touch', { path });
+  }
 }
 
 // Usage
@@ -962,6 +1157,12 @@ await client.write(workspaceId, '/notes/new-file.md', {
 
 // Delete file
 await client.rm(workspaceId, '/notes/old-file.md');
+
+// Move/rename file
+await client.mv(workspaceId, '/notes/thoughts.md', '/docs/thoughts.md');
+
+// Touch file (create or update timestamp)
+await client.touch(workspaceId, '/notes/placeholder.txt');
 ```
 
 ### Rust Integration Example
@@ -1015,6 +1216,8 @@ cargo test tools::ls_tests
 cargo test tools::read_tests
 cargo test tools::write_tests
 cargo test tools::rm_tests
+cargo test tools::mv_tests
+cargo test tools::touch_tests
 
 # Run integration tests
 cargo test tools::integration_tests
@@ -1033,6 +1236,8 @@ backend/tests/tools/
 ├── read_tests.rs           # read tool tests
 ├── write_tests.rs          # write tool tests
 ├── rm_tests.rs             # rm tool tests
+├── mv_tests.rs             # mv tool tests
+├── touch_tests.rs          # touch tool tests
 └── integration_tests.rs    # Cross-tool integration tests
 ```
 
@@ -1043,6 +1248,8 @@ The test suite covers:
 - ✅ Error handling (file not found, invalid arguments)
 - ✅ Recursive vs non-recursive listing
 - ✅ Create vs update behavior for write tool
+- ✅ Move/rename behavior for mv tool
+- ✅ Touch update vs create behavior for touch tool
 - ✅ Workspace isolation
 - ✅ Authentication and authorization
 - ✅ Edge cases (empty directories, nested folders)
@@ -1064,12 +1271,14 @@ The Tools API leverages existing database query functions:
 
 | Query | Purpose | Used By |
 |-------|---------|---------|
-| `get_file_by_path()` | Resolve path to file | ls, read, write, rm |
+| `get_file_by_path()` | Resolve path to file | ls, read, write, rm, mv, touch |
 | `list_files_in_folder()` | List immediate children | ls (non-recursive) |
 | `get_file_with_content()` | Read with latest version | read |
-| `create_file_with_content()` | Create new file with content | write (create mode) |
+| `create_file_with_content()` | Create new file with content | write (create mode), touch (create mode) |
 | `create_version()` | Create new file version | write (update mode) |
 | `soft_delete_file()` | Soft delete file | rm |
+| `touch_file()` | Update file timestamp | touch (update mode) |
+| `update_file()` | Update file metadata | mv |
 
 All queries are located in `backend/src/queries/files.rs`.
 

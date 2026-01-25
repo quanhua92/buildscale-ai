@@ -118,8 +118,11 @@ impl TestApp {
             .await
             .expect("Failed to connect to database");
 
+        // Initialize Rig service for tests (dummy key)
+        let rig_service = std::sync::Arc::new(buildscale::services::chat::rig_engine::RigService::dummy());
+
         // Build application state with cache, user_cache, and database pool
-        let app_state = AppState::new(cache.clone(), user_cache, pool.clone());
+        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service);
 
         // Build API v1 routes using the shared router function
         let api_routes = create_api_router(app_state.clone());

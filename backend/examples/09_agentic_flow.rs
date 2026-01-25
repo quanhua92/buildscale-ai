@@ -1,9 +1,10 @@
-/// Agentic Engine Flow Example
+/// Agentic Engine Flow Example: Complex Multi-step Workflow
 ///
 /// This example demonstrates the decoupled Command/Event architecture of the Agentic Engine:
 /// 1. **Seed**: Anchor the session identity (Create .chat file).
-/// 2. **Event Pipe**: Establish a long-lived SSE connection for AI feedback.
-/// 3. **Command Bus**: Send user interactions as non-blocking POST requests.
+/// 2. **Environment Setup**: Pre-create files for the agent to manipulate.
+/// 3. **Event Pipe**: Establish a long-lived SSE connection for AI feedback.
+/// 4. **Complex Task**: Send a multi-step instruction (List -> Rename -> Append -> Delete).
 ///
 /// **Usage:**
 /// ```bash
@@ -29,8 +30,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_base_url = get_base_url();
 
-    println!("🚀 Agentic Engine Flow Example");
-    println!("==============================\n");
+    println!("🚀 Agentic Engine Flow Example: Complex Task Verification");
+    println!("====================================================\n");
 
     // 1. Authentication & Setup
     println!("1️⃣  Authenticating...");
@@ -61,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("access_token not found in login response");
     println!("✓ Authenticated as: {}\n", email);
 
-    // 2. Get Workspace
+    // 2. Create Workspace
     println!("2️⃣  Creating Workspace...");
     let ws_res = client.post(&format!("{}/workspaces", api_base_url))
         .header("Authorization", format!("Bearer {}", token))
@@ -76,12 +77,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("workspace id not found in response");
     println!("✓ Workspace Created: {}\n", workspace_id);
 
-    // 3. Phase 1: The Seed (Anchor Identity)
-    println!("3️⃣  Phase 1: Seeding the Chat session...");
+    // 3. Setup Environment Files
+    println!("3️⃣  Seeding test environment files...");
+    // Create temp_file.txt
+    client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({ "name": "temp_file.txt", "file_type": "document", "content": "This file will be renamed." }))
+        .send().await?;
+    
+    // Create delete_me.md
+    client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({ "name": "delete_me.md", "file_type": "document", "content": "This file will be deleted." }))
+        .send().await?;
+
+    // Create append_target.txt
+    client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({ "name": "append_target.txt", "file_type": "document", "content": "Original log entry." }))
+        .send().await?;
+    println!("✓ Environment ready.\n");
+
+    // 4. Phase 1: The Seed (Anchor Identity)
+    println!("4️⃣  Phase 1: Seeding the Chat session...");
     let chat_res = client.post(&format!("{}/workspaces/{}/chats", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({
-            "goal": "Hello! I want to start an engineering session in this workspace.",
+            "goal": "I want to perform workspace maintenance: list, rename, append, and delete.",
             "agents": []
         }))
         .send()
@@ -94,35 +116,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("chat_id not found in response");
     println!("✓ Session Anchored. Chat ID: {}\n", chat_id);
 
-    // 4. Phase 2: The Event Pipe (Standard Out)
-    println!("4️⃣  Phase 2: Connecting to Event Pipe (SSE)...");
+    // 5. Phase 2: The Event Pipe (Standard Out)
+    println!("5️⃣  Phase 2: Connecting to Event Pipe (SSE)...");
     let res = client.get(&format!("{}/workspaces/{}/chats/{}/events", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await?;
 
     let mut event_stream = res.bytes_stream();
+    println!("✓ Event Pipe Connected. Listening for AI actions...\n");
 
-    println!("✓ Event Pipe Connected. Listening for AI thoughts...\n");
+    // 6. Phase 3: The Command Bus (Follow-up)
+    println!("6️⃣  Phase 3: Sending complex task command...");
+    let prompt = r#"
+Please perform the following maintenance tasks in order:
+1. List the files in the root directory to see what's there.
+2. Rename 'temp_file.txt' to 'buildscale_renamed.txt' using the 'mv' tool.
+3. Read 'append_target.txt', then use the 'write' tool to append the line ' - Verified by Agent' to its content.
+4. Remove 'delete_me.md' using the 'rm' tool.
+"#;
 
-    // 5. Phase 3: The Command Bus (Follow-up)
-    println!("5️⃣  Phase 3: Sending interaction command...");
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "content": "Please create a file named 'buildscale_status.txt' in the root directory with the content 'The Agentic Engine is operational and verified.'" }))
+        .json(&json!({ "content": prompt }))
         .send()
         .await?;
 
-    println!("✓ Command Dispatched. Waiting for AI response...\n");
+    println!("✓ Command Dispatched. Processing stream...\n");
 
-    // 6. Process SSE Stream
-    println!("--- [ AI OUTPUT STREAM ] ---");
+    // 7. Process SSE Stream
+    println!("--- [ AI EXECUTION LOG ] ---");
     
     while let Some(item) = event_stream.next().await {
         let chunk = item?;
         let text = String::from_utf8_lossy(&chunk);
         
-        // Simple SSE line parser
         for line in text.lines() {
             if line.starts_with("data: ") {
                 let data = &line[6..];
@@ -131,12 +159,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match event_type {
                         "thought" => println!("🤔 THOUGHT: {}", event["data"]["text"].as_str().unwrap_or("...")),
                         "call" => println!("🛠️  CALL: {} with args {}", event["data"]["tool"], event["data"]["args"]),
-                        "observation" => println!("👁️  OBSERVATION: {}", event["data"]["output"]),
+                        "observation" => println!("👁️  OBSERVATION: Tool output received."),
                         "chunk" => print!("{}", event["data"]["text"].as_str().unwrap_or("")),
-                        "ping" => {
-                            // Heartbeat - normally silent or small indicator
-                            print!(".");
-                        }
+                        "ping" => print!("."),
                         "done" => {
                             println!("\n\n✅ DONE: {}", event["data"]["message"]);
                             return Ok(());
@@ -145,9 +170,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             println!("\n❌ ERROR: {}", event["data"]["message"]);
                             return Ok(());
                         }
-                        _ => println!("\n📢 EVENT: {:?}", event),
+                        _ => {}
                     }
-                    // Flush output
                     use std::io::Write;
                     std::io::stdout().flush().unwrap();
                 }
