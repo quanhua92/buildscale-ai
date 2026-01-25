@@ -810,6 +810,18 @@ pub async fn update_workspace(
 }
 ```
 
+### AI & Tool Architecture
+
+**Core Tools (`src/tools/`)**:
+- **Thick Layer**: Contains ALL execution logic, input normalization, and validation.
+- **Single Source of Truth**: Used by API handlers, CLI, and AI agents alike.
+- **Polymorphic Inputs**: Must handle diverse input shapes (e.g., auto-wrapping raw strings into `{"text": "..."}` for Documents) to ensure consistency across all callers.
+
+**AI Adapters (`src/services/chat/rig_tools.rs`)**:
+- **Thin Layer**: Pure translation from LLM frameworks (e.g., Rig.rs) to Core Tool arguments.
+- **No Hidden Logic**: Should strictly call `Tool::execute` after basic type conversion.
+- **Interface Owner**: Defines the JSON Schema exposed to the AI, but delegates implementation details to the core tools.
+
 ### Code Organization
 - Separate concerns: models (data), services (business logic), queries (data access)
 - Use type-safe enums for role management
