@@ -148,7 +148,7 @@ define_rig_tool!(
     tools::write::WriteTool,
     WriteArgs,
     "write",
-    "Creates a NEW file or completely OVERWRITES an existing file. For partial modifications or refactoring, use 'edit' or 'edit-many' instead."
+    "Creates a NEW file or completely OVERWRITES an existing file. For partial modifications or refactoring, use 'edit' or 'edit-many' instead. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
 );
 
 define_rig_tool!(
@@ -172,7 +172,7 @@ define_rig_tool!(
     tools::touch::TouchTool,
     TouchArgs,
     "touch",
-    "Updates the access and modification times of a file, or creates an empty file if it doesn't exist."
+    "Updates the access and modification times of a file, or creates an empty 'document' file if it doesn't exist. To create directories, use 'mkdir' instead."
 );
 
 define_rig_tool!(
