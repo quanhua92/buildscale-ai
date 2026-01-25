@@ -107,28 +107,24 @@ impl ChatActor {
         let file = queries::files::get_file_by_id(&mut conn, self.chat_id).await?;
 
         let agent_config = if let Some(_version_id) = file.latest_version_id {
-            let version = queries::files::get_latest_version(&mut conn, self.chat_id).await?;
-            serde_json::from_value(version.app_data).unwrap_or_else(|e| {
-                tracing::warn!(
-                    "Failed to deserialize agent_config for chat {}: {}. Using default.",
-                    self.chat_id,
-                    e
-                );
-                crate::models::chat::AgentConfig {
-                    agent_id: None,
-                    model: "gpt-4o-mini".to_string(),
-                    temperature: 0.7,
-                    persona_override: None,
-                }
-            })
+            queries::files::get_latest_version(&mut conn, self.chat_id)
+                .await
+                .ok()
+                .and_then(|v| serde_json::from_value(v.app_data).ok())
         } else {
+            None
+        }.unwrap_or_else(|| {
+            tracing::warn!(
+                "Failed to load or deserialize agent_config for chat {}. Using default.",
+                self.chat_id
+            );
             crate::models::chat::AgentConfig {
                 agent_id: None,
                 model: "gpt-4o-mini".to_string(),
                 temperature: 0.7,
                 persona_override: None,
             }
-        };
+        });
 
 
         let session = crate::models::chat::ChatSession {

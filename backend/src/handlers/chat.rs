@@ -19,6 +19,9 @@ use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
 use futures::StreamExt;
 
+/// Maximum length of goal text to include in chat file name.
+const CHAT_NAME_GOAL_SNIPPET_LENGTH: usize = 20;
+
 pub async fn create_chat(
     State(state): State<AppState>,
     Extension(user): Extension<AuthenticatedUser>,
@@ -34,7 +37,7 @@ pub async fn create_chat(
         author_id: user.id,
         file_type: FileType::Chat,
         status: FileStatus::Ready,
-        name: format!("Chat: {}", &req.goal[..std::cmp::min(req.goal.len(), 20)]),
+        name: format!("Chat: {}", &req.goal[..std::cmp::min(req.goal.len(), CHAT_NAME_GOAL_SNIPPET_LENGTH)]),
         slug: format!("chat-{}", Uuid::now_v7()),
         path: format!("/chats/chat-{}", Uuid::now_v7()),
         is_virtual: true,
@@ -112,11 +115,14 @@ pub async fn get_chat_events(
     let broadcast_stream = BroadcastStream::new(handle.event_tx.subscribe())
         .filter_map(|msg| async move {
             match msg {
-                Ok(event) => {
-                    let data = serde_json::to_string(&event).ok()?;
-                    Some(Ok(Event::default().data(data)))
-                }
-                Err(_) => None,
+                Ok(event) => match serde_json::to_string(&event) {
+                    Ok(data) => Some(Ok(Event::default().data(data))),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize SSE event: {:?}", e);
+                        None
+                    }
+                },
+                Err(_) => None, // broadcast receiver lag is fine to ignore
             }
         });
 
