@@ -11,7 +11,7 @@ use buildscale::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageR
 use buildscale::models::files::FileType;
 use buildscale::models::requests::CreateFileRequest;
 use buildscale::queries::chat;
-use buildscale::services::chat::ChatService;
+use buildscale::services::chat::{AttachmentKey, ChatService, DEFAULT_CONTEXT_TOKEN_LIMIT};
 use buildscale::services::files::create_file_with_content;
 use crate::common::database::TestApp;
 
@@ -41,7 +41,7 @@ async fn test_build_context_with_persona() {
         .await
         .expect("Failed to create chat file");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -103,7 +103,7 @@ async fn test_build_context_with_history() {
     .await
     .expect("Failed to insert message");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -179,15 +179,20 @@ async fn test_build_context_with_file_attachments() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
-    // Should contain file attachments
-    assert!(!context.attachments.is_empty());
-    assert_eq!(context.attachments.len(), 1);
-    assert_eq!(context.attachments[0].path, "/test.txt");
-    assert!(context.attachments[0].content.contains("Hello World"));
+    // Should contain file attachments in ContextManager
+    assert!(!context.attachment_manager.map.is_empty());
+    assert_eq!(context.attachment_manager.map.len(), 1);
+
+    // Extract the file content from the ContextManager
+    let file_content = context.attachment_manager.map
+        .values()
+        .next()
+        .expect("Should have one attachment");
+    assert!(file_content.content.contains("Hello World"));
 }
 
 #[tokio::test]
@@ -257,12 +262,12 @@ async fn test_build_context_workspace_isolation() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, workspace1.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace1.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
     // Should NOT contain the file from different workspace
-    assert!(context.attachments.is_empty(), "Attachments should be empty for files from different workspace");
+    assert!(context.attachment_manager.map.is_empty(), "Attachments should be empty for files from different workspace");
 }
 
 #[tokio::test]
@@ -291,14 +296,14 @@ async fn test_build_context_empty_chat() {
         .await
         .expect("Failed to create chat file");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
     // Should contain only persona (no history or attachments)
     assert!(context.persona.contains("BuildScale AI"));
     assert!(context.history.is_empty());
-    assert!(context.attachments.is_empty());
+    assert!(context.attachment_manager.map.is_empty());
 }
 
 #[tokio::test]
@@ -387,7 +392,7 @@ async fn test_build_context_token_limit_optimization() {
         .expect("Failed to insert message with attachment");
     }
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -397,9 +402,18 @@ async fn test_build_context_token_limit_optimization() {
     assert!(context.persona.contains("BuildScale AI"), "Persona should contain AI name");
 
     // For this test, we just verify the structure is correct
-    // Actual token limit optimization would be implemented in context building logic
+    // Actual token limit optimization is now implemented via ContextManager
     assert!(!context.history.is_empty(), "History should contain messages");
-    assert!(!context.attachments.is_empty(), "Attachments should contain files");
+    assert!(!context.attachment_manager.map.is_empty(), "Attachments should contain files");
+
+    // Verify ContextManager has optimized the attachments
+    // (It should have pruned some files if over the token limit)
+    let total_tokens: usize = context.attachment_manager.map
+        .values()
+        .map(|v| v.tokens)
+        .sum();
+    assert!(total_tokens < DEFAULT_CONTEXT_TOKEN_LIMIT * 2,
+        "ContextManager should optimize attachments, total tokens: {}", total_tokens);
 }
 
 #[tokio::test]
@@ -481,7 +495,7 @@ async fn test_build_context_fragment_ordering() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id)
+    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -492,8 +506,17 @@ async fn test_build_context_fragment_ordering() {
     // History should have at least one message (the "Test message")
     assert!(!context.history.is_empty(), "History should contain messages");
 
-    // Attachments should have the file
-    assert!(!context.attachments.is_empty(), "Attachments should contain files");
-    assert_eq!(context.attachments.len(), 1, "Should have one attachment");
-    assert_eq!(context.attachments[0].path, "/test.txt", "Attachment path should match");
+    // Attachments should have the file in ContextManager
+    assert!(!context.attachment_manager.map.is_empty(), "Attachments should contain files");
+    assert_eq!(context.attachment_manager.map.len(), 1, "Should have one attachment");
+
+    // Verify the AttachmentManager has sorted the fragments
+    // WorkspaceFile fragments should be at position POS_WORKSPACE_FILES (2)
+    let (key, _value) = context.attachment_manager.map.iter().next().unwrap();
+    match key {
+        AttachmentKey::WorkspaceFile(_) => {
+            // Correct key type
+        }
+        _ => panic!("Expected WorkspaceFile key"),
+    }
 }

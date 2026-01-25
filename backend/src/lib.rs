@@ -414,8 +414,8 @@ pub async fn run_api_server(
     // Create user cache with configured TTL
     let user_cache = Cache::new_local(CacheConfig::default());
 
-    // Build the application state with cache, user_cache, and database pool
-    let app_state = AppState::new(cache, user_cache, pool, rig_service);
+    // Build the application state with cache, user_cache, database pool, and config
+    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone());
 
     let api_routes = create_api_router(app_state.clone());
 

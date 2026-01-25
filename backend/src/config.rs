@@ -205,6 +205,10 @@ pub struct AiConfig {
     pub chunk_overlap: usize,
     /// Dimension for AI embeddings
     pub embedding_dimension: usize,
+    /// Default AI persona for chat sessions
+    pub default_persona: String,
+    /// Default context token limit for chat sessions
+    pub default_context_token_limit: usize,
     /// OpenAI API key
     #[serde(skip_serializing)]
     pub openai_api_key: SecretString,
@@ -216,6 +220,8 @@ impl Default for AiConfig {
             chunk_window_size: 1000,
             chunk_overlap: 200,
             embedding_dimension: 1536,
+            default_persona: "You are BuildScale AI, a professional software engineering assistant.".to_string(),
+            default_context_token_limit: 4000,
             openai_api_key: SecretString::from(String::new()),
         }
     }

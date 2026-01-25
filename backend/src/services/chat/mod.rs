@@ -75,6 +75,11 @@ pub mod registry;
 pub mod rig_engine;
 pub mod rig_tools;
 
+pub use context::{
+    AttachmentManager, AttachmentKey, AttachmentValue, ESTIMATED_CHARS_PER_TOKEN,
+    HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM,
+};
+
 #[cfg(test)]
 mod tests;
 
@@ -88,18 +93,25 @@ use uuid::Uuid;
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
 
+/// Default AI persona for BuildScale AI assistant.
+pub const DEFAULT_PERSONA: &str = "You are BuildScale AI, a professional software engineering assistant.";
+
 /// Structured context for AI chat sessions.
 ///
 /// Contains persona, conversation history, and file attachments separately,
 /// allowing proper integration with AI frameworks like Rig.
+///
+/// Uses AttachmentManager and HistoryManager for sophisticated management:
+/// - AttachmentManager: Priority-based pruning for file attachments
+/// - HistoryManager: Token estimation and future pruning for conversations
 #[derive(Debug, Clone)]
 pub struct BuiltContext {
     /// System persona/instructions for the AI
     pub persona: String,
-    /// Conversation history (excluding current message)
-    pub history: Vec<ChatMessage>,
-    /// File attachments with their content
-    pub attachments: Vec<FileAttachment>,
+    /// History manager for conversation messages
+    pub history: HistoryManager,
+    /// Attachment manager for file attachments with priority-based pruning
+    pub attachment_manager: AttachmentManager,
 }
 
 /// A file attachment with its content for context.
@@ -132,26 +144,34 @@ impl ChatService {
     ///
     /// Returns persona, history, and file attachments separately for proper
     /// integration with AI frameworks like Rig.
+    ///
+    /// Uses AttachmentManager internally for sophisticated attachment management:
+    /// - Priority-based pruning for token limit optimization
+    /// - Keyed addressability for efficient updates
+    /// - Automatic token estimation
     pub async fn build_context(
         conn: &mut DbConn,
         workspace_id: Uuid,
         chat_file_id: Uuid,
+        default_persona: &str,
+        default_context_token_limit: usize,
     ) -> Result<BuiltContext> {
         // 1. Load Session Identity & History
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
         // 2. Hydrate Persona
-        let persona = "You are BuildScale AI, a professional software engineering assistant.".to_string();
+        let persona = default_persona.to_string();
 
         // 3. Extract history (exclude current/last message which is the prompt)
-        let history = if messages.len() > 1 {
+        let history_messages = if messages.len() > 1 {
             messages[..messages.len() - 1].to_vec()
         } else {
             Vec::new()
         };
+        let history = HistoryManager::new(history_messages);
 
-        // 4. Hydrate Attachments from the LATEST message
-        let mut attachments = Vec::new();
+        // 4. Hydrate Attachments using AttachmentManager
+        let mut attachment_manager = AttachmentManager::new();
 
         if let Some(last_msg) = messages.last() {
             let metadata = &last_msg.metadata.0;
@@ -163,14 +183,25 @@ impl ChatService {
                         {
                             // Security check: Ensure file belongs to the same workspace
                             if file_with_content.file.workspace_id == workspace_id {
-                                attachments.push(FileAttachment {
-                                    file_id: *file_id,
-                                    path: file_with_content.file.path.clone(),
-                                    content: file_with_content
-                                        .latest_version
-                                        .content_raw
-                                        .to_string(),
-                                });
+                                let content = file_with_content
+                                    .latest_version
+                                    .content_raw
+                                    .to_string();
+
+                                // Estimate tokens (rough approximation: 4 chars per token)
+                                let estimated_tokens = content.len() / ESTIMATED_CHARS_PER_TOKEN;
+
+                                // Add to attachment manager with workspace file key
+                                // Use MEDIUM priority for user-attached files
+                                attachment_manager.add_fragment(
+                                    AttachmentKey::WorkspaceFile(*file_id),
+                                    AttachmentValue {
+                                        content,
+                                        priority: PRIORITY_MEDIUM,
+                                        tokens: estimated_tokens,
+                                        is_essential: false,
+                                    },
+                                );
                             }
                         }
                     }
@@ -179,14 +210,17 @@ impl ChatService {
             }
         }
 
-        // 5. Apply token limit optimization (if context is too large)
-        // For now, we keep all history but could optimize in the future
-        // TODO: Implement smart history truncation based on token limits
+        // 5. Optimize attachments for token limit
+        // Keep only essential and high-priority files if we're over the limit
+        attachment_manager.optimize_for_limit(default_context_token_limit);
+
+        // 6. Sort by position for consistent rendering
+        attachment_manager.sort_by_position();
 
         Ok(BuiltContext {
             persona,
             history,
-            attachments,
+            attachment_manager,
         })
     }
 }

@@ -54,7 +54,8 @@ pub async fn create_chat(
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
-        "model": "gpt-4o-mini",
+        "model": req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string()),
+        "persona": req.persona.clone().unwrap_or_else(|| crate::services::chat::DEFAULT_PERSONA.to_string()),
         "temperature": 0.7
     });
 
@@ -103,7 +104,14 @@ pub async fn get_chat_events(
         handle
     } else {
         // Rehydrate/Spawn actor
-        let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), state.rig_service.clone());
+        let handle = ChatActor::spawn(
+            chat_id,
+            workspace_id,
+            state.pool.clone(),
+            state.rig_service.clone(),
+            state.config.ai.default_persona.clone(),
+            state.config.ai.default_context_token_limit,
+        );
         state.agents.register(chat_id, handle.clone()).await;
         handle
     };
@@ -171,7 +179,14 @@ pub async fn post_chat_message(
         handle
     } else {
         // Rehydrate actor
-        let handle = ChatActor::spawn(chat_id, workspace_id, state.pool.clone(), state.rig_service.clone());
+        let handle = ChatActor::spawn(
+            chat_id,
+            workspace_id,
+            state.pool.clone(),
+            state.rig_service.clone(),
+            state.config.ai.default_persona.clone(),
+            state.config.ai.default_context_token_limit,
+        );
         state.agents.register(chat_id, handle.clone()).await;
         handle
     };
