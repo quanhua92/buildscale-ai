@@ -375,13 +375,15 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
 ///
 /// # Example
 /// ```no_run
-/// use buildscale::{Config, Cache, CacheConfig, run_api_server};
+/// use buildscale::{Config, Cache, CacheConfig, run_api_server, services::chat::rig_engine::RigService};
+/// use std::sync::Arc;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let config = Config::load()?;
 ///     let cache: Cache<String> = Cache::new_local(CacheConfig::default());
-///     run_api_server(&config, cache).await?;
+///     let rig_service = Arc::new(RigService::from_env());
+///     run_api_server(&config, cache, rig_service).await?;
 ///     Ok(())
 /// }
 /// ```
