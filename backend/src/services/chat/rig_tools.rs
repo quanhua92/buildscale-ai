@@ -179,3 +179,11 @@ define_rig_tool!(
     "edit",
     "Edits a file by replacing a unique search string with a replacement string. Fails if the search string is not found or found multiple times."
 );
+
+define_rig_tool!(
+    RigEditManyTool,
+    tools::edit::EditManyTool,
+    EditArgs,
+    "edit-many",
+    "Edits a file by replacing all occurrences of a search string with a replacement string. Fails if the search string is not found."
+);

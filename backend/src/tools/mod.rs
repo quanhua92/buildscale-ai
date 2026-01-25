@@ -70,6 +70,7 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "mv" => Ok(ToolExecutor::Mv),
         "touch" => Ok(ToolExecutor::Touch),
         "edit" => Ok(ToolExecutor::Edit),
+        "edit-many" => Ok(ToolExecutor::EditMany),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -110,6 +111,7 @@ pub enum ToolExecutor {
     Mv,
     Touch,
     Edit,
+    EditMany,
 }
 
 impl ToolExecutor {
@@ -128,6 +130,7 @@ impl ToolExecutor {
             ToolExecutor::Mv => mv::MvTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Touch => touch::TouchTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Edit => edit::EditTool.execute(conn, workspace_id, user_id, args).await,
+            ToolExecutor::EditMany => edit::EditManyTool.execute(conn, workspace_id, user_id, args).await,
         }
     }
 }
