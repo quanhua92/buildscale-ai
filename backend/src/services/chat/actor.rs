@@ -94,13 +94,8 @@ impl ChatActor {
 
                         match cmd {
                             AgentCommand::ProcessInteraction { user_id } => {
-                                // Send initial thought to signal activity immediately
-                                let _ = self.event_tx.send(SseEvent::Thought {
-                                    agent_id: None,
-                                    text: "Initializing context and connecting to AI brain...".to_string(),
-                                });
-
                                 if let Err(e) = self.process_interaction(user_id).await {
+
                                     tracing::error!(
                                         "[ChatActor] Error processing interaction for chat {}: {:?}",
                                         self.chat_id,

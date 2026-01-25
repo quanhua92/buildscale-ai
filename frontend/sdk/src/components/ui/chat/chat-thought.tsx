@@ -13,7 +13,8 @@ const ChatThought = React.forwardRef<HTMLDivElement, ChatThoughtProps>(
     const { message } = useChatMessage()
     const [isOpen, setIsOpen] = React.useState(defaultExpanded)
 
-    if (!message.thinking) return null
+    // Only render if there is actual thinking content
+    if (!message.thinking || message.thinking.trim() === "") return null
 
     return (
       <div ref={ref} className={cn("w-full", className)} {...props}>
@@ -32,7 +33,7 @@ const ChatThought = React.forwardRef<HTMLDivElement, ChatThoughtProps>(
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-            <div className="text-sm text-muted-foreground/80 italic pl-4 border-l-2 border-muted/30 py-1 leading-relaxed">
+            <div className="text-sm text-muted-foreground/80 italic pl-4 border-l-2 border-muted/30 py-1 leading-relaxed whitespace-pre-wrap">
               {message.thinking}
             </div>
           </CollapsibleContent>
