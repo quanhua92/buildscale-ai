@@ -129,12 +129,19 @@ impl WriteTool {
                 return Ok(serde_json::json!({ "text": content.as_str().unwrap() }));
             }
 
-            // Ensure existing objects have the "text" field
+            // Check if 'text' field exists
             if !content.get("text").map_or(false, |v| v.is_string()) {
+                // If 'text' field is missing entirely
+                if !content.get("text").is_some() {
+                    return Err(Error::Validation(ValidationErrors::Single {
+                        field: "content".to_string(),
+                        message: "Document content must contain a 'text' field".to_string(),
+                    }));
+                }
+                // If 'text' field exists but is not a string
                 return Err(Error::Validation(ValidationErrors::Single {
                     field: "content".to_string(),
-                    message: "Document content must be a string or a JSON object with a 'text' field"
-                        .to_string(),
+                    message: "Document content must contain a 'text' field with a string value".to_string(),
                 }));
             }
         }

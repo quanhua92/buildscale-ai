@@ -140,3 +140,49 @@ pub async fn delete_file(app: &TestApp, workspace_id: &str, token: &str, path: &
     let body: serde_json::Value = response.json().await.unwrap();
     assert!(body["success"].as_bool().unwrap());
 }
+
+/// Write file via tool with explicit file type
+///
+/// Creates a file with the given content and file type using the write tool.
+///
+/// # Arguments
+/// * `app` - TestApp instance
+/// * `workspace_id` - Workspace ID string
+/// * `token` - Authentication token string
+/// * `path` - File path
+/// * `content` - File content as JSON value
+/// * `file_type` - File type string (e.g., "document", "canvas", "whiteboard")
+///
+/// # Returns
+/// * `String` - File ID of created/updated file
+///
+/// # Example
+/// \`\`\`no_run
+/// let file_id = write_file_with_type(&app, &workspace_id, &token, "/canvas.json", canvas_content, "canvas").await;
+/// \`\`
+pub async fn write_file_with_type(
+    app: &TestApp,
+    workspace_id: &str,
+    token: &str,
+    path: &str,
+    content: serde_json::Value,
+    file_type: &str,
+) -> String {
+    let response = execute_tool(
+        app,
+        workspace_id,
+        token,
+        "write",
+        serde_json::json!({
+            "path": path,
+            "content": content,
+            "file_type": file_type
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+    body["result"]["file_id"].as_str().unwrap().to_string()
+}
+
