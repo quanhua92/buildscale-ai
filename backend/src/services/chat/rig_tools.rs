@@ -1,5 +1,7 @@
 use crate::error::Error;
-use crate::models::requests::{EditArgs, LsArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs};
+use crate::models::requests::{
+    EditArgs, GrepArgs, LsArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
+};
 use crate::tools;
 use crate::DbPool;
 use rig::completion::ToolDefinition;
@@ -186,4 +188,12 @@ define_rig_tool!(
     EditArgs,
     "edit-many",
     "Edits a file by replacing all occurrences of a search string with a replacement string. Fails if the search string is not found."
+);
+
+define_rig_tool!(
+    RigGrepTool,
+    tools::grep::GrepTool,
+    GrepArgs,
+    "grep",
+    "Searches for a regex pattern in all document files within the workspace. Supports optional path filtering."
 );

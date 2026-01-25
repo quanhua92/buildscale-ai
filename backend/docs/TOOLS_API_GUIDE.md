@@ -17,6 +17,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [touch - Update Timestamp or Create Empty File](#touch---update-timestamp-or-create-empty-file)
   - [edit - Edit File Content](#edit---edit-file-content)
   - [edit-many - Replace All Occurrences](#edit-many---replace-all-occurrences)
+  - [grep - Regex Search Files](#grep---regex-search-files)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
 - [Error Responses](#error-responses)
@@ -38,6 +39,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
 | `edit` | Edit file content | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
 | `edit-many` | Replace all occurrences | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
+| `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -821,6 +823,68 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Validation**: Fails with `400 Bad Request` if `old_string` is not found.
 - **Stale Protection**: If `last_read_hash` is provided, the tool will fail with a `409 Conflict` if the current file hash does not match.
 - **Document Only**: Currently only supports `Document` file types.
+
+---
+
+### grep - Regex Search Files
+
+Searches for a regex pattern in all document files within the workspace. This tool uses database-level regex searching for high performance across the entire codebase.
+
+#### Arguments
+
+```json
+{
+  "pattern": "fn \\w+\\(",
+  "path_pattern": "%.rs",
+  "case_sensitive": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | Yes | Regex pattern to search for (Postgres regex syntax) |
+| `path_pattern` | string | No | Optional SQL LIKE pattern to filter file paths (e.g., `%.rs`, `/src/%`) |
+| `case_sensitive` | boolean | No | Whether the search should be case-sensitive. Default: `false`. |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "grep",
+    "args": {
+      "pattern": "TODO:",
+      "case_sensitive": true
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "matches": [
+      {
+        "path": "/src/main.rs",
+        "line_number": 42,
+        "line_text": "// TODO: Implement error handling"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Regex Engine**: Uses PostgreSQL POSIX regex operators (`~` and `~*`).
+- **Performance**: Searches across the latest versions of all document files in the database.
+- **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
+- **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
 
 ---
 

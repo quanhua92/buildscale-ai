@@ -259,6 +259,13 @@ pub struct EditArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrepArgs {
+    pub pattern: String,
+    pub path_pattern: Option<String>,
+    pub case_sensitive: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TouchArgs {
     pub path: String,
 }
@@ -284,6 +291,18 @@ pub struct LsEntry {
     pub path: String,
     pub file_type: FileType,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GrepResult {
+    pub matches: Vec<GrepMatch>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GrepMatch {
+    pub path: String,
+    pub line_number: i32,
+    pub line_text: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -265,6 +265,7 @@ Execute filesystem tools (ls, read, write, rm, mv, touch) within a workspace thr
 | `touch` | Update timestamp or create empty file | `path` (required) |
 | `edit` | Edit file content by unique replace | `path`, `old_string`, `new_string` |
 | `edit-many` | Global search and replace in file | `path`, `old_string`, `new_string` |
+| `grep` | Workspace-wide regex search | `pattern`, `path_pattern?`, `case_sensitive?` |
 
 **Content Handling by File Type**:
 - **Documents**: Raw strings are auto-wrapped to `{text: "..."}`. On read, simple documents are auto-unwrapped to return just the string.
