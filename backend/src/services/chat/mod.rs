@@ -176,36 +176,29 @@ impl ChatService {
         if let Some(last_msg) = messages.last() {
             let metadata = &last_msg.metadata.0;
             for attachment in &metadata.attachments {
-                match attachment {
-                    ChatAttachment::File { file_id, .. } => {
-                        if let Ok(file_with_content) =
-                            crate::services::files::get_file_with_content(conn, *file_id).await
-                        {
-                            // Security check: Ensure file belongs to the same workspace
-                            if file_with_content.file.workspace_id == workspace_id {
-                                let content = file_with_content
-                                    .latest_version
-                                    .content_raw
-                                    .to_string();
+                if let ChatAttachment::File { file_id, .. } = attachment
+                    && let Ok(file_with_content) =
+                        crate::services::files::get_file_with_content(conn, *file_id).await
+                {
+                    // Security check: Ensure file belongs to the same workspace
+                    if file_with_content.file.workspace_id == workspace_id {
+                        let content = file_with_content.latest_version.content_raw.to_string();
 
-                                // Estimate tokens (rough approximation: 4 chars per token)
-                                let estimated_tokens = content.len() / ESTIMATED_CHARS_PER_TOKEN;
+                        // Estimate tokens (rough approximation: 4 chars per token)
+                        let estimated_tokens = content.len() / ESTIMATED_CHARS_PER_TOKEN;
 
-                                // Add to attachment manager with workspace file key
-                                // Use MEDIUM priority for user-attached files
-                                attachment_manager.add_fragment(
-                                    AttachmentKey::WorkspaceFile(*file_id),
-                                    AttachmentValue {
-                                        content,
-                                        priority: PRIORITY_MEDIUM,
-                                        tokens: estimated_tokens,
-                                        is_essential: false,
-                                    },
-                                );
-                            }
-                        }
+                        // Add to attachment manager with workspace file key
+                        // Use MEDIUM priority for user-attached files
+                        attachment_manager.add_fragment(
+                            AttachmentKey::WorkspaceFile(*file_id),
+                            AttachmentValue {
+                                content,
+                                priority: PRIORITY_MEDIUM,
+                                tokens: estimated_tokens,
+                                is_essential: false,
+                            },
+                        );
                     }
-                    _ => {} // Other attachments handled in Phase 2
                 }
             }
         }

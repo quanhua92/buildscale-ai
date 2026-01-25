@@ -49,13 +49,13 @@ async fn perform_edit(
     let latest_version = file_queries::get_latest_version(conn, file.id).await?;
     
     // Optional: Reject if not read latest modification
-    if let Some(last_read_hash) = args.last_read_hash {
-        if latest_version.hash != last_read_hash {
-            return Err(Error::Conflict(format!(
-                "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
-                last_read_hash, latest_version.hash
-            )));
-        }
+    if let Some(last_read_hash) = args.last_read_hash
+        && latest_version.hash != last_read_hash
+    {
+        return Err(Error::Conflict(format!(
+            "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
+            last_read_hash, latest_version.hash
+        )));
     }
 
     // Extract text

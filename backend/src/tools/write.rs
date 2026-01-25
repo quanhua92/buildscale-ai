@@ -132,9 +132,9 @@ impl WriteTool {
             }
 
             // Check if 'text' field exists
-            if !content.get("text").map_or(false, |v| v.is_string()) {
+            if !content.get("text").is_some_and(|v| v.is_string()) {
                 // If 'text' field is missing entirely
-                if !content.get("text").is_some() {
+                if content.get("text").is_none() {
                     return Err(Error::Validation(ValidationErrors::Single {
                         field: "content".to_string(),
                         message: "Document content must contain a 'text' field".to_string(),
