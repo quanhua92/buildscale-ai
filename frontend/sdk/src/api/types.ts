@@ -74,6 +74,31 @@ export interface UpdateWorkspaceResponse {
   workspace: Workspace
 }
 
+// ============================================================================
+// Chat Types
+// ============================================================================
+
+export interface CreateChatRequest {
+  goal: string
+  files?: string[]
+  agents?: string[]
+  model?: string
+  persona?: string
+}
+
+export interface CreateChatResponse {
+  chat_id: string
+  plan_id: string | null
+}
+
+export interface PostChatMessageRequest {
+  content: string
+}
+
+export interface PostChatMessageResponse {
+  status: "accepted"
+}
+
 export interface WorkspaceMemberDetailed {
   workspace_id: string
   user_id: string
