@@ -99,16 +99,46 @@ impl ChatActor {
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-        // 1. Build context with priority-based fragment management
+        // 1. Build structured context with persona, history, and attachments
         let context = ChatService::build_context(&mut conn, self.workspace_id, self.chat_id).await?;
-        tracing::debug!(chat_id = %self.chat_id, context_len = context.len(), "Built context with ChatService");
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            persona_len = context.persona.len(),
+            history_count = context.history.len(),
+            attachment_count = context.attachments.len(),
+            "Built structured context"
+        );
 
-        // 2. Get messages for Rig conversion
+        // 2. Get current message (the prompt)
         let messages =
             queries::chat::get_messages_by_file_id(&mut conn, self.workspace_id, self.chat_id)
                 .await?;
 
-        // 3. Hydrate session model
+        let last_message = messages
+            .last()
+            .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
+
+        // 3. Format file attachments as context block for the prompt
+        let attachments_context = if !context.attachments.is_empty() {
+            let blocks: Vec<String> = context
+                .attachments
+                .iter()
+                .map(|att| format!("File: {}\n---\n{}\n---", att.path, att.content))
+                .collect();
+            format!("\n\nAttached Files:\n{}", blocks.join("\n\n"))
+        } else {
+            String::new()
+        };
+
+        // 4. Build full prompt with attachments
+        let prompt = format!("{}{}", last_message.content, attachments_context);
+
+        // 5. Convert history to Rig format (exclude last/current message)
+        let history = self
+            .rig_service
+            .convert_history(&context.history);
+
+        // 6. Hydrate session model
         let file = queries::files::get_file_by_id(&mut conn, self.chat_id).await?;
 
         let agent_config = if let Some(_version_id) = file.latest_version_id {
@@ -123,10 +153,9 @@ impl ChatActor {
                 agent_id: None,
                 model: "gpt-4o-mini".to_string(),
                 temperature: 0.7,
-                persona_override: None, // Context is passed as prompt instead
+                persona_override: Some(context.persona),
             }
         };
-
 
         let session = crate::models::chat::ChatSession {
             file_id: self.chat_id,
@@ -134,17 +163,16 @@ impl ChatActor {
             messages: messages.clone(),
         };
 
-        // 4. Create Rig Agent
+        // 7. Create Rig Agent
         let agent = self
             .rig_service
             .create_agent(self.pool.clone(), self.workspace_id, user_id, &session)
             .await?;
 
-        // 5. Stream from Rig with full context (persona + history + file attachments)
-        // Note: context already contains conversation history, so we pass empty vec for history
+        // 8. Stream from Rig with persona, history, and attachments in prompt
         tracing::info!(chat_id = %self.chat_id, model = %session.agent_config.model, "Requesting AI completion");
         let mut stream = agent
-            .stream_chat(&context, vec![])
+            .stream_chat(&prompt, history)
             .await;
 
         let mut full_response = String::new();

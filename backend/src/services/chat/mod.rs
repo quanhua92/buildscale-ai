@@ -88,6 +88,28 @@ use uuid::Uuid;
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
 
+/// Structured context for AI chat sessions.
+///
+/// Contains persona, conversation history, and file attachments separately,
+/// allowing proper integration with AI frameworks like Rig.
+#[derive(Debug, Clone)]
+pub struct BuiltContext {
+    /// System persona/instructions for the AI
+    pub persona: String,
+    /// Conversation history (excluding current message)
+    pub history: Vec<ChatMessage>,
+    /// File attachments with their content
+    pub attachments: Vec<FileAttachment>,
+}
+
+/// A file attachment with its content for context.
+#[derive(Debug, Clone)]
+pub struct FileAttachment {
+    pub file_id: Uuid,
+    pub path: String,
+    pub content: String,
+}
+
 pub struct ChatService;
 
 impl ChatService {
@@ -106,84 +128,65 @@ impl ChatService {
         Ok(msg)
     }
 
-    /// Builds the full context for a chat session by hydrating all fragments.
+    /// Builds the structured context for a chat session.
+    ///
+    /// Returns persona, history, and file attachments separately for proper
+    /// integration with AI frameworks like Rig.
     pub async fn build_context(
         conn: &mut DbConn,
         workspace_id: Uuid,
         chat_file_id: Uuid,
-    ) -> Result<String> {
-        use self::context::{
-            format_file_fragment, format_history_fragment, ContextKey, ContextManager, ContextValue,
-            ESTIMATED_CHARS_PER_TOKEN, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_MEDIUM,
-        };
-
-        let mut manager = ContextManager::new();
-
+    ) -> Result<BuiltContext> {
         // 1. Load Session Identity & History
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
-        // 2. Hydrate Persona (from AgentConfig in file app_data - logic to be refined in Phase 1.4)
-        // For now, we use a placeholder or system default
-        manager.add_fragment(
-            ContextKey::SystemPersona,
-            ContextValue {
-                content: "You are BuildScale AI, a professional software engineering assistant.".to_string(),
-                priority: PRIORITY_ESSENTIAL,
-                tokens: 15, // Fixed system prompt estimation
-                is_essential: true,
-            },
-        );
+        // 2. Hydrate Persona
+        let persona = "You are BuildScale AI, a professional software engineering assistant.".to_string();
 
-        // 3. Hydrate History
-        if !messages.is_empty() {
-            let history_content = format_history_fragment(&messages);
-            manager.add_fragment(
-                ContextKey::ChatHistory,
-                ContextValue {
-                    tokens: history_content.len() / ESTIMATED_CHARS_PER_TOKEN,
-                    content: history_content,
-                    priority: PRIORITY_MEDIUM,
-                    is_essential: false,
-                },
-            );
-        }
+        // 3. Extract history (exclude current/last message which is the prompt)
+        let history = if messages.len() > 1 {
+            messages[..messages.len() - 1].to_vec()
+        } else {
+            Vec::new()
+        };
 
         // 4. Hydrate Attachments from the LATEST message
+        let mut attachments = Vec::new();
+
         if let Some(last_msg) = messages.last() {
-            // Access metadata directly as ChatMessageMetadata
             let metadata = &last_msg.metadata.0;
             for attachment in &metadata.attachments {
                 match attachment {
-                    crate::models::chat::ChatAttachment::File { file_id, .. } => {
-                        if let Ok(file_with_content) = crate::services::files::get_file_with_content(conn, *file_id).await {
+                    ChatAttachment::File { file_id, .. } => {
+                        if let Ok(file_with_content) =
+                            crate::services::files::get_file_with_content(conn, *file_id).await
+                        {
                             // Security check: Ensure file belongs to the same workspace
                             if file_with_content.file.workspace_id == workspace_id {
-                                let content = format_file_fragment(
-                                    &file_with_content.file.path,
-                                    &file_with_content.latest_version.content_raw.to_string()
-                                );
-
-                                manager.add_fragment(
-                                    ContextKey::WorkspaceFile(*file_id),
-                                    ContextValue {
-                                        tokens: content.len() / ESTIMATED_CHARS_PER_TOKEN,
-                                        content,
-                                        priority: PRIORITY_HIGH,
-                                        is_essential: false,
-                                    },
-                                );
+                                attachments.push(FileAttachment {
+                                    file_id: *file_id,
+                                    path: file_with_content.file.path.clone(),
+                                    content: file_with_content
+                                        .latest_version
+                                        .content_raw
+                                        .to_string(),
+                                });
                             }
                         }
-                    },
+                    }
                     _ => {} // Other attachments handled in Phase 2
                 }
             }
         }
 
-        // 5. Engineering: Sort and Render
-        manager.sort_by_position();
-        manager.optimize_for_limit(DEFAULT_CONTEXT_TOKEN_LIMIT);
+        // 5. Apply token limit optimization (if context is too large)
+        // For now, we keep all history but could optimize in the future
+        // TODO: Implement smart history truncation based on token limits
 
-        Ok(manager.render())
+        Ok(BuiltContext {
+            persona,
+            history,
+            attachments,
+        })
     }
 }
