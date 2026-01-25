@@ -1,6 +1,9 @@
 use crate::error::Error;
-use crate::models::requests::{LsArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs};
+use crate::models::requests::{
+    EditArgs, GrepArgs, LsArgs, MkdirArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
+};
 use crate::tools;
+
 use crate::DbPool;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool as RigTool;
@@ -137,7 +140,7 @@ define_rig_tool!(
     tools::read::ReadTool,
     ReadArgs,
     "read",
-    "Reads the content of a file. For Document types, automatically unwraps the text field for convenience. For other types (canvas, whiteboard, etc.), returns the raw JSON structure."
+    "Reads the content and hash of a file. For Document types, automatically unwraps the text field. Use this to get the 'hash' before calling 'edit'. PERFORMANCE WARNING: Do NOT use this tool to search for strings in multiple files; use 'grep' instead for efficiency."
 );
 
 define_rig_tool!(
@@ -145,7 +148,7 @@ define_rig_tool!(
     tools::write::WriteTool,
     WriteArgs,
     "write",
-    "Creates or updates a file. For Document types, accepts raw strings (auto-wrapped to {text: ...}) or {text: string} objects. For other types (canvas, whiteboard, etc.), requires the appropriate JSON structure."
+    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you SHOULD prefer 'edit' or 'edit-many' to ensure safety and preserve surrounding context. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
 );
 
 define_rig_tool!(
@@ -169,5 +172,37 @@ define_rig_tool!(
     tools::touch::TouchTool,
     TouchArgs,
     "touch",
-    "Updates the access and modification times of a file, or creates an empty file if it doesn't exist."
+    "Updates the access and modification times of a file, or creates an empty 'document' file if it doesn't exist. To create directories, use 'mkdir' instead."
+);
+
+define_rig_tool!(
+    RigEditTool,
+    tools::edit::EditTool,
+    EditArgs,
+    "edit",
+    "Edits a file by replacing a UNIQUE search string with a replacement string. Use this for precision changes. You SHOULD provide 'last_read_hash' for safety. Fails if the string is not unique."
+);
+
+define_rig_tool!(
+    RigEditManyTool,
+    tools::edit::EditManyTool,
+    EditArgs,
+    "edit-many",
+    "Edits a file by replacing ALL occurrences of a search string. Use this for global refactoring within a file. You SHOULD provide 'last_read_hash' for safety."
+);
+
+define_rig_tool!(
+    RigGrepTool,
+    tools::grep::GrepTool,
+    GrepArgs,
+    "grep",
+    "REQUIRED for searching. Performs a high-performance, workspace-wide regex search across all files. Returns line numbers and matching text. Always use this instead of reading files manually when looking for patterns."
+);
+
+define_rig_tool!(
+    RigMkdirTool,
+    tools::mkdir::MkdirTool,
+    MkdirArgs,
+    "mkdir",
+    "Recursively creates folders to ensure the specified path exists."
 );

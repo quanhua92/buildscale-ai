@@ -913,6 +913,52 @@ pub async fn semantic_search(
     Ok(results)
 }
 
+/// Performs a regex search across all document files in a workspace.
+pub async fn grep_files(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    pattern: &str,
+    path_pattern: Option<&str>,
+    case_sensitive: bool,
+) -> Result<Vec<crate::models::requests::GrepMatch>> {
+    let results = sqlx::query_as!(
+        crate::models::requests::GrepMatch,
+        r#"
+        SELECT 
+            f.path as "path!",
+            t.line_number::int4 as "line_number!",
+            t.line_text as "line_text!"
+        FROM files f
+        JOIN file_versions fv ON f.latest_version_id = fv.id
+        CROSS JOIN LATERAL unnest(string_to_array(
+            CASE 
+                WHEN fv.content_raw ? 'text' THEN fv.content_raw->>'text'
+                WHEN jsonb_typeof(fv.content_raw) = 'string' THEN fv.content_raw #>> '{}'
+                ELSE fv.content_raw::text 
+            END, 
+            E'\n'
+        )) 
+            WITH ORDINALITY AS t(line_text, line_number)
+        WHERE f.workspace_id = $1
+          AND f.deleted_at IS NULL
+          AND f.file_type = 'document'
+          AND ($3::text IS NULL OR f.path ILIKE $3::text)
+          AND (CASE WHEN $4::boolean THEN t.line_text ~ $2 ELSE t.line_text ~* $2 END)
+        ORDER BY f.path, t.line_number
+        LIMIT 1000
+        "#,
+        workspace_id,
+        pattern,
+        path_pattern,
+        case_sensitive
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(results)
+}
+
 /// Row structure for semantic search results.
 #[derive(Debug, Clone)]
 pub struct SearchResultRow {

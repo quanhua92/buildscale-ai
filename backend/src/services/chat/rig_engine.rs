@@ -1,5 +1,8 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
-use crate::services::chat::rig_tools::{RigLsTool, RigMvTool, RigReadTool, RigRmTool, RigTouchTool, RigWriteTool};
+use crate::services::chat::rig_tools::{
+    RigEditManyTool, RigEditTool, RigGrepTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
+    RigRmTool, RigTouchTool, RigWriteTool,
+};
 use crate::DbPool;
 use crate::error::Result;
 use rig::providers::openai::{self, responses_api::ResponsesCompletionModel};
@@ -81,6 +84,26 @@ impl RigService {
                 user_id,
             })
             .tool(RigTouchTool {
+                pool: pool.clone(),
+                workspace_id,
+                user_id,
+            })
+            .tool(RigEditTool {
+                pool: pool.clone(),
+                workspace_id,
+                user_id,
+            })
+            .tool(RigEditManyTool {
+                pool: pool.clone(),
+                workspace_id,
+                user_id,
+            })
+            .tool(RigGrepTool {
+                pool: pool.clone(),
+                workspace_id,
+                user_id,
+            })
+            .tool(RigMkdirTool {
                 pool: pool.clone(),
                 workspace_id,
                 user_id,

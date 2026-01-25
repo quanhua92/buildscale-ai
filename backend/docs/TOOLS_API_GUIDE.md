@@ -15,6 +15,10 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [rm - Delete File or Folder](#rm---delete-file-or-folder)
   - [mv - Move or Rename File](#mv---move-or-rename-file)
   - [touch - Update Timestamp or Create Empty File](#touch---update-timestamp-or-create-empty-file)
+  - [mkdir - Create Directory](#mkdir---create-directory)
+  - [edit - Edit File Content](#edit---edit-file-content)
+  - [edit-many - Replace All Occurrences](#edit-many---replace-all-occurrences)
+  - [grep - Regex Search Files](#grep---regex-search-files)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
 - [Error Responses](#error-responses)
@@ -34,6 +38,10 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `rm` | Delete file or folder | `path` | `file_id` |
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
+| `mkdir` | Create directory | `path` | `path`, `file_id` |
+| `edit` | Edit file content | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
+| `edit-many` | Replace all occurrences | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
+| `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -163,6 +171,17 @@ Document files use automatic wrapping and unwrapping for convenience:
 - Simple documents auto-unwrapped: `{"text": "hello"}` → `"hello"`
 - Complex documents preserved: `{"text": "hello", "metadata": {}}` → returned as-is
 - **Why:** AI gets clean string content without JSON nesting
+
+**Edit & Edit-Many Behavior:**
+- Operates on the inner `text` field for `Document` types.
+- Resilient: Automatically handles both wrapped (`{"text": "..."}`) and raw string content during the search phase.
+- **Result:** Always commits a new version using the standard wrapped structure (`{"text": "..."}`).
+
+**Grep Behavior:**
+- Searches specifically within the `text` field of `Document` files.
+- Resilient: Searches both wrapped and raw string content in the database.
+- High performance: Executes regex directly in the database (PostgreSQL).
+- Returns line-accurate results including line numbers and text chunks.
 
 **Examples:**
 ```json
@@ -327,7 +346,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "success": true,
   "result": {
     "path": "/documents/report.md",
-    "content": "# Annual Report\n\nThis is the content..."
+    "content": "# Annual Report\n\nThis is the content...",
+    "hash": "a1b2c3d4..."
   },
   "error": null
 }
@@ -341,6 +361,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 |-------|------|-------------|
 | `result.path` | string | The path that was read |
 | `result.content` | string or object | File content - unwrapped string for Documents, JSON object for other types |
+| `result.hash` | string | SHA-256 hash of the content |
 
 #### Behavior Notes
 
@@ -452,7 +473,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "result": {
     "path": "/documents/notes.md",
     "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
-    "version_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff2"
+    "version_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff2",
+    "hash": "a1b2c3d4..."
   },
   "error": null
 }
@@ -465,6 +487,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | `result.path` | string | The path that was written |
 | `result.file_id` | UUID | File identifier |
 | `result.version_id` | UUID | New version identifier |
+| `result.hash` | string | SHA-256 hash of the content |
 
 #### Behavior Notes
 
@@ -476,11 +499,63 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Auto-folder creation**: Uses `create_file_with_content()` with path to create nested folders
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
 - **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`, `agent`, `skill`. Defaults to `document`.
-- **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path
+- **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path.
+
+---
+
+### mkdir - Create Directory
+
+Recursively creates folders to ensure the specified path exists.
+
+#### Arguments
+
+```json
+{
+  "path": "/src/components"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Full path to the directory to create |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "mkdir",
+    "args": {
+      "path": "/docs/v1/api"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/docs/v1/api",
+    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1"
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Recursive**: Automatically creates all parent folders in the path if they don't exist.
+- **Idempotent**: If the folder already exists, it returns success with the existing folder ID.
+- **Conflict**: Returns `409 Conflict` if a file (not a folder) already exists at any point in the path.
 
 ---
 
 ### rm - Delete File or Folder
+
 
 Soft deletes a file or empty folder within a workspace. Soft delete preserves data for recovery.
 
@@ -688,6 +763,194 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Create**: If file does not exist, creates a new empty `document` file.
 - **Recursive**: Automatically creates parent folders if missing during creation.
 - **File Type**: New files are created with `document` type and empty text content.
+
+---
+
+### edit - Edit File Content
+
+Edits a file by replacing a unique search string with a replacement string. This tool is designed for precision edits and requires the search string to be unique within the file to prevent accidental modifications.
+
+#### Arguments
+
+```json
+{
+  "path": "/src/main.rs",
+  "old_string": "fn old_function() {",
+  "new_string": "fn new_function() {",
+  "last_read_hash": "a1b2c3d4..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Full path to the file |
+| `old_string` | string | Yes | Unique string to search for |
+| `new_string` | string | Yes | Replacement string |
+| `last_read_hash` | string | No | Hash of the content when last read. If provided, tool fails if content changed. |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "edit",
+    "args": {
+      "path": "/documents/report.md",
+      "old_string": "Draft v1",
+      "new_string": "Final Version"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/documents/report.md",
+    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "version_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff2",
+    "hash": "b2c3d4e5..."
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Uniqueness Requirement**: The tool will fail with a `400 Bad Request` if `old_string` is not found OR if it is found multiple times.
+- **Stale Protection**: If `last_read_hash` is provided, the tool will fail with a `409 Conflict` if the current file hash does not match.
+- **Precision**: Providing more surrounding context in `old_string` helps ensure uniqueness.
+- **Document Only**: Currently only supports `Document` file types.
+- **Versioning**: Each successful edit creates a new file version.
+
+---
+
+### edit-many - Replace All Occurrences
+
+Edits a file by replacing all occurrences of a search string with a replacement string. Use this when you need to perform global refactoring within a single file.
+
+#### Arguments
+
+```json
+{
+  "path": "/src/models.rs",
+  "old_string": "old_name",
+  "new_string": "new_name",
+  "last_read_hash": "a1b2c3d4..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Full path to the file |
+| `old_string` | string | Yes | String to search for |
+| `new_string` | string | Yes | Replacement string |
+| `last_read_hash` | string | No | Hash of the content when last read. |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "edit-many",
+    "args": {
+      "path": "/src/config.rs",
+      "old_string": "DEBUG",
+      "new_string": "INFO"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/src/config.rs",
+    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
+    "version_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff2",
+    "hash": "c3d4e5f6..."
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Global Replace**: Replaces ALL occurrences of `old_string`.
+- **Validation**: Fails with `400 Bad Request` if `old_string` is not found.
+- **Stale Protection**: If `last_read_hash` is provided, the tool will fail with a `409 Conflict` if the current file hash does not match.
+- **Document Only**: Currently only supports `Document` file types.
+
+---
+
+### grep - Regex Search Files
+
+Searches for a regex pattern in all document files within the workspace. This tool uses database-level regex searching for high performance across the entire codebase.
+
+#### Arguments
+
+```json
+{
+  "pattern": "fn \\w+\\(",
+  "path_pattern": "%.rs",
+  "case_sensitive": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | Yes | Regex pattern to search for (Postgres regex syntax) |
+| `path_pattern` | string | No | Optional SQL LIKE pattern to filter file paths (e.g., `%.rs`, `/src/%`) |
+| `case_sensitive` | boolean | No | Whether the search should be case-sensitive. Default: `false`. |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "grep",
+    "args": {
+      "pattern": "TODO:",
+      "case_sensitive": true
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "matches": [
+      {
+        "path": "/src/main.rs",
+        "line_number": 42,
+        "line_text": "// TODO: Implement error handling"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Regex Engine**: Uses PostgreSQL POSIX regex operators (`~` and `~*`).
+- **Fuzzy Path Matching**: The `path_pattern` is case-insensitive and automatically normalized. You can use `*` as a wildcard (e.g., `src/*` or `*.rs`). If no wildcards are provided, it assumes a fuzzy "contains" match on the path.
+- **Performance**: Searches across the latest versions of all document files in the database.
+- **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
+- **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
 
 ---
 

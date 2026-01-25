@@ -58,6 +58,7 @@ impl Tool for WriteTool {
                 path,
                 file_id: file.id,
                 version_id: version.id,
+                hash: version.hash,
             }
         } else {
             let filename = path.rsplit('/').next().unwrap_or("untitled");
@@ -95,6 +96,7 @@ impl Tool for WriteTool {
                 path,
                 file_id: file_result.file.id,
                 version_id: file_result.latest_version.id,
+                hash: file_result.latest_version.hash,
             }
         };
         

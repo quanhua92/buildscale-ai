@@ -251,6 +251,26 @@ pub struct MvArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MkdirArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EditArgs {
+    pub path: String,
+    pub old_string: String,
+    pub new_string: String,
+    pub last_read_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrepArgs {
+    pub pattern: String,
+    pub path_pattern: Option<String>,
+    pub case_sensitive: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TouchArgs {
     pub path: String,
 }
@@ -279,9 +299,22 @@ pub struct LsEntry {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct GrepResult {
+    pub matches: Vec<GrepMatch>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GrepMatch {
+    pub path: String,
+    pub line_number: i32,
+    pub line_text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ReadResult {
     pub path: String,
     pub content: serde_json::Value,
+    pub hash: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -289,6 +322,7 @@ pub struct WriteResult {
     pub path: String,
     pub file_id: Uuid,
     pub version_id: Uuid,
+    pub hash: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -301,6 +335,12 @@ pub struct RmResult {
 pub struct MvResult {
     pub from_path: String,
     pub to_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MkdirResult {
+    pub path: String,
+    pub file_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize)]
