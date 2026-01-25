@@ -256,8 +256,12 @@ impl ChatActor {
                             } else {
                                 "Tool execution completed".to_string()
                             };
-                            tracing::info!("[ChatActor] [Rig] Tool execution finished for chat {}", self.chat_id);
-                            let _ = self.event_tx.send(SseEvent::Observation { output });
+                            
+                            // Heuristic: if the output contains "Error:" it's likely a failure
+                            let success = !output.to_lowercase().contains("error:");
+                            
+                            tracing::info!("[ChatActor] [Rig] Tool execution finished for chat {} (success: {})", self.chat_id, success);
+                            let _ = self.event_tx.send(SseEvent::Observation { output, success });
                         }
                     }
                 }

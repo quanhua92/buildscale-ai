@@ -58,8 +58,6 @@ function ChatContent() {
         
         {messages.map((message: ChatMessageItem) => (
           <Chat.Message key={message.id} role={message.role} message={message}>
-            <Chat.Thought />
-            <Chat.Events />
             <Chat.Bubble />
           </Chat.Message>
         ))}

@@ -9,17 +9,16 @@ import {
 
 export type MessageRole = "user" | "assistant" | "system"
 
-export type MessageStep =
-  | { type: "thought"; text: string; agent_id?: string }
-  | { type: "call"; tool: string; path: string; args?: any }
-  | { type: "observation"; output: string }
+export type MessagePart =
+  | { type: "text"; content: string }
+  | { type: "thought"; content: string }
+  | { type: "call"; tool: string; args: any; id: string }
+  | { type: "observation"; output: string; success: boolean; callId: string }
 
 export interface ChatMessageItem {
   id: string
   role: MessageRole
-  content: string
-  thinking?: string
-  steps?: MessageStep[]
+  parts: MessagePart[]
   status: "sending" | "streaming" | "completed" | "error"
   created_at: string
 }
@@ -100,15 +99,11 @@ export function ChatProvider({
   }, [])
 
   const connectToSse = React.useCallback(async (targetChatId: string) => {
-    if (connectingRef.current === targetChatId) {
-      return
-    }
+    if (connectingRef.current === targetChatId) return
 
     const currentConnectionId = ++connectionIdRef.current
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
+    if (abortControllerRef.current) abortControllerRef.current.abort()
     
     const abortController = new AbortController()
     abortControllerRef.current = abortController
@@ -116,24 +111,15 @@ export function ChatProvider({
     setIsStreaming(true)
 
     try {
-      console.info(`[Chat] [Conn:${currentConnectionId}] Connecting to SSE for chat ${targetChatId}...`)
-      
       const response = await apiClientRef.current.requestRaw(
         `/workspaces/${workspaceId}/chats/${targetChatId}/events`,
         {
-          headers: {
-            'Accept': 'text/event-stream',
-          },
+          headers: { 'Accept': 'text/event-stream' },
           signal: abortController.signal,
         }
       )
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Unauthorized: Please login again')
-        }
-        throw new Error(`Failed to connect to event stream: ${response.statusText}`)
-      }
+      if (!response.ok) throw new Error(`SSE Connection failed: ${response.statusText}`)
       
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No reader available')
@@ -145,27 +131,20 @@ export function ChatProvider({
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-
-          if (currentConnectionId !== connectionIdRef.current) {
-            console.warn(`[Chat] [Conn:${currentConnectionId}] Stale connection ignored.`)
-            break
-          }
+          if (currentConnectionId !== connectionIdRef.current) break
 
           buffer += decoder.decode(value, { stream: true })
-          const chunks = buffer.split('\n\n')
-          buffer = chunks.pop() || ''
+          const lines = buffer.split('\n\n')
+          buffer = lines.pop() || ''
 
-          for (const chunk of chunks) {
-            const lines = chunk.split('\n')
+          for (const line of lines) {
+            const parts = line.split('\n')
             let eventType = 'chunk'
             let dataStr = ''
 
-            for (const line of lines) {
-              if (line.startsWith('event: ')) {
-                eventType = line.slice(7).trim()
-              } else if (line.startsWith('data: ')) {
-                dataStr = line.slice(6).trim()
-              }
+            for (const p of parts) {
+              if (p.startsWith('event: ')) eventType = p.slice(7).trim()
+              else if (p.startsWith('data: ')) dataStr = p.slice(6).trim()
             }
 
             if (!dataStr) continue
@@ -190,14 +169,15 @@ export function ChatProvider({
                   lastMessage = {
                     id: generateId(),
                     role: "assistant",
-                    content: "",
+                    parts: [],
                     status: "streaming",
                     created_at: new Date().toISOString(),
                   }
                   newMessages.push(lastMessage)
                 }
 
-                const updatedMessage = { ...lastMessage }
+                const updatedMessage = { ...lastMessage, parts: [...lastMessage.parts] }
+                const lastPart = updatedMessage.parts[updatedMessage.parts.length - 1]
 
                 switch (type) {
                   case "session_init":
@@ -207,31 +187,35 @@ export function ChatProvider({
                     }
                     return prev
                   case "thought":
-                    updatedMessage.thinking = (updatedMessage.thinking || "") + (data.text || "")
+                    if (lastPart?.type === "thought") {
+                      lastPart.content += (data.text || "")
+                    } else {
+                      updatedMessage.parts.push({ type: "thought", content: (data.text || "") })
+                    }
                     updatedMessage.status = "streaming"
                     break
                   case "chunk":
-                    updatedMessage.content = (updatedMessage.content || "") + (data.text || "")
+                    if (lastPart?.type === "text") {
+                      lastPart.content += (data.text || "")
+                    } else {
+                      updatedMessage.parts.push({ type: "text", content: (data.text || "") })
+                    }
                     updatedMessage.status = "streaming"
                     break
                   case "call": {
-                    const isDuplicate = updatedMessage.steps?.some(s => 
-                      s.type === "call" && s.tool === data.tool && s.path === data.path
-                    )
-                    if (!isDuplicate) {
-                      updatedMessage.steps = [
-                        ...(updatedMessage.steps || []),
-                        { type: "call", tool: data.tool, path: data.path, args: data.args },
-                      ]
-                    }
+                    const callId = generateId()
+                    updatedMessage.parts.push({ type: "call", tool: data.tool, args: data.args, id: callId })
                     updatedMessage.status = "streaming"
                     break
                   }
                   case "observation":
-                    updatedMessage.steps = [
-                      ...(updatedMessage.steps || []),
-                      { type: "observation", output: data.output },
-                    ]
+                    // Look for the last call part to link it, or just push it
+                    updatedMessage.parts.push({ 
+                      type: "observation", 
+                      output: data.output, 
+                      success: data.success ?? true,
+                      callId: "" // We'll link visually by order for now
+                    })
                     updatedMessage.status = "streaming"
                     break
                   case "done":
@@ -240,11 +224,8 @@ export function ChatProvider({
                     break
                   case "error":
                     updatedMessage.status = "error"
-                    updatedMessage.content += `\nError: ${data.message}`
-                    if (currentConnectionId === connectionIdRef.current) {
-                      setIsStreaming(false)
-                      connectingRef.current = null
-                    }
+                    updatedMessage.parts.push({ type: "text", content: `\nError: ${data.message}` })
+                    if (currentConnectionId === connectionIdRef.current) setIsStreaming(false)
                     break
                   case "file_updated":
                     return prev
@@ -254,7 +235,7 @@ export function ChatProvider({
                 return newMessages
               })
             } catch (e) {
-              console.error(`[Chat] [Conn:${currentConnectionId}] Failed to parse SSE payload`, e)
+              console.error(`[Chat] [Conn:${currentConnectionId}] SSE Parse error`, e)
             }
           }
         }
@@ -272,11 +253,8 @@ export function ChatProvider({
   }, [workspaceId])
 
   React.useEffect(() => {
-    if (chatId) {
-      connectToSse(chatId)
-    } else {
-      stopGeneration()
-    }
+    if (chatId) connectToSse(chatId)
+    else stopGeneration()
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort()
       connectingRef.current = null
@@ -288,7 +266,7 @@ export function ChatProvider({
       const userMessage: ChatMessageItem = {
         id: generateId(),
         role: "user",
-        content,
+        parts: [{ type: "text", content }],
         status: "completed",
         created_at: new Date().toISOString(),
       }
@@ -301,7 +279,7 @@ export function ChatProvider({
             `/workspaces/${workspaceId}/chats`,
             { goal: content } as CreateChatRequest
           )
-          if (!response || !response.chat_id) throw new Error('Invalid server response')
+          if (!response?.chat_id) throw new Error('Invalid server response')
           setChatId(response.chat_id)
           onChatCreatedRef.current?.(response.chat_id)
         } else {
@@ -309,7 +287,7 @@ export function ChatProvider({
             `/workspaces/${workspaceId}/chats/${chatId}`,
             { content } as PostChatMessageRequest
           )
-          if (!response || response.status !== "accepted") throw new Error('Message not accepted')
+          if (response?.status !== "accepted") throw new Error('Message not accepted')
           connectToSse(chatId)
         }
       } catch (error) {
@@ -333,12 +311,7 @@ export function ChatProvider({
 
   const value = React.useMemo(
     () => ({
-      messages,
-      isStreaming,
-      sendMessage,
-      stopGeneration,
-      clearMessages,
-      chatId,
+      messages, isStreaming, sendMessage, stopGeneration, clearMessages, chatId
     }),
     [messages, isStreaming, sendMessage, stopGeneration, clearMessages, chatId]
   )

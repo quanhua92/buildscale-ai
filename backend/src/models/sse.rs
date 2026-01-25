@@ -19,6 +19,7 @@ pub enum SseEvent {
     },
     Observation {
         output: String,
+        success: bool,
     },
     FileUpdated {
         path: String,
