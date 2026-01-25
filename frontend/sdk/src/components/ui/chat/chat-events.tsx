@@ -6,79 +6,35 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../collapsi
 
 export interface ChatEventsProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-function formatToolArgs(tool: string, args: any) {
+function formatToolArgs(_tool: string, args: any) {
   if (!args) return null
   
   try {
-    switch (tool) {
-      case 'mv':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground">
-            <span className="truncate max-w-[120px] opacity-70 border-b border-dotted" title={args.source}>{args.source}</span>
-            <span className="shrink-0 text-primary/50">→</span>
-            <span className="truncate max-w-[120px] font-medium" title={args.destination}>{args.destination}</span>
-          </div>
-        )
-      case 'grep':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground">
-            <span className="shrink-0 text-primary font-bold">"</span>
-            <span className="truncate max-w-[100px] text-primary font-semibold" title={args.pattern}>{args.pattern}</span>
-            <span className="shrink-0 text-primary font-bold">"</span>
-            <span className="shrink-0 opacity-50">in</span>
-            <span className="truncate max-w-[100px] opacity-70" title={args.path_pattern}>{args.path_pattern || '/'}</span>
-          </div>
-        )
-      case 'ls':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden text-foreground">
-            <span className="truncate opacity-70" title={args.path}>{args.path || '/'}</span>
-            {args.recursive && <span className="shrink-0 text-[9px] bg-primary/10 text-primary px-1 rounded-sm font-bold">REC</span>}
-          </div>
-        )
-      case 'write':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden text-foreground">
-            <span className="truncate font-medium" title={args.path}>{args.path}</span>
-            <span className="shrink-0 text-[9px] bg-green-500/10 text-green-600 px-1 rounded-sm font-bold uppercase">{args.file_type || 'doc'}</span>
-          </div>
-        )
-      case 'rm':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden text-foreground">
-            <span className="truncate opacity-70 line-through decoration-red-500/50" title={args.path}>{args.path}</span>
-            <span className="shrink-0 text-[9px] bg-red-500/10 text-red-600 px-1 rounded-sm font-bold">DEL</span>
-          </div>
-        )
-      case 'mkdir':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden text-foreground">
-            <span className="truncate font-medium" title={args.path}>{args.path}</span>
-            <span className="shrink-0 text-[9px] bg-blue-500/10 text-blue-600 px-1 rounded-sm font-bold">DIR</span>
-          </div>
-        )
-      case 'touch':
-        return (
-          <div className="flex items-center gap-1.5 overflow-hidden text-foreground">
-            <span className="truncate opacity-70" title={args.path}>{args.path}</span>
-            <span className="shrink-0 text-[9px] bg-muted text-muted-foreground px-1 rounded-sm font-bold">TCH</span>
-          </div>
-        )
-      case 'edit':
-      case 'edit-many':
-        return (
-          <div className="flex flex-col gap-0.5 w-full text-foreground">
-            <span className="truncate font-medium" title={args.path}>{args.path}</span>
-            <div className="flex items-center gap-1.5 text-[10px] opacity-60 italic">
-              <span className="truncate max-w-[80px]">"{args.old_string}"</span>
-              <span>→</span>
-              <span className="truncate max-w-[80px]">"{args.new_string}"</span>
-            </div>
-          </div>
-        )
-      default:
-        return <span className="truncate opacity-70 text-foreground">{args.path || args.source || JSON.stringify(args)}</span>
-    }
+    // 1. Identify primary paths or values
+    const primary = args.path || args.source || args.pattern || "";
+    
+    // 2. Identify remaining args to show in brackets
+    const entries = Object.entries(args)
+      .filter(([key]) => !["path", "source", "pattern"].includes(key))
+      .map(([key, val]) => {
+        const displayVal = typeof val === 'string' ? val : JSON.stringify(val);
+        return `${key}=${displayVal}`;
+      });
+
+    return (
+      <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground">
+        {primary && (
+          <span className="truncate font-medium opacity-90" title={primary}>
+            {primary}
+          </span>
+        )}
+        {entries.length > 0 && (
+          <span className="text-[10px] opacity-50 font-mono truncate">
+            [{entries.join(", ")}]
+          </span>
+        )}
+      </div>
+    )
   } catch (e) {
     return <span className="truncate opacity-70 text-destructive text-[10px]">Format Error</span>
   }
