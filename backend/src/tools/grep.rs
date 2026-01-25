@@ -38,14 +38,25 @@ impl Tool for GrepTool {
             // Convert glob-like * to SQL LIKE %
             p = p.replace('*', "%");
             
-            // If it doesn't look like an absolute path or already a wildcard, make it fuzzy
-            if !p.starts_with('/') && !p.starts_with('%') {
-                p.insert(0, '%');
+            // If no wildcards, assume fuzzy matching for discovery
+            if !p.contains('%') {
+                if p.ends_with('/') {
+                    p.push('%');
+                } else if !p.contains('.') {
+                    // Likely a directory name like "src" -> match children
+                    p.push_str("/%");
+                } else {
+                    // Likely a filename like "main.rs"
+                    // If it doesn't start with /, allow it to match anywhere in the path
+                    if !p.starts_with('/') {
+                        p.insert(0, '%');
+                    }
+                }
             }
             
-            // If it's a directory path, match children
-            if p.ends_with('/') && !p.ends_with('%') {
-                p.push('%');
+            // Ensure leading slash if it looks like an absolute path and doesn't have a wildcard there
+            if !p.starts_with('/') && !p.starts_with('%') {
+                p.insert(0, '/');
             }
             p
         });

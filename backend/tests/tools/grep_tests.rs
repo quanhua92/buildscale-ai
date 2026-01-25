@@ -108,7 +108,6 @@ async fn test_grep_raw_string_content() {
     let workspace_id = create_workspace(&app, &token, "Grep Raw Test").await;
     
     // Create a file with raw string content (not wrapped in {"text": ...})
-    // We bypass the tool normalization by using the REST API /files directly with raw string
     let res = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
         .header("Authorization", format!("Bearer {}", token))
         .json(&serde_json::json!({
@@ -132,30 +131,34 @@ async fn test_grep_raw_string_content() {
 }
 
 #[tokio::test]
-async fn test_grep_path_normalization() {
+async fn test_grep_path_variations() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
-    let workspace_id = create_workspace(&app, &token, "Grep Path Normalization Test").await;
+    let workspace_id = create_workspace(&app, &token, "Grep Path Var Test").await;
     
-    write_file(&app, &workspace_id, &token, "/src/lib.rs", serde_json::json!({"text": "findme"})).await;
+    write_file(&app, &workspace_id, &token, "/src/main.rs", serde_json::json!({"text": "findme"})).await;
+    write_file(&app, &workspace_id, &token, "/config/app.json", serde_json::json!({"text": "findme"})).await;
 
-    // Test with path that needs normalization (no leading slash, no wildcard)
-    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
-        "pattern": "findme",
-        "path_pattern": "src"
-    })).await;
+    let scenarios = vec![
+        ("src", 1, "/src/main.rs"),      // Should match directory
+        ("/src", 1, "/src/main.rs"),     // Absolute path match
+        ("main.rs", 1, "/src/main.rs"),  // Filename match (exact)
+        ("src/", 1, "/src/main.rs"),     // Directory with slash
+        ("%.rs", 1, "/src/main.rs"),     // SQL wildcard
+        ("config", 1, "/config/app.json"),
+    ];
 
-    assert_eq!(response.status(), 200);
-    let body: serde_json::Value = response.json().await.unwrap();
-    let matches = body["result"]["matches"].as_array().unwrap();
-    assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0]["path"], "/src/lib.rs");
-    
-    // Test with * wildcard
-    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
-        "pattern": "findme",
-        "path_pattern": "s*c"
-    })).await;
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["result"]["matches"].as_array().unwrap().len(), 1);
+    for (pattern, expected_count, expected_path) in scenarios {
+        let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+            "pattern": "findme",
+            "path_pattern": pattern
+        })).await;
+        
+        let body: serde_json::Value = response.json().await.unwrap();
+        let matches = body["result"]["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), expected_count, "Failed for path_pattern: {}", pattern);
+        if expected_count > 0 {
+            assert_eq!(matches[0]["path"], expected_path);
+        }
+    }
 }

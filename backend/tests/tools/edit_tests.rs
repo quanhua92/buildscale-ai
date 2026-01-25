@@ -124,13 +124,7 @@ async fn test_edit_stale_hash() {
     // 1. Create file
     write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "initial content"})).await;
 
-    // 2. Get the hash (by reading it)
-    let _response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({"path": "/test.txt"})).await;
-    // We need to get the hash from the file system or response if we exposed it. 
-    // Wait, the 'read' tool result doesn't return the hash. 
-    // Let's check 'read' result in models/requests.rs or TOOLS_API_GUIDE.md
-    
-    // Actually, I'll just use a dummy hash first to see it fail.
+    // 2. Try to edit with wrong hash
     let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
         "path": "/test.txt",
         "old_string": "initial",
