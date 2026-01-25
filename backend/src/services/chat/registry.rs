@@ -36,6 +36,7 @@ impl AgentRegistry {
         if let Some(bus) = self.event_buses.read_async(&chat_id, |_, b| b.clone()).await {
             bus
         } else {
+            tracing::info!("Creating new persistent event bus for chat {}", chat_id);
             let (tx, _) = broadcast::channel(EVENT_BUS_CAPACITY);
             let _ = self.event_buses.insert_async(chat_id, tx.clone()).await;
             tx
@@ -58,10 +59,12 @@ impl AgentRegistry {
     }
 
     pub async fn register(&self, chat_id: Uuid, handle: AgentHandle) {
+        tracing::info!("Registering active actor for chat {}", chat_id);
         let _ = self.active_agents.insert_async(chat_id, handle).await;
     }
 
     pub async fn remove(&self, chat_id: &Uuid) {
+        tracing::info!("Removing actor for chat {}", chat_id);
         let _ = self.active_agents.remove_async(chat_id).await;
     }
 }

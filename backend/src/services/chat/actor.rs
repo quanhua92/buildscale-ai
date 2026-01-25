@@ -68,7 +68,7 @@ impl ChatActor {
     }
 
     async fn run(mut self) {
-        tracing::info!("ChatActor started for chat {}", self.chat_id);
+        tracing::info!("[ChatActor] Started for chat {}", self.chat_id);
 
         // Periodic heartbeat ping (every 10 seconds)
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
@@ -84,7 +84,7 @@ impl ChatActor {
                     let _ = self.event_tx.send(SseEvent::Ping);
                 }
                 _ = &mut inactivity_timeout => {
-                    tracing::info!("ChatActor shutting down due to inactivity for chat {}", self.chat_id);
+                    tracing::info!("[ChatActor] Shutting down due to inactivity for chat {}", self.chat_id);
                     break;
                 }
                 command = self.command_rx.recv() => {
@@ -102,7 +102,7 @@ impl ChatActor {
 
                                 if let Err(e) = self.process_interaction(user_id).await {
                                     tracing::error!(
-                                        "Error processing interaction for chat {}: {:?}",
+                                        "[ChatActor] Error processing interaction for chat {}: {:?}",
                                         self.chat_id,
                                         e
                                     );
@@ -119,7 +119,7 @@ impl ChatActor {
                                 tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
                             }
                             AgentCommand::Shutdown => {
-                                tracing::info!("ChatActor shutting down for chat {}", self.chat_id);
+                                tracing::info!("[ChatActor] Shutting down for chat {}", self.chat_id);
                                 break;
                             }
                         }
@@ -132,7 +132,7 @@ impl ChatActor {
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
-        tracing::debug!(chat_id = %self.chat_id, "Processing interaction");
+        tracing::info!("[ChatActor] Processing interaction for chat {}", self.chat_id);
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
@@ -209,7 +209,7 @@ impl ChatActor {
             .await?;
 
         // 8. Stream from Rig with persona, history, and attachments in prompt
-        tracing::info!(chat_id = %self.chat_id, model = %session.agent_config.model, "Requesting AI completion");
+        tracing::info!("[ChatActor] [Rig] Starting AI completion for chat {} (model: {})", self.chat_id, session.agent_config.model);
         let mut stream = agent
             .stream_chat(&prompt, history)
             .await;
@@ -223,7 +223,7 @@ impl ChatActor {
                     match content {
                         rig::streaming::StreamedAssistantContent::Text(text) => {
                             if !has_started_responding {
-                                tracing::debug!(chat_id = %self.chat_id, "AI started streaming text response");
+                                tracing::info!("[ChatActor] [Rig] AI started streaming text response for chat {}", self.chat_id);
                                 has_started_responding = true;
                             }
                             full_response.push_str(&text.text);
@@ -231,14 +231,14 @@ impl ChatActor {
                         }
                         rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
                             let text = thought.reasoning.join("\n");
-                            tracing::debug!(chat_id = %self.chat_id, thought = %text, "AI thought");
+                            tracing::info!("[ChatActor] [Rig] AI thought for chat {}: {}", self.chat_id, text);
                             let _ = self.event_tx.send(SseEvent::Thought {
                                 agent_id: None,
                                 text,
                             });
                         }
                         rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
-                            tracing::info!(chat_id = %self.chat_id, tool = %tool_call.function.name, "AI calling tool");
+                            tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
                             let path = tool_call.function.arguments.get("path")
                                 .or_else(|| tool_call.function.arguments.get("source"))
                                 .and_then(|v| v.as_str())
@@ -261,13 +261,13 @@ impl ChatActor {
                             } else {
                                 "Tool execution completed".to_string()
                             };
-                            tracing::info!(chat_id = %self.chat_id, "Tool execution finished");
+                            tracing::info!("[ChatActor] [Rig] Tool execution finished for chat {}", self.chat_id);
                             let _ = self.event_tx.send(SseEvent::Observation { output });
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!(chat_id = %self.chat_id, error = ?e, "AI stream encountered an error");
+                    tracing::error!("[ChatActor] [Rig] AI stream encountered an error for chat {}: {:?}", self.chat_id, e);
                     return Err(crate::error::Error::Llm(e.to_string()));
                 }
                 _ => {}
@@ -276,7 +276,7 @@ impl ChatActor {
 
         // 7. Save Assistant Response
         if !full_response.is_empty() {
-            tracing::info!(chat_id = %self.chat_id, "Saving AI response to database");
+            tracing::info!("[ChatActor] Saving AI response to database for chat {}", self.chat_id);
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
             queries::chat::insert_chat_message(
                 &mut final_conn,
@@ -294,6 +294,8 @@ impl ChatActor {
         let _ = self.event_tx.send(SseEvent::Done {
             message: "Turn complete".to_string(),
         });
+
+        tracing::info!("[ChatActor] Interaction turn complete for chat {}", self.chat_id);
 
         Ok(())
     }

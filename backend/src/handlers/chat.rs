@@ -28,6 +28,7 @@ pub async fn create_chat(
     Path(workspace_id): Path<Uuid>,
     Json(req): Json<CreateChatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("[ChatHandler] Creating chat in workspace {} for user {}", workspace_id, user.id);
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
     // 1. Create the .chat file identity
@@ -71,6 +72,8 @@ pub async fn create_chat(
 
     queries::files::update_latest_version_id(&mut conn, chat_file.id, version.id).await?;
 
+    tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
+
     // 3. Persist initial goal message
     queries::chat::insert_chat_message(&mut conn, NewChatMessage {
         file_id: chat_file.id,
@@ -86,6 +89,26 @@ pub async fn create_chat(
         }),
     }).await?;
 
+    // 4. Trigger Actor immediately for the initial goal
+    let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
+    let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
+        chat_id: chat_file.id,
+        workspace_id,
+        pool: state.pool.clone(),
+        rig_service: state.rig_service.clone(),
+        default_persona: state.config.ai.default_persona.clone(),
+        default_context_token_limit: state.config.ai.default_context_token_limit,
+        event_tx,
+        inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+    });
+    state.agents.register(chat_file.id, handle.clone()).await;
+
+    let _ = handle.command_tx.send(AgentCommand::ProcessInteraction {
+        user_id: user.id,
+    }).await;
+
+    tracing::info!("[ChatHandler] Agent seeded and triggered for new chat {}", chat_file.id);
+
     Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
@@ -100,11 +123,13 @@ pub async fn get_chat_events(
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>> {
+    tracing::info!("[ChatHandler] Connecting to chat events: workspace={}, chat={}", workspace_id, chat_id);
     // 1. Get or create persistent bus
     let event_tx = state.agents.get_or_create_bus(chat_id).await;
 
     // 2. Ensure actor is alive (rehydrate if needed)
     if state.agents.get_handle(&chat_id).await.is_none() {
+        tracing::info!("[ChatHandler] Rehydrating ChatActor for chat {}", chat_id);
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
@@ -162,6 +187,7 @@ pub async fn post_chat_message(
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<PostChatMessageRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("[ChatHandler] Received message for chat {} from user {}", chat_id, user.id);
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
     // 1. Append message to DB (Persistence first!)
@@ -199,6 +225,8 @@ pub async fn post_chat_message(
     let _ = handle.command_tx.send(AgentCommand::ProcessInteraction {
         user_id: user.id,
     }).await;
+
+    tracing::info!("[ChatHandler] Interaction command sent to actor for chat {}", chat_id);
 
     Ok((
         StatusCode::ACCEPTED,

@@ -13,19 +13,19 @@ pub async fn revoked_token_cleanup_worker(
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) {
     let mut cleanup_interval = interval(Duration::from_secs(300)); // Every 5 minutes
-    info!("Revoked token cleanup worker started (runs every 5 minutes)");
+    info!("[AuthWorker] Started (runs every 5 minutes)");
 
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => {
-                info!("Revoked token cleanup worker shutting down");
+                info!("[AuthWorker] Shutting down");
                 break;
             }
             _ = cleanup_interval.tick() => {
                 let mut conn = match pool.acquire().await {
                     Ok(conn) => conn,
                     Err(e) => {
-                        error!("Failed to acquire database connection for cleanup: {}", e);
+                        error!("[AuthWorker] Failed to acquire database connection for cleanup: {}", e);
                         continue;
                     }
                 };
@@ -34,7 +34,7 @@ pub async fn revoked_token_cleanup_worker(
                 let config = match Config::load() {
                     Ok(cfg) => cfg,
                     Err(e) => {
-                        error!("Failed to load config for cleanup: {}", e);
+                        error!("[AuthWorker] Failed to load config for cleanup: {}", e);
                         continue;
                     }
                 };
@@ -45,16 +45,16 @@ pub async fn revoked_token_cleanup_worker(
                 match sessions::delete_expired_revoked_tokens(&mut conn, retention_minutes).await {
                     Ok(count) => {
                         if count > 0 {
-                            info!("Cleaned up {} expired revoked tokens (older than {} minutes)", count, retention_minutes);
+                            info!("[AuthWorker] Cleaned up {} expired tokens from revocation list", count);
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to cleanup expired revoked tokens: {}", e);
+                        warn!("[AuthWorker] Failed to cleanup expired revoked tokens: {}", e);
                     }
                 }
             }
         }
     }
 
-    info!("Revoked token cleanup worker stopped");
+    info!("[AuthWorker] Stopped");
 }
