@@ -99,33 +99,35 @@ pub async fn get_chat_events(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
-) -> Sse<impl Stream<Item = std::result::Result<Event, Infallible>>> {
-    let handle = if let Some(handle) = state.agents.get_handle(&chat_id).await {
-        handle
-    } else {
-        // Rehydrate/Spawn actor
-        let handle = ChatActor::spawn(
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>> {
+    // 1. Get or create persistent bus
+    let event_tx = state.agents.get_or_create_bus(chat_id).await;
+
+    // 2. Ensure actor is alive (rehydrate if needed)
+    if state.agents.get_handle(&chat_id).await.is_none() {
+        let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
-            state.pool.clone(),
-            state.rig_service.clone(),
-            state.config.ai.default_persona.clone(),
-            state.config.ai.default_context_token_limit,
-        );
-        state.agents.register(chat_id, handle.clone()).await;
-        handle
+            pool: state.pool.clone(),
+            rig_service: state.rig_service.clone(),
+            default_persona: state.config.ai.default_persona.clone(),
+            default_context_token_limit: state.config.ai.default_context_token_limit,
+            event_tx: event_tx.clone(),
+            inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+        });
+        state.agents.register(chat_id, handle).await;
     };
 
-    // 1. Send initial session_init event
+    // 3. Send initial session_init event
     let init_event = SseEvent::SessionInit {
         chat_id,
         plan_id: None,
     };
-    let init_data = serde_json::to_string(&init_event).unwrap_or_default();
+    let init_data = serde_json::to_string(&init_event).map_err(Error::Json)?;
     let init_stream = stream::once(async move { Ok(Event::default().data(init_data)) });
 
-    // 2. Stream from broadcast channel
-    let broadcast_stream = BroadcastStream::new(handle.event_tx.subscribe())
+    // 4. Stream from persistent broadcast channel
+    let broadcast_stream = BroadcastStream::new(event_tx.subscribe())
         .filter_map(|msg| async move {
             match msg {
                 Ok(event) => match serde_json::to_string(&event) {
@@ -151,7 +153,7 @@ pub async fn get_chat_events(
     let main_stream = init_stream.chain(broadcast_stream);
     let combined_stream = stream::select(main_stream, heartbeat_stream);
 
-    Sse::new(combined_stream).keep_alive(KeepAlive::default())
+    Ok(Sse::new(combined_stream).keep_alive(KeepAlive::default()))
 }
 
 pub async fn post_chat_message(
@@ -179,14 +181,17 @@ pub async fn post_chat_message(
         handle
     } else {
         // Rehydrate actor
-        let handle = ChatActor::spawn(
+        let event_tx = state.agents.get_or_create_bus(chat_id).await;
+        let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
-            state.pool.clone(),
-            state.rig_service.clone(),
-            state.config.ai.default_persona.clone(),
-            state.config.ai.default_context_token_limit,
-        );
+            pool: state.pool.clone(),
+            rig_service: state.rig_service.clone(),
+            default_persona: state.config.ai.default_persona.clone(),
+            default_context_token_limit: state.config.ai.default_context_token_limit,
+            event_tx,
+            inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+        });
         state.agents.register(chat_id, handle.clone()).await;
         handle
     };

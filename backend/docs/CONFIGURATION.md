@@ -307,6 +307,9 @@ BUILDSCALE__DATABASE__DATABASE=buildscale
 # Session configuration
 BUILDSCALE__SESSIONS__EXPIRATION_HOURS=720  # Default: 30 days
 
+# AI Configuration
+BUILDSCALE__AI__ACTOR_INACTIVITY_TIMEOUT_SECONDS=600  # Default: 10 minutes
+
 # Optional: For sqlx CLI
 DATABASE_URL=postgresql://buildscale:your_password@localhost:5432/buildscale
 ```
@@ -325,6 +328,17 @@ BUILDSCALE__SESSIONS__EXPIRATION_HOURS=168
 
 # Set session expiration to 60 days for production
 BUILDSCALE__SESSIONS__EXPIRATION_HOURS=1440
+```
+
+### AI Configuration
+
+- `BUILDSCALE__AI__ACTOR_INACTIVITY_TIMEOUT_SECONDS`: How long a chat actor remains active without any commands (default: 600 = 10 minutes)
+  - This ensures background resources are freed when users are no longer interacting with a chat.
+
+Example:
+```bash
+# Set actor inactivity timeout to 30 minutes
+BUILDSCALE__AI__ACTOR_INACTIVITY_TIMEOUT_SECONDS=1800
 ```
 
 ### Logging Configuration

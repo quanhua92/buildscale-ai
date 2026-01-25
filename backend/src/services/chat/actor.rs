@@ -20,29 +20,41 @@ pub struct ChatActor {
     event_tx: broadcast::Sender<SseEvent>,
     default_persona: String,
     default_context_token_limit: usize,
+    inactivity_timeout: std::time::Duration,
+}
+
+pub struct ChatActorArgs {
+    pub chat_id: Uuid,
+    pub workspace_id: Uuid,
+    pub pool: DbPool,
+    pub rig_service: Arc<RigService>,
+    pub default_persona: String,
+    pub default_context_token_limit: usize,
+    pub event_tx: broadcast::Sender<SseEvent>,
+    pub inactivity_timeout: std::time::Duration,
 }
 
 impl ChatActor {
     pub fn spawn(
-        chat_id: Uuid,
-        workspace_id: Uuid,
-        pool: DbPool,
-        rig_service: Arc<RigService>,
-        default_persona: String,
-        default_context_token_limit: usize,
+        args: ChatActorArgs,
     ) -> AgentHandle {
+        Self::spawn_with_args(args)
+    }
+
+    fn spawn_with_args(args: ChatActorArgs) -> AgentHandle {
         let (command_tx, command_rx) = mpsc::channel(32);
-        let (event_tx, _) = broadcast::channel(100);
+        let event_tx = args.event_tx.clone();
 
         let actor = Self {
-            chat_id,
-            workspace_id,
-            pool,
-            rig_service,
+            chat_id: args.chat_id,
+            workspace_id: args.workspace_id,
+            pool: args.pool,
+            rig_service: args.rig_service,
             command_rx,
-            event_tx: event_tx.clone(),
-            default_persona,
-            default_context_token_limit,
+            event_tx: args.event_tx,
+            default_persona: args.default_persona,
+            default_context_token_limit: args.default_context_token_limit,
+            inactivity_timeout: args.inactivity_timeout,
         };
 
         tokio::spawn(async move {
@@ -61,13 +73,25 @@ impl ChatActor {
         // Periodic heartbeat ping (every 10 seconds)
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
 
+        // Inactivity timeout (shutdown after no commands)
+        let inactivity_timeout_duration = self.inactivity_timeout;
+        let inactivity_timeout = tokio::time::sleep(inactivity_timeout_duration);
+        tokio::pin!(inactivity_timeout);
+
         loop {
             tokio::select! {
                 _ = heartbeat_interval.tick() => {
                     let _ = self.event_tx.send(SseEvent::Ping);
                 }
+                _ = &mut inactivity_timeout => {
+                    tracing::info!("ChatActor shutting down due to inactivity for chat {}", self.chat_id);
+                    break;
+                }
                 command = self.command_rx.recv() => {
                     if let Some(cmd) = command {
+                        // Reset inactivity timeout on any command
+                        inactivity_timeout.as_mut().reset(tokio::time::Instant::now() + inactivity_timeout_duration);
+
                         match cmd {
                             AgentCommand::ProcessInteraction { user_id } => {
                                 // Send initial thought to signal activity immediately
@@ -86,6 +110,13 @@ impl ChatActor {
                                         message: format!("AI Engine Error: {}", e),
                                     });
                                 }
+
+                                // Reset inactivity timeout AGAIN after work completes
+                                // This ensures the idle period starts from the end of the interaction.
+                                inactivity_timeout.as_mut().reset(tokio::time::Instant::now() + inactivity_timeout_duration);
+                            }
+                            AgentCommand::Ping => {
+                                tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
                             }
                             AgentCommand::Shutdown => {
                                 tracing::info!("ChatActor shutting down for chat {}", self.chat_id);

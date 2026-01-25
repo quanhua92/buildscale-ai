@@ -45,7 +45,28 @@ Once anchored, the client sends new interactions via standard POST requests. The
 **Endpoint:** `POST /api/v1/workspaces/:workspace_id/chats/:chat_id`
 *   **Response:** `202 Accepted`
 
-## 3. Execution Scenarios & Workflows
+## 3. Actor Lifecycle & Resource Management
+
+To ensure high performance without unlimited resource consumption, the **Agentic Engine** employs a stateful but ephemeral actor model.
+
+### A. Self-Termination (The Idle Timeout)
+Actors are not permanent. If a `ChatActor` receives no commands (interactions or pings) for a specific duration (default: **10 minutes**, configurable via `BUILDSCALE__AI__ACTOR_INACTIVITY_TIMEOUT_SECONDS`), it performs a graceful shutdown. 
+*   **Idle Definition:** The timeout only counts down when the actor is **truly idle**. The timer is reset both at the start and the end of an interaction, ensuring the agent has a full window of life *after* completing its last tool call or thought.
+*   **Logic:** A resettable inactivity timer monitors the `mpsc` command channel.
+*   **Persistence:** Before shutting down, the actor ensures all state is flushed to the database.
+
+### B. Persistent Event Bus (Stable SSE)
+To prevent UI disruption during actor timeouts, the **Event Bus** is decoupled from the **Actor Task**.
+*   **Registry Ownership:** The `AgentRegistry` maintains a persistent `broadcast` channel for every `chat_id`.
+*   **Seamless Re-spawning:** When a user sends a message to an idle chat:
+    1.  The Registry detects the actor is missing/dead.
+    2.  A new `ChatActor` is spawned and "plugged into" the existing broadcast bus.
+    3.  The UI (SSE) remains connected to the same bus throughout the transition, receiving the new response without needing a page refresh.
+
+### C. Rehydration
+When an actor is re-spawned, it "hydrates" its state by querying the latest message history and file registry, ensuring zero loss of context regardless of how many times the worker task has cycled.
+
+## 4. Execution Scenarios & Workflows
 
 ### Scenario 1: chat_mode (Reactive Assistant)
 *   **Behavior:** A standard 1:1 conversation. The agent executes tools (read/write) immediately after a user prompt and waits for the next turn.
@@ -71,7 +92,7 @@ Once anchored, the client sends new interactions via standard POST requests. The
     *   The agents build a plan in `/content/campaign-plan.md`.
     *   The user views the plan as a high-level dashboard. As the agents write to the Headless CMS, the user sees progress bars move in real-time via the SSE stream.
 
-## 4. The SSE Event Protocol
+## 5. The SSE Event Protocol
 The UI renders the **Agentic Engine's** internal actions using standardized JSON payloads.
 
 | Event Type | Data Payload | Purpose |
@@ -83,12 +104,12 @@ The UI renders the **Agentic Engine's** internal actions using standardized JSON
 | **plan_step** | `{"step": 3, "status": "done"}` | Updates the task checklist/progress UI. |
 | **done** | `{"message": "Task complete."}` | Finalizes the execution turn. |
 
-## 5. Infrastructure: The Sandbox Hydration
+## 6. Infrastructure: The Sandbox Hydration
 To maintain security while allowing high-performance execution (e.g., npm, cargo, python), BuildScale uses a hydration pattern:
 
 *   **Spin Up:** A Docker sandbox starts on the same host as the NVMe mirror.
 *   **Hydrate:** The workspace (or a specific "slice") is mounted to the container as read-only.
 *   **Agentic Engine Write:** The AI runs scripts at native hardware speeds. Any permanent file changes must be sent back through the **Agentic Engine's** write tool, ensuring every global state change is versioned and audited.
 
-## 6. Conclusion
+## 7. Conclusion
 By treating Identity as a File and Memory as a Mirror, BuildScale.ai creates a future-proof environment. Whether for a developer refactoring an **Agentic Engine** or a blogger orchestrating a marketing team, the system provides a single, **Agentic Engine** source of truth for all human-AI collaboration.
