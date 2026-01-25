@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ 'src/main.rs' seeded with content:\n---\n{}\n---\n", main_rs_content);
     
     // Create config/app.json for precision editing
-    let app_json_content = "{\n  \"env\": \"development\",\n  \"version\": \"1.0.0\"\n}";
+    let app_json_content = "{\n  \"env\": \"development\",\n  \"version\": \"0.1.0\"\n}";
     println!("📄 Seeding 'config/app.json'...");
     let res = client.post(&format!("{}/workspaces/{}/files", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
