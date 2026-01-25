@@ -174,11 +174,12 @@ Document files use automatic wrapping and unwrapping for convenience:
 
 **Edit & Edit-Many Behavior:**
 - Operates on the inner `text` field for `Document` types.
-- Resilient: Automatically handles both wrapped (`{"text": "..."}`) and raw string content.
-- **Result:** Always commits a new version using the standard wrapped structure.
+- Resilient: Automatically handles both wrapped (`{"text": "..."}`) and raw string content during the search phase.
+- **Result:** Always commits a new version using the standard wrapped structure (`{"text": "..."}`).
 
 **Grep Behavior:**
 - Searches specifically within the `text` field of `Document` files.
+- Resilient: Searches both wrapped and raw string content in the database.
 - High performance: Executes regex directly in the database (PostgreSQL).
 - Returns line-accurate results including line numbers and text chunks.
 
@@ -946,6 +947,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 #### Behavior Notes
 
 - **Regex Engine**: Uses PostgreSQL POSIX regex operators (`~` and `~*`).
+- **Fuzzy Path Matching**: The `path_pattern` is case-insensitive and automatically normalized. You can use `*` as a wildcard (e.g., `src/*` or `*.rs`). If no wildcards are provided, it assumes a fuzzy "contains" match on the path.
 - **Performance**: Searches across the latest versions of all document files in the database.
 - **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
 - **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
