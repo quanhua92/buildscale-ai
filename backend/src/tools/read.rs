@@ -67,6 +67,7 @@ impl Tool for ReadTool {
         let result = ReadResult {
             path,
             content,
+            hash: file_with_content.latest_version.hash,
         };
         
         Ok(ToolResponse {

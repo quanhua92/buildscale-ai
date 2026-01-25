@@ -10,6 +10,7 @@ pub mod write;
 pub mod rm;
 pub mod mv;
 pub mod touch;
+pub mod edit;
 
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse};
 use uuid::Uuid;
@@ -68,6 +69,7 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "rm" => Ok(ToolExecutor::Rm),
         "mv" => Ok(ToolExecutor::Mv),
         "touch" => Ok(ToolExecutor::Touch),
+        "edit" => Ok(ToolExecutor::Edit),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -107,6 +109,7 @@ pub enum ToolExecutor {
     Rm,
     Mv,
     Touch,
+    Edit,
 }
 
 impl ToolExecutor {
@@ -124,6 +127,7 @@ impl ToolExecutor {
             ToolExecutor::Rm => rm::RmTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Mv => mv::MvTool.execute(conn, workspace_id, user_id, args).await,
             ToolExecutor::Touch => touch::TouchTool.execute(conn, workspace_id, user_id, args).await,
+            ToolExecutor::Edit => edit::EditTool.execute(conn, workspace_id, user_id, args).await,
         }
     }
 }

@@ -8,5 +8,6 @@ pub mod write_tests;
 pub mod rm_tests;
 pub mod mv_tests;
 pub mod touch_tests;
+pub mod edit_tests;
 pub mod integration_tests;
 pub mod common;

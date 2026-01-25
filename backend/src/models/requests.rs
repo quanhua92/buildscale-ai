@@ -251,6 +251,14 @@ pub struct MvArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EditArgs {
+    pub path: String,
+    pub old_string: String,
+    pub new_string: String,
+    pub last_read_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TouchArgs {
     pub path: String,
 }
@@ -282,6 +290,7 @@ pub struct LsEntry {
 pub struct ReadResult {
     pub path: String,
     pub content: serde_json::Value,
+    pub hash: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -289,6 +298,7 @@ pub struct WriteResult {
     pub path: String,
     pub file_id: Uuid,
     pub version_id: Uuid,
+    pub hash: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

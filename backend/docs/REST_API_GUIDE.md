@@ -263,6 +263,7 @@ Execute filesystem tools (ls, read, write, rm, mv, touch) within a workspace thr
 | `rm` | Delete file or folder | `path` (required) |
 | `mv` | Move or rename file | `source` (required), `destination` (required) |
 | `touch` | Update timestamp or create empty file | `path` (required) |
+| `edit` | Edit file content by unique replace | `path`, `old_string`, `new_string` |
 
 **Content Handling by File Type**:
 - **Documents**: Raw strings are auto-wrapped to `{text: "..."}`. On read, simple documents are auto-unwrapped to return just the string.

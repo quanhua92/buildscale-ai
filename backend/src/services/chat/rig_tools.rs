@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::models::requests::{LsArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs};
+use crate::models::requests::{EditArgs, LsArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs};
 use crate::tools;
 use crate::DbPool;
 use rig::completion::ToolDefinition;
@@ -170,4 +170,12 @@ define_rig_tool!(
     TouchArgs,
     "touch",
     "Updates the access and modification times of a file, or creates an empty file if it doesn't exist."
+);
+
+define_rig_tool!(
+    RigEditTool,
+    tools::edit::EditTool,
+    EditArgs,
+    "edit",
+    "Edits a file by replacing a unique search string with a replacement string. Fails if the search string is not found or found multiple times."
 );
