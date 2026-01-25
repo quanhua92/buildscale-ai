@@ -209,6 +209,8 @@ pub struct AiConfig {
     pub default_persona: String,
     /// Default context token limit for chat sessions
     pub default_context_token_limit: usize,
+    /// Inactivity timeout for chat actors in seconds (default: 600)
+    pub actor_inactivity_timeout_seconds: u64,
     /// OpenAI API key
     #[serde(skip_serializing)]
     pub openai_api_key: SecretString,
@@ -220,8 +222,10 @@ impl Default for AiConfig {
             chunk_window_size: 1000,
             chunk_overlap: 200,
             embedding_dimension: 1536,
-            default_persona: "You are BuildScale AI, a professional software engineering assistant.".to_string(),
+            default_persona:
+                "You are BuildScale AI, a professional software engineering assistant.".to_string(),
             default_context_token_limit: 4000,
+            actor_inactivity_timeout_seconds: 600,
             openai_api_key: SecretString::from(String::new()),
         }
     }

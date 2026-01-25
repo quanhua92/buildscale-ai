@@ -451,6 +451,7 @@ pub async fn is_descendant_of(
 }
 
 /// Updates file metadata (parent_id, name, slug, path, virtual status, permissions).
+#[allow(clippy::too_many_arguments)]
 pub async fn update_file_metadata(
     conn: &mut DbConn,
     file_id: Uuid,

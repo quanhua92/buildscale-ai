@@ -1,8 +1,8 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
+use uuid::Uuid;
 
 /// Attachment key types for identifying different attachment sources.
 ///
@@ -95,6 +95,12 @@ pub const ESTIMATED_CHARS_PER_TOKEN: usize = 4;
 #[derive(Debug, Clone)]
 pub struct AttachmentManager {
     pub map: AttachmentMap,
+}
+
+impl Default for AttachmentManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AttachmentManager {

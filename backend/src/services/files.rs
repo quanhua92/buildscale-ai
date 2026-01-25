@@ -391,13 +391,13 @@ pub async fn update_file(
 
     // 7. Collision Check
     // We exclude the current file from collision check (in case of rename to same name/path? filtered in step 5)
-    if target_path != current_file.path {
-        if files::get_file_by_path(&mut tx, current_file.workspace_id, &target_path).await?.is_some() {
-            return Err(Error::Conflict(format!(
-                "A file with path '{}' already exists",
-                target_path
-            )));
-        }
+    if target_path != current_file.path
+        && files::get_file_by_path(&mut tx, current_file.workspace_id, &target_path).await?.is_some()
+    {
+        return Err(Error::Conflict(format!(
+            "A file with path '{}' already exists",
+            target_path
+        )));
     }
 
     // 8. Update metadata
