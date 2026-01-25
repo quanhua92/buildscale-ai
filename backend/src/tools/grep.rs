@@ -43,8 +43,8 @@ impl Tool for GrepTool {
                 p.insert(0, '%');
             }
             
-            // Always allow matching children if it looks like a directory
-            if !p.ends_with('%') {
+            // If it's a directory path, match children
+            if p.ends_with('/') && !p.ends_with('%') {
                 p.push('%');
             }
             p
