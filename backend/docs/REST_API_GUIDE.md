@@ -62,6 +62,9 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -284,6 +287,84 @@ For complete tool specifications, examples, and behavior details, see **[Tools A
 ```
 
 **See**: [Tools API Guide](./TOOLS_API_GUIDE.md) for complete documentation.
+
+---
+
+### Agentic Chat API
+
+Interact with AI agents that have direct access to your workspace tools and files.
+
+#### Start New Chat
+Initialize a stateful agentic session.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/chats`
+
+**Authentication**: Required (JWT access token)
+
+##### Request
+```json
+{
+  "goal": "I want to start a new blog post about Rust.",
+    "files": ["019bf537-f228-7cd3-aa1c-3da8af302e12"],
+
+  "role": "assistant",
+  "model": "gpt-4o-mini"
+}
+```
+
+- `goal`: The initial prompt or objective for the agent.
+- `files`: Optional array of UUIDs for files to include in the initial context.
+- `role`: Optional agent role (e.g., `assistant`). Defaults to `assistant` (Coworker).
+- `model`: Optional LLM model override.
+
+##### Response (201 Created)
+```json
+{
+  "chat_id": "uuid-chat-session-id",
+  "plan_id": null
+}
+```
+
+---
+
+#### Send Message
+Send a subsequent message to an active chat session.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/chats/:chat_id`
+
+**Authentication**: Required (JWT access token)
+
+##### Request
+```json
+{
+  "content": "Please read the outline and suggest a title."
+}
+```
+
+##### Response (202 Accepted)
+```json
+{
+  "status": "accepted"
+}
+```
+
+---
+
+#### Chat Events (SSE)
+Connect to the real-time event stream for an agentic session.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/chats/:chat_id/events`
+
+**Authentication**: Required (JWT access token or Cookie)
+
+**Format**: `text/event-stream`
+
+**Events**:
+- `thought`: Internal reasoning from the agent.
+- `call`: Tool invocation details.
+- `observation`: Tool execution results (includes `success` boolean).
+- `chunk`: Incremental text chunks for the response.
+- `done`: Finalization of the execution turn.
 
 ---
 

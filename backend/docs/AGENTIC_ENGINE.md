@@ -24,13 +24,11 @@ Used to start a conversation, attach files, or define a goal.
 {
   "goal": "Build a multi-tenant subscription system.",
   "files": [
-    { "file_id": "uuid-requirements.pdf" },
-    { "file_id": "uuid-schema-draft.sql" }
+    "019bf537-f228-7cd3-aa1c-3da8af302e12",
+    "019bf537-f239-7122-a146-af0ff3438892"
   ],
-  "agents": [
-    { "role": "Architect", "agent_id": "arch-v1" }
-  ],
-  "config": { "mode": "plan_then_execute" }
+  "role": "assistant",
+  "model": "gpt-4o-mini"
 }
 ```
 
@@ -97,9 +95,9 @@ The UI renders the **Agentic Engine's** internal actions using standardized JSON
 
 | Event Type | Data Payload | Purpose |
 | :--- | :--- | :--- |
-| **thought** | `{"agent_id": "...", "text": "..."}` | Streams the "Internal Monologue" of an agent. |
+| **thought** | `{"text": "..."}` | Streams the "Internal Monologue" of an agent. |
 | **call** | `{"tool": "write", "path": "..."}` | Logs a literal **Agentic Engine** disk action. |
-| **observation** | `{"output": "..."}` | The result of the tool (e.g., shell output, file content). |
+| **observation** | `{"output": "...", "success": true}` | The result of the tool (e.g., shell output, file content). |
 | **file_updated** | `{"path": "/src/auth.rs", "v": 4}` | Triggers immediate UI refresh (Explorer/Editor). |
 | **plan_step** | `{"step": 3, "status": "done"}` | Updates the task checklist/progress UI. |
 | **done** | `{"message": "Task complete."}` | Finalizes the execution turn. |

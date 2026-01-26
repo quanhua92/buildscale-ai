@@ -82,7 +82,7 @@ This document serves as the self-contained execution guide for implementing the 
 ---
 
 ## 🏁 Definition of Done (MVP)
-1.  Can start a chat with a specific Agent persona.
+1.  Can start a chat with a specific Agent role (e.g., `assistant`).
 2.  Can reference specific files in the workspace (read-only context).
-3.  Responses are streamed via SSE.
+3.  Responses and interleaved tool calls are streamed via SSE.
 4.  Conversation history is persisted to `.chat` files.

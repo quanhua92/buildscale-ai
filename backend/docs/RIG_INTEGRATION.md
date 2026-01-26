@@ -44,10 +44,10 @@ impl rig::tool::Tool for RigLsTool {
 
 ## 4. Context-to-Agent Mapping
 
-The `RigService` maps our `ChatSession` and `ContextMap` to a Rig agent:
+The `RigService` maps our `ChatSession` and `BuiltContext` to a Rig agent:
 
 1. **Model Selection**: Uses `openai::GPT_4O` by default or the model specified in `AgentConfig`.
-2. **Preamble**: `ContextKey::SystemPersona` ➔ `builder.preamble()`.
+2. **Preamble**: System instructions resolved from the `src/agents` registry based on the session role ➔ `builder.preamble()`.
 3. **Tools**: Dynamically registered using `builder.tool()`.
 4. **Agent Construction**: Returns an `Agent<ResponsesCompletionModel>`.
 
