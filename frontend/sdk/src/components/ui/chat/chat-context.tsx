@@ -75,10 +75,12 @@ export function ChatProvider({
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([])
   const [isStreaming, setIsStreaming] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
-  
+
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const connectingRef = React.useRef<string | null>(null)
   const connectionIdRef = React.useRef<number>(0)
+  const streamingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasReceivedStreamingEventRef = React.useRef<boolean>(false)
   
   const onChatCreatedRef = React.useRef(onChatCreated)
   React.useEffect(() => {
@@ -92,6 +94,12 @@ export function ChatProvider({
   const stopGeneration = React.useCallback(async () => {
     if (!chatId) return
 
+    // Clear streaming timeout if exists
+    if (streamingTimeoutRef.current) {
+      clearTimeout(streamingTimeoutRef.current)
+      streamingTimeoutRef.current = null
+    }
+
     // Increment connection ID to prevent processing any buffered SSE events
     ++connectionIdRef.current
 
@@ -104,6 +112,7 @@ export function ChatProvider({
 
     // Set streaming state to false synchronously before async backend call
     setIsStreaming(false)
+    hasReceivedStreamingEventRef.current = false
 
     // Mark streaming message as completed
     setMessages((prev) => {
@@ -136,12 +145,28 @@ export function ChatProvider({
     }
     connectingRef.current = null
 
+    // Clear any existing streaming timeout
+    if (streamingTimeoutRef.current) {
+      clearTimeout(streamingTimeoutRef.current)
+      streamingTimeoutRef.current = null
+    }
+
     const currentConnectionId = ++connectionIdRef.current
 
     const abortController = new AbortController()
     abortControllerRef.current = abortController
     connectingRef.current = targetChatId
-    setIsStreaming(true)
+
+    // Don't set isStreaming immediately - wait for actual streaming events
+    hasReceivedStreamingEventRef.current = false
+
+    // Set a timeout: if no streaming events in 1 second, turn off streaming state
+    streamingTimeoutRef.current = setTimeout(() => {
+      if (currentConnectionId === connectionIdRef.current && !hasReceivedStreamingEventRef.current) {
+        setIsStreaming(false)
+      }
+      streamingTimeoutRef.current = null
+    }, 1000)
 
     try {
       const response = await apiClientRef.current.requestRaw(
@@ -181,7 +206,7 @@ export function ChatProvider({
             }
 
             if (!dataStr) continue
-            
+
             try {
               const payload = JSON.parse(dataStr)
               const type = payload.type || eventType
@@ -189,6 +214,23 @@ export function ChatProvider({
 
               if (type === "ping") continue
               if (currentConnectionId !== connectionIdRef.current) break
+
+              // Detect streaming events (thought, chunk, call, observation)
+              // These indicate AI is actively responding
+              const isStreamingEvent = ["thought", "chunk", "call", "observation"].includes(type)
+
+              if (isStreamingEvent && currentConnectionId === connectionIdRef.current) {
+                if (!hasReceivedStreamingEventRef.current) {
+                  hasReceivedStreamingEventRef.current = true
+                  setIsStreaming(true)
+
+                  // Clear the timeout since we received streaming event
+                  if (streamingTimeoutRef.current) {
+                    clearTimeout(streamingTimeoutRef.current)
+                    streamingTimeoutRef.current = null
+                  }
+                }
+              }
 
               setMessages((prev) => {
                 if (currentConnectionId !== connectionIdRef.current) return prev
@@ -253,16 +295,37 @@ export function ChatProvider({
                     break
                   case "done":
                     updatedMessage.status = "completed"
-                    if (currentConnectionId === connectionIdRef.current) setIsStreaming(false)
+                    if (currentConnectionId === connectionIdRef.current) {
+                      setIsStreaming(false)
+                      // Clear streaming timeout
+                      if (streamingTimeoutRef.current) {
+                        clearTimeout(streamingTimeoutRef.current)
+                        streamingTimeoutRef.current = null
+                      }
+                    }
                     break
                   case "error":
                     updatedMessage.status = "error"
                     updatedMessage.parts.push({ type: "text", content: `\nError: ${data.message}` })
-                    if (currentConnectionId === connectionIdRef.current) setIsStreaming(false)
+                    if (currentConnectionId === connectionIdRef.current) {
+                      setIsStreaming(false)
+                      // Clear streaming timeout
+                      if (streamingTimeoutRef.current) {
+                        clearTimeout(streamingTimeoutRef.current)
+                        streamingTimeoutRef.current = null
+                      }
+                    }
                     break
                   case "stopped":
                     updatedMessage.status = "completed"
-                    if (currentConnectionId === connectionIdRef.current) setIsStreaming(false)
+                    if (currentConnectionId === connectionIdRef.current) {
+                      setIsStreaming(false)
+                      // Clear streaming timeout
+                      if (streamingTimeoutRef.current) {
+                        clearTimeout(streamingTimeoutRef.current)
+                        streamingTimeoutRef.current = null
+                      }
+                    }
                     break
                   case "file_updated":
                     return prev
@@ -278,13 +341,34 @@ export function ChatProvider({
         }
       } finally {
         reader.releaseLock()
+        // Clear streaming timeout on connection end
+        if (currentConnectionId === connectionIdRef.current) {
+          if (streamingTimeoutRef.current) {
+            clearTimeout(streamingTimeoutRef.current)
+            streamingTimeoutRef.current = null
+          }
+        }
       }
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return
+      if ((error as Error).name === 'AbortError') {
+        // Clear streaming timeout on abort
+        if (currentConnectionId === connectionIdRef.current) {
+          if (streamingTimeoutRef.current) {
+            clearTimeout(streamingTimeoutRef.current)
+            streamingTimeoutRef.current = null
+          }
+        }
+        return
+      }
       console.error(`[Chat] [Conn:${currentConnectionId}] SSE Error:`, error)
       if (currentConnectionId === connectionIdRef.current) {
         setIsStreaming(false)
         connectingRef.current = null
+        // Clear streaming timeout on error
+        if (streamingTimeoutRef.current) {
+          clearTimeout(streamingTimeoutRef.current)
+          streamingTimeoutRef.current = null
+        }
       }
     }
   }, [workspaceId])
@@ -295,6 +379,11 @@ export function ChatProvider({
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort()
       connectingRef.current = null
+      // Clear streaming timeout on cleanup
+      if (streamingTimeoutRef.current) {
+        clearTimeout(streamingTimeoutRef.current)
+        streamingTimeoutRef.current = null
+      }
     }
   }, [chatId, connectToSse, stopGeneration])
 
@@ -309,7 +398,18 @@ export function ChatProvider({
       }
 
       setMessages((prev) => [...prev, userMessage])
-      setIsStreaming(true)  // Set streaming state when sending message
+
+      // Clear any existing streaming timeout
+      if (streamingTimeoutRef.current) {
+        clearTimeout(streamingTimeoutRef.current)
+        streamingTimeoutRef.current = null
+      }
+
+      // Reset streaming event flag
+      hasReceivedStreamingEventRef.current = false
+
+      // Set streaming state when sending message
+      setIsStreaming(true)
 
       // Clear connection state to ensure we reconnect for new message
       connectingRef.current = null
@@ -340,6 +440,7 @@ export function ChatProvider({
           return newMessages
         })
         setIsStreaming(false)
+        hasReceivedStreamingEventRef.current = false
       }
     },
     [workspaceId, chatId, connectToSse]
