@@ -182,6 +182,43 @@ pub async fn get_latest_version(conn: &mut DbConn, file_id: Uuid) -> Result<File
     Ok(version)
 }
 
+/// Updates the content and hash of an existing file version.
+/// This is used for "In-Place Updates" of virtual files to prevent history bloat.
+pub async fn update_version_content(
+    conn: &mut DbConn,
+    version_id: Uuid,
+    content_raw: serde_json::Value,
+    hash: String,
+) -> Result<FileVersion> {
+    let version = sqlx::query_as!(
+        FileVersion,
+        r#"
+        UPDATE file_versions
+        SET content_raw = $2, hash = $3, updated_at = NOW()
+        WHERE id = $1
+        RETURNING 
+            id, 
+            file_id, 
+            workspace_id,
+            branch as "branch!", 
+            content_raw, 
+            app_data, 
+            hash, 
+            author_id as "author_id?", 
+            created_at, 
+            updated_at
+        "#,
+        version_id,
+        content_raw,
+        hash
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(version)
+}
+
 /// Gets the latest version of a file (optional).
 pub async fn get_latest_version_optional(
     conn: &mut DbConn,
@@ -967,14 +1004,13 @@ pub async fn grep_files(
             CASE 
                 WHEN fv.content_raw ? 'text' THEN fv.content_raw->>'text'
                 WHEN jsonb_typeof(fv.content_raw) = 'string' THEN fv.content_raw #>> '{}'
-                ELSE fv.content_raw::text 
+                ELSE jsonb_pretty(fv.content_raw) 
             END, 
             E'\n'
         )) 
             WITH ORDINALITY AS t(line_text, line_number)
         WHERE f.workspace_id = $1
           AND f.deleted_at IS NULL
-          AND f.file_type = 'document'
           AND ($3::text IS NULL OR f.path ILIKE $3::text)
           AND (CASE WHEN $4::boolean THEN t.line_text ~ $2 ELSE t.line_text ~* $2 END)
         ORDER BY f.path, t.line_number

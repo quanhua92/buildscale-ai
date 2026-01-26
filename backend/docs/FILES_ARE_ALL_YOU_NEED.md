@@ -45,7 +45,37 @@ Agents don't just "open files." They use a standardized, semantic developer tool
 
 ---
 
-## 3. Use Cases (Applied Vision)
+## 3. Technical Implementation: Virtual Files
+
+While users see "Everything as a File," the system maintains a distinction between **Normal Files** and **Virtual Files** to ensure performance and data integrity.
+
+### The Dual-View Architecture
+
+1.  **System View (Source of Truth)**:
+    *   Dynamic data (like Chat History) is stored in optimized, granular database tables (e.g., `chat_messages`).
+    *   This ensures transactional integrity, high-speed app performance, and relational queries.
+
+2.  **File View (The Interface)**:
+    *   To the Agent, these appear as standard files (e.g., `/chats/session-123.chat`).
+    *   The content is a **Read-Only JSON Snapshot** of the system state.
+
+### Write-Through Synchronization
+
+To maintain the "Everything is a File" promise, we use a **Write-Through Caching** strategy:
+
+1.  **Action**: A user posts a message via the Chat API.
+2.  **Update**: The system inserts the message into the `chat_messages` table.
+3.  **Snapshot**: In the same transaction, the system regenerates the full JSON representation of the chat and updates the `file_versions` table.
+
+### Implications for Tools
+
+*   **`read` / `grep`**: Work natively on Virtual Files because the `file_versions` table is always up-to-date.
+*   **`ls`**: Identifies these files with `is_virtual: true`.
+*   **`write` / `edit`**: Are **blocked** on Virtual Files to prevent the File View from drifting out of sync with the System View. Agents must use specialized APIs (like `post_message`) to modify these resources.
+
+---
+
+## 4. Use Cases (Applied Vision)
 
 ### Just-in-Time Learning
 1.  Agent is asked to "Open a PR."

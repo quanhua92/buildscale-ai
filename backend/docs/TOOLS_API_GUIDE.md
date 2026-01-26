@@ -295,7 +295,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | `entries[].name` | string | Technical identifier (slug) used in paths |
 | `entries[].display_name` | string | Human-readable name for UI display |
 | `entries[].path` | string | Full path to the item |
-| `entries[].file_type` | string | Type: `Document`, `Folder`, etc. |
+| `entries[].file_type` | string | Type: `Document`, `Folder`, `Chat`, etc. |
+| `entries[].is_virtual` | boolean | `true` if file is system-managed (e.g. Chat, Agent) |
 | `entries[].updated_at` | string | ISO8601 timestamp of last update |
 
 #### Behavior Notes
@@ -499,6 +500,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
 - **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`, `agent`, `skill`. Defaults to `document`.
 - **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path.
+- **Virtual File Protection**: Returns `400 Bad Request` if attempting to write to a system-managed file (where `is_virtual` is true, e.g., `.chat` files). Use specialized APIs (like the Chat API) to modify these resources.
 
 ---
 
@@ -796,6 +798,7 @@ Edits a file by replacing a unique search string with a replacement string. This
 - **Stale Protection**: If `last_read_hash` is provided, the tool will fail with a `409 Conflict` if the current file hash does not match.
 - **Versatility**: Supports any file type that contains editable text (e.g., Markdown, JSON, plain text).
 - **Versioning**: Each successful edit creates a new file version.
+- **Virtual File Protection**: Returns `400 Bad Request` if attempting to edit a system-managed file (where `is_virtual` is true).
 
 ---
 
@@ -856,7 +859,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Regex Engine**: Uses PostgreSQL POSIX regex operators (`~` and `~*`).
 - **Fuzzy Path Matching**: The `path_pattern` is case-insensitive and automatically normalized. You can use `*` as a wildcard (e.g., `src/*` or `*.rs`). If no wildcards are provided, it assumes a fuzzy "contains" match on the path.
-- **Performance**: Searches across the latest versions of all document files in the database.
+- **Performance**: Searches across the latest versions of all text-searchable files in the database.
+- **Virtual Files**: Supports searching system-managed files (e.g., Chats) by automatically expanding their JSON content into a readable text format.
 - **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
 - **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
 

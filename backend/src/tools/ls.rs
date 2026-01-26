@@ -62,6 +62,7 @@ impl Tool for LsTool {
             display_name: f.name,
             path: f.path,
             file_type: f.file_type,
+            is_virtual: f.is_virtual,
             updated_at: f.updated_at,
         }).collect();
         

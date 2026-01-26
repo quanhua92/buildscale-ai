@@ -323,8 +323,9 @@ impl ChatActor {
         if !full_response.is_empty() {
             tracing::info!("[ChatActor] Saving AI response to database for chat {}", self.chat_id);
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-            queries::chat::insert_chat_message(
+            ChatService::save_message(
                 &mut final_conn,
+                self.workspace_id,
                 NewChatMessage {
                     file_id: self.chat_id,
                     workspace_id: self.workspace_id,
@@ -394,8 +395,9 @@ impl ChatActor {
         conn: &mut sqlx::PgConnection,
         content: String,
     ) -> crate::error::Result<()> {
-        queries::chat::insert_chat_message(
+        ChatService::save_message(
             conn,
+            self.workspace_id,
             NewChatMessage {
                 file_id: self.chat_id,
                 workspace_id: self.workspace_id,
@@ -418,8 +420,9 @@ impl ChatActor {
             reason
         );
 
-        queries::chat::insert_chat_message(
+        ChatService::save_message(
             conn,
+            self.workspace_id,
             NewChatMessage {
                 file_id: self.chat_id,
                 workspace_id: self.workspace_id,

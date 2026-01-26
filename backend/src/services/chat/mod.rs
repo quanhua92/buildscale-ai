@@ -89,6 +89,7 @@ use crate::{
     queries, DbConn,
 };
 use uuid::Uuid;
+use sha2::{Sha256, Digest};
 
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
@@ -122,19 +123,99 @@ pub struct FileAttachment {
 pub struct ChatService;
 
 impl ChatService {
-    /// Saves a message and updates the parent file's timestamp in a single transaction.
+    /// Saves a message and updates the parent file's snapshot in a single transaction.
+    /// Implements Write-Through Caching to ensure `read` and `grep` work on chat files.
     pub async fn save_message(
         conn: &mut DbConn,
-        _workspace_id: Uuid,
+        workspace_id: Uuid,
         new_msg: NewChatMessage,
     ) -> Result<ChatMessage> {
         let file_id = new_msg.file_id;
         
-        // Orchestrate persistence across tables
+        // 1. Insert message into Source of Truth (chat_messages)
         let msg = queries::chat::insert_chat_message(conn, new_msg).await?;
+        
+        // 2. Snapshot the full state to file_versions (File View)
+        Self::snapshot_chat_state(conn, workspace_id, file_id).await?;
+
+        // 3. Touch file to update timestamp
         queries::files::touch_file(conn, file_id).await?;
         
         Ok(msg)
+    }
+
+    /// Snapshots the current chat state (messages + config) into the file_versions table.
+    /// This enables 'read' and 'grep' tools to see the chat content.
+    /// Uses In-Place Update optimization for the latest version to prevent history bloat.
+    async fn snapshot_chat_state(conn: &mut DbConn, workspace_id: Uuid, chat_file_id: Uuid) -> Result<()> {
+        // 1. Fetch all messages (Source of Truth)
+        let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
+
+        // 2. Get file to check latest version
+        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        
+        // 3. Get existing config from latest version (or default)
+        let agent_config = if let Some(_version_id) = file.latest_version_id {
+            // We can reuse the query here, but we need to handle the case where it might fail if ID is bad (unlikely)
+            if let Ok(version) = queries::files::get_latest_version(conn, chat_file_id).await {
+                serde_json::from_value(version.app_data).unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: "gpt-4o-mini".to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                })
+            } else {
+                 crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: "gpt-4o-mini".to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                }
+            }
+        } else {
+             crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: "gpt-4o-mini".to_string(),
+                temperature: 0.7,
+                persona_override: None,
+            }
+        };
+
+        // 4. Build session object
+        let session = crate::models::chat::ChatSession {
+            file_id: chat_file_id,
+            agent_config: agent_config.clone(),
+            messages,
+        };
+
+        let content_raw = serde_json::to_value(&session).map_err(crate::error::Error::Json)?;
+        
+        // 5. Calculate hash
+        // Use a consistent serialization for hashing
+        let content_str = serde_json::to_string(&content_raw).map_err(crate::error::Error::Json)?;
+        let mut hasher = Sha256::new();
+        hasher.update(content_str);
+        let hash = hex::encode(hasher.finalize());
+        
+        // 6. Update or Create Version
+        if let Some(version_id) = file.latest_version_id {
+             // In-Place Update Optimization
+             queries::files::update_version_content(conn, version_id, content_raw, hash).await?;
+        } else {
+             // Create new version (fallback)
+             let version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
+                 file_id: chat_file_id,
+                 workspace_id,
+                 branch: "main".to_string(),
+                 content_raw,
+                 app_data: serde_json::to_value(agent_config).unwrap_or(serde_json::Value::Null),
+                 hash,
+                 author_id: file.author_id,
+             }).await?;
+             queries::files::update_latest_version_id(conn, chat_file_id, version.id).await?;
+        }
+        
+        Ok(())
     }
 
     /// Builds the structured context for a chat session.

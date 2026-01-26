@@ -86,8 +86,9 @@ pub async fn create_chat(
 
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
 
-    // 3. Persist initial goal message
-    queries::chat::insert_chat_message(&mut conn, NewChatMessage {
+    // 3. Persist initial goal message via Service (triggers write-through snapshot)
+    use crate::services::chat::ChatService;
+    ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_file.id,
         workspace_id,
         role: ChatMessageRole::User,
@@ -202,8 +203,9 @@ pub async fn post_chat_message(
     tracing::info!("[ChatHandler] Received message for chat {} from user {}", chat_id, user.id);
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    // 1. Append message to DB (Persistence first!)
-    queries::chat::insert_chat_message(&mut conn, NewChatMessage {
+    // 1. Append message to DB (Persistence first!) via Service for Write-Through
+    use crate::services::chat::ChatService;
+    ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_id,
         workspace_id,
         role: ChatMessageRole::User,
@@ -211,10 +213,7 @@ pub async fn post_chat_message(
         metadata: sqlx::types::Json(ChatMessageMetadata::default()),
     }).await?;
 
-    // 2. Touch file
-    queries::files::touch_file(&mut conn, chat_id).await?;
-
-    // 3. Signal Actor
+    // 2. Signal Actor
     let handle = if let Some(handle) = state.agents.get_handle(&chat_id).await {
         handle
     } else {

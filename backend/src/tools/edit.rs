@@ -36,6 +36,14 @@ async fn perform_edit(
         return Err(Error::NotFound(format!("File not found: {}", path)));
     };
 
+    // Virtual File Protection: Prevent direct edits to system-managed files (e.g. Chats)
+    if file.is_virtual {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "path".to_string(),
+            message: "Cannot edit a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
+        }));
+    }
+
     // Folders cannot be edited as text
     if matches!(file.file_type, FileType::Folder) {
          return Err(Error::Validation(ValidationErrors::Single {

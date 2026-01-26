@@ -296,6 +296,7 @@ pub struct LsEntry {
     pub display_name: String,
     pub path: String,
     pub file_type: FileType,
+    pub is_virtual: bool,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 

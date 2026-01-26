@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE file_versions\n        SET content_raw = $2, hash = $3, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            file_id, \n            workspace_id,\n            branch as \"branch!\", \n            content_raw, \n            app_data, \n            hash, \n            author_id as \"author_id?\", \n            created_at, \n            updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "branch!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_raw",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "app_data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "author_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "3b2dd083d3339bb70f64c980082258cbb700a9abf52362ca7e7bdba526ee58e1"
+}
