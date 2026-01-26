@@ -293,6 +293,7 @@ pub struct LsResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct LsEntry {
     pub name: String,
+    pub display_name: String,
     pub path: String,
     pub file_type: FileType,
     pub updated_at: chrono::DateTime<chrono::Utc>,

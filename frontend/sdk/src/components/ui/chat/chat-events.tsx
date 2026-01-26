@@ -8,20 +8,37 @@ export interface ChatEventsProps extends React.HTMLAttributes<HTMLDivElement> {
   observation?: { output: string; success: boolean }
 }
 
-function formatToolArgs(_tool: string, args: any) {
+function formatToolArgs(tool: string, args: any) {
   if (!args) return null
   
   try {
-    const primary = args.path || args.source || args.pattern || "";
+    // 1. Identify primary targets to show prominently
+    // For 'mv', we want to show both source and destination
+    if (tool === 'mv') {
+      return (
+        <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground">
+          <span className="truncate max-w-[120px] opacity-70 border-b border-dotted" title={args.source}>{args.source}</span>
+          <span className="shrink-0 text-primary/50">→</span>
+          <span className="truncate max-w-[120px] font-medium" title={args.destination}>{args.destination}</span>
+        </div>
+      )
+    }
+
+    // Generic logic for other tools
+    const primaryKeys = ["path", "source", "pattern"];
+    const primaryKey = primaryKeys.find(k => args[k]);
+    const primary = primaryKey ? args[primaryKey] : "";
+    
+    // Identify remaining args to show in brackets
     const entries = Object.entries(args)
-      .filter(([key]) => !["path", "source", "pattern"].includes(key))
+      .filter(([key]) => ![...primaryKeys, "destination", "to"].includes(key))
       .map(([key, val]) => {
         const displayVal = typeof val === 'string' ? val : JSON.stringify(val);
         return `${key}=${displayVal}`;
       });
 
     return (
-      <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground">
+      <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground text-[11px]">
         {primary && (
           <span className="truncate font-medium opacity-90" title={primary}>
             {primary}

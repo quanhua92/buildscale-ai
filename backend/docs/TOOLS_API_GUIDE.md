@@ -31,7 +31,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 
 | Tool | Description | Arguments | Returns |
 |------|-------------|-----------|---------|
-| `ls` | List directory contents | `path?`, `recursive?` | `entries[]` |
+| `ls` | List directory contents | `path?`, `recursive?` | `path`, `entries[]` |
 | `read` | Read file contents | `path` | `content` |
 | `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
 | `rm` | Delete file or folder | `path` | `file_id` |
@@ -292,7 +292,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 |-------|------|-------------|
 | `result.path` | string | The path that was listed |
 | `result.entries[]` | array | Array of file/folder entries |
-| `entries[].name` | string | File or folder name |
+| `entries[].name` | string | Technical identifier (slug) used in paths |
+| `entries[].display_name` | string | Human-readable name for UI display |
 | `entries[].path` | string | Full path to the item |
 | `entries[].file_type` | string | Type: `Document`, `Folder`, etc. |
 | `entries[].updated_at` | string | ISO8601 timestamp of last update |
