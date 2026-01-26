@@ -8,7 +8,7 @@ use crate::DbPool;
 use futures::StreamExt;
 use rig::streaming::StreamingChat;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -22,7 +22,7 @@ pub struct ChatActor {
     default_persona: String,
     default_context_token_limit: usize,
     inactivity_timeout: std::time::Duration,
-    cancellation_token: CancellationToken,
+    current_cancellation_token: Arc<Mutex<Option<CancellationToken>>>,
 }
 
 pub struct ChatActorArgs {
@@ -46,7 +46,6 @@ impl ChatActor {
     fn spawn_with_args(args: ChatActorArgs) -> AgentHandle {
         let (command_tx, command_rx) = mpsc::channel(32);
         let event_tx = args.event_tx.clone();
-        let cancellation_token = CancellationToken::new();
 
         let actor = Self {
             chat_id: args.chat_id,
@@ -58,7 +57,7 @@ impl ChatActor {
             default_persona: args.default_persona,
             default_context_token_limit: args.default_context_token_limit,
             inactivity_timeout: args.inactivity_timeout,
-            cancellation_token,
+            current_cancellation_token: Arc::new(Mutex::new(None)),
         };
 
         tokio::spawn(async move {
@@ -124,8 +123,11 @@ impl ChatActor {
                                     reason
                                 );
 
-                                // Trigger cancellation
-                                self.cancellation_token.cancel();
+                                // Trigger cancellation of current interaction's token
+                                let token = self.current_cancellation_token.lock().await.clone();
+                                if let Some(token) = token {
+                                    token.cancel();
+                                }
 
                                 // Send acknowledgment
                                 if let Some(responder) = responder.lock().await.take() {
@@ -149,6 +151,10 @@ impl ChatActor {
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
         tracing::info!("[ChatActor] Processing interaction for chat {}", self.chat_id);
+
+        // Create a new cancellation token for this interaction
+        let cancellation_token = CancellationToken::new();
+        *self.current_cancellation_token.lock().await = Some(cancellation_token.clone());
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
@@ -235,14 +241,14 @@ impl ChatActor {
 
         loop {
             // Check for cancellation before each stream iteration
-            if self.cancellation_token.is_cancelled() {
+            if cancellation_token.is_cancelled() {
                 tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
                 return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
             }
 
             // Use tokio::select! to allow cancellation during stream.next()
             let item = tokio::select! {
-                _ = self.cancellation_token.cancelled() => {
+                _ = cancellation_token.cancelled() => {
                     tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
                     return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
                 },
@@ -336,6 +342,9 @@ impl ChatActor {
 
         tracing::info!("[ChatActor] Interaction turn complete for chat {}", self.chat_id);
 
+        // Clear the cancellation token for this interaction
+        *self.current_cancellation_token.lock().await = None;
+
         Ok(())
     }
 
@@ -373,6 +382,9 @@ impl ChatActor {
 
         // 3. Add cancellation marker to chat history for AI awareness
         self.add_cancellation_marker(conn, reason).await?;
+
+        // 4. Clear the cancellation token for this interaction
+        *self.current_cancellation_token.lock().await = None;
 
         Ok(())
     }

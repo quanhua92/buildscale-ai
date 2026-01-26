@@ -25,13 +25,21 @@ const ChatMessageList = React.forwardRef<HTMLDivElement, ChatMessageListProps>(
     }, [])
 
     const lastChildrenCount = React.useRef(React.Children.count(children))
+    const lastChildrenString = React.useRef(JSON.stringify(children))
 
     React.useEffect(() => {
       const currentCount = React.Children.count(children)
-      if (autoScroll && isAtBottom && currentCount > lastChildrenCount.current) {
+      const currentString = JSON.stringify(children)
+
+      // Scroll to bottom if:
+      // 1. autoScroll enabled AND at bottom AND new message added
+      // 2. OR children content changed (streaming updates)
+      if (autoScroll && ((isAtBottom && currentCount > lastChildrenCount.current) || currentString !== lastChildrenString.current)) {
         scrollToBottom()
       }
+
       lastChildrenCount.current = currentCount
+      lastChildrenString.current = currentString
     }, [children, autoScroll, isAtBottom, scrollToBottom])
 
     return (
@@ -44,7 +52,7 @@ const ChatMessageList = React.forwardRef<HTMLDivElement, ChatMessageListProps>(
         }}
         onScroll={handleScroll}
         className={cn(
-          "flex-1 overflow-y-auto py-4 space-y-6 scrollbar-thin scrollbar-thumb-muted-foreground/20",
+          "flex-1 min-h-0 overflow-y-auto py-4 space-y-6 scrollbar-thin scrollbar-thumb-muted-foreground/20",
           className
         )}
         {...props}

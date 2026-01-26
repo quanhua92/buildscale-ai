@@ -11,14 +11,14 @@ const ChatRoot = React.forwardRef<HTMLDivElement, ChatRootProps>(
       <div
         ref={ref}
         className={cn(
-          "flex flex-col h-full w-full bg-background overflow-hidden relative",
+          "flex flex-col flex-1 w-full bg-background overflow-hidden",
           className
         )}
         {...props}
       >
         <div
           className={cn(
-            "flex-1 flex flex-col mx-auto w-full max-w-3xl lg:max-w-4xl px-4",
+            "flex flex-col mx-auto w-full max-w-3xl lg:max-w-4xl px-4 flex-1 overflow-hidden",
             containerClassName
           )}
         >
