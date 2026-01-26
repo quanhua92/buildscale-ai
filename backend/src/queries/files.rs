@@ -1066,3 +1066,46 @@ pub async fn update_file_status(conn: &mut DbConn, file_id: Uuid, status: FileSt
 
     Ok(())
 }
+
+/// Updates a file's path and slug.
+/// Used to correct the path after creation when the file ID needs to be embedded in the path.
+pub async fn update_file_path_and_slug(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    new_path: String,
+    new_slug: String,
+) -> Result<File> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        UPDATE files
+        SET path = $2, slug = $3, updated_at = NOW()
+        WHERE id = $1
+        RETURNING
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        "#,
+        file_id,
+        new_path,
+        new_slug
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(|e| Error::Internal(format!("Failed to update file path and slug: {}", e)))?;
+
+    Ok(file)
+}

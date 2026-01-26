@@ -41,8 +41,8 @@ pub async fn create_chat(
         user.id,
     ).await?;
 
-    // 2. Create the .chat file identity with a single consistent UUID
-    let chat_uuid = Uuid::now_v7();
+    // 2. Create the .chat file identity with TEMPORARY path/slug
+    // We need to create the file first to get its ID, then update the path
     let chat_file = queries::files::create_file_identity(&mut conn, NewFile {
         workspace_id,
         parent_id: chats_folder_id,
@@ -55,15 +55,21 @@ pub async fn create_chat(
                 .map_or(req.goal.len(), |(idx, _)| idx);
             format!("Chat: {}", &req.goal[..snippet_end])
         },
-        slug: format!("chat-{}", chat_uuid),
-        path: format!("/chats/chat-{}", chat_uuid),
+        slug: "chat-temp".to_string(),  // Temporary slug
+        path: "/chats/chat-temp".to_string(),  // Temporary path
         is_virtual: true,
         is_remote: false,
         permission: 600,
     }).await?;
 
+    // 3. Update the file with its actual ID in the path/slug
+    let correct_path = format!("/chats/chat-{}", chat_file.id);
+    let correct_slug = format!("chat-{}", chat_file.id);
+    let chat_file = queries::files::update_file_path_and_slug(&mut conn, chat_file.id, correct_path, correct_slug).await?;
 
-    // 3. Create initial version with config in app_data
+    tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
+
+    // 4. Create initial version with config in app_data
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
@@ -84,9 +90,7 @@ pub async fn create_chat(
 
     queries::files::update_latest_version_id(&mut conn, chat_file.id, version.id).await?;
 
-    tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
-
-    // 3. Persist initial goal message via Service (triggers write-through snapshot)
+    // 5. Persist initial goal message via Service (triggers write-through snapshot)
     use crate::services::chat::ChatService;
     ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_file.id,
@@ -102,7 +106,7 @@ pub async fn create_chat(
         }),
     }).await?;
 
-    // 4. Trigger Actor immediately for the initial goal
+    // 6. Trigger Actor immediately for the initial goal
     let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
     let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
         chat_id: chat_file.id,
