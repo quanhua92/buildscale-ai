@@ -24,7 +24,7 @@ impl Tool for WriteTool {
     }
 
     fn description(&self) -> &'static str {
-        "Creates or updates a file at the specified path with the provided content."
+        "Creates a new file or completely replaces existing file content. For Document files, raw string content is auto-wrapped into {\"text\": \"...\"} format. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement."
     }
 
     fn definition(&self) -> Value {

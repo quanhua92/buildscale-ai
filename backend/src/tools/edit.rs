@@ -142,7 +142,7 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &'static str {
-        "Edits a file by replacing a unique search string with a replacement string. Fails if the search string is not found or found multiple times."
+        "Edits a file by replacing a unique search string with a replacement string. CRITICAL: (1) old_string MUST be non-empty and unique in file. (2) This is a REPLACE operation - old_string is completely removed and replaced by new_string. (3) To preserve original content, you MUST include it in new_string. (4) Always use last_read_hash from prior read to prevent conflicts. Fails if old_string is empty, not found, or found multiple times."
     }
 
     fn definition(&self) -> Value {

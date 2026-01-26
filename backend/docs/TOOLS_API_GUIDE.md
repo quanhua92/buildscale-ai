@@ -310,6 +310,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Path resolution**: Uses `get_file_by_path()` to resolve the directory
 - **Sorting**: Entries sorted by path in ascending order
 
+**CRITICAL USAGE NOTES:**
+- Use `recursive: true` for discovering all files in a directory tree
+- Returns `path` as "/" when listing root directory
+- Folders are returned first in the entries list for better readability
+- Check `is_virtual` field to identify system-managed files that cannot be edited directly
+
 ---
 
 ### read - Read File Contents
@@ -373,6 +379,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Complex Documents**: Documents with additional fields beyond `text` are returned as-is without unwrapping
 - **Other types**: Canvas, Whiteboard, Chat, etc. return raw JSON without modification
 - **Not found error**: Returns 404 if path does not exist
+
+**CRITICAL USAGE NOTES:**
+- Returns `hash` field that MUST be used with `edit` tool's `last_read_hash` parameter
+- Cannot read folders - will return validation error if path is a folder
+- Always read a file before editing to get the latest content hash
+- For Document files, content is automatically unwrapped from `{"text": "..."}` to just the string value
 
 ---
 
@@ -505,6 +517,13 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Folder Protection**: Returns `400 Bad Request` if attempting to write text content to an existing folder path.
 - **Virtual File Protection**: Returns `400 Bad Request` if attempting to write to a system-managed file (where `is_virtual` is true, e.g., `.chat` files). Use specialized APIs (like the Chat API) to modify these resources.
 
+**CRITICAL USAGE NOTES:**
+- **NOT for partial edits** - this replaces the ENTIRE file content. Use `edit` tool for partial modifications
+- For new files: use raw strings for Documents, or full JSON objects for other types
+- For existing files: complete content replacement occurs - original content is lost
+- Auto-wrapping only applies to Document types: `"hello"` becomes `{"text": "hello"}`
+- Use `edit` tool instead when modifying specific sections of existing files
+
 ---
 
 ### mkdir - Create Directory
@@ -555,6 +574,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Recursive**: Automatically creates all parent folders in the path if they don't exist.
 - **Idempotent**: If the folder already exists, it returns success with the existing folder ID.
 - **Conflict**: Returns `409 Conflict` if a file (not a folder) already exists at any point in the path.
+
+**CRITICAL USAGE NOTES:**
+- Creates ALL parent directories automatically - no need to create each level separately
+- Example: `mkdir /a/b/c` creates /a, then /a/b, then /a/b/c as needed
+- Succeeds silently if directory already exists (no error for existing folders)
+- Use `touch` to create files, `mkdir` to create directories
 
 ---
 
@@ -612,12 +637,18 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 #### Behavior Notes
 
 - **Soft delete**: Sets `deleted_at` timestamp (file remains in database)
-- **Folder Protection**: 
+- **Folder Protection**:
     - **Hierarchical Check**: Returns `409 Conflict` if the folder has active children (via `parent_id`).
     - **Logical Check**: Returns `409 Conflict` if any active file's path starts with the folder's path prefix (catches orphaned files).
     - **Requirement**: Folders must be completely empty (both hierarchically and logically) before deletion.
 - **Not found error**: Returns 404 if path does not exist
 - **Recovery**: Soft-deleted files can be restored via the files API
+
+**CRITICAL USAGE NOTES:**
+- Soft delete means data is recoverable but not through the tools interface
+- Cannot undo deletion via tool API - use Files API for recovery
+- **Non-empty folders will fail** - delete all children first before deleting folder
+- Use with caution - this operation cannot be easily undone
 
 ---
 
@@ -698,6 +729,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Conflict**: Returns `409 Conflict` if destination path already exists as a file (prevents accidental overwrites).
 - **Parent Validation**: Destination parent directory must exist.
 
+**CRITICAL USAGE NOTES:**
+- **RENAME syntax**: `/old/path.txt` → `/new/path.txt` (full path with new filename)
+- **MOVE syntax**: `/file.txt` → `/folder/` (trailing `/` moves into directory)
+- Destination file already exists → returns conflict error (prevents overwrites)
+- Destination parent directory must exist or operation fails
+
 ---
 
 ### touch - Update Timestamp or Create Empty File
@@ -771,6 +808,12 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Recursive**: Automatically creates parent folders if missing during creation.
 - **File Type**: New files are created with `document` type and empty text content.
 
+**CRITICAL USAGE NOTES:**
+- Creates **empty Document files** with content `{"text": ""}`
+- Use this to create placeholder files or refresh timestamps
+- Does **not create directories** - use `mkdir` instead
+- Existing files only get timestamp updated, content is unchanged
+
 ---
 
 ### edit - Edit File Content
@@ -802,6 +845,15 @@ Edits a file by replacing a unique search string with a replacement string. This
 - **Versatility**: Supports any file type that contains editable text (e.g., Markdown, JSON, plain text).
 - **Versioning**: Each successful edit creates a new file version.
 - **Virtual File Protection**: Returns `400 Bad Request` if attempting to edit a system-managed file (where `is_virtual` is true).
+
+**CRITICAL USAGE NOTES:**
+- `old_string` **MUST be non-empty** - the tool will fail with a validation error if empty
+- This is a **REPLACE operation**, not an insert. The `old_string` is completely removed and replaced by `new_string`
+- If you want to **preserve the original line**, you MUST include it in `new_string`
+- Example: To change "let x = 1" to "let x = 2", use:
+  - `old_string`: "let x = 1"
+  - `new_string`: "let x = 2" (the original line is NOT preserved automatically)
+- **Always provide `last_read_hash`** from a prior `read` call to prevent conflicting edits
 
 ---
 
@@ -866,6 +918,13 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Virtual Files**: Supports searching system-managed files (e.g., Chats) by automatically expanding their JSON content into a readable text format.
 - **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
 - **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
+
+**CRITICAL USAGE NOTES:**
+- `pattern` uses **PostgreSQL POSIX regex syntax** (not PCRE or JavaScript regex)
+- `path_pattern` supports `*` wildcards which convert to SQL LIKE (`%`)
+- `case_sensitive: false` (default) makes pattern case-insensitive
+- Use for **pattern discovery** across all files - faster than reading each file
+- Returns matching file paths with line numbers and line text context
 
 ---
 

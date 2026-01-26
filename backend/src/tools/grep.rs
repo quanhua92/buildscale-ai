@@ -18,7 +18,7 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &'static str {
-        "Searches for a regex pattern in all document files within the workspace. Supports optional path filtering."
+        "Searches for a regex pattern (Postgres syntax) across all document files. Pattern is required. Optional path_pattern filters results (supports * wildcards, auto-converts to SQL LIKE). Set case_sensitive to false (default) for case-insensitive search. Returns matching file paths with context. Use for discovering code patterns or finding specific content."
     }
 
     fn definition(&self) -> Value {

@@ -20,7 +20,7 @@ impl Tool for MvTool {
     }
 
     fn description(&self) -> &'static str {
-        "Moves or renames a file. To rename, provide the full new path. To move, provide the new parent directory path."
+        "Moves or renames a file. RENAME: provide full destination path with new filename (e.g., '/src/old.rs' -> '/src/new.rs'). MOVE: provide existing directory path (e.g., '/src/file.rs' -> '/docs/'). Destination ending with '/' is treated as directory. Fails if destination file already exists."
     }
 
     fn definition(&self) -> Value {

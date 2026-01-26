@@ -16,7 +16,7 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Lists files and folders in a directory."
+        "Lists files and folders in a directory. Use 'path' to specify the directory (default: '/' for root). Set 'recursive' to true for deep listing including all subdirectories. Returns entries sorted with folders first."
     }
 
     fn definition(&self) -> Value {

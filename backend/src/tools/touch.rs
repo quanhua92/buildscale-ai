@@ -14,7 +14,7 @@ impl Tool for TouchTool {
     }
 
     fn description(&self) -> &'static str {
-        "Updates the access and modification times of a file, or creates an empty file if it doesn't exist."
+        "Updates file timestamp if it exists, or creates an empty Document file if it doesn't. Created files have empty text content. Use this to create placeholder files or refresh file timestamps. Does not create directories - use 'mkdir' instead."
     }
 
     fn definition(&self) -> Value {
