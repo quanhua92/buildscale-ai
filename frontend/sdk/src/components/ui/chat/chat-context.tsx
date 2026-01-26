@@ -92,6 +92,9 @@ export function ChatProvider({
   const stopGeneration = React.useCallback(async () => {
     if (!chatId) return
 
+    // Increment connection ID to prevent processing any buffered SSE events
+    ++connectionIdRef.current
+
     try {
       // Call backend stop endpoint
       await apiClientRef.current.post(
