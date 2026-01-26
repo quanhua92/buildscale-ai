@@ -67,4 +67,7 @@ vite.config.ts.timestamp-*
 .vscode/settings.json
 .tanstack
 
+# OpenCode
+.opencode/
+
 TODO.md
