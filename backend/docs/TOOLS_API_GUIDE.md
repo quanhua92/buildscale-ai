@@ -8,6 +8,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 - [Quick Reference](#quick-reference)
 - [Overview](#overview)
 - [API Endpoint](#api-endpoint)
+- [File Type Content Handling](#file-type-content-handling)
 - [Tool Specifications](#tool-specifications)
   - [ls - List Directory Contents](#ls---list-directory-contents)
   - [read - Read File Contents](#read---read-file-contents)
@@ -18,12 +19,14 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [mkdir - Create Directory](#mkdir---create-directory)
   - [edit - Edit File Content](#edit---edit-file-content)
   - [grep - Regex Search Files](#grep---regex-search-files)
+  - [Path Normalization](#path-normalization)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
 - [Error Responses](#error-responses)
 - [Code Examples](#code-examples)
 - [Testing](#testing)
 - [Related Documentation](#related-documentation)
+- [Database Queries Used](#database-queries-used)
 
 ---
 

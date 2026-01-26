@@ -8,6 +8,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 - [Quick Reference](#quick-reference)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
+- [JWT Authentication Middleware](#jwt-authentication-middleware)
 - [API Endpoints](#api-endpoints)
   - [Health Check](#health-check)
   - [User Registration](#user-registration)
@@ -15,11 +16,11 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Profile](#user-profile)
   - [Refresh Access Token](#refresh-access-token)
   - [User Logout](#user-logout)
-  - [Workspaces](#workspaces)
-  - [Members](#members)
-  - [Files & AI](#files-and-ai)
-  - [Knowledge Graph (Tags & Links)](#knowledge-graph)
-  - [Tools API](#tools-api)
+- [Workspaces API](#workspaces-api)
+- [Workspace Members API](#workspace-members-api)
+- [Files & AI](#files-and-ai)
+- [Tools API](#tools-api)
+- [Agentic Chat API](#agentic-chat-api)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 - [Production Considerations](#production-considerations)
@@ -63,6 +64,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid` | GET | Get chat history and config | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/stop` | POST | Stop AI generation | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
@@ -290,11 +292,11 @@ For complete tool specifications, examples, and behavior details, see **[Tools A
 
 ---
 
-### Agentic Chat API
+## Agentic Chat API
 
 Interact with AI agents that have direct access to your workspace tools and files.
 
-#### Start New Chat
+### Start New Chat
 Initialize a stateful agentic session.
 
 **Endpoint**: `POST /api/v1/workspaces/:id/chats`
@@ -327,7 +329,7 @@ Initialize a stateful agentic session.
 
 ---
 
-#### Send Message
+### Send Message
 Send a subsequent message to an active chat session.
 
 **Endpoint**: `POST /api/v1/workspaces/:id/chats/:chat_id`
@@ -350,7 +352,7 @@ Send a subsequent message to an active chat session.
 
 ---
 
-#### Get Chat History
+### Get Chat History
 Retrieve full message history and configuration for a chat session.
 
 **Endpoint**: `GET /api/v1/workspaces/:id/chats/:chat_id`
@@ -379,7 +381,7 @@ Retrieve full message history and configuration for a chat session.
 
 ---
 
-#### Chat Events (SSE)
+### Chat Events (SSE)
 Connect to the real-time event stream for an agentic session.
 
 **Endpoint**: `GET /api/v1/workspaces/:id/chats/:chat_id/events`
@@ -398,7 +400,7 @@ Connect to the real-time event stream for an agentic session.
 
 ---
 
-#### Stop Chat Generation
+### Stop Chat Generation
 Gracefully stop an ongoing AI generation. Allows current tool execution to complete before stopping.
 
 **Endpoint**: `POST /api/v1/workspaces/:id/chats/:chat_id/stop`
