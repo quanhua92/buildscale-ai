@@ -8,51 +8,85 @@ export interface ChatEventsProps extends React.HTMLAttributes<HTMLDivElement> {
   observation?: { output: string; success: boolean }
 }
 
+/**
+ * Truncates a string to a specific number of lines.
+ */
+function truncateLines(str: string, maxLines: number = 5): string {
+  const lines = str.split("\n")
+  if (lines.length <= maxLines) return str
+  return lines.slice(0, maxLines).join("\n") + "\n... (truncated)"
+}
+
 function formatToolArgs(tool: string, args: any) {
   if (!args) return null
   
   try {
-    // 1. Identify primary targets to show prominently
-    // For 'mv', we want to show both source and destination
+    // 1. Special handling for 'mv' - show source and destination clearly
     if (tool === 'mv') {
       return (
-        <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground">
-          <span className="truncate max-w-[120px] opacity-70 border-b border-dotted" title={args.source}>{args.source}</span>
-          <span className="shrink-0 text-primary/50">→</span>
-          <span className="truncate max-w-[120px] font-medium" title={args.destination}>{args.destination}</span>
+        <div className="flex flex-col gap-1 text-foreground">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="opacity-70 border-b border-dotted break-all" title={args.source}>{args.source}</span>
+            <span className="shrink-0 text-primary/50">→</span>
+            <span className="font-medium break-all" title={args.destination}>{args.destination}</span>
+          </div>
         </div>
       )
     }
 
-    // Generic logic for other tools
+    // 2. Identify primary targets (usually paths)
     const primaryKeys = ["path", "source", "pattern"];
     const primaryKey = primaryKeys.find(k => args[k]);
     const primary = primaryKey ? args[primaryKey] : "";
     
-    // Identify remaining args to show in brackets
-    const entries = Object.entries(args)
-      .filter(([key]) => ![...primaryKeys, "destination", "to"].includes(key))
+    // 3. Identify content-heavy fields like 'content' or 'text'
+    const contentKeys = ["content", "text", "body", "old_string", "new_string"];
+    
+    // 4. Identify remaining args
+    const secondaryEntries = Object.entries(args)
+      .filter(([key]) => ![...primaryKeys, ...contentKeys, "destination", "to"].includes(key))
       .map(([key, val]) => {
         const displayVal = typeof val === 'string' ? val : JSON.stringify(val);
         return `${key}=${displayVal}`;
       });
 
+    // 5. Extract and truncate content fields
+    const contentParts = contentKeys
+      .filter(k => args[k] !== undefined)
+      .map(k => {
+        const val = args[k];
+        const valStr = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+        const truncated = truncateLines(valStr, 5);
+        return { key: k, value: truncated, isTruncated: valStr !== truncated };
+      });
+
     return (
-      <div className="flex items-center gap-1.5 overflow-hidden flex-wrap text-foreground text-[11px]">
+      <div className="flex flex-col gap-1.5 text-foreground text-[11px] w-full">
+        {/* Primary line (Path/Target) */}
         {primary && (
-          <span className="truncate font-medium opacity-90" title={primary}>
+          <span className="font-medium opacity-90 break-all whitespace-pre-wrap leading-tight" title={primary}>
             {primary}
           </span>
         )}
-        {entries.length > 0 && (
-          <span className="text-[10px] opacity-50 font-mono truncate">
-            [{entries.join(", ")}]
+
+        {/* Secondary metadata line */}
+        {secondaryEntries.length > 0 && (
+          <span className="text-[10px] opacity-50 font-mono break-all leading-tight">
+            [{secondaryEntries.join(", ")}]
           </span>
         )}
+
+        {/* Content/Code blocks */}
+        {contentParts.map(part => (
+          <div key={part.key} className="mt-0.5 rounded border border-muted bg-muted/30 p-1.5 font-mono text-[10px] whitespace-pre-wrap break-all leading-normal">
+            <span className="opacity-40 uppercase text-[8px] block mb-0.5">{part.key}</span>
+            {part.value}
+          </div>
+        ))}
       </div>
     )
   } catch (e) {
-    return <span className="truncate opacity-70 text-destructive text-[10px]">Format Error</span>
+    return <span className="opacity-70 text-destructive text-[10px]">Format Error</span>
   }
 }
 
@@ -69,13 +103,13 @@ const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
         {...props}
       >
         <div className={cn(
-          "flex items-center gap-3 text-[11px] font-mono bg-muted/20 border rounded-lg px-2.5 py-2 text-muted-foreground group transition-all shadow-sm",
+          "flex items-start gap-3 text-[11px] font-mono bg-muted/20 border rounded-lg px-2.5 py-2 text-muted-foreground group transition-all shadow-sm",
           isPending ? "border-primary/20 animate-pulse" : isSuccess ? "border-muted/50 hover:border-primary/30" : "border-destructive/30 bg-destructive/5"
         )}>
           {isPending ? (
-            <Loader2 className="size-3.5 shrink-0 text-primary animate-spin" />
+            <Loader2 className="size-3.5 shrink-0 text-primary animate-spin mt-0.5" />
           ) : (
-            <Terminal className={cn("size-3.5 shrink-0", isSuccess ? "text-primary opacity-70" : "text-destructive")} />
+            <Terminal className={cn("size-3.5 shrink-0 mt-0.5", isSuccess ? "text-primary opacity-70" : "text-destructive")} />
           )}
           
           <div className="flex flex-col gap-0.5 flex-1 min-w-0">
@@ -85,9 +119,9 @@ const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
             )}>
               {isPending ? "Executing..." : isSuccess ? "Tool Call" : "Tool Failed"}
             </span>
-            <div className="flex items-center gap-2">
-              <span className="text-foreground font-bold shrink-0">{call.tool}</span>
-              <div className="flex-1 min-w-0">
+            <div className="flex flex-col gap-1">
+              <span className="text-foreground font-bold shrink-0 text-[12px]">{call.tool}</span>
+              <div className="w-full">
                 {formatToolArgs(call.tool, call.args)}
               </div>
             </div>
