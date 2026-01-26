@@ -355,16 +355,16 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
                 )),
         )
         .route(
-            "/{id}/chats/{chat_id}",
-            post(chat_handlers::post_chat_message)
+            "/{id}/chats/{chat_id}/stop",
+            post(chat_handlers::stop_chat_generation)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
                 )),
         )
         .route(
-            "/{id}/chats/{chat_id}/stop",
-            post(chat_handlers::stop_chat_generation)
+            "/{id}/chats/{chat_id}",
+            post(chat_handlers::post_chat_message)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

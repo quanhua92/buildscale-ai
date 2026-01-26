@@ -4,3 +4,4 @@ pub mod workspaces;
 pub mod members;
 pub mod files;
 pub mod files_virtual_test;
+pub mod chat;
