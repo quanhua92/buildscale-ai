@@ -95,42 +95,49 @@ export function ChatProvider({
     // Increment connection ID to prevent processing any buffered SSE events
     ++connectionIdRef.current
 
+    // Abort SSE connection immediately
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    connectingRef.current = null
+
+    // Set streaming state to false synchronously before async backend call
+    setIsStreaming(false)
+
+    // Mark streaming message as completed
+    setMessages((prev) => {
+      const newMessages = [...prev]
+      const lastMessage = newMessages[newMessages.length - 1]
+      if (lastMessage?.status === 'streaming') {
+        lastMessage.status = 'completed'
+      }
+      return newMessages
+    })
+
     try {
-      // Call backend stop endpoint
+      // Call backend stop endpoint (fire and forget)
       await apiClientRef.current.post(
         `/workspaces/${workspaceId}/chats/${chatId}/stop`,
         {}
       )
     } catch (error) {
       console.error('[Chat] Stop error', error)
-    } finally {
-      // Always abort SSE connection
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-        abortControllerRef.current = null
-      }
-      connectingRef.current = null
-      setIsStreaming(false)
-
-      // Mark streaming message as completed (partial response)
-      setMessages((prev) => {
-        const newMessages = [...prev]
-        const lastMessage = newMessages[newMessages.length - 1]
-        if (lastMessage?.status === 'streaming') {
-          lastMessage.status = 'completed'
-        }
-        return newMessages
-      })
     }
   }, [workspaceId, chatId])
 
   const connectToSse = React.useCallback(async (targetChatId: string) => {
     if (connectingRef.current === targetChatId) return
 
+    // Abort any existing connection before starting a new one
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    connectingRef.current = null
+
     const currentConnectionId = ++connectionIdRef.current
 
-    if (abortControllerRef.current) abortControllerRef.current.abort()
-    
     const abortController = new AbortController()
     abortControllerRef.current = abortController
     connectingRef.current = targetChatId
