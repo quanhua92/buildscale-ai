@@ -350,6 +350,35 @@ Send a subsequent message to an active chat session.
 
 ---
 
+#### Get Chat History
+Retrieve full message history and configuration for a chat session.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/chats/:chat_id`
+
+**Authentication**: Required (JWT access token)
+
+##### Response (200 OK)
+```json
+{
+  "file_id": "019bfa7f-7b41-7d31-9368-aed217a36c7e",
+  "agent_config": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "persona_override": null
+  },
+  "messages": [
+    {
+      "id": "019bfa7f-...",
+      "role": "user",
+      "content": "Hello",
+      "created_at": "2024-01-26T12:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
 #### Chat Events (SSE)
 Connect to the real-time event stream for an agentic session.
 

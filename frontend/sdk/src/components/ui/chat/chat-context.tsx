@@ -26,6 +26,7 @@ export interface ChatMessageItem {
 interface ChatContextValue {
   messages: ChatMessageItem[]
   isStreaming: boolean
+  isLoading: boolean
   sendMessage: (content: string, attachments?: string[]) => Promise<void>
   stopGeneration: () => void
   clearMessages: () => void
@@ -74,6 +75,7 @@ export function ChatProvider({
 
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([])
   const [isStreaming, setIsStreaming] = React.useState(false)
+  const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
 
   const abortControllerRef = React.useRef<AbortController | null>(null)
@@ -374,9 +376,44 @@ export function ChatProvider({
   }, [workspaceId])
 
   React.useEffect(() => {
-    if (chatId) connectToSse(chatId)
-    else stopGeneration()
+    let mounted = true
+    const initChat = async () => {
+      if (!chatId) {
+        stopGeneration()
+        return
+      }
+
+      setIsLoading(true)
+      try {
+        const session = await apiClientRef.current.getChat(workspaceId, chatId)
+        if (mounted) {
+          const historyMessages: ChatMessageItem[] = session.messages.map(msg => ({
+            id: msg.id,
+            role: msg.role as MessageRole,
+            parts: [{ type: "text", content: msg.content }],
+            status: "completed",
+            created_at: msg.created_at
+          }))
+          setMessages(historyMessages)
+          
+          // Connect to SSE only after history is loaded
+          connectToSse(chatId)
+        }
+      } catch (error) {
+        console.error('[Chat] Failed to load history:', error)
+        if (mounted) {
+          // Even if history fails, try to connect to SSE
+          connectToSse(chatId)
+        }
+      } finally {
+        if (mounted) setIsLoading(false)
+      }
+    }
+
+    initChat()
+
     return () => {
+      mounted = false
       if (abortControllerRef.current) abortControllerRef.current.abort()
       connectingRef.current = null
       // Clear streaming timeout on cleanup
@@ -385,7 +422,7 @@ export function ChatProvider({
         streamingTimeoutRef.current = null
       }
     }
-  }, [chatId, connectToSse, stopGeneration])
+  }, [chatId, workspaceId, connectToSse, stopGeneration])
 
   const sendMessage = React.useCallback(
     async (content: string, _attachments?: string[]) => {
@@ -453,9 +490,9 @@ export function ChatProvider({
 
   const value = React.useMemo(
     () => ({
-      messages, isStreaming, sendMessage, stopGeneration, clearMessages, chatId
+      messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId
     }),
-    [messages, isStreaming, sendMessage, stopGeneration, clearMessages, chatId]
+    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId]
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

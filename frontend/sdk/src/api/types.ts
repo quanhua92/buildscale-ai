@@ -116,6 +116,34 @@ export interface PostChatMessageResponse {
   status: "accepted"
 }
 
+export type ChatMessageRole = "system" | "user" | "assistant" | "tool"
+
+export interface ChatMessage {
+  id: string
+  file_id: string
+  workspace_id: string
+  role: ChatMessageRole
+  content: string
+  metadata: any
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentConfig {
+  agent_id?: string | null
+  model: string
+  temperature: number
+  persona_override?: string | null
+}
+
+export interface ChatSession {
+  file_id: string
+  agent_config: AgentConfig
+  messages: ChatMessage[]
+}
+
+export type GetChatResponse = ChatSession
+
 export interface WorkspaceMemberDetailed {
   workspace_id: string
   user_id: string

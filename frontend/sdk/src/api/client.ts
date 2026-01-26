@@ -14,6 +14,7 @@ import type {
   GetWorkspaceResponse,
   UpdateWorkspaceResponse,
   GetMembershipResponse,
+  GetChatResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -331,6 +332,12 @@ class ApiClient {
   async deleteWorkspace(id: string): Promise<{ message: string }> {
     return this.request<{ message: string }>(`/workspaces/${id}`, {
       method: 'DELETE',
+    })
+  }
+
+  async getChat(workspaceId: string, chatId: string): Promise<GetChatResponse> {
+    return this.request<GetChatResponse>(`/workspaces/${workspaceId}/chats/${chatId}`, {
+      method: 'GET',
     })
   }
 

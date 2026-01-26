@@ -245,6 +245,22 @@ pub async fn post_chat_message(
     ))
 }
 
+pub async fn get_chat(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthenticatedUser>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<crate::models::chat::ChatSession>> {
+    let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+
+    let session = crate::services::chat::ChatService::get_chat_session(
+        &mut conn,
+        workspace_id,
+        chat_id,
+    ).await?;
+
+    Ok(Json(session))
+}
+
 pub async fn stop_chat_generation(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthenticatedUser>,

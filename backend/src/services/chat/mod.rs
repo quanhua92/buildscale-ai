@@ -218,6 +218,60 @@ impl ChatService {
         Ok(())
     }
 
+    /// Retrieves the full chat session including configuration and message history.
+    pub async fn get_chat_session(
+        conn: &mut DbConn,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+    ) -> Result<crate::models::chat::ChatSession> {
+        // 1. Verify file exists and is a chat
+        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        if file.workspace_id != workspace_id {
+            return Err(crate::error::Error::NotFound(format!("Chat not found: {}", chat_file_id)));
+        }
+        if !matches!(file.file_type, crate::models::files::FileType::Chat) {
+            return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
+                field: "chat_id".to_string(),
+                message: "File is not a chat".to_string(),
+            }));
+        }
+
+        // 2. Fetch all messages
+        let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
+
+        // 3. Get existing config from latest version (or default)
+        let agent_config = if let Some(_version_id) = file.latest_version_id {
+            if let Ok(version) = queries::files::get_latest_version(conn, chat_file_id).await {
+                serde_json::from_value(version.app_data).unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: "gpt-4o-mini".to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                })
+            } else {
+                 crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: "gpt-4o-mini".to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                }
+            }
+        } else {
+             crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: "gpt-4o-mini".to_string(),
+                temperature: 0.7,
+                persona_override: None,
+            }
+        };
+
+        Ok(crate::models::chat::ChatSession {
+            file_id: chat_file_id,
+            agent_config,
+            messages,
+        })
+    }
+
     /// Builds the structured context for a chat session.
     ///
     /// Returns persona, history, and file attachments separately for proper

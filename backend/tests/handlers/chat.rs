@@ -304,3 +304,55 @@ async fn test_stop_endpoint_with_wrong_workspace_returns_403_or_404() {
     // Should return 403 (Forbidden) or 404 (Not Found) depending on middleware order
     assert!(response.status() == 403 || response.status() == 404);
 }
+
+#[tokio::test]
+async fn test_get_chat_endpoint() {
+    let app = TestApp::new().await;
+    let (_email, access_token, workspace_id, chat_id) = setup_test_chat(&app).await;
+
+    // Post a message first
+    let msg_content = "Hello History";
+    let post_response = app
+        .client
+        .post(&app.url(&format!(
+            "/api/v1/workspaces/{}/chats/{}",
+            workspace_id, chat_id
+        )))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .json(&json!({
+            "content": msg_content
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(post_response.status(), 202);
+
+    // Get chat history
+    let response = app
+        .client
+        .get(&app.url(&format!(
+            "/api/v1/workspaces/{}/chats/{}",
+            workspace_id, chat_id
+        )))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    
+    let body: serde_json::Value = response.json().await.unwrap();
+    
+    // Verify structure
+    assert_eq!(body["file_id"], chat_id.to_string());
+    assert!(body["agent_config"].is_object());
+    assert!(body["messages"].is_array());
+    
+    let messages = body["messages"].as_array().unwrap();
+    // 1 initial goal + 1 posted message = 2 messages
+    assert!(messages.len() >= 2);
+    
+    // Check if our posted message is there
+    let found = messages.iter().any(|m| m["content"].as_str() == Some(msg_content));
+    assert!(found, "Posted message not found in history");
+}
