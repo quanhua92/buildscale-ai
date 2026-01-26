@@ -148,7 +148,7 @@ define_rig_tool!(
     tools::write::WriteTool,
     WriteArgs,
     "write",
-    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you SHOULD prefer 'edit' or 'edit-many' to ensure safety and preserve surrounding context. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
+    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you MUST prefer 'edit' to ensure safety and preserve surrounding context. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
 );
 
 define_rig_tool!(
@@ -181,14 +181,6 @@ define_rig_tool!(
     EditArgs,
     "edit",
     "Edits a file by replacing a UNIQUE search string with a replacement string. Use this for precision changes. You SHOULD provide 'last_read_hash' for safety. Fails if the string is not unique."
-);
-
-define_rig_tool!(
-    RigEditManyTool,
-    tools::edit::EditManyTool,
-    EditArgs,
-    "edit-many",
-    "Edits a file by replacing ALL occurrences of a search string. Use this for global refactoring within a file. You SHOULD provide 'last_read_hash' for safety."
 );
 
 define_rig_tool!(

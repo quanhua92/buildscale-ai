@@ -1,6 +1,6 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
 use crate::services::chat::rig_tools::{
-    RigEditManyTool, RigEditTool, RigGrepTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
+    RigEditTool, RigGrepTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
     RigRmTool, RigTouchTool, RigWriteTool,
 };
 use crate::DbPool;
@@ -56,8 +56,11 @@ impl RigService {
         };
 
         // 2. Build the Rig Agent with Tools
+        let persona = session.agent_config.persona_override.clone()
+            .unwrap_or_else(|| crate::agents::get_persona(None));
+
         let agent = self.client.agent(model_name)
-            .preamble(session.agent_config.persona_override.as_deref().unwrap_or_else(|| crate::agents::get_persona(None)))
+            .preamble(&persona)
             .tool(RigLsTool {
                 pool: pool.clone(),
                 workspace_id,
@@ -89,11 +92,6 @@ impl RigService {
                 user_id,
             })
             .tool(RigEditTool {
-                pool: pool.clone(),
-                workspace_id,
-                user_id,
-            })
-            .tool(RigEditManyTool {
                 pool: pool.clone(),
                 workspace_id,
                 user_id,

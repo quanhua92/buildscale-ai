@@ -112,7 +112,7 @@ async fn test_edit_wrong_file_type() {
     assert_eq!(response.status(), 400);
     let body: serde_json::Value = response.json().await.unwrap();
     assert_eq!(body["code"], "VALIDATION_ERROR");
-    assert!(body["fields"]["path"].as_str().unwrap().contains("only supports Document"));
+    assert!(body["fields"]["path"].as_str().unwrap().contains("Cannot edit a folder"));
 }
 
 #[tokio::test]

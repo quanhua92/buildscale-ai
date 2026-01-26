@@ -2,7 +2,7 @@
 ///
 /// This example demonstrates the full suite of Agentic Engine tools:
 /// - Basic: `ls`, `read`, `write`, `rm`, `mv`, `touch`, `mkdir`
-/// - Advanced: `edit` (precision), `edit-many` (global), `grep` (SQL-backed search)
+/// - Advanced: `edit` (precision), `grep` (SQL-backed search)
 ///
 /// Workflow:
 /// 1. **Seed**: Anchor session identity.
@@ -170,7 +170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chat_res = client.post(&format!("{}/workspaces/{}/chats", api_base_url, workspace_id))
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({
-            "goal": "I want to demonstrate all tools in the engine. IMPORTANT: Always prefer 'edit' or 'edit-many' for partial file changes. Use 'write' ONLY for creating entirely new files. Use 'mkdir' for directories. Never use 'json' or 'text' as file types; use 'document' if unsure.",
+            "goal": "I want to demonstrate all tools in the engine. IMPORTANT: Always prefer 'edit' for partial file changes. Use 'write' ONLY for creating entirely new files. Use 'mkdir' for directories. Never use 'json' or 'text' as file types; use 'document' if unsure.",
             "agents": []
         }))
         .send().await?
@@ -209,9 +209,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send().await?;
     wait_for_agent_completion(&mut event_stream).await?;
 
-    // --- TURN 3: Global Refactor ---
-    println!("👉 TURN 3: Global Refactor (edit-many)");
-    let prompt = "Logging refactor time. YOU MUST use the 'edit-many' tool specifically to replace all occurrences of 'DEBUG:' with 'LOG:' in '/src/main.rs'. DO NOT use 'write'; use 'edit-many'.";
+    // --- TURN 3: Refactor ---
+    println!("👉 TURN 3: Refactor (edit)");
+    let prompt = "Logging refactor time. YOU MUST use the 'edit' tool specifically to replace 'DEBUG: Initializing engine...' with 'LOG: Initializing engine...' in '/src/main.rs'. DO NOT use 'write'; use 'edit'.";
     println!("💬 PROMPT: {}", prompt);
     client.post(&format!("{}/workspaces/{}/chats/{}", api_base_url, workspace_id, chat_id))
         .header("Authorization", format!("Bearer {}", token))

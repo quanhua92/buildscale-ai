@@ -17,7 +17,6 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [touch - Update Timestamp or Create Empty File](#touch---update-timestamp-or-create-empty-file)
   - [mkdir - Create Directory](#mkdir---create-directory)
   - [edit - Edit File Content](#edit---edit-file-content)
-  - [edit-many - Replace All Occurrences](#edit-many---replace-all-occurrences)
   - [grep - Regex Search Files](#grep---regex-search-files)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
@@ -39,8 +38,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
 | `mkdir` | Create directory | `path` | `path`, `file_id` |
-| `edit` | Edit file content | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
-| `edit-many` | Replace all occurrences | `path`, `old_string`, `new_string` | `path`, `file_id`, `version_id` |
+| `edit` | Edit file content | `path`, `old_string`, `new_string`, `last_read_hash?` | `path`, `file_id`, `version_id` |
 | `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
 
 **Base URL**: `http://localhost:3000` (default)
@@ -788,106 +786,12 @@ Edits a file by replacing a unique search string with a replacement string. This
 | `new_string` | string | Yes | Replacement string |
 | `last_read_hash` | string | No | Hash of the content when last read. If provided, tool fails if content changed. |
 
-#### Request Example
-
-```bash
-curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "edit",
-    "args": {
-      "path": "/documents/report.md",
-      "old_string": "Draft v1",
-      "new_string": "Final Version"
-    }
-  }'
-```
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "result": {
-    "path": "/documents/report.md",
-    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
-    "version_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff2",
-    "hash": "b2c3d4e5..."
-  },
-  "error": null
-}
-```
-
 #### Behavior Notes
 
 - **Uniqueness Requirement**: The tool will fail with a `400 Bad Request` if `old_string` is not found OR if it is found multiple times.
 - **Stale Protection**: If `last_read_hash` is provided, the tool will fail with a `409 Conflict` if the current file hash does not match.
-- **Precision**: Providing more surrounding context in `old_string` helps ensure uniqueness.
-- **Document Only**: Currently only supports `Document` file types.
+- **Versatility**: Supports any file type that contains editable text (e.g., Markdown, JSON, plain text).
 - **Versioning**: Each successful edit creates a new file version.
-
----
-
-### edit-many - Replace All Occurrences
-
-Edits a file by replacing all occurrences of a search string with a replacement string. Use this when you need to perform global refactoring within a single file.
-
-#### Arguments
-
-```json
-{
-  "path": "/src/models.rs",
-  "old_string": "old_name",
-  "new_string": "new_name",
-  "last_read_hash": "a1b2c3d4..."
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | Yes | Full path to the file |
-| `old_string` | string | Yes | String to search for |
-| `new_string` | string | Yes | Replacement string |
-| `last_read_hash` | string | No | Hash of the content when last read. |
-
-#### Request Example
-
-```bash
-curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "edit-many",
-    "args": {
-      "path": "/src/config.rs",
-      "old_string": "DEBUG",
-      "new_string": "INFO"
-    }
-  }'
-```
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "result": {
-    "path": "/src/config.rs",
-    "file_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff1",
-    "version_id": "019b97ac-e5f5-735b-b0a6-f3a34fcd4ff2",
-    "hash": "c3d4e5f6..."
-  },
-  "error": null
-}
-```
-
-#### Behavior Notes
-
-- **Global Replace**: Replaces ALL occurrences of `old_string`.
-- **Validation**: Fails with `400 Bad Request` if `old_string` is not found.
-- **Stale Protection**: If `last_read_hash` is provided, the tool will fail with a `409 Conflict` if the current file hash does not match.
-- **Document Only**: Currently only supports `Document` file types.
 
 ---
 
