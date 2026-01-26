@@ -1,5 +1,6 @@
 import { ChatProvider, useChat, type ChatMessageItem } from "./chat-context"
 import { ChatRoot } from "./chat-root"
+import { ChatHeader } from "./chat-header"
 import { ChatMessageList } from "./chat-message-list"
 import { ChatMessage } from "./chat-message"
 import { ChatBubble } from "./chat-bubble"
@@ -9,6 +10,7 @@ import { ChatInput } from "./chat-input"
 
 export const Chat = Object.assign(ChatRoot, {
   Provider: ChatProvider,
+  Header: ChatHeader,
   MessageList: ChatMessageList,
   Message: ChatMessage,
   Bubble: ChatBubble,
