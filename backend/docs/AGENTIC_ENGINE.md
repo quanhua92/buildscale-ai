@@ -101,13 +101,43 @@ The UI renders the **Agentic Engine's** internal actions using standardized JSON
 | **file_updated** | `{"path": "/src/auth.rs", "v": 4}` | Triggers immediate UI refresh (Explorer/Editor). |
 | **plan_step** | `{"step": 3, "status": "done"}` | Updates the task checklist/progress UI. |
 | **done** | `{"message": "Task complete."}` | Finalizes the execution turn. |
+| **stopped** | `{"reason": "...", "partial_response": "..."}` | Signals graceful cancellation to UI. |
 
-## 6. Infrastructure: The Sandbox Hydration
+## 6. Cancellation Protocol (Graceful Stop)
+
+### A. Client-Side Stop Request
+When user presses STOP, the frontend sends a cancellation command:
+**Endpoint:** `POST /api/v1/workspaces/:id/chats/:chat_id/stop`
+**Response:** `200 OK` with `{ "status": "cancelled", "chat_id": "..." }`
+
+### B. Graceful Cancellation Behavior
+- **Tool Completion**: If AI is executing a tool (e.g., `write_file`), the tool completes first
+- **Partial Save**: Any text generated before cancellation is saved to `chat_messages` table
+- **System Marker**: A system message is added indicating user cancelled for AI context
+- **Actor Continues**: The actor remains alive for future interactions (only resets interaction state)
+
+### C. Cancellation Flow
+1. Frontend calls `POST /chats/{id}/stop`
+2. Backend sends `AgentCommand::Cancel` to actor
+3. Actor sets `CancellationToken` (cooperative cancellation)
+4. Streaming loop checks token after each event/chunk
+5. If mid-tool-call, waits for tool result before stopping
+6. Sends `SseEvent::Stopped` event to all clients
+7. Saves partial response (if any text generated)
+8. Adds system marker: `[System: Response was interrupted by user (user_cancelled)]`
+9. Actor continues running, ready for next interaction
+
+### D. Error Handling
+- **Actor Not Found**: Returns `404 Not Found` if chat doesn't exist or actor timed out
+- **Multiple Stops**: Idempotent - second stop request is harmless
+- **No Partial Text**: Only saves assistant message if text was generated
+
+## 7. Infrastructure: The Sandbox Hydration
 To maintain security while allowing high-performance execution (e.g., npm, cargo, python), BuildScale uses a hydration pattern:
 
 *   **Spin Up:** A Docker sandbox starts on the same host as the NVMe mirror.
 *   **Hydrate:** The workspace (or a specific "slice") is mounted to the container as read-only.
 *   **Agentic Engine Write:** The AI runs scripts at native hardware speeds. Any permanent file changes must be sent back through the **Agentic Engine's** write tool, ensuring every global state change is versioned and audited.
 
-## 7. Conclusion
+## 8. Conclusion
 By treating Identity as a File and Memory as a Mirror, BuildScale.ai creates a future-proof environment. Whether for a developer refactoring an **Agentic Engine** or a blogger orchestrating a marketing team, the system provides a single, **Agentic Engine** source of truth for all human-AI collaboration.

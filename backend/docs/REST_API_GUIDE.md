@@ -64,6 +64,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid/stop` | POST | Stop AI generation | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
@@ -364,6 +365,60 @@ Connect to the real-time event stream for an agentic session.
 - `observation`: Tool execution results (includes `success` boolean).
 - `chunk`: Incremental text chunks for the response.
 - `done`: Finalization of the execution turn.
+- `stopped`: Graceful cancellation signal (includes `reason` and optional `partial_response`).
+
+---
+
+#### Stop Chat Generation
+Gracefully stop an ongoing AI generation. Allows current tool execution to complete before stopping.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/chats/:chat_id/stop`
+
+**Authentication**: Required (JWT access token)
+
+##### Request
+No request body required.
+
+##### Response (200 OK)
+```json
+{
+  "status": "cancelled",
+  "chat_id": "uuid-chat-session-id"
+}
+```
+
+##### Behavior
+- **Graceful**: If AI is executing a tool, it completes before stopping
+- **Partial Save**: Any text generated before cancellation is saved to `chat_messages` table
+- **System Marker**: A system message is added for AI context: `[System: Response was interrupted by user (user_cancelled)]`
+- **Actor Continues**: The chat actor remains alive for future interactions
+
+##### SSE Event
+After stopping, the SSE stream sends:
+```json
+{
+  "type": "stopped",
+  "data": {
+    "reason": "user_cancelled",
+    "partial_response": "Text generated before stop..."
+  }
+}
+```
+
+##### Error Responses
+**404 Not Found** - Chat actor doesn't exist or timed out:
+```json
+{
+  "error": "Chat actor not found for chat {chat_id}",
+  "code": "NOT_FOUND"
+}
+```
+
+##### Example
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/chats/{chat_id}/stop \
+  -H "Authorization: Bearer <access_token>"
+```
 
 ---
 

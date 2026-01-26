@@ -14,7 +14,9 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{Extension, Json};
 use futures::stream::{self, Stream};
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{Mutex, oneshot};
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
 use futures::StreamExt;
@@ -242,4 +244,49 @@ pub async fn post_chat_message(
         StatusCode::ACCEPTED,
         Json(serde_json::json!({ "status": "accepted" })),
     ))
+}
+
+pub async fn stop_chat_generation(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthenticatedUser>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>> {
+    tracing::info!(
+        "[ChatHandler] Stop requested for chat {} in workspace {}",
+        chat_id,
+        workspace_id
+    );
+
+    // Get the actor handle
+    let handle = state
+        .agents
+        .get_handle(&chat_id)
+        .await
+        .ok_or_else(|| Error::NotFound(format!("Chat actor not found for chat {}", chat_id)))?;
+
+    // Create a one-shot channel for response
+    let (responder, response) = oneshot::channel();
+    let responder = Arc::new(Mutex::new(Some(responder)));
+
+    // Send cancel command
+    handle
+        .command_tx
+        .send(AgentCommand::Cancel {
+            reason: "user_cancelled".to_string(),
+            responder,
+        })
+        .await
+        .map_err(|_| Error::Internal("Failed to send cancel command".into()))?;
+
+    // Wait for acknowledgment
+    let _result = response
+        .await
+        .map_err(|_| Error::Internal("Cancel acknowledgment failed".into()))??;
+
+    tracing::info!("[ChatHandler] Cancel successful for chat {}", chat_id);
+
+    Ok(Json(serde_json::json!({
+        "status": "cancelled",
+        "chat_id": chat_id
+    })))
 }

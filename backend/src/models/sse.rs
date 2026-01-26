@@ -35,4 +35,8 @@ pub enum SseEvent {
         message: String,
     },
     Ping,
+    Stopped {
+        reason: String,
+        partial_response: Option<String>,
+    },
 }

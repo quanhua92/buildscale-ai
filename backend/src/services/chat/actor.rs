@@ -9,6 +9,7 @@ use futures::StreamExt;
 use rig::streaming::StreamingChat;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 pub struct ChatActor {
@@ -21,6 +22,7 @@ pub struct ChatActor {
     default_persona: String,
     default_context_token_limit: usize,
     inactivity_timeout: std::time::Duration,
+    cancellation_token: CancellationToken,
 }
 
 pub struct ChatActorArgs {
@@ -44,6 +46,7 @@ impl ChatActor {
     fn spawn_with_args(args: ChatActorArgs) -> AgentHandle {
         let (command_tx, command_rx) = mpsc::channel(32);
         let event_tx = args.event_tx.clone();
+        let cancellation_token = CancellationToken::new();
 
         let actor = Self {
             chat_id: args.chat_id,
@@ -55,6 +58,7 @@ impl ChatActor {
             default_persona: args.default_persona,
             default_context_token_limit: args.default_context_token_limit,
             inactivity_timeout: args.inactivity_timeout,
+            cancellation_token,
         };
 
         tokio::spawn(async move {
@@ -112,6 +116,23 @@ impl ChatActor {
                             }
                             AgentCommand::Ping => {
                                 tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
+                            }
+                            AgentCommand::Cancel { reason, responder } => {
+                                tracing::info!(
+                                    "[ChatActor] Cancel requested for chat {} (reason: {})",
+                                    self.chat_id,
+                                    reason
+                                );
+
+                                // Trigger cancellation
+                                self.cancellation_token.cancel();
+
+                                // Send acknowledgment
+                                if let Some(responder) = responder.lock().await.take() {
+                                    let _ = responder.send(Ok(true));
+                                }
+
+                                // Don't break the loop - actor continues running
                             }
                             AgentCommand::Shutdown => {
                                 tracing::info!("[ChatActor] Shutting down for chat {}", self.chat_id);
@@ -212,7 +233,26 @@ impl ChatActor {
         let mut full_response = String::new();
         let mut has_started_responding = false;
 
-        while let Some(item) = stream.next().await {
+        loop {
+            // Check for cancellation before each stream iteration
+            if self.cancellation_token.is_cancelled() {
+                tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
+            }
+
+            // Use tokio::select! to allow cancellation during stream.next()
+            let item = tokio::select! {
+                _ = self.cancellation_token.cancelled() => {
+                    tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                    return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
+                },
+                item = stream.next() => { item }
+            };
+
+            let item = match item {
+                Some(i) => i,
+                None => break, // Stream finished naturally
+            };
             match item {
                 Ok(rig::agent::MultiTurnStreamItem::StreamAssistantItem(content)) => {
                     match content {
@@ -256,10 +296,10 @@ impl ChatActor {
                             } else {
                                 "Tool execution completed".to_string()
                             };
-                            
+
                             // Heuristic: if the output contains "Error:" it's likely a failure
                             let success = !output.to_lowercase().contains("error:");
-                            
+
                             tracing::info!("[ChatActor] [Rig] Tool execution finished for chat {} (success: {})", self.chat_id, success);
                             let _ = self.event_tx.send(SseEvent::Observation { output, success });
                         }
@@ -296,6 +336,87 @@ impl ChatActor {
 
         tracing::info!("[ChatActor] Interaction turn complete for chat {}", self.chat_id);
 
+        Ok(())
+    }
+
+    async fn handle_cancellation(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        partial_response: String,
+        reason: &str,
+    ) -> crate::error::Result<()> {
+        tracing::info!(
+            "[ChatActor] Handling cancellation for chat {} (reason: {})",
+            self.chat_id,
+            reason
+        );
+
+        // 1. Send Stopped event to all SSE clients
+        let _ = self.event_tx.send(SseEvent::Stopped {
+            reason: reason.to_string(),
+            partial_response: if partial_response.is_empty() {
+                None
+            } else {
+                Some(partial_response.clone())
+            },
+        });
+
+        // 2. Save partial response if there is any text
+        if !partial_response.is_empty() {
+            tracing::info!(
+                "[ChatActor] Saving partial response ({} chars) for chat {}",
+                partial_response.len(),
+                self.chat_id
+            );
+            self.save_partial_response(conn, partial_response.clone()).await?;
+        }
+
+        // 3. Add cancellation marker to chat history for AI awareness
+        self.add_cancellation_marker(conn, reason).await?;
+
+        Ok(())
+    }
+
+    async fn save_partial_response(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        content: String,
+    ) -> crate::error::Result<()> {
+        queries::chat::insert_chat_message(
+            conn,
+            NewChatMessage {
+                file_id: self.chat_id,
+                workspace_id: self.workspace_id,
+                role: ChatMessageRole::Assistant,
+                content,
+                metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata::default()),
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn add_cancellation_marker(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        reason: &str,
+    ) -> crate::error::Result<()> {
+        let marker_content = format!(
+            "[System: Response was interrupted by user ({})]",
+            reason
+        );
+
+        queries::chat::insert_chat_message(
+            conn,
+            NewChatMessage {
+                file_id: self.chat_id,
+                workspace_id: self.workspace_id,
+                role: ChatMessageRole::System,
+                content: marker_content,
+                metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata::default()),
+            },
+        )
+        .await?;
         Ok(())
     }
 }

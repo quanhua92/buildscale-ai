@@ -89,14 +89,37 @@ export function ChatProvider({
     setChatId(initialChatId)
   }, [initialChatId])
 
-  const stopGeneration = React.useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
+  const stopGeneration = React.useCallback(async () => {
+    if (!chatId) return
+
+    try {
+      // Call backend stop endpoint
+      await apiClientRef.current.post(
+        `/workspaces/${workspaceId}/chats/${chatId}/stop`,
+        {}
+      )
+    } catch (error) {
+      console.error('[Chat] Stop error', error)
+    } finally {
+      // Always abort SSE connection
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+      connectingRef.current = null
+      setIsStreaming(false)
+
+      // Mark streaming message as completed (partial response)
+      setMessages((prev) => {
+        const newMessages = [...prev]
+        const lastMessage = newMessages[newMessages.length - 1]
+        if (lastMessage?.status === 'streaming') {
+          lastMessage.status = 'completed'
+        }
+        return newMessages
+      })
     }
-    connectingRef.current = null
-    setIsStreaming(false)
-  }, [])
+  }, [workspaceId, chatId])
 
   const connectToSse = React.useCallback(async (targetChatId: string) => {
     if (connectingRef.current === targetChatId) return
@@ -227,6 +250,10 @@ export function ChatProvider({
                     updatedMessage.parts.push({ type: "text", content: `\nError: ${data.message}` })
                     if (currentConnectionId === connectionIdRef.current) setIsStreaming(false)
                     break
+                  case "stopped":
+                    updatedMessage.status = "completed"
+                    if (currentConnectionId === connectionIdRef.current) setIsStreaming(false)
+                    break
                   case "file_updated":
                     return prev
                 }
@@ -272,7 +299,11 @@ export function ChatProvider({
       }
 
       setMessages((prev) => [...prev, userMessage])
-      
+      setIsStreaming(true)  // Set streaming state when sending message
+
+      // Clear connection state to ensure we reconnect for new message
+      connectingRef.current = null
+
       try {
         if (!chatId) {
           const response = await apiClientRef.current.post<CreateChatResponse>(

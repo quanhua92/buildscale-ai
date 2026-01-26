@@ -1,5 +1,7 @@
+use crate::error::Result;
 use crate::models::sse::SseEvent;
-use tokio::sync::{broadcast, mpsc};
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
 const EVENT_BUS_CAPACITY: usize = 1024;
@@ -9,6 +11,10 @@ pub enum AgentCommand {
     ProcessInteraction { user_id: Uuid },
     Ping,
     Shutdown,
+    Cancel {
+        reason: String,
+        responder: Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>,
+    },
 }
 
 #[derive(Clone)]
