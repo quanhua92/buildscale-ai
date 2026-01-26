@@ -23,13 +23,6 @@ function ChatRoute() {
     })
   }
 
-  const handleNewChat = () => {
-    navigate({
-      to: '.',
-      search: {},
-    })
-  }
-
   return (
     <div className="flex-1 w-full relative">
       <Chat.Provider
@@ -37,18 +30,27 @@ function ChatRoute() {
         chatId={chatId}
         onChatCreated={handleChatCreated}
       >
-        <ChatContent onNewChat={handleNewChat} />
+        <ChatContent />
       </Chat.Provider>
     </div>
   )
 }
 
-function ChatContent({ onNewChat }: { onNewChat: () => void }) {
-  const { messages, isStreaming } = useChat()
+function ChatContent() {
+  const { messages, isStreaming, clearMessages } = useChat()
+  const navigate = Route.useNavigate()
+
+  const handleNewChat = () => {
+    clearMessages()
+    navigate({
+      to: '.',
+      search: {},
+    })
+  }
 
   return (
     <Chat containerClassName="max-w-4xl flex flex-col h-full">
-      <Chat.Header modelName="gpt-4o-mini" onNewChat={onNewChat} />
+      <Chat.Header modelName="gpt-4o-mini" onNewChat={handleNewChat} />
       <Chat.MessageList className="max-h-[calc(100vh-200px)] pb-32">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center space-y-4 py-20">
