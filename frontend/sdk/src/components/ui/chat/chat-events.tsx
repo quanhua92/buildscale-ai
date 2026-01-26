@@ -1,11 +1,31 @@
 import * as React from "react"
-import { Terminal, Box, CheckCircle2, CircleX, Loader2 } from "lucide-react"
+import { Terminal, CheckCircle2, CircleX, Loader2, ChevronDown } from "lucide-react"
 import { cn } from "src/utils"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../collapsible"
 
 export interface ChatEventsProps extends React.HTMLAttributes<HTMLDivElement> {
   call: { tool: string; args: any; id: string }
   observation?: { output: string; success: boolean }
+}
+
+/**
+ * Attempts to parse and pretty-print JSON output.
+ * Only formats if output starts with '{' or '[' to avoid false positives.
+ */
+function formatOutput(output: string): string {
+  if (!output) return output
+  const trimmed = output.trim()
+  // Only attempt JSON parsing if output looks like JSON
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(output)
+      if (typeof parsed === 'object' && parsed !== null) {
+        return JSON.stringify(parsed, null, 2)
+      }
+    } catch {
+      // Not valid JSON, return as-is
+    }
+  }
+  return output
 }
 
 /**
@@ -129,29 +149,34 @@ const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
         </div>
 
         {observation && (
-          <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
-            <CollapsibleTrigger asChild>
-              <button type="button" className="w-full flex items-center justify-between gap-2 text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40 hover:text-primary transition-colors px-2 py-1 group">
-                <div className="flex items-center gap-1.5">
-                  {isSuccess ? (
-                    <CheckCircle2 className="size-3 text-green-500/50 group-hover:text-green-500" />
-                  ) : (
-                    <CircleX className="size-3 text-destructive/50 group-hover:text-destructive" />
-                  )}
-                  <span>Output</span>
-                </div>
-                <Box className="size-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+          <div className="w-full">
+            <button
+              type="button"
+              onClick={() => setIsOpen(!isOpen)}
+              className="w-full flex items-center justify-between gap-2 text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40 hover:text-primary transition-colors px-2 py-1 group"
+            >
+              <div className="flex items-center gap-1.5">
+                {isSuccess ? (
+                  <CheckCircle2 className="size-3 text-green-500/50 group-hover:text-green-500" />
+                ) : (
+                  <CircleX className="size-3 text-destructive/50 group-hover:text-destructive" />
+                )}
+                <span>{isOpen ? "Show less" : "Output"}</span>
+              </div>
+              <ChevronDown className={cn(
+                "size-3 transition-transform opacity-0 group-hover:opacity-100",
+                isOpen && "rotate-180 opacity-100"
+              )} />
+            </button>
+            {isOpen && (
               <pre className={cn(
-                "mt-1 p-2.5 rounded-lg text-[11px] font-mono overflow-x-auto border-l-2 max-h-60 overflow-y-auto leading-relaxed shadow-inner",
+                "mt-1 p-2.5 rounded-lg text-[11px] font-mono overflow-x-auto border-l-2 leading-relaxed shadow-inner",
                 isSuccess ? "bg-black/5 border-primary/30" : "bg-destructive/5 border-destructive/50 text-destructive/90"
               )}>
-                {observation.output || "No output returned."}
+                {formatOutput(observation.output) || "No output returned."}
               </pre>
-            </CollapsibleContent>
-          </Collapsible>
+            )}
+          </div>
         )}
       </div>
     )
