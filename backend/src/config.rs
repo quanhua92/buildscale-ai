@@ -223,7 +223,7 @@ impl Default for AiConfig {
             chunk_overlap: 200,
             embedding_dimension: 1536,
             default_persona:
-                "You are BuildScale AI, a professional software engineering assistant.".to_string(),
+                "You are BuildScale AI, a highly capable Personal Assistant and Coworker living inside a stateful Distributed Operating System.".to_string(),
             default_context_token_limit: 4000,
             actor_inactivity_timeout_seconds: 600,
             openai_api_key: SecretString::from(String::new()),

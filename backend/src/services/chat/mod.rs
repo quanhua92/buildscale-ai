@@ -93,11 +93,6 @@ use uuid::Uuid;
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
 
-/// Default AI persona for BuildScale AI assistant.
-pub const DEFAULT_PERSONA: &str = "You are BuildScale AI, a professional software engineering assistant. \
-When complex reasoning or multi-step tool usage is required, think out loud using <thinking> blocks to explain your plan before executing tools. \
-Keep your thinking concise but clear.";
-
 /// Structured context for AI chat sessions.
 ///
 /// Contains persona, conversation history, and file attachments separately,

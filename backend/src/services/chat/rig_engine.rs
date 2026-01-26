@@ -57,7 +57,7 @@ impl RigService {
 
         // 2. Build the Rig Agent with Tools
         let agent = self.client.agent(model_name)
-            .preamble(session.agent_config.persona_override.as_deref().unwrap_or(super::DEFAULT_PERSONA))
+            .preamble(session.agent_config.persona_override.as_deref().unwrap_or_else(|| crate::agents::get_persona(None)))
             .tool(RigLsTool {
                 pool: pool.clone(),
                 workspace_id,

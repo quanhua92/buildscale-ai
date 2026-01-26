@@ -56,7 +56,7 @@ pub async fn create_chat(
         "goal": req.goal,
         "agents": req.agents,
         "model": req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string()),
-        "persona": req.persona.clone().unwrap_or_else(|| crate::services::chat::DEFAULT_PERSONA.to_string()),
+        "persona": req.persona.clone().unwrap_or_else(|| crate::agents::get_persona(None)),
         "temperature": 0.7
     });
 
@@ -96,7 +96,7 @@ pub async fn create_chat(
         workspace_id,
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
-        default_persona: state.config.ai.default_persona.clone(),
+        default_persona: crate::agents::get_persona(None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
         inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -135,7 +135,7 @@ pub async fn get_chat_events(
             workspace_id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
-            default_persona: state.config.ai.default_persona.clone(),
+            default_persona: crate::agents::get_persona(None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -213,7 +213,7 @@ pub async fn post_chat_message(
             workspace_id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
-            default_persona: state.config.ai.default_persona.clone(),
+            default_persona: crate::agents::get_persona(None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
