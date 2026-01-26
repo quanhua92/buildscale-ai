@@ -292,6 +292,7 @@ pub struct LsResult {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LsEntry {
+    pub id: Uuid,
     pub name: String,
     pub display_name: String,
     pub path: String,

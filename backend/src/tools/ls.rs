@@ -58,6 +58,7 @@ impl Tool for LsTool {
         };
         
         let entries: Vec<LsEntry> = files.into_iter().map(|f| LsEntry {
+            id: f.id,
             name: f.slug,
             display_name: f.name,
             path: f.path,
