@@ -56,7 +56,7 @@ pub async fn create_chat(
         "goal": req.goal,
         "agents": req.agents,
         "model": req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string()),
-        "persona": req.persona.clone().unwrap_or_else(|| crate::agents::get_persona(None)),
+        "persona": crate::agents::get_persona(req.role.as_deref()),
         "temperature": 0.7
     });
 

@@ -83,7 +83,7 @@ export interface CreateChatRequest {
   files?: string[]
   agents?: string[]
   model?: string
-  persona?: string
+  role?: string
 }
 
 export interface CreateChatResponse {

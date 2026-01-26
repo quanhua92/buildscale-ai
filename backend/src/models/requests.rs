@@ -212,7 +212,7 @@ pub struct CreateChatRequest {
     pub files: Option<Vec<Uuid>>,
     pub agents: Option<Vec<Uuid>>,
     pub model: Option<String>,
-    pub persona: Option<String>,
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
