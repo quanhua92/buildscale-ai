@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS(\n            SELECT 1 FROM files \n            WHERE workspace_id = $1 \n              AND path LIKE $2 || '%' \n              AND path != $3\n              AND deleted_at IS NULL\n        ) as \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7984662dfb6b67c0b0383b5df9314b933a5e9fbae1be7c191bb2f22f06ecbf56"
+}

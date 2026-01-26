@@ -31,10 +31,19 @@ pub async fn create_chat(
     tracing::info!("[ChatHandler] Creating chat in workspace {} for user {}", workspace_id, user.id);
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    // 1. Create the .chat file identity
+    // 1. Ensure the /chats folder exists and get its ID
+    let chats_folder_id = crate::services::files::ensure_path_exists(
+        &mut conn,
+        workspace_id,
+        "chats",
+        user.id,
+    ).await?;
+
+    // 2. Create the .chat file identity with a single consistent UUID
+    let chat_uuid = Uuid::now_v7();
     let chat_file = queries::files::create_file_identity(&mut conn, NewFile {
         workspace_id,
-        parent_id: None,
+        parent_id: chats_folder_id,
         author_id: user.id,
         file_type: FileType::Chat,
         status: FileStatus::Ready,
@@ -44,14 +53,15 @@ pub async fn create_chat(
                 .map_or(req.goal.len(), |(idx, _)| idx);
             format!("Chat: {}", &req.goal[..snippet_end])
         },
-        slug: format!("chat-{}", Uuid::now_v7()),
-        path: format!("/chats/chat-{}", Uuid::now_v7()),
+        slug: format!("chat-{}", chat_uuid),
+        path: format!("/chats/chat-{}", chat_uuid),
         is_virtual: true,
         is_remote: false,
         permission: 600,
     }).await?;
 
-    // 2. Create initial version with config in app_data
+
+    // 3. Create initial version with config in app_data
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,

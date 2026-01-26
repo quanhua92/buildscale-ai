@@ -435,14 +435,33 @@ pub async fn update_file(
 pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
     let file = files::get_file_by_id(conn, file_id).await?;
 
-    // If it's a folder, ensure it's empty
-    if matches!(file.file_type, FileType::Folder) && files::has_active_children(conn, file_id).await? {
-        return Err(Error::Conflict(
-            "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
-        ));
+    if file.deleted_at.is_some() {
+        return Err(Error::NotFound(format!("File already deleted: {}", file.path)));
     }
 
-    files::soft_delete_file(conn, file_id).await
+    // If it's a folder, ensure it's empty both hierarchically AND logically (path prefix)
+    if matches!(file.file_type, FileType::Folder) {
+        let has_children = files::has_active_children(conn, file_id).await?;
+        let has_descendants = files::has_active_descendants(conn, file.workspace_id, &file.path).await?;
+        
+        if has_children || has_descendants {
+            return Err(Error::Conflict(
+                "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
+            ));
+        }
+    }
+
+    let rows_affected = files::soft_delete_file(conn, file_id).await?;
+    
+    // Safety check: Ensure exactly one record was affected
+    if rows_affected != 1 {
+        return Err(Error::Internal(format!(
+            "Critical safety error: Expected to delete exactly 1 file, but affected {} rows. Operation aborted.",
+            rows_affected
+        )));
+    }
+
+    Ok(())
 }
 
 /// Restores a soft-deleted file

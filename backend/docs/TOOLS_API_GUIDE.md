@@ -607,7 +607,10 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 #### Behavior Notes
 
 - **Soft delete**: Sets `deleted_at` timestamp (file remains in database)
-- **Safety checks**: Underlying service applies safety checks
+- **Folder Protection**: 
+    - **Hierarchical Check**: Returns `409 Conflict` if the folder has active children (via `parent_id`).
+    - **Logical Check**: Returns `409 Conflict` if any active file's path starts with the folder's path prefix (catches orphaned files).
+    - **Requirement**: Folders must be completely empty (both hierarchically and logically) before deletion.
 - **Not found error**: Returns 404 if path does not exist
 - **Recovery**: Soft-deleted files can be restored via the files API
 

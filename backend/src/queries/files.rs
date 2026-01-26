@@ -304,7 +304,7 @@ pub async fn list_files_in_folder(
 // ORGANIZATION & HIERARCHY QUERIES
 // ============================================================================
 
-/// Checks if a file has any active (not deleted) children.
+/// Checks if a file has any active (not deleted) children (via parent_id).
 pub async fn has_active_children(conn: &mut DbConn, file_id: Uuid) -> Result<bool> {
     let result = sqlx::query!(
         r#"
@@ -314,6 +314,37 @@ pub async fn has_active_children(conn: &mut DbConn, file_id: Uuid) -> Result<boo
         ) as "exists!"
         "#,
         file_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(result.exists)
+}
+
+/// Checks if a path has any active (not deleted) descendants (via path prefix).
+/// This is used to catch "orphans" that don't have a parent_id but logically live in a folder.
+pub async fn has_active_descendants(conn: &mut DbConn, workspace_id: Uuid, path: &str) -> Result<bool> {
+    // Ensure path ends with / for prefix matching if it's not root
+    let prefix = if path == "/" {
+        "/".to_string()
+    } else {
+        format!("{}/", path.trim_end_matches('/'))
+    };
+
+    let result = sqlx::query!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM files 
+            WHERE workspace_id = $1 
+              AND path LIKE $2 || '%' 
+              AND path != $3
+              AND deleted_at IS NULL
+        ) as "exists!"
+        "#,
+        workspace_id,
+        prefix,
+        path // Exclude the folder itself
     )
     .fetch_one(conn)
     .await
@@ -504,12 +535,13 @@ pub async fn update_file_metadata(
 }
 
 /// Performs a soft delete on a file.
-pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
-    sqlx::query!(
+/// Returns the number of rows affected (should be 1).
+pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<u64> {
+    let result = sqlx::query!(
         r#"
         UPDATE files
         SET deleted_at = NOW(), updated_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND deleted_at IS NULL
         "#,
         file_id
     )
@@ -517,7 +549,7 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
     .await
     .map_err(Error::Sqlx)?;
 
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 /// Restores a soft-deleted file.

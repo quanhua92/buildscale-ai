@@ -122,7 +122,7 @@ let agent = rig_service
 
 The agent is configured with:
 - **System prompt**: From `context.persona`
-- **Tools**: All 6 workspace tools (ls, read, write, rm, mv, touch)
+- **Tools**: All workspace tools (ls, read, write, rm, mv, touch, edit, grep)
 - **Model**: GPT-4o-mini (configurable per chat)
 
 ### Phase 3: Streaming with Context
