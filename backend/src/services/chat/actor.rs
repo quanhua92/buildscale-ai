@@ -247,7 +247,6 @@ impl ChatActor {
         let agent = self.get_or_create_agent(user_id, &session, &ai_config).await?;
 
         // 9. Stream from Rig with persona, history, and attachments in prompt
-        tracing::info!("[ChatActor] [Rig] Starting AI completion for chat {} (model: {})", self.chat_id, session.agent_config.model);
         let mut stream = agent
             .stream_chat(&prompt, history)
             .await;
@@ -292,17 +291,13 @@ impl ChatActor {
                             let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
                         }
                         rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
-                            tracing::info!("[ChatActor] [Rig] AI reasoning event received for chat {} with {} parts", self.chat_id, thought.reasoning.len());
-                            for (idx, part) in thought.reasoning.iter().enumerate() {
-                                tracing::info!("[ChatActor] [Rig] Thought part {} (len={}, empty={}): '{}'", idx, part.len(), part.is_empty(), part);
+                            // Only send non-empty reasoning parts to frontend
+                            for part in &thought.reasoning {
                                 if !part.trim().is_empty() {
-                                    tracing::debug!("[ChatActor] [Rig] Sending thought part {} for chat {}", idx, self.chat_id);
                                     let _ = self.event_tx.send(SseEvent::Thought {
                                         agent_id: None,
                                         text: part.clone(),
                                     });
-                                } else {
-                                    tracing::warn!("[ChatActor] [Rig] Skipping empty thought part {} for chat {}", idx, self.chat_id);
                                 }
                             }
                         }
@@ -506,12 +501,11 @@ impl ChatActor {
             && current_user.as_ref() == Some(&user_id);
 
         if can_reuse {
-            tracing::info!("[ChatActor] Reusing cached agent for chat {}", self.chat_id);
             Ok(cached.as_ref().unwrap().clone())
         } else {
             tracing::info!(
-                "[ChatActor] Creating new agent for chat {} (model: {}, user_id: {})",
-                self.chat_id, session.agent_config.model, user_id
+                "[ChatActor] Creating new agent for chat {} (model: {})",
+                self.chat_id, session.agent_config.model
             );
 
             // Create new agent

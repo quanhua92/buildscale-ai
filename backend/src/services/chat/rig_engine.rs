@@ -110,18 +110,27 @@ impl RigService {
             })
             .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
 
-        // Add reasoning parameters based on configuration
-        // Only add when enabled - OpenAI doesn't accept "none" as a valid value
-        let agent_builder = if ai_config.enable_reasoning_summaries {
-            agent_builder.additional_params(serde_json::json!({
-                "reasoning": {
-                    "effort": ai_config.reasoning_effort,
-                    "summary": "auto"
+        // Build additional parameters for OpenAI Responses API
+        // CRITICAL: Set store: false to use stateless mode
+        // This prevents OpenAI from requiring reasoning items to be maintained across requests
+        // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
+        let mut params = serde_json::json!({
+            "store": false,
+            "reasoning": {
+                "effort": ai_config.reasoning_effort
+            }
+        });
+
+        // Enable reasoning summaries based on configuration
+        if ai_config.enable_reasoning_summaries {
+            if let Some(obj) = params.get_mut("reasoning") {
+                if let Some(reasoning_obj) = obj.as_object_mut() {
+                    reasoning_obj.insert("summary".to_string(), serde_json::json!("auto"));
                 }
-            }))
-        } else {
-            agent_builder
-        };
+            }
+        }
+
+        let agent_builder = agent_builder.additional_params(params);
 
         // Add previous_response_id if available (for conversation continuity with GPT-5)
         let agent_builder = if let Some(ref response_id) = session.agent_config.previous_response_id {

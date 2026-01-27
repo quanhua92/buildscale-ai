@@ -135,7 +135,7 @@ async fn test_grep_path_variations() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Grep Path Var Test").await;
-    
+
     write_file(&app, &workspace_id, &token, "/src/main.rs", serde_json::json!({"text": "findme"})).await;
     write_file(&app, &workspace_id, &token, "/config/app.json", serde_json::json!({"text": "findme"})).await;
 
@@ -153,7 +153,7 @@ async fn test_grep_path_variations() {
             "pattern": "findme",
             "path_pattern": pattern
         })).await;
-        
+
         let body: serde_json::Value = response.json().await.unwrap();
         let matches = body["result"]["matches"].as_array().unwrap();
         assert_eq!(matches.len(), expected_count, "Failed for path_pattern: {}", pattern);
@@ -161,4 +161,25 @@ async fn test_grep_path_variations() {
             assert_eq!(matches[0]["path"], expected_path);
         }
     }
+}
+
+#[tokio::test]
+async fn test_grep_invalid_regex() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Invalid Regex Test").await;
+
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "some content"})).await;
+
+    // Invalid regex: |?\b is not valid (quantifier without operand)
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "math|trade|macbook|hello|hi|?\\b"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+
+    // Should return success: false with an error message
+    assert_eq!(body["success"].as_bool().unwrap(), false);
+    assert!(body["error"].as_str().unwrap().contains("Invalid regex pattern"));
 }

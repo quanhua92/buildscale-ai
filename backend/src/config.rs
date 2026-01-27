@@ -233,7 +233,7 @@ impl Default for AiConfig {
             actor_inactivity_timeout_seconds: 600,
             openai_api_key: SecretString::from(String::new()),
             enable_reasoning_summaries: false,
-            reasoning_effort: "medium".to_string(),
+            reasoning_effort: "low".to_string(),
         }
     }
 }

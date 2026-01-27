@@ -33,7 +33,17 @@ impl Tool for GrepTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
-        
+
+        // Validate regex pattern to prevent PostgreSQL errors
+        // PostgreSQL regex is similar to Rust regex, so we can validate here
+        if let Err(e) = regex::Regex::new(&grep_args.pattern) {
+            return Ok(ToolResponse {
+                success: false,
+                result: serde_json::Value::Null,
+                error: Some(format!("Invalid regex pattern: {}", e)),
+            });
+        }
+
         let path_pattern = grep_args.path_pattern.map(|mut p| {
             // Convert glob-like * to SQL LIKE %
             p = p.replace('*', "%");
