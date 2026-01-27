@@ -1,15 +1,17 @@
-use crate::{DbConn, error::Result};
-use crate::models::files::FileType;
+use crate::{DbConn, error::{Error, Result}};
 use crate::models::requests::{ToolResponse, GrepArgs, GrepMatch, GrepResult};
-use crate::queries::files as file_queries;
 use crate::services::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
+use std::process::Command as StdCommand;
+use tokio::process::Command as TokioCommand;
+use std::path::Path;
 use super::Tool;
 
-/// Grep tool for searching file contents using regex
+/// Grep tool for searching file contents using external binaries
 ///
+/// Uses ripgrep (rg) if available, falls back to grep.
 /// Searches for a regex pattern across all document files in a workspace.
 pub struct GrepTool;
 
@@ -20,7 +22,7 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &'static str {
-        "Searches for a regex pattern across all document files in a workspace using disk-based operations. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search. Returns matching file paths with context. Use for discovering code patterns or finding specific content."
+        "Searches for a regex pattern across all document files in a workspace using ripgrep or grep. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search. Returns matching file paths with context. Use for discovering code patterns or finding specific content."
     }
 
     fn definition(&self) -> Value {
@@ -29,7 +31,7 @@ impl Tool for GrepTool {
 
     async fn execute(
         &self,
-        conn: &mut DbConn,
+        _conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
@@ -37,80 +39,51 @@ impl Tool for GrepTool {
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
 
-        // Validate regex pattern
-        let regex = match grep_args.case_sensitive.unwrap_or(false) {
-            true => regex::Regex::new(&grep_args.pattern),
-            false => regex::RegexBuilder::new(&grep_args.pattern).case_insensitive(true).build(),
-        };
+        let workspace_path = storage.get_workspace_path(workspace_id);
 
-        let regex = match regex {
-            Ok(re) => re,
-            Err(e) => {
-                return Ok(ToolResponse {
-                    success: false,
-                    result: serde_json::Value::Null,
-                    error: Some(format!("Invalid regex pattern: {}", e)),
-                });
-            }
-        };
+        // Check if workspace directory exists
+        if !workspace_path.exists() {
+            return Ok(ToolResponse {
+                success: false,
+                result: Value::Null,
+                error: Some(format!("Workspace directory not found: {:?}", workspace_path)),
+            });
+        }
 
-        // Convert path_pattern to glob pattern if provided
-        let path_glob = grep_args.path_pattern.as_ref().map(|p| {
-            let mut glob_pattern = p.clone();
-            // Convert * to glob pattern
-            glob_pattern = glob_pattern.replace('*', "**");
-            glob_pattern
-        });
+        // Build command (tries ripgrep, then grep)
+        let mut cmd = build_grep_command(
+            &grep_args.pattern,
+            grep_args.path_pattern.as_deref(),
+            grep_args.case_sensitive.unwrap_or(false),
+            &workspace_path,
+        )?;
 
-        // Get all active files in workspace
-        let all_files = file_queries::list_all_active_files(conn, workspace_id).await?;
+        // Execute command
+        let output = cmd.output().await.map_err(|e| {
+            Error::Internal(format!("Failed to execute grep command: {}", e))
+        })?;
 
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Ok(ToolResponse {
+                success: false,
+                result: Value::Null,
+                error: Some(format!("Grep command failed: {}", stderr)),
+            });
+        }
+
+        // Parse output
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let mut matches = Vec::new();
-        let mut match_count = 0;
         const MAX_MATCHES: usize = 1000;
 
-        for file in all_files {
-            if match_count >= MAX_MATCHES {
+        for line in stdout.lines() {
+            if matches.len() >= MAX_MATCHES {
                 break;
             }
 
-            // Skip folders
-            if matches!(file.file_type, FileType::Folder) {
-                continue;
-            }
-
-            // Apply path filter if provided
-            if let Some(ref glob_pattern) = path_glob {
-                if !matches_path_pattern(&file.path, glob_pattern) {
-                    continue;
-                }
-            }
-
-            // Read file content from disk
-            let file_bytes = match storage.read_file(workspace_id, &file.path).await {
-                Ok(content) => content,
-                Err(e) => {
-                    tracing::warn!("Failed to read file {} for grep: {}", file.path, e);
-                    continue;
-                }
-            };
-
-            // Convert bytes to string, defaulting to empty if not valid UTF-8
-            let file_content = String::from_utf8_lossy(&file_bytes);
-
-            // Search for pattern in file content
-            for (line_num, line) in file_content.lines().enumerate() {
-                if regex.is_match(line) {
-                    matches.push(GrepMatch {
-                        path: file.path.clone(),
-                        line_number: (line_num + 1) as i32,
-                        line_text: line.to_string(),
-                    });
-                    match_count += 1;
-                    if match_count >= MAX_MATCHES {
-                        break;
-                    }
-                }
+            if let Some(grep_match) = parse_grep_output(line, &workspace_path) {
+                matches.push(grep_match);
             }
         }
 
@@ -124,40 +97,120 @@ impl Tool for GrepTool {
     }
 }
 
-/// Matches a file path against a glob pattern
-fn matches_path_pattern(path: &str, pattern: &str) -> bool {
-    let pattern = pattern.trim_start_matches('/');
-
-    if pattern.is_empty() {
-        return true;
+/// Builds the appropriate grep command (ripgrep or grep)
+fn build_grep_command(
+    pattern: &str,
+    path_pattern: Option<&str>,
+    case_sensitive: bool,
+    workspace_path: &Path,
+) -> Result<TokioCommand> {
+    // Try ripgrep first
+    if StdCommand::new("rg")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some()
+    {
+        tracing::debug!("Using ripgrep for search");
+        return build_ripgrep_command(pattern, path_pattern, case_sensitive, workspace_path);
     }
 
-    if pattern.contains('*') {
-        // Simple glob matching
-        let parts: Vec<&str> = pattern.split('*').collect();
-        let mut path_idx = 0;
+    // Fallback to grep
+    if StdCommand::new("grep")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some()
+    {
+        tracing::debug!("Using grep for search");
+        return build_standard_grep_command(pattern, path_pattern, case_sensitive, workspace_path);
+    }
 
-        for part in &parts {
-            if part.is_empty() {
-                continue;
-            }
+    Err(Error::Internal(
+        "Neither rg nor grep found on system".to_string()
+    ))
+}
 
-            if let Some(idx) = path[path_idx..].find(part) {
-                path_idx += idx + part.len();
-            } else {
-                return false;
-            }
-        }
+/// Builds a ripgrep command
+fn build_ripgrep_command(
+    pattern: &str,
+    path_pattern: Option<&str>,
+    case_sensitive: bool,
+    workspace_path: &Path,
+) -> Result<TokioCommand> {
+    let mut cmd = TokioCommand::new("rg");
+    cmd.arg(pattern)
+       .arg(workspace_path);
 
-        // If pattern ends with *, anything after last match is okay
-        if pattern.ends_with('*') {
-            return true;
-        }
+    // Add glob pattern if provided
+    if let Some(path_pattern) = path_pattern {
+        cmd.arg("--glob").arg(path_pattern);
+    }
 
-        // Otherwise, we must have consumed the entire path
-        path_idx >= path.len()
+    // Case sensitivity
+    if case_sensitive {
+        cmd.arg("--case-sensitive");
     } else {
-        // Exact match or prefix match
-        path.starts_with(pattern)
+        cmd.arg("--ignore-case");
     }
+
+    // Output format: line number + filename + line content
+    cmd.args(["--line-number", "--no-heading", "--with-filename"]);
+
+    Ok(cmd)
+}
+
+/// Builds a standard grep command
+fn build_standard_grep_command(
+    pattern: &str,
+    path_pattern: Option<&str>,
+    case_sensitive: bool,
+    workspace_path: &Path,
+) -> Result<TokioCommand> {
+    let mut cmd = TokioCommand::new("grep");
+    cmd.arg("-R")  // Recursive
+       .arg("-n")  // Line numbers
+       .arg("-H")  // Always show filename
+       .arg(pattern);
+
+    if !case_sensitive {
+        cmd.arg("-i");  // Case insensitive
+    }
+
+    // Add path filter if provided
+    if let Some(path_pattern) = path_pattern {
+        cmd.arg("--include").arg(path_pattern);
+    }
+
+    cmd.arg(workspace_path);
+
+    Ok(cmd)
+}
+
+/// Parses grep output line into GrepMatch
+/// Expected format: "path:line_number:line_content"
+fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
+    // Split on ':' but only into 3 parts max (path:line:content)
+    let parts: Vec<&str> = line.splitn(3, ':').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let full_path = parts[0].trim();
+    let line_number: i32 = parts[1].parse().ok()?;
+    let line_text = parts[2].to_string();
+
+    // Convert absolute path to relative path from workspace
+    let relative_path = Path::new(full_path)
+        .strip_prefix(workspace_path)
+        .map(|p| p.to_str().unwrap_or(full_path))
+        .unwrap_or(full_path);
+
+    Some(GrepMatch {
+        path: relative_path.to_string(),
+        line_number,
+        line_text,
+    })
 }

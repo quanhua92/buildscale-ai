@@ -38,6 +38,10 @@ impl FileStorageService {
         self.get_workspaces_root().join(workspace_id.to_string())
     }
 
+    pub fn get_workspace_path(&self, workspace_id: Uuid) -> PathBuf {
+        self.get_latest_root(workspace_id)
+    }
+
     fn get_latest_root(&self, workspace_id: Uuid) -> PathBuf {
         self.get_workspace_root(workspace_id).join("latest")
     }
