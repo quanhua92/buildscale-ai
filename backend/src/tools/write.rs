@@ -24,7 +24,7 @@ impl Tool for WriteTool {
     }
 
     fn description(&self) -> &'static str {
-        "Creates or updates a file at the specified path with the provided content."
+        "Creates a new file or completely replaces existing file content. For Document files, raw string content is auto-wrapped into {\"text\": \"...\"} format. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement."
     }
 
     fn definition(&self) -> Value {
@@ -43,6 +43,16 @@ impl Tool for WriteTool {
         
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
         
+        // Virtual File Protection: Prevent direct writes to system-managed files (e.g. Chats)
+        if let Some(ref file) = existing_file {
+            if file.is_virtual {
+                return Err(Error::Validation(ValidationErrors::Single {
+                    field: "path".to_string(),
+                    message: "Cannot write to a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
+                }));
+            }
+        }
+
         let result = if let Some(file) = existing_file {
             // Prepare content: handle auto-wrapping for documents
             let final_content = Self::prepare_content_for_type(file.file_type, write_args.content, write_args.file_type.as_deref())?;

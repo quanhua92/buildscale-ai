@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod cache;
 pub mod config;
 pub mod database;
@@ -48,11 +49,22 @@ pub fn load_config() -> Result<Config> {
 /// init_tracing();
 /// ```
 pub fn init_tracing() {
+    let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
+    
+    // Always append our desired overrides if they aren't explicitly provided
+    let mut final_filter = filter;
+    if !final_filter.contains("rig=") {
+        final_filter = format!("{},rig=warn", final_filter);
+    }
+    if !final_filter.contains("rig_core=") {
+        final_filter = format!("{},rig_core=warn", final_filter);
+    }
+    if !final_filter.contains("openai=") {
+        final_filter = format!("{},openai=warn", final_filter);
+    }
+
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::new(final_filter))
         .with_target(false)
         .init();
 }
@@ -343,8 +355,17 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
                 )),
         )
         .route(
+            "/{id}/chats/{chat_id}/stop",
+            post(chat_handlers::stop_chat_generation)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
             "/{id}/chats/{chat_id}",
             post(chat_handlers::post_chat_message)
+                .get(chat_handlers::get_chat)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

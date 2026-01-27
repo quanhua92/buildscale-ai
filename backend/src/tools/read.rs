@@ -19,7 +19,7 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &'static str {
-        "Reads the content of a file at the specified path."
+        "Reads the content of a file at the specified path. Returns file content with a hash for change detection. Cannot read folders - folders have no content. Always read a file before editing to get the latest hash."
     }
 
     fn definition(&self) -> Value {

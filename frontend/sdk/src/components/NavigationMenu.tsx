@@ -13,6 +13,7 @@
  *   <NavigationMenu.Separator />
  *   <NavigationMenu.Section title="Workspaces">
  *     <NavigationMenu.Item to="/workspaces/all">All</NavigationMenu.Item>
+ *     <NavigationMenu.Item to="/workspaces/$id/chat" params={{ id: '123' }}>Chat</NavigationMenu.Item>
  *   </NavigationMenu.Section>
  * </NavigationMenu>
  * ```

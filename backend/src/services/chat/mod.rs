@@ -10,6 +10,30 @@
 //! - **Context Manager**: Manages conversation history and file attachments
 //! - **Actor System**: Manages concurrent chat sessions with SSE streaming
 //!
+//! # Model Management
+//!
+//! The chat system supports dynamic model switching:
+//!
+//! - **Available Models**: `gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.1`, `gpt-4o`, `gpt-4o-mini`
+//! - **Default Model**: `gpt-5-mini` (used if not specified)
+//! - **Model Persistence**: Model is stored per chat in file version's `app_data`
+//! - **Model Switching**: Use `ChatService::update_chat_model()` to change models
+//!
+//! ## Example: Switch Models Mid-Chat
+//!
+//! ```text
+//! // Chat started with gpt-5-mini (default)
+//! // ... exchange messages ...
+//!
+//! // Switch to gpt-5 for more complex reasoning
+//! ChatService::update_chat_model(
+//!     &mut conn,
+//!     workspace_id,
+//!     chat_file_id,
+//!     "gpt-5".to_string()
+//! ).await?;
+//! ```
+//!
 //! # Tool Behavior for AI
 //!
 //! The AI tools use smart content handling to optimize interactions:
@@ -84,17 +108,15 @@ pub use context::{
 mod tests;
 
 use crate::{
-    error::Result,
-    models::chat::{ChatAttachment, ChatMessage, NewChatMessage},
+    error::{Error, Result},
+    models::chat::{AgentConfig, ChatAttachment, ChatMessage, NewChatMessage, DEFAULT_CHAT_MODEL},
     queries, DbConn,
 };
 use uuid::Uuid;
+use sha2::{Sha256, Digest};
 
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
-
-/// Default AI persona for BuildScale AI assistant.
-pub const DEFAULT_PERSONA: &str = "You are BuildScale AI, a professional software engineering assistant.";
 
 /// Structured context for AI chat sessions.
 ///
@@ -125,19 +147,236 @@ pub struct FileAttachment {
 pub struct ChatService;
 
 impl ChatService {
-    /// Saves a message and updates the parent file's timestamp in a single transaction.
+    /// Saves a message and updates the parent file's snapshot in a single transaction.
+    /// Implements Write-Through Caching to ensure `read` and `grep` work on chat files.
     pub async fn save_message(
         conn: &mut DbConn,
-        _workspace_id: Uuid,
+        workspace_id: Uuid,
         new_msg: NewChatMessage,
     ) -> Result<ChatMessage> {
         let file_id = new_msg.file_id;
         
-        // Orchestrate persistence across tables
+        // 1. Insert message into Source of Truth (chat_messages)
         let msg = queries::chat::insert_chat_message(conn, new_msg).await?;
+        
+        // 2. Snapshot the full state to file_versions (File View)
+        Self::snapshot_chat_state(conn, workspace_id, file_id).await?;
+
+        // 3. Touch file to update timestamp
         queries::files::touch_file(conn, file_id).await?;
         
         Ok(msg)
+    }
+
+    /// Updates the model for a chat session in app_data.
+    ///
+    /// This method allows changing the AI model used for a chat session
+    /// without creating a new chat. The model is stored in the file version's
+    /// `app_data` field as part of the `AgentConfig`.
+    ///
+    /// # Arguments
+    /// * `conn` - Database connection
+    /// * `workspace_id` - Workspace ID containing the chat
+    /// * `chat_file_id` - File ID of the chat session
+    /// * `new_model` - New model name (e.g., "gpt-5", "gpt-5-mini", "gpt-4o")
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error
+    ///
+    /// # Behavior
+    /// - Reads the current `AgentConfig` from the latest file version
+    /// - Updates only the `model` field, preserving other settings
+    /// - Creates a new file version with the updated config
+    /// - Updates the `latest_version_id` pointer
+    ///
+    /// # Example
+    /// ```text
+    /// // Switch from gpt-5-mini to gpt-5
+    /// // Note: This updates the model for all future messages in the chat
+    /// ChatService::update_chat_model(
+    ///     &mut conn,
+    ///     workspace_id,
+    ///     chat_file_id,
+    ///     "gpt-5".to_string()
+    /// ).await?;
+    /// ```
+    ///
+    /// # Model Persistence
+    /// The updated model will be used for all future messages in this chat
+    /// until changed again. The model persists across page reloads because
+    /// it's stored in the file version's `app_data`.
+    pub async fn update_chat_model(
+        conn: &mut DbConn,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+        new_model: String,
+    ) -> Result<()> {
+        // 1. Get current version to extract existing agent_config
+        let version = queries::files::get_latest_version(conn, chat_file_id).await?;
+        let mut agent_config: AgentConfig = serde_json::from_value(version.app_data)
+            .unwrap_or_else(|_| AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+            });
+
+        // 2. Update the model field
+        agent_config.model = new_model.clone();
+
+        // 3. Create new version with updated agent_config
+        let new_app_data = serde_json::to_value(agent_config).map_err(Error::Json)?;
+
+        let new_version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
+            file_id: chat_file_id,
+            workspace_id,
+            branch: "main".to_string(),
+            content_raw: version.content_raw,
+            app_data: new_app_data,
+            hash: "model-update".to_string(),
+            author_id: None,
+        }).await?;
+
+        queries::files::update_latest_version_id(conn, chat_file_id, new_version.id).await?;
+
+        tracing::info!("[ChatService] Updated model for chat {} to {}", chat_file_id, new_model);
+
+        Ok(())
+    }
+
+    /// Snapshots the current chat state (messages + config) into the file_versions table.
+    /// This enables 'read' and 'grep' tools to see the chat content.
+    /// Uses In-Place Update optimization for the latest version to prevent history bloat.
+    async fn snapshot_chat_state(conn: &mut DbConn, workspace_id: Uuid, chat_file_id: Uuid) -> Result<()> {
+        // 1. Fetch all messages (Source of Truth)
+        let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
+
+        // 2. Get file to check latest version
+        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        
+        // 3. Get existing config from latest version (or default)
+        let agent_config = if let Some(_version_id) = file.latest_version_id {
+            // We can reuse the query here, but we need to handle the case where it might fail if ID is bad (unlikely)
+            if let Ok(version) = queries::files::get_latest_version(conn, chat_file_id).await {
+                serde_json::from_value(version.app_data).unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: DEFAULT_CHAT_MODEL.to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                    previous_response_id: None,
+                })
+            } else {
+                 crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: DEFAULT_CHAT_MODEL.to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                    previous_response_id: None,
+                }
+            }
+        } else {
+             crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+            }
+        };
+
+        // 4. Build session object
+        let session = crate::models::chat::ChatSession {
+            file_id: chat_file_id,
+            agent_config: agent_config.clone(),
+            messages,
+        };
+
+        let content_raw = serde_json::to_value(&session).map_err(crate::error::Error::Json)?;
+        
+        // 5. Calculate hash
+        // Use a consistent serialization for hashing
+        let content_str = serde_json::to_string(&content_raw).map_err(crate::error::Error::Json)?;
+        let mut hasher = Sha256::new();
+        hasher.update(content_str);
+        let hash = hex::encode(hasher.finalize());
+        
+        // 6. Update or Create Version
+        if let Some(version_id) = file.latest_version_id {
+             // In-Place Update Optimization
+             queries::files::update_version_content(conn, version_id, content_raw, hash).await?;
+        } else {
+             // Create new version (fallback)
+             let version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
+                 file_id: chat_file_id,
+                 workspace_id,
+                 branch: "main".to_string(),
+                 content_raw,
+                 app_data: serde_json::to_value(agent_config).unwrap_or(serde_json::Value::Null),
+                 hash,
+                 author_id: file.author_id,
+             }).await?;
+             queries::files::update_latest_version_id(conn, chat_file_id, version.id).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// Retrieves the full chat session including configuration and message history.
+    pub async fn get_chat_session(
+        conn: &mut DbConn,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+    ) -> Result<crate::models::chat::ChatSession> {
+        // 1. Verify file exists and is a chat
+        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        if file.workspace_id != workspace_id {
+            return Err(crate::error::Error::NotFound(format!("Chat not found: {}", chat_file_id)));
+        }
+        if !matches!(file.file_type, crate::models::files::FileType::Chat) {
+            return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
+                field: "chat_id".to_string(),
+                message: "File is not a chat".to_string(),
+            }));
+        }
+
+        // 2. Fetch all messages
+        let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
+
+        // 3. Get existing config from latest version (or default)
+        let agent_config = if let Some(_version_id) = file.latest_version_id {
+            if let Ok(version) = queries::files::get_latest_version(conn, chat_file_id).await {
+                serde_json::from_value(version.app_data).unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: DEFAULT_CHAT_MODEL.to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                    previous_response_id: None,
+                })
+            } else {
+                 crate::models::chat::AgentConfig {
+                    agent_id: None,
+                    model: DEFAULT_CHAT_MODEL.to_string(),
+                    temperature: 0.7,
+                    persona_override: None,
+                    previous_response_id: None,
+                }
+            }
+        } else {
+             crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+            }
+        };
+
+        Ok(crate::models::chat::ChatSession {
+            file_id: chat_file_id,
+            agent_config,
+            messages,
+        })
     }
 
     /// Builds the structured context for a chat session.

@@ -19,6 +19,7 @@ pub enum SseEvent {
     },
     Observation {
         output: String,
+        success: bool,
     },
     FileUpdated {
         path: String,
@@ -34,4 +35,8 @@ pub enum SseEvent {
         message: String,
     },
     Ping,
+    Stopped {
+        reason: String,
+        partial_response: Option<String>,
+    },
 }

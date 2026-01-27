@@ -185,7 +185,7 @@ ARG BUILD_DATE
 ARG GIT_COMMIT
 
 # Set default environment variables
-ENV RUST_LOG="info"
+ENV RUST_LOG="info,rig=warn,rig_core=warn,openai=warn"
 ENV BUILD_DATE="${BUILD_DATE}"
 ENV GIT_COMMIT="${GIT_COMMIT}"
 ENV PORT=3000

@@ -7,6 +7,7 @@ pub mod files;
 pub mod tools;
 
 pub use auth::*;
+pub use chat::*;
 pub use health::*;
 pub use workspaces::*;
 pub use members::*;

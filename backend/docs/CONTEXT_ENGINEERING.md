@@ -102,7 +102,7 @@ let context = ChatService::build_context(&mut conn, workspace_id, chat_file_id).
 ```
 
 1. **Load Messages**: Fetch all messages for this chat from the database
-2. **Extract Persona**: Use default or load from agent config
+2. **Extract Persona**: Use the high-intelligence "Coworker" persona from the `agents` registry or load from the chat's persistent agent config.
 3. **Split History**: Exclude last message (the current prompt), wrap in `HistoryManager`
 4. **Hydrate Attachments** using `AttachmentManager`:
    - Fetch file content from database
@@ -122,7 +122,7 @@ let agent = rig_service
 
 The agent is configured with:
 - **System prompt**: From `context.persona`
-- **Tools**: All 6 workspace tools (ls, read, write, rm, mv, touch)
+- **Tools**: All workspace tools (ls, read, write, rm, mv, touch, edit, grep)
 - **Model**: GPT-4o-mini (configurable per chat)
 
 ### Phase 3: Streaming with Context
@@ -148,15 +148,16 @@ let mut stream = agent.stream_chat(&prompt, history).await;
 ### Phase 4: Tool Execution & Response
 
 The AI receives:
-- **System prompt**: "You are BuildScale AI, a professional software engineering assistant."
+- **System prompt**: The "Coworker" persona which mandates an **"Explore First"** protocol.
 - **History**: Previous conversation turns (via `HistoryManager`)
 - **Current prompt**: User message + formatted file attachments (via `AttachmentManager`)
-- **Tools**: Workspace file operations
+- **Tools**: Workspace file operations (ls, read, write, rm, mv, touch, edit, grep)
 
-The AI can then:
-1. **Read** attached files to understand context
-2. **Call tools** (ls, read, write, rm, mv, touch) to manipulate files
-3. **Respond** with text or continue with more tool calls
+The AI is instructed to:
+1. **Explore First**: Never guess workspace structure. Always use `ls` or `grep` to map context before answering.
+2. **Read** attached or discovered files to understand implementation details.
+3. **Call tools** to manipulate files, preferring `edit` for precision.
+4. **Respond** with text or continue with more tool calls, using `<thinking>` blocks for complex plans.
 
 ## 4. Security: Workspace Isolation
 

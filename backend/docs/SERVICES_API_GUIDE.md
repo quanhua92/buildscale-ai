@@ -4,20 +4,44 @@
 
 Service layer API reference and usage examples for the multi-tenant workspace-based RBAC system.
 
+## Table of Contents
+- [Quick API Reference](#quick-api-reference)
+- [Core Service APIs](#core-service-apis)
+  - [User Authentication](#user-authentication)
+  - [Workspace Management](#workspace-management)
+  - [Member Management](#member-management)
+  - [File Management & AI](#file-management--ai)
+  - [Permissions & RBAC](#permissions--rbac)
+  - [Roles](#roles)
+  - [Invitations API](#invitations-api)
+  - [Sessions API](#sessions-api)
+  - [Refresh Token Service](#refresh-token-service)
+  - [Chat & AI Services](#chat--ai-services)
+  - [Validation Utilities](#validation-utilities)
+- [Essential Usage Examples](#essential-usage-examples)
+- [Development Best Practices](#development-best-practices)
+- [Error Handling Guide](#error-handling-guide)
+- [Key Architecture](#key-architecture)
+- [Environment Setup](#environment-setup)
+
+---
+
 ## Quick API Reference
 
 | Area | Key Functions |
 |------|--------------|
-| **Users** | `register_user`, `register_user_with_workspace`, `login_user`, `validate_session`, `logout_user`, `get_user_by_id`, `update_password`, `is_email_available` |
+| **Users** | `register_user`, `register_user_with_workspace`, `login_user`, `validate_session`, `logout_user`, `get_user_by_id`, `update_password`, `is_email_available`, `verify_password`, `generate_session_token`, `get_session_info`, `get_user_active_sessions` |
 | **Workspaces** | `create_workspace`, `get_workspace`, `list_user_workspaces`, `update_workspace_owner`, `can_access_workspace` |
 | **Members** | `list_members`, `get_my_membership`, `add_member_by_email`, `update_member_role`, `remove_member` |
-| **Files** | `create_file_with_content`, `create_version`, `get_file_with_content`, `move_or_rename_file`, `soft_delete_file`, `restore_file`, `list_trash` |
+| **Files** | `create_file_with_content`, `create_version`, `get_file_with_content`, `move_or_rename_file`, `soft_delete_file`, `restore_file`, `list_trash`, `hash_content`, `auto_wrap_document_content`, `slugify`, `calculate_path`, `ensure_path_exists`, `chunk_text`, `extract_text_recursively` |
 | **Network** | `add_tag`, `remove_tag`, `list_files_by_tag`, `link_files`, `remove_link`, `get_file_network` |
 | **AI Engine** | `process_file_for_ai`, `semantic_search` |
+| **Chat & AI** | `save_message`, `get_chat_session`, `build_context`, `format_file_fragment`, `format_history_fragment`, `AttachmentManager`, `HistoryManager` |
+| **Refresh Tokens** | `generate_refresh_token`, `verify_refresh_token` |
 | **Permissions** | `validate_workspace_permission`, `validate_any_workspace_permission`, `require_workspace_permission`, `get_user_workspace_permissions` |
 | **Roles** | `create_default_roles`, `get_role_by_name`, `list_workspace_roles`, `get_role` |
-| **Invitations** | `create_invitation`, `accept_invitation`, `revoke_invitation`, `bulk_create_invitations`, `get_invitation_by_token` |
-| **Sessions** | `cleanup_expired_sessions`, `revoke_all_user_sessions`, `revoke_session_by_token`, `get_user_active_sessions` |
+| **Invitations** | `create_invitation`, `accept_invitation`, `revoke_invitation`, `delete_invitation`, `bulk_create_invitations`, `get_invitation_by_token`, `list_workspace_invitations`, `list_user_sent_invitations`, `list_email_invitations`, `get_invitations_expiring_soon`, `get_workspace_invitation_stats`, `resend_invitation`, `cleanup_expired_invitations` |
+| **Sessions** | `cleanup_expired_sessions`, `revoke_all_user_sessions`, `revoke_session_by_token`, `get_user_active_sessions`, `user_has_active_sessions`, `extend_all_user_sessions` |
 | **Validation** | `validate_email`, `validate_password`, `validate_workspace_name`, `validate_session_token`, `validate_full_name`, `validate_uuid` |
 
 ---
@@ -49,6 +73,14 @@ pub async fn refresh_access_token(conn: &mut DbConn, refresh_token: &str) -> Res
 // Account security
 pub async fn update_password(conn: &mut DbConn, user_id: Uuid, request: UpdatePasswordRequest) -> Result<()>
 pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool>
+
+// Password and session token utilities
+pub fn verify_password(password: &str, hash: &str) -> Result<bool>
+pub fn generate_session_token() -> Result<String>
+
+// Session information
+pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<UserSession>>
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<UserSession>>
 ```
 
 ### Workspace Management
@@ -191,6 +223,15 @@ pub async fn semantic_search(
     workspace_id: Uuid,
     request: SemanticSearchHttp
 ) -> Result<Vec<SearchResult>>
+
+// File Utility Functions
+pub fn hash_content(content: &serde_json::Value) -> Result<String>
+pub fn auto_wrap_document_content(file_type: FileType, content: serde_json::Value) -> serde_json::Value
+pub fn slugify(name: &str) -> String
+pub fn calculate_path(parent_path: Option<&str>, slug: &str) -> String
+pub async fn ensure_path_exists(conn: &mut DbConn, workspace_id: Uuid, path: &str, author_id: Uuid) -> Result<Option<Uuid>>
+pub fn chunk_text(text: &str, window_size: usize, overlap: usize) -> Vec<String>
+pub fn extract_text_recursively(value: &serde_json::Value) -> String
 ```
 
 ### Permissions & RBAC
@@ -266,6 +307,12 @@ pub async fn revoke_invitation(
     revoker_id: Uuid,
 ) -> Result<WorkspaceInvitation>
 
+pub async fn delete_invitation(
+    conn: &mut DbConn,
+    invitation_id: Uuid,
+    deleter_id: Uuid,
+) -> Result<u64>
+
 pub async fn bulk_create_invitations(
     conn: &mut DbConn,
     workspace_id: Uuid,
@@ -276,6 +323,44 @@ pub async fn bulk_create_invitations(
 ) -> Result<Vec<CreateInvitationResponse>>
 
 pub async fn get_invitation_by_token(conn: &mut DbConn, token: &str) -> Result<WorkspaceInvitation>
+
+// Invitation listing and filtering
+pub async fn list_workspace_invitations(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    requester_id: Uuid,
+) -> Result<Vec<WorkspaceInvitation>>
+
+pub async fn list_user_sent_invitations(
+    conn: &mut DbConn,
+    user_id: Uuid,
+) -> Result<Vec<WorkspaceInvitation>>
+
+pub async fn list_email_invitations(
+    conn: &mut DbConn,
+    email: &str,
+) -> Result<Vec<WorkspaceInvitation>>
+
+pub async fn get_invitations_expiring_soon(
+    conn: &mut DbConn,
+    hours: i32,
+) -> Result<Vec<WorkspaceInvitation>>
+
+pub async fn get_workspace_invitation_stats(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    requester_id: Uuid,
+) -> Result<Vec<(String, i64)>>
+
+// Invitation management
+pub async fn resend_invitation(
+    conn: &mut DbConn,
+    invitation_id: Uuid,
+    resender_id: Uuid,
+    expires_in_hours: Option<i64>,
+) -> Result<CreateInvitationResponse>
+
+pub async fn cleanup_expired_invitations(conn: &mut DbConn) -> Result<u64>
 ```
 
 ### Sessions API
@@ -285,7 +370,92 @@ pub async fn cleanup_expired_sessions(conn: &mut DbConn) -> Result<u64>
 pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64>
 pub async fn revoke_session_by_token(conn: &mut DbConn, session_token: &str) -> Result<()>
 pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<UserSession>>
+pub async fn user_has_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<bool>
+pub async fn extend_all_user_sessions(conn: &mut DbConn, user_id: Uuid, hours_to_extend: i64) -> Result<u64>
 ```
+
+### Refresh Token Service
+```rust
+// HMAC-signed refresh token generation (256-bit randomness)
+// Format: "<random_64chars>:<signature_64chars>" (129 total characters)
+pub fn generate_refresh_token(config: &Config) -> Result<String>
+
+// Verify refresh token signature using constant-time comparison
+pub fn verify_refresh_token(token: &str, config: &Config) -> Result<Vec<u8>>
+```
+
+**Security Features**:
+- **HMAC-SHA256**: Tamper-evident signature prevents token manipulation
+- **256-bit Randomness**: Cryptographically secure random bytes
+- **Constant-Time Comparison**: Prevents timing attacks on verification
+- **Format**: `<random_hex>:<signature_hex>` for easy inspection
+
+### Chat & AI Services
+```rust
+// Chat message persistence with write-through caching
+pub async fn save_message(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    new_msg: NewChatMessage,
+) -> Result<ChatMessage>
+
+// Complete chat session retrieval (config + message history)
+pub async fn get_chat_session(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    chat_file_id: Uuid,
+) -> Result<ChatSession>
+
+// Build AI context with attachments and history
+pub async fn build_context(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    chat_file_id: Uuid,
+    default_persona: &str,
+    default_context_token_limit: usize,
+) -> Result<BuiltContext>
+
+// Context formatting utilities
+pub fn format_file_fragment(path: &str, content: &str) -> String
+pub fn format_history_fragment(messages: &[ChatMessage]) -> String
+```
+
+**Context Management**:
+
+```rust
+// Attachment manager for file attachments with priority-based pruning
+pub struct AttachmentManager {
+    pub map: AttachmentMap,  // IndexMap<AttachmentKey, AttachmentValue>
+}
+
+impl AttachmentManager {
+    pub fn new() -> Self
+    pub fn add_fragment(&mut self, key: AttachmentKey, value: AttachmentValue)
+    pub fn optimize_for_limit(&mut self, max_tokens: usize)  // Prune low-priority files
+    pub fn sort_by_position(&mut self)  // System → Skills → Files → Env → History → Request
+    pub fn render(&self) -> String  // Wrap files in <file_context> markers
+}
+
+// History manager for conversation messages with token estimation
+pub struct HistoryManager {
+    pub messages: Vec<ChatMessage>,
+}
+
+impl HistoryManager {
+    pub fn new(messages: Vec<ChatMessage>) -> Self
+    pub fn estimate_tokens(&self) -> usize  // Uses 4 chars per token
+    pub fn len(&self) -> usize
+    pub fn is_empty(&self) -> bool
+}
+```
+
+**Key Features**:
+- **Write-Through Caching**: `save_message()` updates both chat_messages and file_versions tables
+- **Priority-Based Pruning**: Drop low-priority files when over token limits
+- **Token Estimation**: Automatic counting using `ESTIMATED_CHARS_PER_TOKEN` (4 chars/token)
+- **Attachment Priorities**: ESSENTIAL(0) > HIGH(3) > MEDIUM(5) > LOW(10)
+- **Position-Based Ordering**: Ensures consistent prompt structure
+- **In-Place Update Optimization**: Reuses latest version to prevent history bloat
 
 ### Validation Utilities
 ```rust

@@ -212,12 +212,13 @@ pub struct CreateChatRequest {
     pub files: Option<Vec<Uuid>>,
     pub agents: Option<Vec<Uuid>>,
     pub model: Option<String>,
-    pub persona: Option<String>,
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PostChatMessageRequest {
     pub content: String,
+    pub model: Option<String>,
 }
 
 /// Tool-specific argument structures
@@ -292,9 +293,12 @@ pub struct LsResult {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LsEntry {
+    pub id: Uuid,
     pub name: String,
+    pub display_name: String,
     pub path: String,
     pub file_type: FileType,
+    pub is_virtual: bool,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 

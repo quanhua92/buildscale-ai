@@ -8,6 +8,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 - [Quick Reference](#quick-reference)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
+- [JWT Authentication Middleware](#jwt-authentication-middleware)
 - [API Endpoints](#api-endpoints)
   - [Health Check](#health-check)
   - [User Registration](#user-registration)
@@ -15,11 +16,11 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Profile](#user-profile)
   - [Refresh Access Token](#refresh-access-token)
   - [User Logout](#user-logout)
-  - [Workspaces](#workspaces)
-  - [Members](#members)
-  - [Files & AI](#files-and-ai)
-  - [Knowledge Graph (Tags & Links)](#knowledge-graph)
-  - [Tools API](#tools-api)
+- [Workspaces API](#workspaces-api)
+- [Workspace Members API](#workspace-members-api)
+- [Files & AI](#files-and-ai)
+- [Tools API](#tools-api)
+- [Agentic Chat API](#agentic-chat-api)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 - [Production Considerations](#production-considerations)
@@ -62,6 +63,11 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid` | GET | Get chat history and config | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid/stop` | POST | Stop AI generation | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -264,8 +270,7 @@ Execute filesystem tools (ls, read, write, rm, mv, touch) within a workspace thr
 | `mv` | Move or rename file | `source` (required), `destination` (required) |
 | `touch` | Update timestamp or create empty file | `path` (required) |
 | `mkdir` | Create folder structure recursively | `path` (required) |
-| `edit` | Edit file content by unique replace | `path`, `old_string`, `new_string` |
-| `edit-many` | Global search and replace in file | `path`, `old_string`, `new_string` |
+| `edit` | Edit file content by unique replace | `path`, `old_string`, `new_string`, `last_read_hash?` |
 | `grep` | Workspace-wide regex search | `pattern`, `path_pattern?`, `case_sensitive?` |
 
 **Content Handling by File Type**:
@@ -284,6 +289,167 @@ For complete tool specifications, examples, and behavior details, see **[Tools A
 ```
 
 **See**: [Tools API Guide](./TOOLS_API_GUIDE.md) for complete documentation.
+
+---
+
+## Agentic Chat API
+
+Interact with AI agents that have direct access to your workspace tools and files.
+
+### Start New Chat
+Initialize a stateful agentic session.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/chats`
+
+**Authentication**: Required (JWT access token)
+
+##### Request
+```json
+{
+  "goal": "I want to start a new blog post about Rust.",
+    "files": ["019bf537-f228-7cd3-aa1c-3da8af302e12"],
+
+  "role": "assistant",
+  "model": "gpt-4o-mini"
+}
+```
+
+- `goal`: The initial prompt or objective for the agent.
+- `files`: Optional array of UUIDs for files to include in the initial context.
+- `role`: Optional agent role (e.g., `assistant`). Defaults to `assistant` (Coworker).
+- `model`: Optional LLM model override.
+
+##### Response (201 Created)
+```json
+{
+  "chat_id": "uuid-chat-session-id",
+  "plan_id": null
+}
+```
+
+---
+
+### Send Message
+Send a subsequent message to an active chat session.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/chats/:chat_id`
+
+**Authentication**: Required (JWT access token)
+
+##### Request
+```json
+{
+  "content": "Please read the outline and suggest a title."
+}
+```
+
+##### Response (202 Accepted)
+```json
+{
+  "status": "accepted"
+}
+```
+
+---
+
+### Get Chat History
+Retrieve full message history and configuration for a chat session.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/chats/:chat_id`
+
+**Authentication**: Required (JWT access token)
+
+##### Response (200 OK)
+```json
+{
+  "file_id": "019bfa7f-7b41-7d31-9368-aed217a36c7e",
+  "agent_config": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "persona_override": null
+  },
+  "messages": [
+    {
+      "id": "019bfa7f-...",
+      "role": "user",
+      "content": "Hello",
+      "created_at": "2024-01-26T12:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Chat Events (SSE)
+Connect to the real-time event stream for an agentic session.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/chats/:chat_id/events`
+
+**Authentication**: Required (JWT access token or Cookie)
+
+**Format**: `text/event-stream`
+
+**Events**:
+- `thought`: Internal reasoning from the agent.
+- `call`: Tool invocation details.
+- `observation`: Tool execution results (includes `success` boolean).
+- `chunk`: Incremental text chunks for the response.
+- `done`: Finalization of the execution turn.
+- `stopped`: Graceful cancellation signal (includes `reason` and optional `partial_response`).
+
+---
+
+### Stop Chat Generation
+Gracefully stop an ongoing AI generation. Allows current tool execution to complete before stopping.
+
+**Endpoint**: `POST /api/v1/workspaces/:id/chats/:chat_id/stop`
+
+**Authentication**: Required (JWT access token)
+
+##### Request
+No request body required.
+
+##### Response (200 OK)
+```json
+{
+  "status": "cancelled",
+  "chat_id": "uuid-chat-session-id"
+}
+```
+
+##### Behavior
+- **Graceful**: If AI is executing a tool, it completes before stopping
+- **Partial Save**: Any text generated before cancellation is saved to `chat_messages` table
+- **System Marker**: A system message is added for AI context: `[System: Response was interrupted by user (user_cancelled)]`
+- **Actor Continues**: The chat actor remains alive for future interactions
+
+##### SSE Event
+After stopping, the SSE stream sends:
+```json
+{
+  "type": "stopped",
+  "data": {
+    "reason": "user_cancelled",
+    "partial_response": "Text generated before stop..."
+  }
+}
+```
+
+##### Error Responses
+**404 Not Found** - Chat actor doesn't exist or timed out:
+```json
+{
+  "error": "Chat actor not found for chat {chat_id}",
+  "code": "NOT_FOUND"
+}
+```
+
+##### Example
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/chats/{chat_id}/stop \
+  -H "Authorization: Bearer <access_token>"
+```
 
 ---
 

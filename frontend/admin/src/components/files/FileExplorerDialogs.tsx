@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useFileExplorer } from './FileExplorerContext'
 import {
   Dialog,
@@ -223,9 +224,10 @@ function FileEditor() {
 }
 
 function FileViewer() {
-  const { isViewerOpen, setViewerOpen, activeFile, readFile } = useFileExplorer()
+  const { isViewerOpen, setViewerOpen, activeFile, readFile, workspaceId } = useFileExplorer()
   const [content, setContent] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     let mounted = true
@@ -246,6 +248,8 @@ function FileViewer() {
     return () => { mounted = false }
   }, [isViewerOpen, activeFile, readFile])
 
+  const isChat = activeFile?.file_type === 'chat' || (activeFile?.is_virtual && activeFile?.name.startsWith('chat-'))
+
   return (
     <Dialog open={isViewerOpen} onOpenChange={setViewerOpen}>
       <DialogContent className="w-[95vw] max-w-5xl max-h-[80vh] flex flex-col p-0 gap-0 sm:p-6 sm:gap-4">
@@ -264,8 +268,23 @@ function FileViewer() {
             content || <span className="text-muted-foreground italic">Empty file</span>
           )}
         </div>
-        <DialogFooter className="p-4 sm:p-0 border-t sm:border-0">
-          <Button onClick={() => setViewerOpen(false)}>Close</Button>
+        <DialogFooter className="p-4 sm:p-0 border-t sm:border-0 flex flex-col gap-2 sm:flex-col sm:space-x-0">
+          {isChat && activeFile && (
+            <Button 
+              className="w-full"
+              onClick={() => {
+                setViewerOpen(false)
+                navigate({
+                  to: '/workspaces/$workspaceId/chat',
+                  params: { workspaceId },
+                  search: { chatId: activeFile.id }
+                })
+              }}
+            >
+              Continue with this chat
+            </Button>
+          )}
+          <Button className="w-full" onClick={() => setViewerOpen(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

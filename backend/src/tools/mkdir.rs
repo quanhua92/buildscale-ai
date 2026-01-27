@@ -18,7 +18,7 @@ impl Tool for MkdirTool {
     }
 
     fn description(&self) -> &'static str {
-        "Recursively creates folders to ensure the specified path exists."
+        "Recursively creates directories to ensure the full path exists. Creates all parent directories automatically if they don't exist. For example, 'mkdir /a/b/c' will create /a, /a/b, and /a/b/c as needed. Succeeds silently if path already exists."
     }
 
     fn definition(&self) -> Value {

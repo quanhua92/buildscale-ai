@@ -48,6 +48,7 @@ export interface AuthContextType {
   deleteWorkspace: (id: string) => Promise<ApiResult<{ message: string }>>
   getMembership: (workspaceId: string) => Promise<ApiResult<WorkspaceMemberDetailed>>
   executeTool: <T>(workspaceId: string, tool: string, args: any) => Promise<ApiResult<T>>
+  apiClient: ApiClient
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -253,6 +254,7 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     deleteWorkspace,
     getMembership,
     executeTool,
+    apiClient,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

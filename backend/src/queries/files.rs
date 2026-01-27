@@ -182,6 +182,43 @@ pub async fn get_latest_version(conn: &mut DbConn, file_id: Uuid) -> Result<File
     Ok(version)
 }
 
+/// Updates the content and hash of an existing file version.
+/// This is used for "In-Place Updates" of virtual files to prevent history bloat.
+pub async fn update_version_content(
+    conn: &mut DbConn,
+    version_id: Uuid,
+    content_raw: serde_json::Value,
+    hash: String,
+) -> Result<FileVersion> {
+    let version = sqlx::query_as!(
+        FileVersion,
+        r#"
+        UPDATE file_versions
+        SET content_raw = $2, hash = $3, updated_at = NOW()
+        WHERE id = $1
+        RETURNING 
+            id, 
+            file_id, 
+            workspace_id,
+            branch as "branch!", 
+            content_raw, 
+            app_data, 
+            hash, 
+            author_id as "author_id?", 
+            created_at, 
+            updated_at
+        "#,
+        version_id,
+        content_raw,
+        hash
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(version)
+}
+
 /// Gets the latest version of a file (optional).
 pub async fn get_latest_version_optional(
     conn: &mut DbConn,
@@ -304,7 +341,7 @@ pub async fn list_files_in_folder(
 // ORGANIZATION & HIERARCHY QUERIES
 // ============================================================================
 
-/// Checks if a file has any active (not deleted) children.
+/// Checks if a file has any active (not deleted) children (via parent_id).
 pub async fn has_active_children(conn: &mut DbConn, file_id: Uuid) -> Result<bool> {
     let result = sqlx::query!(
         r#"
@@ -314,6 +351,37 @@ pub async fn has_active_children(conn: &mut DbConn, file_id: Uuid) -> Result<boo
         ) as "exists!"
         "#,
         file_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(result.exists)
+}
+
+/// Checks if a path has any active (not deleted) descendants (via path prefix).
+/// This is used to catch "orphans" that don't have a parent_id but logically live in a folder.
+pub async fn has_active_descendants(conn: &mut DbConn, workspace_id: Uuid, path: &str) -> Result<bool> {
+    // Ensure path ends with / for prefix matching if it's not root
+    let prefix = if path == "/" {
+        "/".to_string()
+    } else {
+        format!("{}/", path.trim_end_matches('/'))
+    };
+
+    let result = sqlx::query!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM files 
+            WHERE workspace_id = $1 
+              AND path LIKE $2 || '%' 
+              AND path != $3
+              AND deleted_at IS NULL
+        ) as "exists!"
+        "#,
+        workspace_id,
+        prefix,
+        path // Exclude the folder itself
     )
     .fetch_one(conn)
     .await
@@ -504,12 +572,13 @@ pub async fn update_file_metadata(
 }
 
 /// Performs a soft delete on a file.
-pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
-    sqlx::query!(
+/// Returns the number of rows affected (should be 1).
+pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<u64> {
+    let result = sqlx::query!(
         r#"
         UPDATE files
         SET deleted_at = NOW(), updated_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND deleted_at IS NULL
         "#,
         file_id
     )
@@ -517,7 +586,7 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
     .await
     .map_err(Error::Sqlx)?;
 
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 /// Restores a soft-deleted file.
@@ -935,14 +1004,13 @@ pub async fn grep_files(
             CASE 
                 WHEN fv.content_raw ? 'text' THEN fv.content_raw->>'text'
                 WHEN jsonb_typeof(fv.content_raw) = 'string' THEN fv.content_raw #>> '{}'
-                ELSE fv.content_raw::text 
+                ELSE jsonb_pretty(fv.content_raw) 
             END, 
             E'\n'
         )) 
             WITH ORDINALITY AS t(line_text, line_number)
         WHERE f.workspace_id = $1
           AND f.deleted_at IS NULL
-          AND f.file_type = 'document'
           AND ($3::text IS NULL OR f.path ILIKE $3::text)
           AND (CASE WHEN $4::boolean THEN t.line_text ~ $2 ELSE t.line_text ~* $2 END)
         ORDER BY f.path, t.line_number
@@ -997,4 +1065,47 @@ pub async fn update_file_status(conn: &mut DbConn, file_id: Uuid, status: FileSt
     .map_err(Error::Sqlx)?;
 
     Ok(())
+}
+
+/// Updates a file's path and slug.
+/// Used to correct the path after creation when the file ID needs to be embedded in the path.
+pub async fn update_file_path_and_slug(
+    conn: &mut DbConn,
+    file_id: Uuid,
+    new_path: String,
+    new_slug: String,
+) -> Result<File> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        UPDATE files
+        SET path = $2, slug = $3, updated_at = NOW()
+        WHERE id = $1
+        RETURNING
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        "#,
+        file_id,
+        new_path,
+        new_slug
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(|e| Error::Internal(format!("Failed to update file path and slug: {}", e)))?;
+
+    Ok(file)
 }

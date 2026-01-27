@@ -2,9 +2,11 @@
 export type FileType = "document" | "folder" | "canvas" | "chat" | "whiteboard"
 
 export interface LsEntry {
+  id: string
   name: string
   path: string
   file_type: FileType | string
+  is_virtual: boolean
   updated_at: string
 }
 

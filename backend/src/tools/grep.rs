@@ -18,7 +18,7 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &'static str {
-        "Searches for a regex pattern in all document files within the workspace. Supports optional path filtering."
+        "Searches for a regex pattern (Postgres syntax) across all document files. Pattern is required. Optional path_pattern filters results (supports * wildcards, auto-converts to SQL LIKE). Set case_sensitive to false (default) for case-insensitive search. Returns matching file paths with context. Use for discovering code patterns or finding specific content."
     }
 
     fn definition(&self) -> Value {
@@ -33,7 +33,17 @@ impl Tool for GrepTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
-        
+
+        // Validate regex pattern to prevent PostgreSQL errors
+        // PostgreSQL regex is similar to Rust regex, so we can validate here
+        if let Err(e) = regex::Regex::new(&grep_args.pattern) {
+            return Ok(ToolResponse {
+                success: false,
+                result: serde_json::Value::Null,
+                error: Some(format!("Invalid regex pattern: {}", e)),
+            });
+        }
+
         let path_pattern = grep_args.path_pattern.map(|mut p| {
             // Convert glob-like * to SQL LIKE %
             p = p.replace('*', "%");

@@ -16,7 +16,7 @@ impl Tool for RmTool {
     }
 
     fn description(&self) -> &'static str {
-        "Deletes a file or folder at the specified path."
+        "Soft deletes a file or folder at the specified path. The item is marked as deleted but recoverable. Use with caution - this operation cannot be undone through the tool interface. Non-empty folders will fail - delete children first."
     }
 
     fn definition(&self) -> Value {

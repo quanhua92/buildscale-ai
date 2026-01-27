@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage};
+use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::files::{FileType, FileStatus, NewFile};
 use crate::models::requests::{CreateChatRequest, PostChatMessageRequest};
 use crate::models::sse::SseEvent;
@@ -14,7 +14,9 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{Extension, Json};
 use futures::stream::{self, Stream};
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{Mutex, oneshot};
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
 use futures::StreamExt;
@@ -28,12 +30,22 @@ pub async fn create_chat(
     Path(workspace_id): Path<Uuid>,
     Json(req): Json<CreateChatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("[ChatHandler] Creating chat in workspace {} for user {}", workspace_id, user.id);
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    // 1. Create the .chat file identity
+    // 1. Ensure the /chats folder exists and get its ID
+    let chats_folder_id = crate::services::files::ensure_path_exists(
+        &mut conn,
+        workspace_id,
+        "chats",
+        user.id,
+    ).await?;
+
+    // 2. Create the .chat file identity with TEMPORARY path/slug
+    // We need to create the file first to get its ID, then update the path
     let chat_file = queries::files::create_file_identity(&mut conn, NewFile {
         workspace_id,
-        parent_id: None,
+        parent_id: chats_folder_id,
         author_id: user.id,
         file_type: FileType::Chat,
         status: FileStatus::Ready,
@@ -43,19 +55,26 @@ pub async fn create_chat(
                 .map_or(req.goal.len(), |(idx, _)| idx);
             format!("Chat: {}", &req.goal[..snippet_end])
         },
-        slug: format!("chat-{}", Uuid::now_v7()),
-        path: format!("/chats/chat-{}", Uuid::now_v7()),
+        slug: "chat-temp".to_string(),  // Temporary slug
+        path: "/chats/chat-temp".to_string(),  // Temporary path
         is_virtual: true,
         is_remote: false,
         permission: 600,
     }).await?;
 
-    // 2. Create initial version with config in app_data
+    // 3. Update the file with its actual ID in the path/slug
+    let correct_path = format!("/chats/chat-{}", chat_file.id);
+    let correct_slug = format!("chat-{}", chat_file.id);
+    let chat_file = queries::files::update_file_path_and_slug(&mut conn, chat_file.id, correct_path, correct_slug).await?;
+
+    tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
+
+    // 4. Create initial version with config in app_data
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
-        "model": req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string()),
-        "persona": req.persona.clone().unwrap_or_else(|| crate::services::chat::DEFAULT_PERSONA.to_string()),
+        "model": req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
+        "persona": crate::agents::get_persona(req.role.as_deref()),
         "temperature": 0.7
     });
 
@@ -71,8 +90,14 @@ pub async fn create_chat(
 
     queries::files::update_latest_version_id(&mut conn, chat_file.id, version.id).await?;
 
-    // 3. Persist initial goal message
-    queries::chat::insert_chat_message(&mut conn, NewChatMessage {
+    // 5. Persist initial goal message via Service (triggers write-through snapshot)
+    use crate::services::chat::ChatService;
+
+    // Get model for metadata (from request or default)
+    let model_for_metadata = req.model.clone()
+        .unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
+
+    ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_file.id,
         workspace_id,
         role: ChatMessageRole::User,
@@ -82,9 +107,30 @@ pub async fn create_chat(
                 file_id: f,
                 version_id: None,
             }).collect(),
+            model: Some(model_for_metadata),
             ..Default::default()
         }),
     }).await?;
+
+    // 6. Trigger Actor immediately for the initial goal
+    let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
+    let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
+        chat_id: chat_file.id,
+        workspace_id,
+        pool: state.pool.clone(),
+        rig_service: state.rig_service.clone(),
+        default_persona: crate::agents::get_persona(None),
+        default_context_token_limit: state.config.ai.default_context_token_limit,
+        event_tx,
+        inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+    });
+    state.agents.register(chat_file.id, handle.clone()).await;
+
+    let _ = handle.command_tx.send(AgentCommand::ProcessInteraction {
+        user_id: user.id,
+    }).await;
+
+    tracing::info!("[ChatHandler] Agent seeded and triggered for new chat {}", chat_file.id);
 
     Ok((
         StatusCode::CREATED,
@@ -100,17 +146,19 @@ pub async fn get_chat_events(
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>> {
+    tracing::info!("[ChatHandler] Connecting to chat events: workspace={}, chat={}", workspace_id, chat_id);
     // 1. Get or create persistent bus
     let event_tx = state.agents.get_or_create_bus(chat_id).await;
 
     // 2. Ensure actor is alive (rehydrate if needed)
     if state.agents.get_handle(&chat_id).await.is_none() {
+        tracing::info!("[ChatHandler] Rehydrating ChatActor for chat {}", chat_id);
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
-            default_persona: state.config.ai.default_persona.clone(),
+            default_persona: crate::agents::get_persona(None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -162,19 +210,45 @@ pub async fn post_chat_message(
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<PostChatMessageRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("[ChatHandler] Received message for chat {} from user {}", chat_id, user.id);
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    // 1. Append message to DB (Persistence first!)
-    queries::chat::insert_chat_message(&mut conn, NewChatMessage {
+    // 1. Append message to DB (Persistence first!) via Service for Write-Through
+    use crate::services::chat::ChatService;
+
+    // Get model for metadata (from request or current chat config)
+    let model_for_metadata = if let Some(ref model) = req.model {
+        model.clone()
+    } else {
+        // Get from current chat config
+        let version = queries::files::get_latest_version(&mut conn, chat_id).await?;
+        let agent_config: crate::models::chat::AgentConfig = serde_json::from_value(version.app_data)
+            .unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+            });
+        agent_config.model
+    };
+
+    ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_id,
         workspace_id,
         role: ChatMessageRole::User,
         content: req.content.clone(),
-        metadata: sqlx::types::Json(ChatMessageMetadata::default()),
+        metadata: sqlx::types::Json(ChatMessageMetadata {
+            model: Some(model_for_metadata),
+            ..Default::default()
+        }),
     }).await?;
 
-    // 2. Touch file
-    queries::files::touch_file(&mut conn, chat_id).await?;
+    // 2. Update model if provided
+    if let Some(new_model) = req.model {
+        tracing::info!("[ChatHandler] Updating model for chat {} to {}", chat_id, new_model);
+        ChatService::update_chat_model(&mut conn, workspace_id, chat_id, new_model).await?;
+    }
 
     // 3. Signal Actor
     let handle = if let Some(handle) = state.agents.get_handle(&chat_id).await {
@@ -187,7 +261,7 @@ pub async fn post_chat_message(
             workspace_id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
-            default_persona: state.config.ai.default_persona.clone(),
+            default_persona: crate::agents::get_persona(None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -200,8 +274,71 @@ pub async fn post_chat_message(
         user_id: user.id,
     }).await;
 
+    tracing::info!("[ChatHandler] Interaction command sent to actor for chat {}", chat_id);
+
     Ok((
         StatusCode::ACCEPTED,
         Json(serde_json::json!({ "status": "accepted" })),
     ))
+}
+
+pub async fn get_chat(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthenticatedUser>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<crate::models::chat::ChatSession>> {
+    let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+
+    let session = crate::services::chat::ChatService::get_chat_session(
+        &mut conn,
+        workspace_id,
+        chat_id,
+    ).await?;
+
+    Ok(Json(session))
+}
+
+pub async fn stop_chat_generation(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthenticatedUser>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>> {
+    tracing::info!(
+        "[ChatHandler] Stop requested for chat {} in workspace {}",
+        chat_id,
+        workspace_id
+    );
+
+    // Get the actor handle
+    let handle = state
+        .agents
+        .get_handle(&chat_id)
+        .await
+        .ok_or_else(|| Error::NotFound(format!("Chat actor not found for chat {}", chat_id)))?;
+
+    // Create a one-shot channel for response
+    let (responder, response) = oneshot::channel();
+    let responder = Arc::new(Mutex::new(Some(responder)));
+
+    // Send cancel command
+    handle
+        .command_tx
+        .send(AgentCommand::Cancel {
+            reason: "user_cancelled".to_string(),
+            responder,
+        })
+        .await
+        .map_err(|_| Error::Internal("Failed to send cancel command".into()))?;
+
+    // Wait for acknowledgment
+    let _result = response
+        .await
+        .map_err(|_| Error::Internal("Cancel acknowledgment failed".into()))??;
+
+    tracing::info!("[ChatHandler] Cancel successful for chat {}", chat_id);
+
+    Ok(Json(serde_json::json!({
+        "status": "cancelled",
+        "chat_id": chat_id
+    })))
 }

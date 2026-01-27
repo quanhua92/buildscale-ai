@@ -16,7 +16,7 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Lists files and folders in a directory."
+        "Lists files and folders in a directory. Use 'path' to specify the directory (default: '/' for root). Set 'recursive' to true for deep listing including all subdirectories. Returns entries sorted with folders first."
     }
 
     fn definition(&self) -> Value {
@@ -58,9 +58,12 @@ impl Tool for LsTool {
         };
         
         let entries: Vec<LsEntry> = files.into_iter().map(|f| LsEntry {
-            name: f.name,
+            id: f.id,
+            name: f.slug,
+            display_name: f.name,
             path: f.path,
             file_type: f.file_type,
+            is_virtual: f.is_virtual,
             updated_at: f.updated_at,
         }).collect();
         

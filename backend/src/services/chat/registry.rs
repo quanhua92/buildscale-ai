@@ -1,5 +1,7 @@
+use crate::error::Result;
 use crate::models::sse::SseEvent;
-use tokio::sync::{broadcast, mpsc};
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
 const EVENT_BUS_CAPACITY: usize = 1024;
@@ -9,6 +11,10 @@ pub enum AgentCommand {
     ProcessInteraction { user_id: Uuid },
     Ping,
     Shutdown,
+    Cancel {
+        reason: String,
+        responder: Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>,
+    },
 }
 
 #[derive(Clone)]
@@ -36,6 +42,7 @@ impl AgentRegistry {
         if let Some(bus) = self.event_buses.read_async(&chat_id, |_, b| b.clone()).await {
             bus
         } else {
+            tracing::info!("Creating new persistent event bus for chat {}", chat_id);
             let (tx, _) = broadcast::channel(EVENT_BUS_CAPACITY);
             let _ = self.event_buses.insert_async(chat_id, tx.clone()).await;
             tx
@@ -58,10 +65,12 @@ impl AgentRegistry {
     }
 
     pub async fn register(&self, chat_id: Uuid, handle: AgentHandle) {
+        tracing::info!("Registering active actor for chat {}", chat_id);
         let _ = self.active_agents.insert_async(chat_id, handle).await;
     }
 
     pub async fn remove(&self, chat_id: &Uuid) {
+        tracing::info!("Removing actor for chat {}", chat_id);
         let _ = self.active_agents.remove_async(chat_id).await;
     }
 }
