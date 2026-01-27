@@ -335,11 +335,36 @@ BUILDSCALE__SESSIONS__EXPIRATION_HOURS=1440
 - `BUILDSCALE__AI__ACTOR_INACTIVITY_TIMEOUT_SECONDS`: How long a chat actor remains active without any commands (default: 600 = 10 minutes)
   - This ensures background resources are freed when users are no longer interacting with a chat.
 
+- `BUILDSCALE__AI__ENABLE_REASONING_SUMMARIES`: Enable GPT-5 reasoning token summaries (default: false)
+  - When enabled, GPT-5 models will provide summaries of their internal reasoning process
+  - **Requires organization verification** at https://platform.openai.com/settings/organization/general
+  - Set to `true` only after your organization has been verified by OpenAI
+  - If enabled without verification, API calls will fail with error code `unsupported_value`
+
+- `BUILDSCALE__AI__REASONING_EFFORT`: Reasoning effort level for GPT-5 models (default: "medium")
+  - Accepted values: `"low"`, `"medium"`, `"high"`
+  - Controls how much time the model spends on internal reasoning before responding
+  - `"low"`: Faster responses, less reasoning
+  - `"medium"`: Balance between speed and reasoning quality
+  - `"high"`: More thorough reasoning, slower responses
+
 Example:
 ```bash
 # Set actor inactivity timeout to 30 minutes
 BUILDSCALE__AI__ACTOR_INACTIVITY_TIMEOUT_SECONDS=1800
+
+# Enable reasoning summaries (only after org verification)
+BUILDSCALE__AI__ENABLE_REASONING_SUMMARIES=true
+
+# Use high reasoning effort for complex tasks
+BUILDSCALE__AI__REASONING_EFFORT="high"
 ```
+
+**Important Notes:**
+- Reasoning summaries require organization verification at https://platform.openai.com/settings/organization/general
+- After verification, it can take up to 15 minutes for access to propagate
+- The reasoning effort level affects both response time and token usage
+- Not all GPT-5 model variants support reasoning (check OpenAI documentation for model-specific capabilities)
 
 ### Logging Configuration
 ```rust

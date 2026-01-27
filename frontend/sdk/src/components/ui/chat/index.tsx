@@ -1,4 +1,4 @@
-import { ChatProvider, useChat, type ChatMessageItem } from "./chat-context"
+import { ChatProvider, useChat, type ChatMessageItem, type ChatModel, CHAT_MODELS, DEFAULT_MODEL } from "./chat-context"
 import { ChatRoot } from "./chat-root"
 import { ChatHeader } from "./chat-header"
 import { ChatMessageList } from "./chat-message-list"
@@ -19,4 +19,4 @@ export const Chat = Object.assign(ChatRoot, {
   Input: ChatInput,
 })
 
-export { useChat, type ChatMessageItem }
+export { useChat, type ChatMessageItem, type ChatModel, CHAT_MODELS, DEFAULT_MODEL }

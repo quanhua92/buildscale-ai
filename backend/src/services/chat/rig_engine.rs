@@ -45,12 +45,13 @@ impl RigService {
         workspace_id: Uuid,
         user_id: Uuid,
         session: &ChatSession,
+        ai_config: &crate::config::AiConfig,
     ) -> Result<rig::agent::Agent<ResponsesCompletionModel>> {
         use rig::client::CompletionClient;
 
         // 1. Resolve the model
         let model_name = if session.agent_config.model.is_empty() {
-            openai::GPT_4O
+            openai::GPT_5_MINI  // Default to gpt-5-mini
         } else {
             &session.agent_config.model
         };
@@ -59,7 +60,8 @@ impl RigService {
         let persona = session.agent_config.persona_override.clone()
             .unwrap_or_else(|| crate::agents::get_persona(None));
 
-        let agent = self.client.agent(model_name)
+        // 3. Build agent with optional reasoning parameters
+        let agent_builder = self.client.agent(model_name)
             .preamble(&persona)
             .tool(RigLsTool {
                 pool: pool.clone(),
@@ -106,8 +108,31 @@ impl RigService {
                 workspace_id,
                 user_id,
             })
-            .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS)
-            .build();
+            .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
+
+        // Add reasoning parameters based on configuration
+        // Only add when enabled - OpenAI doesn't accept "none" as a valid value
+        let agent_builder = if ai_config.enable_reasoning_summaries {
+            agent_builder.additional_params(serde_json::json!({
+                "reasoning": {
+                    "effort": ai_config.reasoning_effort,
+                    "summary": "auto"
+                }
+            }))
+        } else {
+            agent_builder
+        };
+
+        // Add previous_response_id if available (for conversation continuity with GPT-5)
+        let agent_builder = if let Some(ref response_id) = session.agent_config.previous_response_id {
+            agent_builder.additional_params(serde_json::json!({
+                "previous_response_id": response_id
+            }))
+        } else {
+            agent_builder
+        };
+
+        let agent = agent_builder.build();
 
         Ok(agent)
     }

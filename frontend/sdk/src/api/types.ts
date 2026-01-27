@@ -110,6 +110,7 @@ export interface CreateChatResponse {
 
 export interface PostChatMessageRequest {
   content: string
+  model?: string
 }
 
 export interface PostChatMessageResponse {

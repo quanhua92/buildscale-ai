@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage};
+use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::files::{FileType, FileStatus, NewFile};
 use crate::models::requests::{CreateChatRequest, PostChatMessageRequest};
 use crate::models::sse::SseEvent;
@@ -73,7 +73,7 @@ pub async fn create_chat(
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
-        "model": req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string()),
+        "model": req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
         "persona": crate::agents::get_persona(req.role.as_deref()),
         "temperature": 0.7
     });
@@ -92,6 +92,11 @@ pub async fn create_chat(
 
     // 5. Persist initial goal message via Service (triggers write-through snapshot)
     use crate::services::chat::ChatService;
+
+    // Get model for metadata (from request or default)
+    let model_for_metadata = req.model.clone()
+        .unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
+
     ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_file.id,
         workspace_id,
@@ -102,6 +107,7 @@ pub async fn create_chat(
                 file_id: f,
                 version_id: None,
             }).collect(),
+            model: Some(model_for_metadata),
             ..Default::default()
         }),
     }).await?;
@@ -209,15 +215,42 @@ pub async fn post_chat_message(
 
     // 1. Append message to DB (Persistence first!) via Service for Write-Through
     use crate::services::chat::ChatService;
+
+    // Get model for metadata (from request or current chat config)
+    let model_for_metadata = if let Some(ref model) = req.model {
+        model.clone()
+    } else {
+        // Get from current chat config
+        let version = queries::files::get_latest_version(&mut conn, chat_id).await?;
+        let agent_config: crate::models::chat::AgentConfig = serde_json::from_value(version.app_data)
+            .unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+            });
+        agent_config.model
+    };
+
     ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
         file_id: chat_id,
         workspace_id,
         role: ChatMessageRole::User,
         content: req.content.clone(),
-        metadata: sqlx::types::Json(ChatMessageMetadata::default()),
+        metadata: sqlx::types::Json(ChatMessageMetadata {
+            model: Some(model_for_metadata),
+            ..Default::default()
+        }),
     }).await?;
 
-    // 2. Signal Actor
+    // 2. Update model if provided
+    if let Some(new_model) = req.model {
+        tracing::info!("[ChatHandler] Updating model for chat {} to {}", chat_id, new_model);
+        ChatService::update_chat_model(&mut conn, workspace_id, chat_id, new_model).await?;
+    }
+
+    // 3. Signal Actor
     let handle = if let Some(handle) = state.agents.get_handle(&chat_id).await {
         handle
     } else {

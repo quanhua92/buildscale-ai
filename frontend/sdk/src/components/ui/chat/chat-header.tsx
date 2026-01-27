@@ -2,14 +2,25 @@ import * as React from "react"
 import { Plus } from "lucide-react"
 import { cn } from "src/utils"
 import { Button } from "../button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../select"
+import type { ChatModel } from "./chat-context"
+import { CHAT_MODELS } from "./chat-context"
 
 export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   modelName?: string
   onNewChat?: () => void
+  model?: ChatModel
+  onModelChange?: (model: ChatModel) => void
 }
 
 const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
-  ({ className, modelName, onNewChat, ...props }, ref) => {
+  ({ className, modelName, onNewChat, model, onModelChange, ...props }, ref) => {
     return (
       <div
         ref={ref}
@@ -22,13 +33,26 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
         {/* Spacer for center alignment */}
         <div className="w-24" />
 
-        {/* Center: Model Name */}
+        {/* Center: Model Selector */}
         <div className="flex-1 flex justify-center">
-          {modelName && (
+          {model && onModelChange ? (
+            <Select value={model} onValueChange={onModelChange}>
+              <SelectTrigger className="w-[180px] h-7 text-xs">
+                <SelectValue placeholder="Select model" />
+              </SelectTrigger>
+              <SelectContent>
+                {CHAT_MODELS.map((modelOption) => (
+                  <SelectItem key={modelOption} value={modelOption} className="text-xs">
+                    {modelOption}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : modelName ? (
             <div className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1 rounded">
               {modelName}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Right: New Chat Button */}

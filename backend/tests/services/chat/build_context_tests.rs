@@ -173,6 +173,8 @@ async fn test_build_context_with_file_attachments() {
                 }],
                 tool_calls: None,
                 usage: None,
+                model: None,
+                response_id: None,
             }),
         },
     )
@@ -256,6 +258,8 @@ async fn test_build_context_workspace_isolation() {
                 }],
                 tool_calls: None,
                 usage: None,
+                model: None,
+                response_id: None,
             }),
         },
     )
@@ -385,6 +389,8 @@ async fn test_build_context_token_limit_optimization() {
                     }],
                     tool_calls: None,
                     usage: None,
+                    model: None,
+                    response_id: None,
                 }),
             },
         )
@@ -489,6 +495,8 @@ async fn test_build_context_fragment_ordering() {
                 }],
                 tool_calls: None,
                 usage: None,
+                model: None,
+                response_id: None,
             }),
         },
     )

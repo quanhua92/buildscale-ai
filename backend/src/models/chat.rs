@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
+/// Default AI model for new chat sessions
+pub const DEFAULT_CHAT_MODEL: &str = "gpt-5-mini";
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, sqlx::Type,
 )]
@@ -43,6 +46,10 @@ pub struct ChatMessageMetadata {
     pub attachments: Vec<ChatAttachment>,
     pub tool_calls: Option<serde_json::Value>,
     pub usage: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>, // Model that generated this message (e.g., "gpt-5", "gpt-5-mini", "gpt-4o")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_id: Option<String>, // OpenAI Responses API response_id for conversation continuity
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +80,8 @@ pub struct AgentConfig {
     pub model: String,
     pub temperature: f32,
     pub persona_override: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_response_id: Option<String>, // OpenAI Responses API response_id for conversation continuity
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

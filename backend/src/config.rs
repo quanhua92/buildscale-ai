@@ -214,6 +214,11 @@ pub struct AiConfig {
     /// OpenAI API key
     #[serde(skip_serializing)]
     pub openai_api_key: SecretString,
+    /// Enable reasoning summaries for GPT-5 models (default: false)
+    /// Note: Requires organization verification at https://platform.openai.com/settings/organization/general
+    pub enable_reasoning_summaries: bool,
+    /// Reasoning effort level: "low", "medium" (default), or "high"
+    pub reasoning_effort: String,
 }
 
 impl Default for AiConfig {
@@ -227,6 +232,8 @@ impl Default for AiConfig {
             default_context_token_limit: 4000,
             actor_inactivity_timeout_seconds: 600,
             openai_api_key: SecretString::from(String::new()),
+            enable_reasoning_summaries: false,
+            reasoning_effort: "medium".to_string(),
         }
     }
 }

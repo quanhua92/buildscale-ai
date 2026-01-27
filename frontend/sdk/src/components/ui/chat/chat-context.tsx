@@ -15,6 +15,10 @@ export type MessagePart =
   | { type: "call"; tool: string; args: any; id: string }
   | { type: "observation"; output: string; success: boolean; callId: string }
 
+export type ChatModel = "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-4o" | "gpt-4o-mini"
+export const CHAT_MODELS: ChatModel[] = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-4o", "gpt-4o-mini"]
+export const DEFAULT_MODEL: ChatModel = "gpt-5-mini"
+
 export interface ChatMessageItem {
   id: string
   role: MessageRole
@@ -31,6 +35,8 @@ interface ChatContextValue {
   stopGeneration: () => void
   clearMessages: () => void
   chatId?: string
+  model: ChatModel
+  setModel: (model: ChatModel) => void
 }
 
 const ChatContext = React.createContext<ChatContextValue | null>(null)
@@ -77,6 +83,7 @@ export function ChatProvider({
   const [isStreaming, setIsStreaming] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
+  const [model, setModel] = React.useState<ChatModel>(DEFAULT_MODEL)
 
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const connectingRef = React.useRef<string | null>(null)
@@ -395,7 +402,15 @@ export function ChatProvider({
             created_at: msg.created_at
           }))
           setMessages(historyMessages)
-          
+
+          // Load model from existing chat session
+          const chatModel = session.agent_config.model as ChatModel
+          if (CHAT_MODELS.includes(chatModel)) {
+            setModel(chatModel)
+          } else {
+            setModel(DEFAULT_MODEL)
+          }
+
           // Connect to SSE only after history is loaded
           connectToSse(chatId)
         }
@@ -455,7 +470,7 @@ export function ChatProvider({
         if (!chatId) {
           const response = await apiClientRef.current.post<CreateChatResponse>(
             `/workspaces/${workspaceId}/chats`,
-            { goal: content } as CreateChatRequest
+            { goal: content, model } as CreateChatRequest
           )
           if (!response?.chat_id) throw new Error('Invalid server response')
           setChatId(response.chat_id)
@@ -463,7 +478,7 @@ export function ChatProvider({
         } else {
           const response = await apiClientRef.current.post<PostChatMessageResponse>(
             `/workspaces/${workspaceId}/chats/${chatId}`,
-            { content } as PostChatMessageRequest
+            { content, model } as PostChatMessageRequest
           )
           if (response?.status !== "accepted") throw new Error('Message not accepted')
           connectToSse(chatId)
@@ -480,7 +495,7 @@ export function ChatProvider({
         hasReceivedStreamingEventRef.current = false
       }
     },
-    [workspaceId, chatId, connectToSse]
+    [workspaceId, chatId, connectToSse, model]
   )
 
   const clearMessages = React.useCallback(() => {
@@ -490,9 +505,10 @@ export function ChatProvider({
 
   const value = React.useMemo(
     () => ({
-      messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId
+      messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId,
+      model, setModel
     }),
-    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId]
+    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel]
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

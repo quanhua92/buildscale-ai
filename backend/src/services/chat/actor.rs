@@ -1,4 +1,4 @@
-use crate::models::chat::{ChatMessageRole, NewChatMessage};
+use crate::models::chat::{ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::queries;
 use crate::services::chat::registry::{AgentCommand, AgentHandle};
@@ -23,6 +23,14 @@ pub struct ChatActor {
     default_context_token_limit: usize,
     inactivity_timeout: std::time::Duration,
     current_cancellation_token: Arc<Mutex<Option<CancellationToken>>>,
+    current_model: Arc<Mutex<Option<String>>>, // Track current model for cancellation metadata
+    /// Cached Rig agent with preserved chat_history
+    /// Contains reasoning items for GPT-5 multi-turn conversations
+    cached_agent: Arc<Mutex<Option<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>>>>,
+    /// Track model name to detect when to recreate agent
+    current_model_name: Arc<Mutex<Option<String>>>,
+    /// Track user_id to detect when to recreate agent
+    current_user_id: Arc<Mutex<Option<Uuid>>>,
 }
 
 pub struct ChatActorArgs {
@@ -58,6 +66,10 @@ impl ChatActor {
             default_context_token_limit: args.default_context_token_limit,
             inactivity_timeout: args.inactivity_timeout,
             current_cancellation_token: Arc::new(Mutex::new(None)),
+            current_model: Arc::new(Mutex::new(None)),
+            cached_agent: Arc::new(Mutex::new(None)),
+            current_model_name: Arc::new(Mutex::new(None)),
+            current_user_id: Arc::new(Mutex::new(None)),
         };
 
         tokio::spawn(async move {
@@ -212,9 +224,10 @@ impl ChatActor {
             );
             crate::models::chat::AgentConfig {
                 agent_id: None,
-                model: "gpt-4o-mini".to_string(),
+                model: DEFAULT_CHAT_MODEL.to_string(),
                 temperature: 0.7,
                 persona_override: Some(context.persona),
+                previous_response_id: None,
             }
         };
 
@@ -224,13 +237,16 @@ impl ChatActor {
             messages: messages.clone(),
         };
 
-        // 7. Create Rig Agent
-        let agent = self
-            .rig_service
-            .create_agent(self.pool.clone(), self.workspace_id, user_id, &session)
-            .await?;
+        // Store current model for potential cancellation
+        *self.current_model.lock().await = Some(session.agent_config.model.clone());
 
-        // 8. Stream from Rig with persona, history, and attachments in prompt
+        // 7. Load AI config for reasoning settings
+        let ai_config = crate::config::Config::load()?.ai;
+
+        // 8. Get or create cached Rig Agent
+        let agent = self.get_or_create_agent(user_id, &session, &ai_config).await?;
+
+        // 9. Stream from Rig with persona, history, and attachments in prompt
         tracing::info!("[ChatActor] [Rig] Starting AI completion for chat {} (model: {})", self.chat_id, session.agent_config.model);
         let mut stream = agent
             .stream_chat(&prompt, history)
@@ -238,6 +254,7 @@ impl ChatActor {
 
         let mut full_response = String::new();
         let mut has_started_responding = false;
+        let mut item_count = 0usize;
 
         loop {
             // Check for cancellation before each stream iteration
@@ -259,6 +276,10 @@ impl ChatActor {
                 Some(i) => i,
                 None => break, // Stream finished naturally
             };
+
+            // Track stream items for debugging
+            item_count += 1;
+
             match item {
                 Ok(rig::agent::MultiTurnStreamItem::StreamAssistantItem(content)) => {
                     match content {
@@ -271,12 +292,19 @@ impl ChatActor {
                             let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
                         }
                         rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
-                            let text = thought.reasoning.join("\n");
-                            tracing::info!("[ChatActor] [Rig] AI thought for chat {}: {}", self.chat_id, text);
-                            let _ = self.event_tx.send(SseEvent::Thought {
-                                agent_id: None,
-                                text,
-                            });
+                            tracing::info!("[ChatActor] [Rig] AI reasoning event received for chat {} with {} parts", self.chat_id, thought.reasoning.len());
+                            for (idx, part) in thought.reasoning.iter().enumerate() {
+                                tracing::info!("[ChatActor] [Rig] Thought part {} (len={}, empty={}): '{}'", idx, part.len(), part.is_empty(), part);
+                                if !part.trim().is_empty() {
+                                    tracing::debug!("[ChatActor] [Rig] Sending thought part {} for chat {}", idx, self.chat_id);
+                                    let _ = self.event_tx.send(SseEvent::Thought {
+                                        agent_id: None,
+                                        text: part.clone(),
+                                    });
+                                } else {
+                                    tracing::warn!("[ChatActor] [Rig] Skipping empty thought part {} for chat {}", idx, self.chat_id);
+                                }
+                            }
                         }
                         rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
                             tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
@@ -313,15 +341,28 @@ impl ChatActor {
                 }
                 Err(e) => {
                     tracing::error!("[ChatActor] [Rig] AI stream encountered an error for chat {}: {:?}", self.chat_id, e);
+
+                    // Clear agent cache on error to force fresh agent on next interaction
+                    *self.cached_agent.lock().await = None;
+
                     return Err(crate::error::Error::Llm(e.to_string()));
                 }
                 _ => {}
             }
         }
 
+        // Check if stream completed without any items (possible API access issue)
+        if item_count == 0 {
+            tracing::warn!(
+                "[ChatActor] [Rig] Stream completed with 0 items for chat {} (model: {}). This may indicate an API access issue or invalid model name.",
+                self.chat_id,
+                session.agent_config.model
+            );
+        }
+
         // 7. Save Assistant Response
         if !full_response.is_empty() {
-            tracing::info!("[ChatActor] Saving AI response to database for chat {}", self.chat_id);
+            tracing::info!("[ChatActor] Saving AI response to database for chat {} (model: {})", self.chat_id, session.agent_config.model);
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
             ChatService::save_message(
                 &mut final_conn,
@@ -331,7 +372,10 @@ impl ChatActor {
                     workspace_id: self.workspace_id,
                     role: ChatMessageRole::Assistant,
                     content: full_response,
-                    metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata::default()),
+                    metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
+                        model: Some(session.agent_config.model.clone()),
+                        ..Default::default()
+                    }),
                 },
             )
             .await?;
@@ -361,6 +405,9 @@ impl ChatActor {
             reason
         );
 
+        // Get current model for metadata
+        let model = self.current_model.lock().await.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
+
         // 1. Send Stopped event to all SSE clients
         let _ = self.event_tx.send(SseEvent::Stopped {
             reason: reason.to_string(),
@@ -374,11 +421,12 @@ impl ChatActor {
         // 2. Save partial response if there is any text
         if !partial_response.is_empty() {
             tracing::info!(
-                "[ChatActor] Saving partial response ({} chars) for chat {}",
+                "[ChatActor] Saving partial response ({} chars) for chat {} (model: {})",
                 partial_response.len(),
-                self.chat_id
+                self.chat_id,
+                model
             );
-            self.save_partial_response(conn, partial_response.clone()).await?;
+            self.save_partial_response(conn, partial_response.clone(), model).await?;
         }
 
         // 3. Add cancellation marker to chat history for AI awareness
@@ -387,6 +435,9 @@ impl ChatActor {
         // 4. Clear the cancellation token for this interaction
         *self.current_cancellation_token.lock().await = None;
 
+        // 5. Clear agent cache to ensure fresh state after cancellation
+        *self.cached_agent.lock().await = None;
+
         Ok(())
     }
 
@@ -394,6 +445,7 @@ impl ChatActor {
         &self,
         conn: &mut sqlx::PgConnection,
         content: String,
+        model: String,
     ) -> crate::error::Result<()> {
         ChatService::save_message(
             conn,
@@ -403,7 +455,10 @@ impl ChatActor {
                 workspace_id: self.workspace_id,
                 role: ChatMessageRole::Assistant,
                 content,
-                metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata::default()),
+                metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
+                    model: Some(model),
+                    ..Default::default()
+                }),
             },
         )
         .await?;
@@ -433,5 +488,49 @@ impl ChatActor {
         )
         .await?;
         Ok(())
+    }
+
+    async fn get_or_create_agent(
+        &self,
+        user_id: Uuid,
+        session: &crate::models::chat::ChatSession,
+        ai_config: &crate::config::AiConfig,
+    ) -> crate::error::Result<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>> {
+        let mut cached = self.cached_agent.lock().await;
+        let current_model_name = self.current_model_name.lock().await;
+        let current_user = self.current_user_id.lock().await;
+
+        // Check if we can reuse the cached agent
+        let can_reuse = cached.is_some()
+            && current_model_name.as_ref() == Some(&session.agent_config.model)
+            && current_user.as_ref() == Some(&user_id);
+
+        if can_reuse {
+            tracing::info!("[ChatActor] Reusing cached agent for chat {}", self.chat_id);
+            Ok(cached.as_ref().unwrap().clone())
+        } else {
+            tracing::info!(
+                "[ChatActor] Creating new agent for chat {} (model: {}, user_id: {})",
+                self.chat_id, session.agent_config.model, user_id
+            );
+
+            // Create new agent
+            let agent = self.rig_service.create_agent(
+                self.pool.clone(),
+                self.workspace_id,
+                user_id,
+                session,
+                ai_config,
+            ).await?;
+
+            // Update cache
+            *cached = Some(agent.clone());
+            drop(current_model_name);
+            *self.current_model_name.lock().await = Some(session.agent_config.model.clone());
+            drop(current_user);
+            *self.current_user_id.lock().await = Some(user_id);
+
+            Ok(agent)
+        }
     }
 }

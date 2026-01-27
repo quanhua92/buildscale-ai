@@ -218,6 +218,7 @@ pub struct CreateChatRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PostChatMessageRequest {
     pub content: String,
+    pub model: Option<String>,
 }
 
 /// Tool-specific argument structures

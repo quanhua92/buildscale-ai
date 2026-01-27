@@ -37,7 +37,7 @@ function ChatRoute() {
 }
 
 function ChatContent() {
-  const { messages, isStreaming, clearMessages } = useChat()
+  const { messages, isStreaming, clearMessages, model, setModel } = useChat()
   const navigate = Route.useNavigate()
 
   const handleNewChat = () => {
@@ -50,7 +50,12 @@ function ChatContent() {
 
   return (
     <Chat containerClassName="max-w-4xl flex flex-col h-full">
-      <Chat.Header modelName="gpt-4o-mini" onNewChat={handleNewChat} />
+      <Chat.Header
+        modelName={model}
+        onNewChat={handleNewChat}
+        model={model}
+        onModelChange={setModel}
+      />
       <Chat.MessageList className="max-h-[calc(100vh-200px)] pb-32">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center space-y-4 py-20">
