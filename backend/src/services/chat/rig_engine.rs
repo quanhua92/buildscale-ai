@@ -3,10 +3,12 @@ use crate::services::chat::rig_tools::{
     RigEditTool, RigGrepTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
     RigRmTool, RigTouchTool, RigWriteTool,
 };
+use crate::services::storage::FileStorageService;
 use crate::DbPool;
 use crate::error::Result;
 use rig::providers::openai::{self, responses_api::ResponsesCompletionModel};
 use rig::completion::Message;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Maximum number of tool-calling iterations allowed per user message.
@@ -42,6 +44,7 @@ impl RigService {
     pub async fn create_agent(
         &self,
         pool: DbPool,
+        storage: Arc<FileStorageService>,
         workspace_id: Uuid,
         user_id: Uuid,
         session: &ChatSession,
@@ -65,46 +68,55 @@ impl RigService {
             .preamble(&persona)
             .tool(RigLsTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigReadTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigWriteTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigRmTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigMvTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigTouchTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigEditTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigGrepTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })
             .tool(RigMkdirTool {
                 pool: pool.clone(),
+                storage: storage.clone(),
                 workspace_id,
                 user_id,
             })

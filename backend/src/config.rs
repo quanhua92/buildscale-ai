@@ -12,6 +12,25 @@ pub struct Config {
     pub cookies: crate::services::cookies::CookieConfig,
     pub server: ServerConfig,
     pub ai: AiConfig,
+    pub storage: StorageConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StorageConfig {
+    /// Base path for storage (default: "./data")
+    /// Within this, the system manages:
+    /// - /data (Working Tree)
+    /// - /archive (CAS History)
+    /// - /trash (Recycle Bin)
+    pub base_path: String,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            base_path: "./storage".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -1,5 +1,7 @@
 # Docker
 data/
+storage/
+
 # Environment Files
 .env
 .env.*
@@ -35,6 +37,9 @@ target/
 
 # Docker Configuration
 docker-compose.local.yml
+docker-compose.override.yml
+docker-compose.local.yaml
+docker-compose.override.yaml
 
 # Node.js & pnpm Files
 playwright-report

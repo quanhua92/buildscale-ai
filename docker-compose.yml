@@ -34,11 +34,13 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Mount data directory for persistent storage
-      - ./data:/app/data
+      # Use named volume for persistent storage (workspaces, archives, trash)
+      - buildscale_storage:/app/storage
     environment:
       - RUST_LOG=info
       - PORT=3000
+      # Storage Configuration
+      - BUILDSCALE__STORAGE__BASE_PATH=/app/storage
       # Environment Configuration
       - BUILDSCALE__ENV=development
       # Static File Serving Configuration
@@ -68,3 +70,4 @@ services:
 
 volumes:
   postgres_data:
+  buildscale_storage:

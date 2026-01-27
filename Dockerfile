@@ -175,10 +175,10 @@ FROM alpine:3.22 AS final
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates curl
+RUN apk add --no-cache ca-certificates curl bash ripgrep grep
 
 # Create non-root user for security
-RUN addgroup -S appgroup && adduser -S -G appgroup appuser
+RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser
 
 # Accept build arguments
 ARG BUILD_DATE
@@ -209,11 +209,14 @@ COPY --from=admin-builder /app/admin/dist ./admin
 # Copy web frontend build artifacts
 COPY --from=web-builder /app/web/dist ./web
 
-# Create data directories
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data
+# Create storage directories
+RUN mkdir -p /app/storage && chown -R appuser:appgroup /app/storage
 
 # Change ownership to non-root user
 RUN chown -R appuser:appgroup /app
+
+# Set default storage path
+ENV BUILDSCALE__STORAGE__BASE_PATH="/app/storage"
 
 # Use non-root user
 USER appuser

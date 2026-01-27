@@ -33,7 +33,7 @@ Agents don't just "open files." They use a standardized, semantic developer tool
 
 ### B. Ingestion (`read`)
 *   **Purpose**: Absorbing context into the agent's window.
-*   **Mechanism**: Streams content from the global store (supporting truncation and markdown conversion).
+*   **Mechanism**: Reads the actual file from disk (supporting truncation and markdown conversion).
 
 ### C. Recall (`grep`)
 *   **Purpose**: Finding specific information across the entire logical volume.
@@ -45,33 +45,55 @@ Agents don't just "open files." They use a standardized, semantic developer tool
 
 ---
 
-## 3. Technical Implementation: Virtual Files
+## 3. Technical Implementation: Hybrid Storage
 
-While users see "Everything as a File," the system maintains a distinction between **Normal Files** and **Virtual Files** to ensure performance and data integrity.
+While users see "Everything as a File," the system employs a **Hybrid Disk/Database Architecture** to ensure performance, data integrity, and tool compatibility.
 
-### The Dual-View Architecture
+### The Dual-Layer Storage
 
-1.  **System View (Source of Truth)**:
-    *   Dynamic data (like Chat History) is stored in optimized, granular database tables (e.g., `chat_messages`).
-    *   This ensures transactional integrity, high-speed app performance, and relational queries.
+Each workspace is **self-contained** within `/app/storage/workspaces/` directory structure:
 
-2.  **File View (The Interface)**:
-    *   To the Agent, these appear as standard files (e.g., `/chats/session-123.chat`).
-    *   The content is a **Read-Only JSON Snapshot** of the system state.
+**Directory Layout:**
+```
+/app/storage/workspaces/{workspace_id}/
+├── latest/       # Current files (Source of Truth)
+├── archive/      # All file versions (Content-Addressable Store)
+└── trash/        # Soft-deleted files
+```
 
-### Write-Through Synchronization
+**Components:**
+1.  **The Latest (`latest/`)**:
+    *   This is **Source of Truth** for current state.
+    *   It contains the latest version of every file, laid out exactly as the user sees it (e.g., `/projects/app/main.rs`).
+    *   **Benefit**: Standard Linux tools (`grep`, `find`, `cat`) work natively on the workspace for debugging and introspection.
 
-To maintain the "Everything is a File" promise, we use a **Write-Through Caching** strategy:
+2.  **The Archive (`archive/`)**:
+    *   A **Content-Addressable Store** (CAS) containing every file version ever written for this workspace.
+    *   Files are stored by their SHA-256 hash (e.g., `./archive/e3/b0/...`).
+    *   **Benefit**: Infinite version history with automatic deduplication per workspace.
 
-1.  **Action**: A user posts a message via the Chat API.
-2.  **Update**: The system inserts the message into the `chat_messages` table.
-3.  **Snapshot**: In the same transaction, the system regenerates the full JSON representation of the chat and updates the `file_versions` table.
+3.  **The Trash (`trash/`)**:
+    *   Soft-deleted files for this workspace.
+    *   Supports recovery before permanent deletion.
+
+4.  **The Index (PostgreSQL)**:
+    *   Stores metadata (Permissions, Authorship, Relationships, Vector Embeddings).
+    *   Maps logical paths to content hashes.
+
+### The "Double Write" Protocol
+
+To maintain consistency, every write operation follows this sequence:
+
+1.  **Hash**: The content is hashed (SHA-256).
+2.  **Archive**: The content is written to CAS (`./storage/workspaces/{workspace_id}/archive/`).
+3.  **Commit**: The content is atomically written to the Latest directory (`./storage/workspaces/{workspace_id}/latest/`), overwriting the old version.
+4.  **Index**: The database is updated with the new metadata and hash.
 
 ### Implications for Tools
 
-*   **`read` / `grep`**: Work natively on Virtual Files because the `file_versions` table is always up-to-date.
-*   **`ls`**: Identifies these files with `is_virtual: true`.
-*   **`write` / `edit`**: Are **blocked** on Virtual Files to prevent the File View from drifting out of sync with the System View. Agents must use specialized APIs (like `post_message`) to modify these resources.
+*   **`read` / `grep`**: Work natively on the disk (Working Tree).
+*   **`ls`**: Scans the disk directory structure.
+*   **`write` / `edit`**: Must go through the API to ensure the "Double Write" protocol is respected and the Archive is updated.
 
 ---
 
@@ -95,7 +117,7 @@ To maintain the "Everything is a File" promise, we use a **Write-Through Caching
 
 ---
 
-## 4. The Platform Layer (Infrastructure & Scale)
+## 5. The Platform Layer (Infrastructure & Scale)
 
 While the agent sees a simple file system, the **Platform** powers it with a massive distributed architecture.
 
@@ -121,7 +143,7 @@ Agents often need to run native tools (`bash`, `python`, `npm`) that expect a lo
 
 ---
 
-## 5. Distributed Agentic Workflows
+## 6. Distributed Agentic Workflows
 
 The File System acts as the **State of Record** for complex, multi-agent pipelines, decoupled from the execution.
 

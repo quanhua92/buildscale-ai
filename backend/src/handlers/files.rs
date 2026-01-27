@@ -47,6 +47,7 @@ pub async fn create_file(
 
     let result = file_services::create_file_with_content(
         &mut conn,
+        &state.storage,
         CreateFileRequest {
             workspace_id: workspace_access.workspace_id,
             parent_id: request.parent_id,
@@ -82,7 +83,7 @@ pub async fn get_file(
 ) -> Result<Json<FileWithContent>> {
     let mut conn = acquire_db_connection(&state, "get_file").await?;
 
-    let result = file_services::get_file_with_content(&mut conn, file_id)
+    let result = file_services::get_file_with_content(&mut conn, &state.storage, file_id)
         .await
         .inspect_err(|e| log_handler_error("get_file", e))?;
 
@@ -136,7 +137,7 @@ pub async fn delete_file(
 ) -> Result<Json<serde_json::Value>> {
     let mut conn = acquire_db_connection(&state, "delete_file").await?;
 
-    file_services::soft_delete_file(&mut conn, file_id)
+    file_services::soft_delete_file(&mut conn, &state.storage, file_id)
         .await
         .inspect_err(|e| log_handler_error("delete_file", e))?;
 
@@ -157,7 +158,7 @@ pub async fn restore_file(
 ) -> Result<Json<crate::models::files::File>> {
     let mut conn = acquire_db_connection(&state, "restore_file").await?;
 
-    let result = file_services::restore_file(&mut conn, file_id)
+    let result = file_services::restore_file(&mut conn, &state.storage, file_id)
         .await
         .inspect_err(|e| log_handler_error("restore_file", e))?;
 
@@ -335,6 +336,7 @@ pub async fn create_version(
 
     let result = file_services::create_version(
         &mut conn,
+        &state.storage,
         file_id,
         CreateVersionRequest {
             author_id: Some(auth_user.id),

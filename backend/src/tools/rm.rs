@@ -26,6 +26,7 @@ impl Tool for RmTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         args: Value,
@@ -37,7 +38,7 @@ impl Tool for RmTool {
             .await?
             .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
         
-        files::soft_delete_file(conn, file.id).await?;
+        files::soft_delete_file(conn, storage, file.id).await?;
         
         let result = RmResult {
             path,

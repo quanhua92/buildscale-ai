@@ -1,6 +1,7 @@
 use crate::{
-    cache::Cache, config::Config, database::DbPool, models::users::User, services::chat::registry::AgentRegistry,
-    services::chat::rig_engine::RigService,
+    cache::Cache, config::Config, database::DbPool, models::users::User,
+    services::chat::registry::AgentRegistry, services::chat::rig_engine::RigService,
+    services::storage::FileStorageService,
 };
 use std::sync::Arc;
 
@@ -20,6 +21,8 @@ pub struct AppState {
     pub agents: Arc<AgentRegistry>,
     /// Service for interacting with Rig.rs AI runtime
     pub rig_service: Arc<RigService>,
+    /// File storage service (Disk I/O)
+    pub storage: Arc<FileStorageService>,
     /// Application configuration
     pub config: Config,
 }
@@ -40,12 +43,18 @@ impl AppState {
         rig_service: Arc<RigService>,
         config: Config,
     ) -> Self {
+        let storage = Arc::new(FileStorageService::new(&config.storage.base_path));
+        // Note: Storage init is async, so we might want to call it from main before creating AppState,
+        // or just let it create directories lazily/on-startup.
+        // For this implementation, we assume main.rs might call init, or we lazily handle it.
+
         Self {
             cache,
             user_cache,
             pool,
             agents: Arc::new(AgentRegistry::new()),
             rig_service,
+            storage,
             config,
         }
     }

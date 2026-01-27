@@ -14,7 +14,7 @@ pub mod edit;
 pub mod grep;
 pub mod mkdir;
 
-use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse};
+use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, services::storage::FileStorageService};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -38,6 +38,7 @@ pub trait Tool: Send + Sync {
     ///
     /// # Arguments
     /// * `conn` - Database connection
+    /// * `storage` - File storage service
     /// * `workspace_id` - ID of workspace to operate on
     /// * `user_id` - ID of authenticated user executing the tool
     /// * `args` - Tool-specific arguments as JSON value
@@ -47,6 +48,7 @@ pub trait Tool: Send + Sync {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,
@@ -122,20 +124,21 @@ impl ToolExecutor {
     pub async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,
     ) -> Result<ToolResponse> {
         match self {
-            ToolExecutor::Ls => ls::LsTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Read => read::ReadTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Write => write::WriteTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Rm => rm::RmTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Mv => mv::MvTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Touch => touch::TouchTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Edit => edit::EditTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Grep => grep::GrepTool.execute(conn, workspace_id, user_id, args).await,
-            ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, workspace_id, user_id, args).await,
+            ToolExecutor::Ls => ls::LsTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Read => read::ReadTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Write => write::WriteTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Rm => rm::RmTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Mv => mv::MvTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Touch => touch::TouchTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Edit => edit::EditTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Grep => grep::GrepTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, storage, workspace_id, user_id, args).await,
         }
     }
 }

@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::models::requests::{MvArgs, MvResult, ToolResponse};
 use crate::queries::files as file_queries;
 use crate::services::files;
+use crate::services::storage::FileStorageService;
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -30,6 +31,7 @@ impl Tool for MvTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        _storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         args: Value,

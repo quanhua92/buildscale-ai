@@ -5,6 +5,7 @@ use crate::models::requests::{
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
+use crate::services::storage::FileStorageService;
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -14,6 +15,7 @@ use super::Tool;
 /// Shared logic for edit tool
 async fn perform_edit(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     workspace_id: Uuid,
     user_id: Uuid,
     args: EditArgs,
@@ -109,7 +111,7 @@ async fn perform_edit(
     let final_content = serde_json::json!({ "text": new_content_text });
 
     // Save new version
-    let version = files::create_version(conn, file.id, CreateVersionRequest {
+    let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
         author_id: Some(user_id),
         branch: Some("main".to_string()),
         content: final_content,
@@ -152,11 +154,12 @@ impl Tool for EditTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,
     ) -> Result<ToolResponse> {
         let edit_args: EditArgs = serde_json::from_value(args)?;
-        perform_edit(conn, workspace_id, user_id, edit_args).await
+        perform_edit(conn, storage, workspace_id, user_id, edit_args).await
     }
 }

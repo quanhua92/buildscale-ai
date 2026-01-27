@@ -1109,3 +1109,39 @@ pub async fn update_file_path_and_slug(
 
     Ok(file)
 }
+
+/// Gets all active (non-deleted) files in a workspace.
+pub async fn list_all_active_files(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        FROM files
+        WHERE workspace_id = $1
+          AND deleted_at IS NULL
+        ORDER BY path ASC
+        "#,
+        workspace_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}

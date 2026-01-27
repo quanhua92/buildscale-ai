@@ -29,6 +29,7 @@ impl Tool for ReadTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         args: Value,
@@ -47,7 +48,7 @@ impl Tool for ReadTool {
             }));
         }
         
-        let file_with_content = files::get_file_with_content(conn, file.id).await?;
+        let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
         
         // Normalize output: unwrap simple documents for ease of AI/API access
         let content = if file.file_type == crate::models::files::FileType::Document {

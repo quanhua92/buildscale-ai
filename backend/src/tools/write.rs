@@ -34,6 +34,7 @@ impl Tool for WriteTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,
@@ -57,7 +58,7 @@ impl Tool for WriteTool {
             // Prepare content: handle auto-wrapping for documents
             let final_content = Self::prepare_content_for_type(file.file_type, write_args.content, write_args.file_type.as_deref())?;
 
-            let version = files::create_version(conn, file.id, CreateVersionRequest {
+            let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
                 branch: Some("main".to_string()),
                 content: final_content,
@@ -87,7 +88,7 @@ impl Tool for WriteTool {
             // Prepare content: handle auto-wrapping for documents
             let final_content = Self::prepare_content_for_type(file_type, write_args.content, write_args.file_type.as_deref())?;
 
-            let file_result = files::create_file_with_content(conn, CreateFileRequest {
+            let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
                 author_id: user_id,

@@ -12,6 +12,7 @@ use crate::{
     validation::validate_file_slug,
     config::AiConfig,
 };
+use crate::services::storage::FileStorageService;
 use pgvector::Vector;
 use sha2::{Digest, Sha256};
 use sqlx::Acquire;
@@ -125,6 +126,7 @@ pub async fn ensure_path_exists(
 /// Creates a new file with its initial content version in a single transaction
 pub async fn create_file_with_content(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     request: CreateFileRequest,
 ) -> Result<FileWithContent> {
     // 1. Start transaction
@@ -212,7 +214,7 @@ pub async fn create_file_with_content(
         status: FileStatus::Ready, // Set to Ready since we are providing content immediately
         name,
         slug,
-        path,
+        path: path.clone(),
         is_virtual: request.is_virtual.unwrap_or(false),
         is_remote: request.is_remote.unwrap_or(false),
         permission: request.permission.unwrap_or(if request.file_type == FileType::Folder {
@@ -224,18 +226,35 @@ pub async fn create_file_with_content(
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
     // 5. Create initial version record (Ensures structural consistency for all file types)
+    // NORMALIZATION:
     let content = auto_wrap_document_content(file.file_type, request.content);
-    let hash = hash_content(&content)?;
+    
+    // PERSISTENCE (Hybrid): Write to Disk
+    let content_bytes = serde_json::to_vec_pretty(&content)
+        .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?;
+    
+    let hash = storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+
+    // DATABASE: Store metadata only
+    let content_metadata = serde_json::json!({
+        "storage": "disk",
+        "size": content_bytes.len(),
+        "preview": truncate_preview(&content)
+    });
+
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
         branch: "main".to_string(),
-        content_raw: content,
+        content_raw: content_metadata,
         app_data: request.app_data.unwrap_or(serde_json::json!({})),
-        hash,
+        hash: hash.clone(),
         author_id: Some(request.author_id),
     };
-    let latest_version = files::create_version(&mut tx, new_version).await?;
+    let mut latest_version = files::create_version(&mut tx, new_version).await?;
+
+    // Inject actual content back into the response object so the API client sees it
+    latest_version.content_raw = content;
 
     // 6. Update file with latest version ID cache
     files::update_latest_version_id(&mut tx, file.id, latest_version.id).await?;
@@ -252,12 +271,22 @@ pub async fn create_file_with_content(
     })
 }
 
+fn truncate_preview(content: &serde_json::Value) -> String {
+    let s = content.to_string();
+    if s.len() > 100 {
+        format!("{}...", &s[0..100])
+    } else {
+        s
+    }
+}
+
 /// Creates a new version for an existing file
 ///
 /// This method implements deduplication: if the content hash matches the latest
 /// version, it skips the database insert and returns the existing version.
 pub async fn create_version(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     file_id: Uuid,
     request: CreateVersionRequest,
 ) -> Result<crate::models::files::FileVersion> {
@@ -265,12 +294,33 @@ pub async fn create_version(
     let file = files::get_file_by_id(conn, file_id).await?;
 
     let content = auto_wrap_document_content(file.file_type, request.content);
+    
+    // PERSISTENCE: Write to disk to get hash
+    let content_bytes = serde_json::to_vec_pretty(&content)
+        .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?;
+    
+    // We calculate hash locally first to check deduplication BEFORE writing to disk if possible,
+    // but FileStorageService handles double-write logic. 
+    // Let's rely on storage service to be efficient.
+    // However, for DB deduplication we need the hash.
+    // Let's use the helper.
     let hash = hash_content(&content)?;
 
     // 2. Check if the latest version already has this hash (deduplication)
     let latest = files::get_latest_version_optional(conn, file_id).await?;
     if let Some(v) = latest.filter(|v| v.hash == hash) {
+        // Even if DB has it, ensure it's physically on disk (e.g. after a restore or sync issue)
+        // This is a "healing" write - effectively a touch
+        storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
         return Ok(v);
+    }
+
+    // Write to storage now that we know we need a new version
+    let written_hash = storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+    
+    // Sanity check
+    if written_hash != hash {
+        tracing::warn!("Calculated hash {} differs from storage hash {}", hash, written_hash);
     }
 
     // 3. Start transaction
@@ -279,17 +329,26 @@ pub async fn create_version(
     })?;
 
     // 4. Insert new version
+    let content_metadata = serde_json::json!({
+        "storage": "disk",
+        "size": content_bytes.len(),
+        "preview": truncate_preview(&content)
+    });
+
     let new_version = NewFileVersion {
         file_id,
         workspace_id: file.workspace_id,
         branch: request.branch.unwrap_or_else(|| "main".to_string()),
-        content_raw: content,
+        content_raw: content_metadata,
         app_data: request.app_data.unwrap_or(serde_json::json!({})),
         hash,
         author_id: request.author_id,
     };
 
-    let version = files::create_version(&mut tx, new_version).await?;
+    let mut version = files::create_version(&mut tx, new_version).await?;
+    
+    // Inject content back for response
+    version.content_raw = content;
 
     // 5. Update cache
     files::update_latest_version_id(&mut tx, file_id, version.id).await?;
@@ -303,9 +362,38 @@ pub async fn create_version(
 }
 
 /// Gets a file and its latest version together
-pub async fn get_file_with_content(conn: &mut DbConn, file_id: Uuid) -> Result<FileWithContent> {
+pub async fn get_file_with_content(
+    conn: &mut DbConn, 
+    storage: &FileStorageService,
+    file_id: Uuid
+) -> Result<FileWithContent> {
     let file = files::get_file_by_id(conn, file_id).await?;
-    let latest_version = files::get_latest_version(conn, file_id).await?;
+    let mut latest_version = files::get_latest_version(conn, file_id).await?;
+
+    // HYBRID READ: Fetch content from disk
+    if !file.is_remote {
+        match storage.read_file(file.workspace_id, &file.path).await {
+            Ok(bytes) => {
+                let content: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| Error::Internal(format!("Failed to deserialize file content: {}", e)))?;
+                latest_version.content_raw = content;
+            },
+            Err(Error::NotFound(_)) => {
+                // Fallback: If not found on disk, check if it's in archive using the hash
+                if let Ok(bytes) = storage.read_version(file.workspace_id, &latest_version.hash).await {
+                     // Heal: Write back to working tree
+                     let _ = storage.write_file(file.workspace_id, &file.path, &bytes).await;
+                     let content: serde_json::Value = serde_json::from_slice(&bytes)
+                        .map_err(|e| Error::Internal(format!("Failed to deserialize archive content: {}", e)))?;
+                     latest_version.content_raw = content;
+                } else {
+                    tracing::error!("File content missing on disk and archive for file {}", file.path);
+                    latest_version.content_raw = serde_json::json!({"error": "Content missing"});
+                }
+            },
+            Err(e) => return Err(e),
+        }
+    }
 
     Ok(FileWithContent {
         file,
@@ -432,7 +520,11 @@ pub async fn update_file(
 }
 
 /// Soft deletes a file with a check for empty folders
-pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+pub async fn soft_delete_file(
+    conn: &mut DbConn, 
+    storage: &FileStorageService,
+    file_id: Uuid
+) -> Result<()> {
     let file = files::get_file_by_id(conn, file_id).await?;
 
     if file.deleted_at.is_some() {
@@ -451,6 +543,11 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
         }
     }
 
+    // HYBRID: Move from Working Tree to Trash on disk
+    if !matches!(file.file_type, FileType::Folder) {
+        storage.move_to_trash(file.workspace_id, &file.path).await?;
+    }
+
     let rows_affected = files::soft_delete_file(conn, file_id).await?;
     
     // Safety check: Ensure exactly one record was affected
@@ -465,7 +562,11 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
 }
 
 /// Restores a soft-deleted file
-pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
+pub async fn restore_file(
+    conn: &mut DbConn, 
+    storage: &FileStorageService,
+    file_id: Uuid
+) -> Result<File> {
     let file = files::get_file_by_id(conn, file_id).await?;
 
     if file.deleted_at.is_none() {
@@ -478,6 +579,12 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             "Cannot restore '{}' because another file with the same name already exists in its original location.",
             file.slug
         )));
+    }
+
+    // HYBRID: Ensure file is restored to Working Tree
+    if let Some(_version_id) = file.latest_version_id {
+        let version = files::get_latest_version(conn, file_id).await?;
+        storage.ensure_file_restored(file.workspace_id, &file.path, &version.hash).await?;
     }
 
     files::restore_file(conn, file_id).await

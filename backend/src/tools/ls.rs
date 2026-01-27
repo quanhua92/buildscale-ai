@@ -26,6 +26,7 @@ impl Tool for LsTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        _storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         args: Value,

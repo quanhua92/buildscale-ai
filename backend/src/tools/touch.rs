@@ -1,4 +1,4 @@
-use crate::{DbConn, error::Result, models::requests::{ToolResponse, TouchArgs, TouchResult}, services::files, queries::files as file_queries};
+use crate::{DbConn, error::Result, models::requests::{ToolResponse, TouchArgs, TouchResult}, services::files, services::storage::FileStorageService, queries::files as file_queries};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -24,6 +24,7 @@ impl Tool for TouchTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,
@@ -58,7 +59,7 @@ impl Tool for TouchTool {
                 app_data: None,
             };
             
-            let file_with_content = files::create_file_with_content(conn, req).await?;
+            let file_with_content = files::create_file_with_content(conn, storage, req).await?;
             file_with_content.file.id
         };
         

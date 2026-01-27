@@ -4,6 +4,7 @@ use crate::queries;
 use crate::services::chat::registry::{AgentCommand, AgentHandle};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
+use crate::services::storage::FileStorageService;
 use crate::DbPool;
 use futures::StreamExt;
 use rig::streaming::StreamingChat;
@@ -17,6 +18,7 @@ pub struct ChatActor {
     workspace_id: Uuid,
     pool: DbPool,
     rig_service: Arc<RigService>,
+    storage: Arc<FileStorageService>,
     command_rx: mpsc::Receiver<AgentCommand>,
     event_tx: broadcast::Sender<SseEvent>,
     default_persona: String,
@@ -38,6 +40,7 @@ pub struct ChatActorArgs {
     pub workspace_id: Uuid,
     pub pool: DbPool,
     pub rig_service: Arc<RigService>,
+    pub storage: Arc<FileStorageService>,
     pub default_persona: String,
     pub default_context_token_limit: usize,
     pub event_tx: broadcast::Sender<SseEvent>,
@@ -60,6 +63,7 @@ impl ChatActor {
             workspace_id: args.workspace_id,
             pool: args.pool,
             rig_service: args.rig_service,
+            storage: args.storage,
             command_rx,
             event_tx: args.event_tx,
             default_persona: args.default_persona,
@@ -173,6 +177,7 @@ impl ChatActor {
         // 1. Build structured context with persona, history, and attachments
         let context = ChatService::build_context(
             &mut conn,
+            &self.storage,
             self.workspace_id,
             self.chat_id,
             &self.default_persona,
@@ -361,6 +366,7 @@ impl ChatActor {
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
             ChatService::save_message(
                 &mut final_conn,
+                &self.storage,
                 self.workspace_id,
                 NewChatMessage {
                     file_id: self.chat_id,
@@ -444,6 +450,7 @@ impl ChatActor {
     ) -> crate::error::Result<()> {
         ChatService::save_message(
             conn,
+            &self.storage,
             self.workspace_id,
             NewChatMessage {
                 file_id: self.chat_id,
@@ -472,6 +479,7 @@ impl ChatActor {
 
         ChatService::save_message(
             conn,
+            &self.storage,
             self.workspace_id,
             NewChatMessage {
                 file_id: self.chat_id,
@@ -511,6 +519,7 @@ impl ChatActor {
             // Create new agent
             let agent = self.rig_service.create_agent(
                 self.pool.clone(),
+                self.storage.clone(),
                 self.workspace_id,
                 user_id,
                 session,
