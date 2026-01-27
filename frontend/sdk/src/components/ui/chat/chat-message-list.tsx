@@ -9,6 +9,8 @@ const ChatMessageList = React.forwardRef<HTMLDivElement, ChatMessageListProps>(
   ({ className, children, autoScroll = true, ...props }, ref) => {
     const scrollRef = React.useRef<HTMLDivElement>(null)
     const [isAtBottom, setIsAtBottom] = React.useState(true)
+    const [userInteracted, setUserInteracted] = React.useState(false)
+    const [lastInteractionTime, setLastInteractionTime] = React.useState<number>(Date.now())
 
     const scrollToBottom = React.useCallback(() => {
       if (scrollRef.current) {
@@ -21,8 +23,23 @@ const ChatMessageList = React.forwardRef<HTMLDivElement, ChatMessageListProps>(
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
         const atBottom = scrollHeight - scrollTop <= clientHeight + 100
         setIsAtBottom(atBottom)
+
+        // Detect manual scroll (not programmatic)
+        setUserInteracted(true)
+        setLastInteractionTime(Date.now())
       }
     }, [])
+
+    // Reset user interaction after 10 seconds of no interaction
+    React.useEffect(() => {
+      if (!userInteracted) return
+
+      const timeout = setTimeout(() => {
+        setUserInteracted(false)
+      }, 10000) // 10 seconds
+
+      return () => clearTimeout(timeout)
+    }, [userInteracted, lastInteractionTime])
 
     const lastChildrenCount = React.useRef(React.Children.count(children))
     const lastChildrenString = React.useRef(JSON.stringify(children))
@@ -33,14 +50,19 @@ const ChatMessageList = React.forwardRef<HTMLDivElement, ChatMessageListProps>(
 
       // Scroll to bottom if:
       // 1. autoScroll enabled AND at bottom AND new message added
-      // 2. OR children content changed (streaming updates)
-      if (autoScroll && ((isAtBottom && currentCount > lastChildrenCount.current) || currentString !== lastChildrenString.current)) {
+      // 2. OR children content changed (streaming updates) AND user hasn't interacted
+      const shouldScroll = autoScroll && (
+        (!userInteracted && currentString !== lastChildrenString.current) ||
+        (isAtBottom && currentCount > lastChildrenCount.current)
+      )
+
+      if (shouldScroll) {
         scrollToBottom()
       }
 
       lastChildrenCount.current = currentCount
       lastChildrenString.current = currentString
-    }, [children, autoScroll, isAtBottom, scrollToBottom])
+    }, [children, autoScroll, isAtBottom, userInteracted, scrollToBottom])
 
     return (
       <div
