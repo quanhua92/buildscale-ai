@@ -208,8 +208,11 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
         .map(|p| p.to_str().unwrap_or(full_path))
         .unwrap_or(full_path);
 
+    // Add leading "/" to match workspace path convention
+    let path_with_slash = format!("/{}", relative_path);
+
     Some(GrepMatch {
-        path: relative_path.to_string(),
+        path: path_with_slash,
         line_number,
         line_text,
     })

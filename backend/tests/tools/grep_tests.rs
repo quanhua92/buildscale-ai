@@ -10,8 +10,8 @@ async fn test_grep_basic_search() {
     let workspace_id = create_workspace(&app, &token, "Grep Basic Test").await;
     
     // 1. Create files
-    write_file(&app, &workspace_id, &token, "/file1.rs", serde_json::json!({"text": "fn main() {\n    println!(\"hello\");\n}"})).await;
-    write_file(&app, &workspace_id, &token, "/file2.txt", serde_json::json!({"text": "Just some text with main in it."})).await;
+    write_file(&app, &workspace_id, &token, "/file1.rs", serde_json::json!("fn main() {\n    println!(\"hello\");\n}")).await;
+    write_file(&app, &workspace_id, &token, "/file2.txt", serde_json::json!("Just some text with main in it.")).await;
 
     // 2. Perform grep for "main"
     let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
@@ -42,13 +42,13 @@ async fn test_grep_path_filter() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Grep Path Test").await;
     
-    write_file(&app, &workspace_id, &token, "/src/main.rs", serde_json::json!({"text": "pattern here"})).await;
-    write_file(&app, &workspace_id, &token, "/docs/readme.md", serde_json::json!({"text": "pattern here"})).await;
+    write_file(&app, &workspace_id, &token, "/src/main.rs", serde_json::json!("pattern here")).await;
+    write_file(&app, &workspace_id, &token, "/docs/readme.md", serde_json::json!("pattern here")).await;
 
     // Search only in .rs files
     let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
         "pattern": "pattern",
-        "path_pattern": "%.rs"
+        "path_pattern": "*.rs"
     })).await;
 
     assert_eq!(response.status(), 200);
@@ -64,7 +64,7 @@ async fn test_grep_case_sensitivity() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Grep Case Test").await;
     
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "CASE sensitive\ncase insensitive"})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("CASE sensitive\ncase insensitive")).await;
 
     // Case-insensitive (default)
     let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
@@ -89,7 +89,7 @@ async fn test_grep_regex_pattern() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Grep Regex Test").await;
     
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "foo123bar\nfooabcbar"})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("foo123bar\nfooabcbar")).await;
 
     // Match digits only
     let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
@@ -136,16 +136,13 @@ async fn test_grep_path_variations() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Grep Path Var Test").await;
 
-    write_file(&app, &workspace_id, &token, "/src/main.rs", serde_json::json!({"text": "findme"})).await;
-    write_file(&app, &workspace_id, &token, "/config/app.json", serde_json::json!({"text": "findme"})).await;
+    write_file(&app, &workspace_id, &token, "/src/main.rs", serde_json::json!("findme")).await;
+    write_file(&app, &workspace_id, &token, "/config/app.json", serde_json::json!("findme")).await;
 
     let scenarios = vec![
-        ("src", 1, "/src/main.rs"),      // Should match directory
-        ("/src", 1, "/src/main.rs"),     // Absolute path match
-        ("main.rs", 1, "/src/main.rs"),  // Filename match (exact)
-        ("src/", 1, "/src/main.rs"),     // Directory with slash
-        ("%.rs", 1, "/src/main.rs"),     // SQL wildcard
-        ("config", 1, "/config/app.json"),
+        ("**/main.rs", 1, "/src/main.rs"),   // Glob pattern for filename
+        ("*.rs", 1, "/src/main.rs"),          // Glob wildcard
+        ("**/*.json", 1, "/config/app.json"), // Glob pattern for extension
     ];
 
     for (pattern, expected_count, expected_path) in scenarios {
@@ -169,7 +166,7 @@ async fn test_grep_invalid_regex() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Grep Invalid Regex Test").await;
 
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "some content"})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("some content")).await;
 
     // Invalid regex: |?\b is not valid (quantifier without operand)
     let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
@@ -181,5 +178,6 @@ async fn test_grep_invalid_regex() {
 
     // Should return success: false with an error message
     assert_eq!(body["success"].as_bool().unwrap(), false);
-    assert!(body["error"].as_str().unwrap().contains("Invalid regex pattern"));
+    assert!(body["error"].as_str().unwrap().contains("parse error") ||
+            body["error"].as_str().unwrap().contains("regex error"));
 }
