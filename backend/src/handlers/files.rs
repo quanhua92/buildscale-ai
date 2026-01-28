@@ -331,24 +331,31 @@ pub async fn create_version(
     Extension(auth_user): Extension<AuthenticatedUser>,
     Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<CreateVersionHttp>,
-) -> Result<Json<crate::models::files::FileVersion>> {
+) -> Result<Json<crate::models::requests::FileWithContent>> {
     let mut conn = acquire_db_connection(&state, "create_version").await?;
 
-    let result = file_services::create_version(
+    let version = file_services::create_version(
         &mut conn,
         &state.storage,
         file_id,
         CreateVersionRequest {
             author_id: Some(auth_user.id),
             branch: request.branch,
-            content: request.content,
+            content: request.content.clone(),
             app_data: request.app_data,
         },
     )
     .await
     .inspect_err(|e| log_handler_error("create_version", e))?;
 
-    Ok(Json(result))
+    // Fetch the file with content to return in response
+    let file = crate::queries::files::get_file_by_id(&mut conn, file_id).await?;
+
+    Ok(Json(crate::models::requests::FileWithContent {
+        file,
+        latest_version: version,
+        content: request.content,
+    }))
 }
 
 // ============================================================================

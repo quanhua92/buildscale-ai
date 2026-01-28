@@ -3,6 +3,8 @@ use buildscale::models::{
     requests::{AddLinkHttp, AddTagHttp, CreateFileHttp, CreateVersionHttp, UpdateFileHttp, SemanticSearchHttp},
 };
 use buildscale::services::files::process_file_for_ai;
+use buildscale::services::storage::FileStorageService;
+use buildscale::load_config;
 use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
 
 #[tokio::test]
@@ -49,7 +51,7 @@ async fn test_file_api_lifecycle() {
     let created_body: serde_json::Value = create_resp.json().await.unwrap();
     let file_id = created_body["file"]["id"].as_str().unwrap();
     assert_eq!(created_body["file"]["slug"], "api_test.md");
-    assert_eq!(created_body["latest_version"]["content_raw"]["text"], "initial content");
+    assert_eq!(created_body["content"]["text"], "initial content");
 
     // 3. Get the file
     let get_resp = app
@@ -80,7 +82,7 @@ async fn test_file_api_lifecycle() {
 
     assert_eq!(version_resp.status(), 200);
     let version_body: serde_json::Value = version_resp.json().await.unwrap();
-    assert_eq!(version_body["content_raw"]["text"], "updated content");
+    assert_eq!(version_body["content"]["text"], "updated content");
 
     // 5. Verify latest version is updated
     let final_resp = app
@@ -91,7 +93,7 @@ async fn test_file_api_lifecycle() {
         .await
         .unwrap();
     let final_body: serde_json::Value = final_resp.json().await.unwrap();
-    assert_eq!(final_body["latest_version"]["content_raw"]["text"], "updated content");
+    assert_eq!(final_body["content"]["text"], "updated content");
 }
 
 #[tokio::test]
@@ -440,7 +442,8 @@ async fn test_semantic_search_flow() {
 
     // 2. Trigger AI ingestion (manually for test)
     let ai_config = buildscale::config::AiConfig::default();
-    process_file_for_ai(&mut conn, file_id, &ai_config).await.expect("AI ingestion failed");
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    process_file_for_ai(&mut conn, &storage, file_id, &ai_config).await.expect("AI ingestion failed");
 
     // 3. Verify status is Ready
     let get_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))

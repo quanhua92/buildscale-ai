@@ -122,6 +122,7 @@ pub struct CreateVersionHttp {
 pub struct FileWithContent {
     pub file: File,
     pub latest_version: FileVersion,
+    pub content: serde_json::Value,
 }
 
 /// HTTP API request for updating file metadata (move/rename)

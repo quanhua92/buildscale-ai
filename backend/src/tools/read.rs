@@ -52,10 +52,10 @@ impl Tool for ReadTool {
 
         let result = ReadResult {
             path,
-            content: file_with_content.latest_version.content_raw,
+            content: file_with_content.content,
             hash: file_with_content.latest_version.hash,
         };
-        
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,

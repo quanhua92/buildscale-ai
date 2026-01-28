@@ -64,7 +64,7 @@ impl Tool for WriteTool {
                 content: final_content,
                 app_data: None,
             }).await?;
-            
+
             WriteResult {
                 path,
                 file_id: file.id,

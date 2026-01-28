@@ -115,7 +115,7 @@ async fn test_create_file_atomic_success() {
 
     let file_with_content = result.unwrap();
     assert_eq!(file_with_content.file.slug, "test_file.md");
-    assert_eq!(file_with_content.latest_version.content_raw["text"], "hello world");
+    assert_eq!(file_with_content.content["text"], "hello world");
 }
 
 #[tokio::test]
@@ -195,5 +195,5 @@ async fn test_version_history() {
 
     // 3. Verify get_file_with_content returns v2
     let fetched = get_file_with_content(&mut conn, &storage, file_id).await.unwrap();
-    assert_eq!(fetched.latest_version.content_raw["v"], 2);
+    assert_eq!(fetched.content["v"], 2);
 }

@@ -239,36 +239,33 @@ pub async fn create_file_with_content(
 
     let hash = hash_content(&content)?;
 
-    // For non-folder files, use flat storage (just the filename) to avoid directory creation issues
-    // Folders are virtual (database-only), so we don't create physical directories for them
-    let storage_path = if matches!(file.file_type, FileType::Folder) {
-        file.path.clone()
+    // HYBRID: Write to Disk
+    if matches!(file.file_type, FileType::Folder) {
+        // Folders: Create directory structure on disk
+        storage.create_folder(file.workspace_id, &file.path).await?;
     } else {
-        format!("/{}", file.slug)
-    };
-
-    storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
+        // Files: Write content using the full file.path to preserve folder structure on disk
+        storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+    }
 
     // DATABASE: Store metadata only
-    let content_metadata = serde_json::json!({
-        "storage": "disk",
-        "size": content_bytes.len(),
-        "preview": truncate_preview(&content)
-    });
+    let mut app_data = request.app_data.unwrap_or(serde_json::json!({}));
+    // Add storage metadata to app_data
+    if let Some(obj) = app_data.as_object_mut() {
+        obj.insert("storage".to_string(), serde_json::json!("disk"));
+        obj.insert("size".to_string(), serde_json::json!(content_bytes.len()));
+        obj.insert("preview".to_string(), serde_json::json!(truncate_preview(&content)));
+    }
 
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
         branch: "main".to_string(),
-        content_raw: content_metadata,
-        app_data: request.app_data.unwrap_or(serde_json::json!({})),
+        app_data,
         hash: hash.clone(),
         author_id: Some(request.author_id),
     };
-    let mut latest_version = files::create_version(&mut tx, new_version).await?;
-
-    // Inject actual content back into the response object so the API client sees it
-    latest_version.content_raw = content;
+    let latest_version = files::create_version(&mut tx, new_version).await?;
 
     // 6. Update file with latest version ID cache
     files::update_latest_version_id(&mut tx, file.id, latest_version.id).await?;
@@ -282,6 +279,7 @@ pub async fn create_file_with_content(
     Ok(FileWithContent {
         file,
         latest_version,
+        content,
     })
 }
 
@@ -325,12 +323,8 @@ pub async fn create_version(
     // Let's use the helper.
     let hash = hash_content(&content)?;
 
-    // Use flat storage path for non-folder files (same as in create_file_with_content)
-    let storage_path = if matches!(file.file_type, FileType::Folder) {
-        file.path.clone()
-    } else {
-        format!("/{}", file.slug)
-    };
+    // Use the full file.path to preserve folder structure on disk
+    let storage_path = file.path.clone();
 
     // 2. Check if the latest version already has this hash (deduplication)
     let latest = files::get_latest_version_optional(conn, file_id).await?;
@@ -355,26 +349,24 @@ pub async fn create_version(
     })?;
 
     // 4. Insert new version
-    let content_metadata = serde_json::json!({
-        "storage": "disk",
-        "size": content_bytes.len(),
-        "preview": truncate_preview(&content)
-    });
+    let mut app_data = request.app_data.unwrap_or(serde_json::json!({}));
+    // Add storage metadata to app_data
+    if let Some(obj) = app_data.as_object_mut() {
+        obj.insert("storage".to_string(), serde_json::json!("disk"));
+        obj.insert("size".to_string(), serde_json::json!(content_bytes.len()));
+        obj.insert("preview".to_string(), serde_json::json!(truncate_preview(&content)));
+    }
 
     let new_version = NewFileVersion {
         file_id,
         workspace_id: file.workspace_id,
         branch: request.branch.unwrap_or_else(|| "main".to_string()),
-        content_raw: content_metadata,
-        app_data: request.app_data.unwrap_or(serde_json::json!({})),
+        app_data,
         hash,
         author_id: request.author_id,
     };
 
-    let mut version = files::create_version(&mut tx, new_version).await?;
-    
-    // Inject content back for response
-    version.content_raw = content;
+    let version = files::create_version(&mut tx, new_version).await?;
 
     // 5. Update cache
     files::update_latest_version_id(&mut tx, file_id, version.id).await?;
@@ -394,10 +386,11 @@ pub async fn get_file_with_content(
     file_id: Uuid
 ) -> Result<FileWithContent> {
     let file = files::get_file_by_id(conn, file_id).await?;
-    let mut latest_version = files::get_latest_version(conn, file_id).await?;
+    let latest_version = files::get_latest_version(conn, file_id).await?;
 
-    // SPECIAL CASE: Chat files - return messages from database as structured JSON
-    if matches!(file.file_type, FileType::Chat) {
+    // Fetch content from appropriate source
+    let content = if matches!(file.file_type, FileType::Chat) {
+        // SPECIAL CASE: Chat files - return messages from database as structured JSON
         use crate::queries::chat;
         let messages = chat::get_messages_by_file_id(conn, file.workspace_id, file.id).await?;
         let messages_json: Vec<serde_json::Value> = messages.into_iter().map(|msg| {
@@ -409,55 +402,52 @@ pub async fn get_file_with_content(
                 "metadata": msg.metadata
             })
         }).collect();
-        latest_version.content_raw = serde_json::json!({
+        serde_json::json!({
             "messages": messages_json
-        });
-    }
-    // HYBRID READ: Fetch content from disk for non-chat files
-    else if !file.is_remote {
-        // Use flat storage path for non-folder files (same as in create_file_with_content)
-        let storage_path = if matches!(file.file_type, FileType::Folder) {
-            file.path.clone()
-        } else {
-            format!("/{}", file.slug)
-        };
+        })
+    } else if !file.is_remote {
+        // HYBRID READ: Fetch content from disk for non-remote files
+        // Use the full file.path to read from correct hierarchical location
+        let storage_path = file.path.clone();
 
         match storage.read_file(file.workspace_id, &storage_path).await {
             Ok(bytes) => {
                 // Try to parse as JSON first (for objects/arrays/numbers/bool)
                 // If that fails, treat as raw string (for text content)
-                let content: serde_json::Value = serde_json::from_slice(&bytes)
+                serde_json::from_slice(&bytes)
                     .unwrap_or_else(|_| {
                         // Not valid JSON, treat as raw UTF-8 string
                         // Use Value::String directly to avoid double-wrapping with json!()
                         serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
-                    });
-                latest_version.content_raw = content;
+                    })
             },
             Err(Error::NotFound(_)) => {
                 // Fallback: If not found on disk, check if it's in archive using the hash
                 if let Ok(bytes) = storage.read_version(file.workspace_id, &latest_version.hash).await {
                      // Heal: Write back to working tree
                      let _ = storage.write_file(file.workspace_id, &storage_path, &bytes).await;
-                     let content: serde_json::Value = serde_json::from_slice(&bytes)
+                     serde_json::from_slice(&bytes)
                         .unwrap_or_else(|_| {
                             // Not valid JSON, treat as raw UTF-8 string
                             // Use Value::String directly to avoid double-wrapping with json!()
                             serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
-                        });
-                     latest_version.content_raw = content;
+                        })
                 } else {
                     tracing::error!("File content missing on disk and archive for file {}", file.path);
-                    latest_version.content_raw = serde_json::json!({"error": "Content missing"});
+                    serde_json::json!({"error": "Content missing"})
                 }
             },
             Err(e) => return Err(e),
         }
-    }
+    } else {
+        // Remote files - no content available locally
+        serde_json::json!(null)
+    };
 
     Ok(FileWithContent {
         file,
         latest_version,
+        content,
     })
 }
 
@@ -595,7 +585,7 @@ pub async fn soft_delete_file(
     if matches!(file.file_type, FileType::Folder) {
         let has_children = files::has_active_children(conn, file_id).await?;
         let has_descendants = files::has_active_descendants(conn, file.workspace_id, &file.path).await?;
-        
+
         if has_children || has_descendants {
             return Err(Error::Conflict(
                 "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
@@ -605,9 +595,8 @@ pub async fn soft_delete_file(
 
     // HYBRID: Move from Working Tree to Trash on disk
     if !matches!(file.file_type, FileType::Folder) {
-        // Use flat storage path for non-folder files
-        let storage_path = format!("/{}", file.slug);
-        storage.move_to_trash(file.workspace_id, &storage_path).await?;
+        // Use the full file.path to move from correct hierarchical location
+        storage.move_to_trash(file.workspace_id, &file.path).await?;
     }
 
     let rows_affected = files::soft_delete_file(conn, file_id).await?;
@@ -748,6 +737,7 @@ pub async fn get_file_network(conn: &mut DbConn, file_id: Uuid) -> Result<FileNe
 /// Orchestrates the AI ingestion pipeline for a file.
 pub async fn process_file_for_ai(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     file_id: Uuid,
     ai_config: &AiConfig,
 ) -> Result<()> {
@@ -760,8 +750,9 @@ pub async fn process_file_for_ai(
 
     // 3. Process with error handling to avoid stuck status
     let process_result: Result<()> = async {
-        // Extract text content (from JSONB)
-        let text = extract_text_recursively(&latest_version.content_raw);
+        // Extract text content (from disk)
+        let file_with_content = get_file_with_content(conn, storage, file_id).await?;
+        let text = extract_text_recursively(&file_with_content.content);
 
         if text.trim().is_empty() {
             return Ok(());

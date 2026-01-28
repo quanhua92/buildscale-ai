@@ -31,16 +31,18 @@ The system manages workspace directories within `/app/storage/workspaces/` (conf
 ```
 
 ### 1. The Latest (`latest/`)
-*   **Structure**: Mirrors logical workspace hierarchy.
-*   **Example**: `./storage/workspaces/{workspace_id}/latest/projects/backend/src/main.rs`
+*   **Structure**: Flat storage - files stored at `/{slug}` (not full logical path)
+*   **Example**: `./storage/workspaces/{workspace_id}/latest/main.rs` (not `/projects/backend/src/main.rs`)
 *   **Usage**: All `read`, `ls`, `grep`, and AI tool operations hit this directory.
 *   **State**: Always contains the `latest_version` of file.
+*   **Note**: Folders are virtual (database-only), not physical directories
 
 ### 2. The Archive (`archive/`)
-*   **Structure**: Flat, content-addressable storage (CAS).
+*   **Structure**: Flat, content-addressable storage (CAS) with 2-level sharding.
 *   **Example**: `./storage/workspaces/{workspace_id}/archive/e3/b0/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
 *   **Usage**: History lookup, deduplication, restoration.
 *   **State**: Immutable blobs.
+*   **Key**: The `hash` column in `file_versions` points to these files.
 
 ### 3. The Trash (`trash/`)
 *   **Structure**: Flat list of deleted bundles per workspace.
@@ -86,8 +88,9 @@ The `files` table is the central registry for all objects in the system.
 Stores the history and metadata of file changes.
 
 **Architectural Change**:
-*   The `content_raw` column is deprecated for storing large bodies of text.
-*   Instead, the `hash` column points to the **Content-Addressable Archive** on disk.
+*   Content is stored exclusively on disk in the **Content-Addressable Archive**.
+*   The `hash` column points to the file content at `./archive/{hash}`.
+*   Database stores only metadata (no content).
 
 | Column | Type | Description |
 |---|---|---|
@@ -95,8 +98,7 @@ Stores the history and metadata of file changes.
 | `file_id` | UUID | Link to the Identity. |
 | `workspace_id` | UUID | **Tenant isolation.** Denormalized for performance. |
 | `author_id` | UUID | Who created this specific version. Supports user deletion. |
-| `content_raw` | JSONB | *Deprecated/Metadata*. Stores small JSON payloads or `{ "storage": "disk" }`. |
-| `app_data` | JSONB | Machine metadata (AI tags, linguistic scores, view settings). |
+| `app_data` | JSONB | Machine metadata (storage type, size, preview, AI tags, etc.). |
 | `hash` | TEXT | **The Key**. SHA-256 hash of content. Points to file in `./archive`. |
 | `branch` | TEXT | Default `main`. Supports A/B variants. |
 | `created_at` | TIMESTAMPTZ | Version creation timestamp. |
@@ -161,7 +163,7 @@ For high-volume data like Chat Sessions, we employ a hybrid persistence strategy
 
 For large binary assets (Images, Videos, Archives), storing content directly in PostgreSQL is inefficient.
 
-*   **Redirection**: If `is_remote = true`, the database `content_raw` column is considered invalid or merely a placeholder.
+*   **Redirection**: If `is_remote = true`, the content is stored externally and `hash` may contain an external reference.
 *   **Mechanism**: The system uses the version's hash or metadata to fetch the actual payload from Object Storage (S3/Blob).
 *   **Use Case**: Large datasets, media files, and high-volume archival data.
 

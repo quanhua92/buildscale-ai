@@ -28,7 +28,7 @@ This document serves as the self-contained execution guide for implementing the 
 - [x] **1.2 Domain Models (`src/models/files.rs`)**
     - [x] Define Enums: `FileStatus` (Pending, Uploading...), `FileType` (Document, Folder...).
     - [x] Struct `File` (Identity): `id`, `parent_id`, `slug`, `status`, `created_at`...
-    - [x] Struct `FileVersion` (Content): `id`, `file_id`, `content_raw` (JSONB), `hash`, `branch`.
+    - [x] Struct `FileVersion` (Content): `id`, `file_id`, `hash`, `branch`, `app_data`.
     - [x] Struct `FileChunk` (Semantic): `id`, `chunk_hash`, `embedding` (Vector).
     - [x] Struct `FileLink` & `FileTag`.
 - [x] **1.3 Base Queries (`src/queries/files.rs`)**
@@ -42,8 +42,8 @@ This document serves as the self-contained execution guide for implementing the 
 - [x] **2.1 Service Layer (`src/services/files.rs`)**
     - [x] **Hashing Logic**: Implement SHA-256 calculation for content.
     - [x] **Storage Strategy**:
-        - *Logic*: If content is small text (<1MB), store in `content_raw`.
-        - *Future Stub*: If binary/large, upload to S3 (mock for now) and store pointer.
+        - *Logic*: All content stored on disk at `./archive/{hash}`.
+        - *Database*: Only stores hash reference in `file_versions` table.
     - [x] `create_version`:
         - Input: `file_id`, `content`, `author`.
         - Action: Calculate Hash -> Check Dedup (optional) -> Insert `file_versions` -> Update `files.updated_at`.

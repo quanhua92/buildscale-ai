@@ -139,6 +139,25 @@ impl FileStorageService {
         Ok(hash)
     }
 
+    /// Creates a directory for a folder
+    pub async fn create_folder(&self, workspace_id: Uuid, path: &str) -> Result<()> {
+        let dir_path = self.get_file_path(workspace_id, path);
+
+        // Ensure parent directories exist
+        if let Some(parent) = dir_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                Error::Internal(format!("Failed to create parent directory {:?}: {}", parent, e))
+            })?;
+        }
+
+        // Create the folder directory
+        fs::create_dir(&dir_path).await.map_err(|e| {
+            Error::Internal(format!("Failed to create folder directory {:?}: {}", dir_path, e))
+        })?;
+
+        Ok(())
+    }
+
     /// Appends content to a file (Used for Chat Logs)
     /// Note: This bypasses Archive for performance (Archive is for snapshots/versions).
     /// To "Version" a chat log, a full snapshot should be triggered separately.

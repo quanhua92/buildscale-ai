@@ -204,7 +204,6 @@ impl ChatService {
             file_id: chat_file_id,
             workspace_id,
             branch: "main".to_string(),
-            content_raw: version.content_raw,
             app_data: new_app_data,
             hash: "model-update".to_string(),
             author_id: None,
@@ -309,7 +308,7 @@ impl ChatService {
                 {
                     // Security check: Ensure file belongs to the same workspace
                     if file_with_content.file.workspace_id == workspace_id {
-                        let content = file_with_content.latest_version.content_raw.to_string();
+                        let content = file_with_content.content.to_string();
 
                         // Estimate tokens (rough approximation: 4 chars per token)
                         let estimated_tokens = content.len() / ESTIMATED_CHARS_PER_TOKEN;

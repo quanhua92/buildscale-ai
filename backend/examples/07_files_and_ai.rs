@@ -210,8 +210,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Manually trigger ingestion (simulating background worker)
     println!("Triggering AI ingestion for documents...");
-    process_file_for_ai(&mut conn, doc1.file.id, &config.ai).await?;
-    process_file_for_ai(&mut conn, doc2.file.id, &config.ai).await?;
+    process_file_for_ai(&mut conn, &storage, doc1.file.id, &config.ai).await?;
+    process_file_for_ai(&mut conn, &storage, doc2.file.id, &config.ai).await?;
     
     // Perform search
     // Using a non-zero vector to ensure similarity scores are calculated correctly

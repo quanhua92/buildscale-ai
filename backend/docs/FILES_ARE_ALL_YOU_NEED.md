@@ -64,12 +64,13 @@ Each workspace is **self-contained** within `/app/storage/workspaces/` directory
 **Components:**
 1.  **The Latest (`latest/`)**:
     *   This is **Source of Truth** for current state.
-    *   It contains the latest version of every file, laid out exactly as the user sees it (e.g., `/projects/app/main.rs`).
-    *   **Benefit**: Standard Linux tools (`grep`, `find`, `cat`) work natively on the workspace for debugging and introspection.
+    *   Files are stored hierarchically using their full `path` (e.g., `/projects/backend/main.rs`, `/notes/personal/note1.md`).
+    *   Folders are created as actual directories on disk to preserve the folder structure.
+    *   **Benefit**: Fast access, natural folder structure, easy navigation and browsing.
 
 2.  **The Archive (`archive/`)**:
     *   A **Content-Addressable Store** (CAS) containing every file version ever written for this workspace.
-    *   Files are stored by their SHA-256 hash (e.g., `./archive/e3/b0/...`).
+    *   Files are stored by their SHA-256 hash with 2-level sharding (e.g., `./archive/e3/b0/e3b0...`).
     *   **Benefit**: Infinite version history with automatic deduplication per workspace.
 
 3.  **The Trash (`trash/`)**:
@@ -78,22 +79,30 @@ Each workspace is **self-contained** within `/app/storage/workspaces/` directory
 
 4.  **The Index (PostgreSQL)**:
     *   Stores metadata (Permissions, Authorship, Relationships, Vector Embeddings).
-    *   Maps logical paths to content hashes.
+    *   Maps logical paths (e.g., `/projects/backend/main.rs`) to physical storage (`/main.rs`).
+    *   Stores only hash references to archive, not content.
 
 ### The "Double Write" Protocol
 
-To maintain consistency, every write operation follows this sequence:
+To maintain consistency and provide both version history and fast access, every write operation performs **two disk writes**:
 
 1.  **Hash**: The content is hashed (SHA-256).
-2.  **Archive**: The content is written to CAS (`./storage/workspaces/{workspace_id}/archive/`).
-3.  **Commit**: The content is atomically written to the Latest directory (`./storage/workspaces/{workspace_id}/latest/`), overwriting the old version.
-4.  **Index**: The database is updated with the new metadata and hash.
+2.  **Archive** (First Write): The content is written to CAS (`./storage/workspaces/{workspace_id}/archive/`).
+    *   **Purpose**: Version history, deduplication, and restoration.
+    *   **Benefit**: Multiple versions with same content share storage (O(1) space).
+3.  **Commit** (Second Write): The content is written to the Latest directory at `/{slug}` (flat storage).
+    *   **Purpose**: Fast O(1) access for reads, grep, and AI tools.
+    *   **Benefit**: No database query needed to read file content.
+4.  **Index**: The database is updated with the new metadata and hash reference.
+    *   **Purpose**: Maps logical paths to physical slugs and stores version metadata.
+    *   Stores only hash, not content.
 
 ### Implications for Tools
 
-*   **`read` / `grep`**: Work natively on the disk (Working Tree).
-*   **`ls`**: Scans the disk directory structure.
-*   **`write` / `edit`**: Must go through the API to ensure the "Double Write" protocol is respected and the Archive is updated.
+*   **`read`**: Reads from `latest/{full_path}` using the file's path from database.
+*   **`grep`**: Uses ripgrep on the `latest/` directory - paths from disk match logical paths.
+*   **`ls`**: Queries database for file hierarchy metadata.
+*   **`write` / `edit`**: Must go through the API to ensure proper storage and database updates.
 
 ---
 
