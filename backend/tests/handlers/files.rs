@@ -166,7 +166,7 @@ async fn test_folder_delete_safeguard() {
             is_remote: None,
             permission: None,
             file_type: FileType::Document,
-            content: serde_json::json!({"text": "hello"}),
+            content: serde_json::json!("hello"),
             app_data: None,
         }).send().await.unwrap();
 

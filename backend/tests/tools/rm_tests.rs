@@ -9,7 +9,7 @@ async fn test_rm_file() {
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "RM Test").await;
 
-    let file_id = write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "to delete"})).await;
+    let file_id = write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("to delete")).await;
 
     let response = execute_tool(&app, &workspace_id, &token, "rm", serde_json::json!({
         "path": "/test.txt"
@@ -86,7 +86,7 @@ async fn test_rm_folder_with_children() {
             "parent_id": folder_id,
             "name": "file.txt",
             "file_type": "document",
-            "content": {"text": "child"}
+            "content": "child"
         }))
         .send()
         .await
@@ -125,7 +125,7 @@ async fn test_rm_strict_isolation() {
     // 1. Create a nested structure
     for i in 1..=5 {
         let path = format!("/work/file-{}.txt", i);
-        write_file(&app, &workspace_id, &token, &path, serde_json::json!({"text": "data"})).await;
+        write_file(&app, &workspace_id, &token, &path, serde_json::json!("data")).await;
     }
 
     // 2. Delete file-3
