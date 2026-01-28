@@ -155,3 +155,23 @@ async fn test_write_multiline_text() {
     let read_content = read_file(&app, &workspace_id, &token, "/multiline.txt").await;
     assert_eq!(read_content.as_str().unwrap(), content);
 }
+
+#[tokio::test]
+async fn test_write_multiline_preserves_newlines() {
+    // Verify that newlines are stored as actual newlines on disk, not literal "\n"
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Newline Preservation Test").await;
+
+    let content = "Line 1\nLine 2\nLine 3";
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(content)).await;
+
+    // Read back via tool
+    let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
+    assert_eq!(read_content.as_str().unwrap(), content);
+
+    // Verify on disk has actual newlines (not literal \n)
+    let file_path = format!("storage/workspaces/{}/latest/test.txt", workspace_id);
+    let on_disk = std::fs::read_to_string(&file_path).unwrap();
+    assert_eq!(on_disk, "Line 1\nLine 2\nLine 3");
+}

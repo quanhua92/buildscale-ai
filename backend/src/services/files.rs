@@ -22,14 +22,23 @@ pub const DEFAULT_FOLDER_PERMISSION: i32 = 755;
 pub const DEFAULT_FILE_PERMISSION: i32 = 600;
 
 /// Hashes content using SHA-256 for content-addressing
-/// Hashes the JSON serialization of the content
+/// For strings: hashes raw bytes (preserves newlines, special chars)
+/// For other types: hashes JSON serialization
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
-    let content_str = serde_jcs::to_string(content)
-        .map_err(|e| Error::Internal(format!("Failed to serialize to canonical JSON: {}", e)))?;
+    use sha2::Digest;
+
+    let bytes = match content {
+        // For strings, hash the raw string bytes (not JSON-encoded)
+        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+        // For other types (objects, arrays, numbers, bool), hash JSON representation
+        _ => serde_jcs::to_string(content)
+            .map_err(|e| Error::Internal(format!("Failed to serialize to canonical JSON: {}", e)))?
+            .into_bytes(),
+    };
+
     let mut hasher = Sha256::new();
-    hasher.update(content_str.as_bytes());
-    let result = hasher.finalize();
-    Ok(hex::encode(result))
+    hasher.update(&bytes);
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Converts a display name into a URL-safe slug.
@@ -220,12 +229,16 @@ pub async fn create_file_with_content(
     let content = request.content;
 
     // PERSISTENCE (Hybrid): Write to Disk
-    // Serialize content as JSON (for both strings and objects)
-    // AI is responsible for writing in their desired format
-    let content_bytes = serde_json::to_vec(&content)
-        .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?;
+    // For strings: write as raw bytes (preserves newlines, special chars)
+    // For other types: serialize as JSON
+    let content_bytes = match &content {
+        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+        _ => serde_json::to_vec(&content)
+            .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?,
+    };
 
-    let hash = storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+    let hash = hash_content(&content)?;
+    storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
 
     // DATABASE: Store metadata only
     let content_metadata = serde_json::json!({
@@ -288,12 +301,16 @@ pub async fn create_version(
     let content = request.content;
 
     // PERSISTENCE: Write to disk to get hash
-    // Serialize content as JSON (AI is responsible for format)
-    let content_bytes = serde_json::to_vec(&content)
-        .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?;
-    
+    // For strings: write as raw bytes (preserves newlines, special chars)
+    // For other types: serialize as JSON
+    let content_bytes = match &content {
+        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+        _ => serde_json::to_vec(&content)
+            .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?,
+    };
+
     // We calculate hash locally first to check deduplication BEFORE writing to disk if possible,
-    // but FileStorageService handles double-write logic. 
+    // but FileStorageService handles double-write logic.
     // Let's rely on storage service to be efficient.
     // However, for DB deduplication we need the hash.
     // Let's use the helper.
@@ -367,9 +384,13 @@ pub async fn get_file_with_content(
     if !file.is_remote {
         match storage.read_file(file.workspace_id, &file.path).await {
             Ok(bytes) => {
-                // Deserialize JSON content (AI is responsible for format)
+                // Try to parse as JSON first (for objects/arrays/numbers/bool)
+                // If that fails, treat as raw string (for text content)
                 let content: serde_json::Value = serde_json::from_slice(&bytes)
-                    .map_err(|e| Error::Internal(format!("Failed to deserialize file content: {}", e)))?;
+                    .unwrap_or_else(|_| {
+                        // Not valid JSON, treat as raw UTF-8 string
+                        serde_json::json!(String::from_utf8_lossy(&bytes))
+                    });
                 latest_version.content_raw = content;
             },
             Err(Error::NotFound(_)) => {
@@ -378,7 +399,10 @@ pub async fn get_file_with_content(
                      // Heal: Write back to working tree
                      let _ = storage.write_file(file.workspace_id, &file.path, &bytes).await;
                      let content: serde_json::Value = serde_json::from_slice(&bytes)
-                        .map_err(|e| Error::Internal(format!("Failed to deserialize archive content: {}", e)))?;
+                        .unwrap_or_else(|_| {
+                            // Not valid JSON, treat as raw UTF-8 string
+                            serde_json::json!(String::from_utf8_lossy(&bytes))
+                        });
                      latest_version.content_raw = content;
                 } else {
                     tracing::error!("File content missing on disk and archive for file {}", file.path);
