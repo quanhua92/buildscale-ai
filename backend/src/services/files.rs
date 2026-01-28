@@ -429,7 +429,8 @@ pub async fn get_file_with_content(
                 let content: serde_json::Value = serde_json::from_slice(&bytes)
                     .unwrap_or_else(|_| {
                         // Not valid JSON, treat as raw UTF-8 string
-                        serde_json::json!(String::from_utf8_lossy(&bytes))
+                        // Use Value::String directly to avoid double-wrapping with json!()
+                        serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
                     });
                 latest_version.content_raw = content;
             },
@@ -441,7 +442,8 @@ pub async fn get_file_with_content(
                      let content: serde_json::Value = serde_json::from_slice(&bytes)
                         .unwrap_or_else(|_| {
                             // Not valid JSON, treat as raw UTF-8 string
-                            serde_json::json!(String::from_utf8_lossy(&bytes))
+                            // Use Value::String directly to avoid double-wrapping with json!()
+                            serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
                         });
                      latest_version.content_raw = content;
                 } else {
