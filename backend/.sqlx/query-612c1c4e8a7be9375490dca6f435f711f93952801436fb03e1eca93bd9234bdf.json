@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO file_versions (file_id, workspace_id, branch, content_raw, app_data, hash, author_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        RETURNING \n            id, \n            file_id, \n            workspace_id,\n            branch as \"branch!\", \n            content_raw, \n            app_data, \n            hash, \n            author_id as \"author_id?\", \n            created_at, \n            updated_at\n        ",
+  "query": "\n        INSERT INTO file_versions (file_id, workspace_id, branch, app_data, hash, author_id)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING\n            id,\n            file_id,\n            workspace_id,\n            branch as \"branch!\",\n            app_data,\n            hash,\n            author_id as \"author_id?\",\n            created_at,\n            updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -25,31 +25,26 @@
       },
       {
         "ordinal": 4,
-        "name": "content_raw",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 5,
         "name": "app_data",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "hash",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "author_id?",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -60,7 +55,6 @@
         "Uuid",
         "Text",
         "Jsonb",
-        "Jsonb",
         "Text",
         "Uuid"
       ]
@@ -70,7 +64,6 @@
       false,
       false,
       true,
-      false,
       true,
       false,
       true,
@@ -78,5 +71,5 @@
       false
     ]
   },
-  "hash": "4f848deb5dfa7a1ce41334875c7c40a7d51b8a430396296e9cec74f437c64b5e"
+  "hash": "612c1c4e8a7be9375490dca6f435f711f93952801436fb03e1eca93bd9234bdf"
 }

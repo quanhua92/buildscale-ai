@@ -34,6 +34,7 @@ impl Tool for WriteTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,
@@ -57,13 +58,13 @@ impl Tool for WriteTool {
             // Prepare content: handle auto-wrapping for documents
             let final_content = Self::prepare_content_for_type(file.file_type, write_args.content, write_args.file_type.as_deref())?;
 
-            let version = files::create_version(conn, file.id, CreateVersionRequest {
+            let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
                 branch: Some("main".to_string()),
                 content: final_content,
                 app_data: None,
             }).await?;
-            
+
             WriteResult {
                 path,
                 file_id: file.id,
@@ -87,7 +88,7 @@ impl Tool for WriteTool {
             // Prepare content: handle auto-wrapping for documents
             let final_content = Self::prepare_content_for_type(file_type, write_args.content, write_args.file_type.as_deref())?;
 
-            let file_result = files::create_file_with_content(conn, CreateFileRequest {
+            let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
                 author_id: user_id,
@@ -119,8 +120,8 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    /// Validates and normalizes content based on the file type.
-    /// Handles auto-wrapping raw strings into the expected JSON structure for Documents.
+    /// Validates content based on the file type.
+    /// Documents and Chat files can contain raw text or arbitrary JSON.
     fn prepare_content_for_type(
         actual_type: FileType,
         content: Value,
@@ -134,30 +135,8 @@ impl WriteTool {
             }));
         }
 
-        // 2. Handle Document normalization and validation
-        if matches!(actual_type, FileType::Document) {
-            // Auto-wrap raw strings: "hello" -> {"text": "hello"}
-            if content.is_string() {
-                return Ok(serde_json::json!({ "text": content.as_str().unwrap() }));
-            }
-
-            // Check if 'text' field exists
-            if !content.get("text").is_some_and(|v| v.is_string()) {
-                // If 'text' field is missing entirely
-                if content.get("text").is_none() {
-                    return Err(Error::Validation(ValidationErrors::Single {
-                        field: "content".to_string(),
-                        message: "Document content must contain a 'text' field".to_string(),
-                    }));
-                }
-                // If 'text' field exists but is not a string
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "content".to_string(),
-                    message: "Document content must contain a 'text' field with a string value".to_string(),
-                }));
-            }
-        }
-
+        // Content is passed through as-is for all file types
+        // Documents and Chat files can be raw strings or JSON objects
         Ok(content)
     }
 }

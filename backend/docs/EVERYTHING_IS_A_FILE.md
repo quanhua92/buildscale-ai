@@ -10,12 +10,44 @@ In BuildScale.ai, **Identity** is separated from **Content**.
 
 1.  **Identity (`files`)**: The permanent anchor. It has an ID, a human name (`name`), a machine identifier (`slug`), a location (`parent_id`), and an owner. It doesn't change when you edit the document content.
 2.  **Content (`file_versions`)**: The immutable history. Every "Save" creates a new version. We never update existing content; we only append new versions.
+3.  **Storage (Hybrid)**: The actual content lives on **Disk** (for speed and tooling compatibility), while the **Database** acts as the index and metadata registry.
 
 **Default Type & Validation**:
 *   The system defaults to `file_type = 'document'` if not specified.
-*   **Documents** are strictly validated to ensure they contain a `text` field with string content.
-*   Specialized types like `canvas` or `chat` allow arbitrary JSON structures but must be valid JSON.
+*   **Documents** and **Chats** can contain raw text content or JSON objects.
+*   **Canvas** and **Whiteboard** types use JSON structures for complex data.
 *   **Folders** are identity-only nodes and do not typically hold text content.
+
+## Storage Layout
+
+The system manages workspace directories within `/app/storage/workspaces/` (configurable via `STORAGE_BASE_PATH`):
+
+**Directory Structure:**
+```
+/app/storage/workspaces/{workspace_id}/
+├── latest/       # Current files (Source of Truth)
+├── archive/      # All file versions (Content-Addressable Store)
+└── trash/        # Soft-deleted files
+```
+
+### 1. The Latest (`latest/`)
+*   **Structure**: Hierarchical storage - files stored at full logical path
+*   **Example**: `./storage/workspaces/{workspace_id}/latest/projects/backend/src/main.rs`
+*   **Usage**: All `read`, `ls`, `grep`, and AI tool operations hit this directory.
+*   **State**: Always contains the `latest_version` of file.
+*   **Note**: Folders are created as actual directories on disk
+
+### 2. The Archive (`archive/`)
+*   **Structure**: Content-addressable storage (CAS) with 2-level sharding.
+*   **Example**: `./storage/workspaces/{workspace_id}/archive/e3/b0/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+*   **Usage**: History lookup, deduplication, restoration.
+*   **State**: Immutable blobs.
+*   **Key**: The `hash` column in `file_versions` points to these files.
+
+### 3. The Trash (`trash/`)
+*   **Structure**: Hierarchical list of deleted files preserving folder structure.
+*   **Example**: `./storage/workspaces/{workspace_id}/trash/projects/backend/main.rs`
+*   **Usage**: Soft delete recovery.
 
 ## Schema Overview
 
@@ -34,8 +66,8 @@ The `files` table is the central registry for all objects in the system.
 | `name` | TEXT | **Display Name.** Supports spaces, emojis, mixed case (e.g., "My Plan ✨"). |
 | `slug` | TEXT | **URL-safe Name.** Lowercase, hyphens (e.g., "my-plan"). Unique per folder. |
 | `path` | TEXT | **Materialized Path.** Absolute path for fast tree queries (e.g., "/my-plan/doc"). Unique per workspace. |
-| `is_virtual` | BOOLEAN | **Optimization Flag.** If true, the application logic should minimize database versioning, storing dynamic content in specialized tables instead. |
-| `is_remote` | BOOLEAN | **Storage Flag.** If true, content **must** be fetched from Object Storage using the version's hash; the database `content_raw` is ignored. |
+| `is_virtual` | BOOLEAN | **Optimization Flag.** If true, it implies the file might be constructed dynamically or has special handling (like Chats), though in the hybrid model most files are physical. |
+| `is_remote` | BOOLEAN | **Storage Flag.** If true, content **must** be fetched from S3/Object Storage; otherwise it is local disk. |
 | `permission` | INT | **Unix-style Mode.** Access control (e.g. 600 for private, 755 for shared). Defaults to 600. |
 | `latest_version_id` | UUID | **Cache.** Points to the most recent version in `file_versions`. |
 | `deleted_at` | TIMESTAMPTZ | **Trash Bin.** If not NULL, the file is in the trash. |
@@ -53,11 +85,12 @@ The `files` table is the central registry for all objects in the system.
 
 ### 2. The Content: `file_versions`
 
-Stores the actual data.
+Stores the history and metadata of file changes.
 
-**Architectural Note**:
-*   Small content (Markdown, Code, JSON) is stored directly in `content_raw` (JSONB) in PostgreSQL for atomic versioning and instant access.
-*   Large blobs (Images, Videos, Archives) are typically stored in S3/Object Storage, with only the reference URL and metadata stored in PostgreSQL. This hybrid approach enables both high-performance metadata operations and infinite storage scaling.
+**Architectural Change**:
+*   Content is stored exclusively on disk in the **Content-Addressable Archive**.
+*   The `hash` column points to the file content at `./archive/{hash}`.
+*   Database stores only metadata (no content).
 
 | Column | Type | Description |
 |---|---|---|
@@ -65,9 +98,8 @@ Stores the actual data.
 | `file_id` | UUID | Link to the Identity. |
 | `workspace_id` | UUID | **Tenant isolation.** Denormalized for performance. |
 | `author_id` | UUID | Who created this specific version. Supports user deletion. |
-| `content_raw` | JSONB | The payload (Markdown AST, Excalidraw JSON, Chat Array). |
-| `app_data` | JSONB | Machine metadata (AI tags, linguistic scores, view settings). |
-| `hash` | TEXT | SHA-256 hash of content. Used for deduplication. |
+| `app_data` | JSONB | Machine metadata (storage type, size, preview, AI tags, etc.). |
+| `hash` | TEXT | **The Key**. SHA-256 hash of content. Points to file in `./archive`. |
 | `branch` | TEXT | Default `main`. Supports A/B variants. |
 | `created_at` | TIMESTAMPTZ | Version creation timestamp. |
 | `updated_at` | TIMESTAMPTZ | Metadata update timestamp. |
@@ -119,19 +151,19 @@ Links versions to their chunks.
 | `workspace_id` | UUID | **Tenant isolation.** |
 | `chunk_index` | INT | Order of the chunk in the document. |
 
-### 6. Virtual Files (Dynamic Content)
+### 6. Chat Persistence (The Hybrid Model)
 
-For high-volume data like Chat Sessions, storing every single message as a new `file_version` blob would be inefficient.
+For high-volume data like Chat Sessions, we employ a hybrid persistence strategy.
 
-*   **Optimization**: If `is_virtual = true`, the system initializes the file with a single version but expects future updates to be handled outside the standard `file_versions` table.
-*   **Mechanism**: Application-layer logic (e.g., a Chat service) manages the dynamic state in high-performance tables.
-*   **Use Case**: Infinite chat histories, real-time logs, or computed views.
+1.  **Runtime**: Messages are inserted into the `chat_messages` table for O(1) retrieval of structured history during the conversation.
+2.  **Persistence**: Simultaneously, the message is formatted as Markdown and appended to `./storage/workspaces/{workspace_id}/latest/chats/<session_id>.md`.
+3.  **Consistency**: The `.md` file on disk is the "File Representation" that agents see when they browse directories.
 
 ### 7. Remote Files (Object Storage)
 
 For large binary assets (Images, Videos, Archives), storing content directly in PostgreSQL is inefficient.
 
-*   **Redirection**: If `is_remote = true`, the database `content_raw` column is considered invalid or merely a placeholder.
+*   **Redirection**: If `is_remote = true`, the content is stored externally and `hash` may contain an external reference.
 *   **Mechanism**: The system uses the version's hash or metadata to fetch the actual payload from Object Storage (S3/Blob).
 *   **Use Case**: Large datasets, media files, and high-volume archival data.
 
@@ -150,13 +182,8 @@ ORDER BY (file_type = 'folder') DESC, name ASC;
 ### B. Latest Content (Opening a File)
 "Get the current content for file X."
 
-```sql
--- O(1) Lookup using the cache
-SELECT fv.* 
-FROM file_versions fv
-JOIN files f ON f.latest_version_id = fv.id
-WHERE f.id = 'uuid-of-file-x';
-```
+1.  Query DB for metadata/hash.
+2.  Read file from `./storage/workspaces/{workspace_id}/latest/<path>`.
 
 ### C. Semantic Search (AI)
 "Find files related to 'Quarterly Goals'."
@@ -183,4 +210,3 @@ WHERE workspace_id = 'current-workspace'
   AND deleted_at IS NULL
 ORDER BY path ASC;
 ```
-

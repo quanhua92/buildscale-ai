@@ -1,6 +1,7 @@
 use crate::{DbConn, error::Result};
 use crate::models::requests::{ToolResponse, MkdirArgs, MkdirResult};
 use crate::services::files as file_services;
+use crate::services::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -28,6 +29,7 @@ impl Tool for MkdirTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        _storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         args: Value,

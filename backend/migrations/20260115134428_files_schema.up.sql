@@ -50,11 +50,10 @@ CREATE TABLE file_versions (
     file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, -- Tenant isolation
     branch TEXT DEFAULT 'main',      -- Supports parallel drafts or A/B variants
-    
-    -- JSONB Pillars
-    content_raw JSONB NOT NULL,      -- Human source (e.g., Markdown AST, chat log)
+
+    -- Metadata
     app_data JSONB DEFAULT '{}',     -- Machine metadata (e.g., AI tags, cursor pos, view settings)
-    
+
     hash TEXT NOT NULL,              -- SHA-256 fingerprint for Content-Addressing
     author_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

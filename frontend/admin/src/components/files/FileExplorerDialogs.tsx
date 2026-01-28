@@ -125,7 +125,7 @@ function FileEditor() {
       if (isEditorOpen && activeFile && activeFile.file_type !== 'folder') {
         const result = await readFile(activeFile.path)
         if (mounted && result) {
-          setContent(getContentAsString(result.content, activeFile.file_type))
+          setContent(getContentAsString(result.content))
         }
       }
     }
@@ -237,7 +237,7 @@ function FileViewer() {
         try {
           const result = await readFile(activeFile.path)
           if (mounted && result) {
-            setContent(getContentAsString(result.content, activeFile.file_type))
+            setContent(getContentAsString(result.content))
           }
         } finally {
           if (mounted) setIsLoading(false)

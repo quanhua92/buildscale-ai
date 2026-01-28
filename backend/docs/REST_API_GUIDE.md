@@ -122,9 +122,9 @@ Retrieve file metadata and its latest content version.
   },
   "latest_version": {
     "id": "...",
-    "content_raw": { "text": "Hello world" },
     "hash": "..."
-  }
+  },
+  "content": { "text": "Hello world" }
 }
 ```
 

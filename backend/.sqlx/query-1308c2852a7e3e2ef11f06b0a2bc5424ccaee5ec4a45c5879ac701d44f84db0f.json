@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE file_versions\n        SET content_raw = $2, hash = $3, updated_at = NOW()\n        WHERE id = $1\n        RETURNING \n            id, \n            file_id, \n            workspace_id,\n            branch as \"branch!\", \n            content_raw, \n            app_data, \n            hash, \n            author_id as \"author_id?\", \n            created_at, \n            updated_at\n        ",
+  "query": "\n        SELECT\n            fv.id,\n            fv.file_id,\n            fv.workspace_id,\n            fv.branch as \"branch!\",\n            fv.app_data,\n            fv.hash,\n            fv.author_id as \"author_id?\",\n            fv.created_at,\n            fv.updated_at\n        FROM file_versions fv\n        INNER JOIN files f ON fv.id = f.latest_version_id\n        WHERE f.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -25,40 +25,33 @@
       },
       {
         "ordinal": 4,
-        "name": "content_raw",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 5,
         "name": "app_data",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "hash",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "author_id?",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Jsonb",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -66,7 +59,6 @@
       false,
       false,
       true,
-      false,
       true,
       false,
       true,
@@ -74,5 +66,5 @@
       false
     ]
   },
-  "hash": "3b2dd083d3339bb70f64c980082258cbb700a9abf52362ca7e7bdba526ee58e1"
+  "hash": "1308c2852a7e3e2ef11f06b0a2bc5424ccaee5ec4a45c5879ac701d44f84db0f"
 }

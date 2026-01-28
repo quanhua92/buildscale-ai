@@ -12,6 +12,7 @@ use crate::{
     validation::validate_file_slug,
     config::AiConfig,
 };
+use crate::services::storage::FileStorageService;
 use pgvector::Vector;
 use sha2::{Digest, Sha256};
 use sqlx::Acquire;
@@ -20,24 +21,24 @@ use uuid::Uuid;
 pub const DEFAULT_FOLDER_PERMISSION: i32 = 755;
 pub const DEFAULT_FILE_PERMISSION: i32 = 600;
 
-/// Hashes JSON content using SHA-256 for content-addressing
+/// Hashes content using SHA-256 for content-addressing
+/// For strings: hashes raw bytes (preserves newlines, special chars)
+/// For other types: hashes JSON serialization
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
-    let content_str = serde_jcs::to_string(content)
-        .map_err(|e| Error::Internal(format!("Failed to serialize to canonical JSON: {}", e)))?;
-    let mut hasher = Sha256::new();
-    hasher.update(content_str.as_bytes());
-    let result = hasher.finalize();
-    Ok(hex::encode(result))
-}
+    use sha2::Digest;
 
-/// Normalizes content for a specific file type.
-/// For Documents, raw strings are auto-wrapped in `{"text": "..."}`.
-pub fn auto_wrap_document_content(file_type: FileType, content: serde_json::Value) -> serde_json::Value {
-    if matches!(file_type, FileType::Document) && content.is_string() {
-        serde_json::json!({ "text": content.as_str().unwrap() })
-    } else {
-        content
-    }
+    let bytes = match content {
+        // For strings, hash the raw string bytes (not JSON-encoded)
+        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+        // For other types (objects, arrays, numbers, bool), hash JSON representation
+        _ => serde_jcs::to_string(content)
+            .map_err(|e| Error::Internal(format!("Failed to serialize to canonical JSON: {}", e)))?
+            .into_bytes(),
+    };
+
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Converts a display name into a URL-safe slug.
@@ -125,6 +126,7 @@ pub async fn ensure_path_exists(
 /// Creates a new file with its initial content version in a single transaction
 pub async fn create_file_with_content(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     request: CreateFileRequest,
 ) -> Result<FileWithContent> {
     // 1. Start transaction
@@ -212,7 +214,7 @@ pub async fn create_file_with_content(
         status: FileStatus::Ready, // Set to Ready since we are providing content immediately
         name,
         slug,
-        path,
+        path: path.clone(),
         is_virtual: request.is_virtual.unwrap_or(false),
         is_remote: request.is_remote.unwrap_or(false),
         permission: request.permission.unwrap_or(if request.file_type == FileType::Folder {
@@ -223,16 +225,44 @@ pub async fn create_file_with_content(
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
-    // 5. Create initial version record (Ensures structural consistency for all file types)
-    let content = auto_wrap_document_content(file.file_type, request.content);
+    // 5. Create initial version record
+    let content = request.content;
+
+    // PERSISTENCE (Hybrid): Write to Disk
+    // For strings: write as raw bytes (preserves newlines, special chars)
+    // For other types: serialize as JSON
+    let content_bytes = match &content {
+        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+        _ => serde_json::to_vec(&content)
+            .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?,
+    };
+
     let hash = hash_content(&content)?;
+
+    // HYBRID: Write to Disk
+    if matches!(file.file_type, FileType::Folder) {
+        // Folders: Create directory structure on disk
+        storage.create_folder(file.workspace_id, &file.path).await?;
+    } else {
+        // Files: Write content using the full file.path to preserve folder structure on disk
+        storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+    }
+
+    // DATABASE: Store metadata only
+    let mut app_data = request.app_data.unwrap_or(serde_json::json!({}));
+    // Add storage metadata to app_data
+    if let Some(obj) = app_data.as_object_mut() {
+        obj.insert("storage".to_string(), serde_json::json!("disk"));
+        obj.insert("size".to_string(), serde_json::json!(content_bytes.len()));
+        obj.insert("preview".to_string(), serde_json::json!(truncate_preview(&content)));
+    }
+
     let new_version = NewFileVersion {
         file_id: file.id,
         workspace_id: file.workspace_id,
         branch: "main".to_string(),
-        content_raw: content,
-        app_data: request.app_data.unwrap_or(serde_json::json!({})),
-        hash,
+        app_data,
+        hash: hash.clone(),
         author_id: Some(request.author_id),
     };
     let latest_version = files::create_version(&mut tx, new_version).await?;
@@ -249,7 +279,17 @@ pub async fn create_file_with_content(
     Ok(FileWithContent {
         file,
         latest_version,
+        content,
     })
+}
+
+fn truncate_preview(content: &serde_json::Value) -> String {
+    let s = content.to_string();
+    if s.len() > 100 {
+        format!("{}...", &s[0..100])
+    } else {
+        s
+    }
 }
 
 /// Creates a new version for an existing file
@@ -258,19 +298,49 @@ pub async fn create_file_with_content(
 /// version, it skips the database insert and returns the existing version.
 pub async fn create_version(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     file_id: Uuid,
     request: CreateVersionRequest,
 ) -> Result<crate::models::files::FileVersion> {
     // 1. Get file to obtain file_type and workspace_id
     let file = files::get_file_by_id(conn, file_id).await?;
 
-    let content = auto_wrap_document_content(file.file_type, request.content);
+    let content = request.content;
+
+    // PERSISTENCE: Write to disk to get hash
+    // For strings: write as raw bytes (preserves newlines, special chars)
+    // For other types: serialize as JSON
+    let content_bytes = match &content {
+        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+        _ => serde_json::to_vec(&content)
+            .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?,
+    };
+
+    // We calculate hash locally first to check deduplication BEFORE writing to disk if possible,
+    // but FileStorageService handles double-write logic.
+    // Let's rely on storage service to be efficient.
+    // However, for DB deduplication we need the hash.
+    // Let's use the helper.
     let hash = hash_content(&content)?;
+
+    // Use the full file.path to preserve folder structure on disk
+    let storage_path = file.path.clone();
 
     // 2. Check if the latest version already has this hash (deduplication)
     let latest = files::get_latest_version_optional(conn, file_id).await?;
     if let Some(v) = latest.filter(|v| v.hash == hash) {
+        // Even if DB has it, ensure it's physically on disk (e.g. after a restore or sync issue)
+        // This is a "healing" write - effectively a touch
+        storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
         return Ok(v);
+    }
+
+    // Write to storage now that we know we need a new version
+    let written_hash = storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
+    
+    // Sanity check
+    if written_hash != hash {
+        tracing::warn!("Calculated hash {} differs from storage hash {}", hash, written_hash);
     }
 
     // 3. Start transaction
@@ -279,12 +349,19 @@ pub async fn create_version(
     })?;
 
     // 4. Insert new version
+    let mut app_data = request.app_data.unwrap_or(serde_json::json!({}));
+    // Add storage metadata to app_data
+    if let Some(obj) = app_data.as_object_mut() {
+        obj.insert("storage".to_string(), serde_json::json!("disk"));
+        obj.insert("size".to_string(), serde_json::json!(content_bytes.len()));
+        obj.insert("preview".to_string(), serde_json::json!(truncate_preview(&content)));
+    }
+
     let new_version = NewFileVersion {
         file_id,
         workspace_id: file.workspace_id,
         branch: request.branch.unwrap_or_else(|| "main".to_string()),
-        content_raw: content,
-        app_data: request.app_data.unwrap_or(serde_json::json!({})),
+        app_data,
         hash,
         author_id: request.author_id,
     };
@@ -303,13 +380,58 @@ pub async fn create_version(
 }
 
 /// Gets a file and its latest version together
-pub async fn get_file_with_content(conn: &mut DbConn, file_id: Uuid) -> Result<FileWithContent> {
+pub async fn get_file_with_content(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    file_id: Uuid
+) -> Result<FileWithContent> {
     let file = files::get_file_by_id(conn, file_id).await?;
     let latest_version = files::get_latest_version(conn, file_id).await?;
+
+    // Fetch content from appropriate source
+    let content = if !file.is_remote {
+        // HYBRID READ: Fetch content from disk for non-remote files (including chat files)
+        // Use the full file.path to read from correct hierarchical location
+        let storage_path = file.path.clone();
+
+        match storage.read_file(file.workspace_id, &storage_path).await {
+            Ok(bytes) => {
+                // Try to parse as JSON first (for objects/arrays/numbers/bool)
+                // If that fails, treat as raw string (for text content)
+                serde_json::from_slice(&bytes)
+                    .unwrap_or_else(|_| {
+                        // Not valid JSON, treat as raw UTF-8 string
+                        // Use Value::String directly to avoid double-wrapping with json!()
+                        serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
+                    })
+            },
+            Err(Error::NotFound(_)) => {
+                // Fallback: If not found on disk, check if it's in archive using the hash
+                if let Ok(bytes) = storage.read_version(file.workspace_id, &latest_version.hash).await {
+                     // Heal: Write back to working tree
+                     let _ = storage.write_file(file.workspace_id, &storage_path, &bytes).await;
+                     serde_json::from_slice(&bytes)
+                        .unwrap_or_else(|_| {
+                            // Not valid JSON, treat as raw UTF-8 string
+                            // Use Value::String directly to avoid double-wrapping with json!()
+                            serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
+                        })
+                } else {
+                    tracing::error!("File content missing on disk and archive for file {}", file.path);
+                    serde_json::json!({"error": "Content missing"})
+                }
+            },
+            Err(e) => return Err(e),
+        }
+    } else {
+        // Remote files - no content available locally
+        serde_json::json!(null)
+    };
 
     Ok(FileWithContent {
         file,
         latest_version,
+        content,
     })
 }
 
@@ -432,7 +554,11 @@ pub async fn update_file(
 }
 
 /// Soft deletes a file with a check for empty folders
-pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
+pub async fn soft_delete_file(
+    conn: &mut DbConn, 
+    storage: &FileStorageService,
+    file_id: Uuid
+) -> Result<()> {
     let file = files::get_file_by_id(conn, file_id).await?;
 
     if file.deleted_at.is_some() {
@@ -443,12 +569,18 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
     if matches!(file.file_type, FileType::Folder) {
         let has_children = files::has_active_children(conn, file_id).await?;
         let has_descendants = files::has_active_descendants(conn, file.workspace_id, &file.path).await?;
-        
+
         if has_children || has_descendants {
             return Err(Error::Conflict(
                 "Cannot delete folder because it is not empty. Please delete or move sub-items first.".to_string(),
             ));
         }
+    }
+
+    // HYBRID: Move from Working Tree to Trash on disk
+    if !matches!(file.file_type, FileType::Folder) {
+        // Use the full file.path to move from correct hierarchical location
+        storage.move_to_trash(file.workspace_id, &file.path).await?;
     }
 
     let rows_affected = files::soft_delete_file(conn, file_id).await?;
@@ -465,7 +597,11 @@ pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
 }
 
 /// Restores a soft-deleted file
-pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
+pub async fn restore_file(
+    conn: &mut DbConn, 
+    storage: &FileStorageService,
+    file_id: Uuid
+) -> Result<File> {
     let file = files::get_file_by_id(conn, file_id).await?;
 
     if file.deleted_at.is_none() {
@@ -478,6 +614,12 @@ pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File> {
             "Cannot restore '{}' because another file with the same name already exists in its original location.",
             file.slug
         )));
+    }
+
+    // HYBRID: Ensure file is restored to Working Tree
+    if let Some(_version_id) = file.latest_version_id {
+        let version = files::get_latest_version(conn, file_id).await?;
+        storage.ensure_file_restored(file.workspace_id, &file.path, &version.hash).await?;
     }
 
     files::restore_file(conn, file_id).await
@@ -579,6 +721,7 @@ pub async fn get_file_network(conn: &mut DbConn, file_id: Uuid) -> Result<FileNe
 /// Orchestrates the AI ingestion pipeline for a file.
 pub async fn process_file_for_ai(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     file_id: Uuid,
     ai_config: &AiConfig,
 ) -> Result<()> {
@@ -591,8 +734,9 @@ pub async fn process_file_for_ai(
 
     // 3. Process with error handling to avoid stuck status
     let process_result: Result<()> = async {
-        // Extract text content (from JSONB)
-        let text = extract_text_recursively(&latest_version.content_raw);
+        // Extract text content (from disk)
+        let file_with_content = get_file_with_content(conn, storage, file_id).await?;
+        let text = extract_text_recursively(&file_with_content.content);
 
         if text.trim().is_empty() {
             return Ok(());

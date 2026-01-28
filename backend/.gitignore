@@ -1,0 +1,29 @@
+# Storage directories
+/storage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rust
+/target/
+**/*.rs.bk
+**/*.rs.bk
+
+# Build output
+/target/
+dist/
+build/
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local

@@ -10,6 +10,7 @@ use buildscale::{
             add_tag, create_file_with_content, create_version, get_file_network, link_files,
             update_file, process_file_for_ai, semantic_search,
         },
+        storage::FileStorageService,
         users::register_user,
         workspaces::create_workspace,
     },
@@ -33,6 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = PgPool::connect(config.database.connection_string().expose_secret()).await?;
     println!("✓ Database connection established");
     println!();
+
+    // Initialize file storage service
+    let storage = FileStorageService::new(&config.storage.base_path);
 
     // Get a database connection
     let mut conn = pool.acquire().await?;
@@ -102,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let folder = create_file_with_content(&mut conn, folder_request).await?.file;
+    let folder = create_file_with_content(&mut conn, &storage, folder_request).await?.file;
     println!("✓ Created Folder: {} (Slug: /{})", folder.name, folder.slug);
 
     // 2.2 Create a Document inside the folder
@@ -120,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: serde_json::json!("Retrieval-Augmented Generation (RAG) is a technique used to give LLMs access to external data."),
         app_data: Some(serde_json::json!({"tags": ["ai", "guide"]})),
     };
-    let doc1 = create_file_with_content(&mut conn, doc1_request).await?;
+    let doc1 = create_file_with_content(&mut conn, &storage, doc1_request).await?;
     println!("✓ Created Document: {} (Slug: /{}/{})", doc1.file.name, folder.slug, doc1.file.slug);
 
     // 2.3 Create another Document
@@ -138,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: serde_json::json!("Autonomous agents use files as their toolbox to perform actions and remember context."),
         app_data: None,
     };
-    let doc2 = create_file_with_content(&mut conn, doc2_request).await?;
+    let doc2 = create_file_with_content(&mut conn, &storage, doc2_request).await?;
     println!("✓ Created Document: {} (Slug: /{}/{})", doc2.file.name, folder.slug, doc2.file.slug);
     println!();
 
@@ -153,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: serde_json::json!("Retrieval-Augmented Generation (RAG) is a technique used to give LLMs access to external data. v2 adds re-ranking support."),
         app_data: None,
     };
-    let v2 = create_version(&mut conn, doc1.file.id, update_request).await?;
+    let v2 = create_version(&mut conn, &storage, doc1.file.id, update_request).await?;
     println!("✓ Updated 'rag_guide.md' to Version 2");
     println!("  - Original Hash: {}", doc1.latest_version.hash);
     println!("  - New Hash:      {}", v2.hash);
@@ -206,8 +210,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Manually trigger ingestion (simulating background worker)
     println!("Triggering AI ingestion for documents...");
-    process_file_for_ai(&mut conn, doc1.file.id, &config.ai).await?;
-    process_file_for_ai(&mut conn, doc2.file.id, &config.ai).await?;
+    process_file_for_ai(&mut conn, &storage, doc1.file.id, &config.ai).await?;
+    process_file_for_ai(&mut conn, &storage, doc2.file.id, &config.ai).await?;
     
     // Perform search
     // Using a non-zero vector to ensure similarity scores are calculated correctly

@@ -65,6 +65,7 @@ pub async fn execute_tool(
     let response = executor
         .execute(
             &mut conn,
+            &state.storage,
             workspace_access.workspace_id,
             workspace_access.user_id,
             request.args,

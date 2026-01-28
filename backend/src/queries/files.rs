@@ -55,24 +55,22 @@ pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> R
     let version = sqlx::query_as!(
         FileVersion,
         r#"
-        INSERT INTO file_versions (file_id, workspace_id, branch, content_raw, app_data, hash, author_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING 
-            id, 
-            file_id, 
+        INSERT INTO file_versions (file_id, workspace_id, branch, app_data, hash, author_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING
+            id,
+            file_id,
             workspace_id,
-            branch as "branch!", 
-            content_raw, 
-            app_data, 
-            hash, 
-            author_id as "author_id?", 
-            created_at, 
+            branch as "branch!",
+            app_data,
+            hash,
+            author_id as "author_id?",
+            created_at,
             updated_at
         "#,
         new_version.file_id,
         new_version.workspace_id,
         new_version.branch,
-        new_version.content_raw,
         new_version.app_data,
         new_version.hash,
         new_version.author_id
@@ -158,16 +156,15 @@ pub async fn get_latest_version(conn: &mut DbConn, file_id: Uuid) -> Result<File
     let version = sqlx::query_as!(
         FileVersion,
         r#"
-        SELECT 
-            fv.id, 
-            fv.file_id, 
+        SELECT
+            fv.id,
+            fv.file_id,
             fv.workspace_id,
-            fv.branch as "branch!", 
-            fv.content_raw, 
-            fv.app_data, 
-            fv.hash, 
-            fv.author_id as "author_id?", 
-            fv.created_at, 
+            fv.branch as "branch!",
+            fv.app_data,
+            fv.hash,
+            fv.author_id as "author_id?",
+            fv.created_at,
             fv.updated_at
         FROM file_versions fv
         INNER JOIN files f ON fv.id = f.latest_version_id
@@ -182,34 +179,32 @@ pub async fn get_latest_version(conn: &mut DbConn, file_id: Uuid) -> Result<File
     Ok(version)
 }
 
-/// Updates the content and hash of an existing file version.
+/// Updates the hash of an existing file version.
 /// This is used for "In-Place Updates" of virtual files to prevent history bloat.
+/// Content is stored on disk, only the hash needs updating in the database.
 pub async fn update_version_content(
     conn: &mut DbConn,
     version_id: Uuid,
-    content_raw: serde_json::Value,
     hash: String,
 ) -> Result<FileVersion> {
     let version = sqlx::query_as!(
         FileVersion,
         r#"
         UPDATE file_versions
-        SET content_raw = $2, hash = $3, updated_at = NOW()
+        SET hash = $2, updated_at = NOW()
         WHERE id = $1
-        RETURNING 
-            id, 
-            file_id, 
+        RETURNING
+            id,
+            file_id,
             workspace_id,
-            branch as "branch!", 
-            content_raw, 
-            app_data, 
-            hash, 
-            author_id as "author_id?", 
-            created_at, 
+            branch as "branch!",
+            app_data,
+            hash,
+            author_id as "author_id?",
+            created_at,
             updated_at
         "#,
         version_id,
-        content_raw,
         hash
     )
     .fetch_one(conn)
@@ -227,16 +222,15 @@ pub async fn get_latest_version_optional(
     let version = sqlx::query_as!(
         FileVersion,
         r#"
-        SELECT 
-            fv.id, 
-            fv.file_id, 
+        SELECT
+            fv.id,
+            fv.file_id,
             fv.workspace_id,
-            fv.branch as "branch!", 
-            fv.content_raw, 
-            fv.app_data, 
-            fv.hash, 
-            fv.author_id as "author_id?", 
-            fv.created_at, 
+            fv.branch as "branch!",
+            fv.app_data,
+            fv.hash,
+            fv.author_id as "author_id?",
+            fv.created_at,
             fv.updated_at
         FROM file_versions fv
         INNER JOIN files f ON fv.id = f.latest_version_id
@@ -286,6 +280,48 @@ pub async fn get_file_by_slug(
         "#,
         workspace_id,
         parent_id,
+        slug
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(file)
+}
+
+/// Resolves a file by its slug and workspace_id (any parent).
+/// Useful for mapping storage paths back to logical paths.
+pub async fn get_file_by_slug_any_parent(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    slug: &str,
+) -> Result<Option<File>> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        FROM files
+        WHERE workspace_id = $1
+          AND slug = $2
+          AND deleted_at IS NULL
+        "#,
+        workspace_id,
         slug
     )
     .fetch_optional(conn)
@@ -983,51 +1019,6 @@ pub async fn semantic_search(
     Ok(results)
 }
 
-/// Performs a regex search across all document files in a workspace.
-pub async fn grep_files(
-    conn: &mut DbConn,
-    workspace_id: Uuid,
-    pattern: &str,
-    path_pattern: Option<&str>,
-    case_sensitive: bool,
-) -> Result<Vec<crate::models::requests::GrepMatch>> {
-    let results = sqlx::query_as!(
-        crate::models::requests::GrepMatch,
-        r#"
-        SELECT 
-            f.path as "path!",
-            t.line_number::int4 as "line_number!",
-            t.line_text as "line_text!"
-        FROM files f
-        JOIN file_versions fv ON f.latest_version_id = fv.id
-        CROSS JOIN LATERAL unnest(string_to_array(
-            CASE 
-                WHEN fv.content_raw ? 'text' THEN fv.content_raw->>'text'
-                WHEN jsonb_typeof(fv.content_raw) = 'string' THEN fv.content_raw #>> '{}'
-                ELSE jsonb_pretty(fv.content_raw) 
-            END, 
-            E'\n'
-        )) 
-            WITH ORDINALITY AS t(line_text, line_number)
-        WHERE f.workspace_id = $1
-          AND f.deleted_at IS NULL
-          AND ($3::text IS NULL OR f.path ILIKE $3::text)
-          AND (CASE WHEN $4::boolean THEN t.line_text ~ $2 ELSE t.line_text ~* $2 END)
-        ORDER BY f.path, t.line_number
-        LIMIT 1000
-        "#,
-        workspace_id,
-        pattern,
-        path_pattern,
-        case_sensitive
-    )
-    .fetch_all(conn)
-    .await
-    .map_err(Error::Sqlx)?;
-
-    Ok(results)
-}
-
 /// Row structure for semantic search results.
 #[derive(Debug, Clone)]
 pub struct SearchResultRow {
@@ -1108,4 +1099,40 @@ pub async fn update_file_path_and_slug(
     .map_err(|e| Error::Internal(format!("Failed to update file path and slug: {}", e)))?;
 
     Ok(file)
+}
+
+/// Gets all active (non-deleted) files in a workspace.
+pub async fn list_all_active_files(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        FROM files
+        WHERE workspace_id = $1
+          AND deleted_at IS NULL
+        ORDER BY path ASC
+        "#,
+        workspace_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
 }

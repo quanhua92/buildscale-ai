@@ -82,7 +82,6 @@ pub async fn create_chat(
         file_id: chat_file.id,
         workspace_id,
         branch: "main".to_string(),
-        content_raw: serde_json::json!({"messages": []}),
         app_data,
         hash: "initial".to_string(),
         author_id: Some(user.id),
@@ -97,7 +96,7 @@ pub async fn create_chat(
     let model_for_metadata = req.model.clone()
         .unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
 
-    ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
+    ChatService::save_message(&mut conn, &state.storage, workspace_id, NewChatMessage {
         file_id: chat_file.id,
         workspace_id,
         role: ChatMessageRole::User,
@@ -119,6 +118,7 @@ pub async fn create_chat(
         workspace_id,
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
+        storage: state.storage.clone(),
         default_persona: crate::agents::get_persona(None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
@@ -158,6 +158,7 @@ pub async fn get_chat_events(
             workspace_id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
+            storage: state.storage.clone(),
             default_persona: crate::agents::get_persona(None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
@@ -233,7 +234,7 @@ pub async fn post_chat_message(
         agent_config.model
     };
 
-    ChatService::save_message(&mut conn, workspace_id, NewChatMessage {
+    ChatService::save_message(&mut conn, &state.storage, workspace_id, NewChatMessage {
         file_id: chat_id,
         workspace_id,
         role: ChatMessageRole::User,
@@ -261,6 +262,7 @@ pub async fn post_chat_message(
             workspace_id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
+            storage: state.storage.clone(),
             default_persona: crate::agents::get_persona(None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,

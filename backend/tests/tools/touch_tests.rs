@@ -22,7 +22,7 @@ async fn test_touch_new_file() {
     let read_res = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({"path": "/brand-new.txt"})).await;
     assert_eq!(read_res.status(), 200);
     let read_body: serde_json::Value = read_res.json().await.unwrap();
-    assert_eq!(read_body["result"]["content"], ""); // ReadTool unwraps empty doc to empty string
+    assert_eq!(read_body["result"]["content"], "");
 }
 
 #[tokio::test]
@@ -34,7 +34,7 @@ async fn test_touch_existing_file() {
     // 1. Create file
     execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
-        "content": {"text": "hello"}
+        "content": "hello"
     })).await;
     
     // 2. Touch it

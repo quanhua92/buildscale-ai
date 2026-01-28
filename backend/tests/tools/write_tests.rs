@@ -1,16 +1,16 @@
 //! Tests for write tool
 
 use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
-use crate::tools::common::{execute_tool, write_file, read_file, write_file_with_type};
+use crate::tools::common::{execute_tool, write_file, read_file};
 
 #[tokio::test]
 async fn test_write_new_file() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Write Test").await;
-    
-    let content = "new file content";  // Auto-unwrapped for Documents
-    let file_id = write_file(&app, &workspace_id, &token, "/new.txt", serde_json::json!({"text": content})).await;
+
+    let content = "new file content";
+    let file_id = write_file(&app, &workspace_id, &token, "/new.txt", serde_json::json!(content)).await;
 
     assert!(!file_id.is_empty());
 
@@ -23,14 +23,14 @@ async fn test_write_update_existing_file() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Write Update Test").await;
-    
+
     let initial_content = "initial";
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": initial_content})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(initial_content)).await;
 
     let updated_content = "updated";
     let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
-        "content": serde_json::json!({"text": updated_content})
+        "content": updated_content
     })).await;
 
     assert_eq!(response.status(), 200);
@@ -47,9 +47,9 @@ async fn test_write_nested_path() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Write Nested Test").await;
-    
-    let content = "nested content";  // Auto-unwrapped for Documents
-    write_file(&app, &workspace_id, &token, "/folder/subfolder/nested.txt", serde_json::json!({"text": content})).await;
+
+    let content = "nested content";
+    write_file(&app, &workspace_id, &token, "/folder/subfolder/nested.txt", serde_json::json!(content)).await;
 
     let read_content = read_file(&app, &workspace_id, &token, "/folder/subfolder/nested.txt").await;
     assert_eq!(read_content.as_str().unwrap(), content);
@@ -60,12 +60,12 @@ async fn test_write_duplicate_content() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Write Dedup Test").await;
-    
-    let content = "same content";  // Auto-unwrapped for Documents
-    
+
+    let content = "same content";
+
     let first_write = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
-        "content": serde_json::json!({"text": content})
+        "content": content
     })).await;
 
     assert_eq!(first_write.status(), 200);
@@ -74,13 +74,13 @@ async fn test_write_duplicate_content() {
 
     let second_write = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
-        "content": serde_json::json!({"text": content})
+        "content": content
     })).await;
-    
+
     assert_eq!(second_write.status(), 200);
     let second_body: serde_json::Value = second_write.json().await.unwrap();
     let second_version_id = second_body["result"]["version_id"].as_str().unwrap();
-    
+
     assert_eq!(first_version_id, second_version_id);
 }
 
@@ -89,14 +89,14 @@ async fn test_write_invalid_file_type() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Write Invalid Type Test").await;
-    
-    let content = serde_json::json!({"text": "content"});
+
+    let content = "content";
     let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
         "content": content,
         "file_type": "invalid_type"
     })).await;
-    
+
     assert_eq!(response.status(), 400);
     let body: serde_json::Value = response.json().await.unwrap();
     assert_eq!(body["code"], "VALIDATION_ERROR");
@@ -109,13 +109,13 @@ async fn test_write_folder() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Write Folder Test").await;
-    
+
     let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/my-folder",
         "content": {},
         "file_type": "folder"
     })).await;
-    
+
     assert_eq!(response.status(), 200);
     let body: serde_json::Value = response.json().await.unwrap();
     assert!(body["success"].as_bool().unwrap());
@@ -123,74 +123,55 @@ async fn test_write_folder() {
 }
 
 #[tokio::test]
-async fn test_write_update_document_invalid_content() {
+async fn test_write_markdown_content() {
+    // Files can store markdown content
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
-    let workspace_id = create_workspace(&app, &token, "Update Document Validation Test").await;
-    
-    // 1. Create a valid document
-    let content = serde_json::json!({"text": "valid"});
-    write_file(&app, &workspace_id, &token, "/doc.txt", content).await;
-    
-    // 2. Try to update with invalid content (missing 'text' field)
-    let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
-        "path": "/doc.txt",
-        "content": {"not_text": "invalid"}
-    })).await;
-    
-    assert_eq!(response.status(), 400);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["code"], "VALIDATION_ERROR");
-    assert!(body["fields"]["content"].as_str().unwrap().contains("Document content must contain a 'text' field"));
+    let workspace_id = create_workspace(&app, &token, "Markdown Test").await;
 
-    // 3. Try to update with invalid content ('text' field is not a string)
+    let markdown_content = "# Heading\n\nSome **bold** text.";
     let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
-        "path": "/doc.txt",
-        "content": {"text": 123}
-    })).await;
-    
-    assert_eq!(response.status(), 400);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["code"], "VALIDATION_ERROR");
-    assert!(body["fields"]["content"].as_str().unwrap().contains("Document content must contain a 'text' field with a string value"));
-}
-
-#[tokio::test]
-async fn test_write_auto_wrap_string() {
-    // Verify that raw strings are auto-wrapped and then auto-unwrapped for Documents
-    let app = TestApp::new_with_options(TestAppOptions::api()).await;
-    let token = register_and_login(&app).await;
-    let workspace_id = create_workspace(&app, &token, "Auto Wrap Test").await;
-
-    // Write raw string (should be auto-wrapped to {"text": "raw string content"})
-    let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
-        "path": "/auto.txt",
-        "content": "raw string content"  // Not wrapped - raw string
+        "path": "/doc.md",
+        "content": markdown_content
     })).await;
 
     assert_eq!(response.status(), 200);
 
-    // Read back (should be auto-unwrapped to just the string)
-    let read_content = read_file(&app, &workspace_id, &token, "/auto.txt").await;
-    assert_eq!(read_content.as_str().unwrap(), "raw string content");
+    // Read back - should return the markdown string
+    let read_content = read_file(&app, &workspace_id, &token, "/doc.md").await;
+    assert_eq!(read_content.as_str().unwrap(), markdown_content);
 }
 
 #[tokio::test]
-async fn test_write_canvas_preserves_jsonb() {
-    // Canvas files preserve JSON structure without auto-wrap/unwrap
+async fn test_write_multiline_text() {
+    // Test multiline text content
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
-    let workspace_id = create_workspace(&app, &token, "Canvas Test").await;
+    let workspace_id = create_workspace(&app, &token, "Multiline Test").await;
 
-    let canvas_content = serde_json::json!({
-        "elements": [{"type": "rect", "x": 10, "y": 20}],
-        "metadata": {"version": 1}
-    });
+    let content = "Line 1\nLine 2\nLine 3";
+    write_file(&app, &workspace_id, &token, "/multiline.txt", serde_json::json!(content)).await;
 
-    write_file_with_type(&app, &workspace_id, &token, "/canvas.json", canvas_content.clone(), "canvas").await;
-
-    // Read back - should be identical (no unwrap for non-Document types)
-    let read_content = read_file(&app, &workspace_id, &token, "/canvas.json").await;
-    assert_eq!(read_content, canvas_content);
+    let read_content = read_file(&app, &workspace_id, &token, "/multiline.txt").await;
+    assert_eq!(read_content.as_str().unwrap(), content);
 }
 
+#[tokio::test]
+async fn test_write_multiline_preserves_newlines() {
+    // Verify that newlines are stored as actual newlines on disk, not literal "\n"
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Newline Preservation Test").await;
+
+    let content = "Line 1\nLine 2\nLine 3";
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(content)).await;
+
+    // Read back via tool
+    let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
+    assert_eq!(read_content.as_str().unwrap(), content);
+
+    // Verify on disk has actual newlines (not literal \n)
+    let file_path = format!("storage/workspaces/{}/latest/test.txt", workspace_id);
+    let on_disk = std::fs::read_to_string(&file_path).unwrap();
+    assert_eq!(on_disk, "Line 1\nLine 2\nLine 3");
+}

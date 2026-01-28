@@ -2,12 +2,14 @@ use crate::error::Error;
 use crate::models::requests::{
     EditArgs, GrepArgs, LsArgs, MkdirArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
 };
+use crate::services::storage::FileStorageService;
 use crate::tools;
 
 use crate::DbPool;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool as RigTool;
 use std::future::Future;
+use std::sync::Arc;
 use uuid::Uuid;
 
 fn enforce_strict_schema(mut schema: serde_json::Value) -> serde_json::Value {
@@ -64,6 +66,7 @@ macro_rules! define_rig_tool {
     ) => {
         pub struct $rig_tool_name {
             pub pool: DbPool,
+            pub storage: Arc<FileStorageService>,
             pub workspace_id: Uuid,
             pub user_id: Uuid,
         }
@@ -97,6 +100,7 @@ macro_rules! define_rig_tool {
                 args: Self::Args,
             ) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
                 let pool = self.pool.clone();
+                let storage = self.storage.clone();
                 let workspace_id = self.workspace_id;
                 let user_id = self.user_id;
 
@@ -106,6 +110,7 @@ macro_rules! define_rig_tool {
                     let response = tools::Tool::execute(
                         &tool,
                         &mut conn,
+                        &storage,
                         workspace_id,
                         user_id,
                         serde_json::to_value(args)?,
