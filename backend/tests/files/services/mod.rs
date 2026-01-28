@@ -1,4 +1,5 @@
 use buildscale::{
+    load_config,
     models::{
         files::FileType,
         requests::{CreateFileRequest, CreateVersionRequest},
@@ -7,6 +8,7 @@ use buildscale::{
         create_file_with_content, create_version, get_file_with_content, DEFAULT_FILE_PERMISSION,
         DEFAULT_FOLDER_PERMISSION,
     },
+    services::storage::FileStorageService,
 };
 use crate::common::database::TestApp;
 
@@ -14,6 +16,7 @@ use crate::common::database::TestApp;
 async fn test_default_permissions_by_type() {
     let test_app = TestApp::new("test_default_permissions_by_type").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -32,7 +35,7 @@ async fn test_default_permissions_by_type() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let doc = create_file_with_content(&mut conn, doc_request)
+    let doc = create_file_with_content(&mut conn, &storage, doc_request)
         .await
         .unwrap();
     assert_eq!(
@@ -55,7 +58,7 @@ async fn test_default_permissions_by_type() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let folder = create_file_with_content(&mut conn, folder_request)
+    let folder = create_file_with_content(&mut conn, &storage, folder_request)
         .await
         .unwrap();
     assert_eq!(
@@ -78,7 +81,7 @@ async fn test_default_permissions_by_type() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let over = create_file_with_content(&mut conn, override_request)
+    let over = create_file_with_content(&mut conn, &storage, override_request)
         .await
         .unwrap();
     assert_eq!(over.file.permission, 777, "Should respect explicit permission");
@@ -88,6 +91,7 @@ async fn test_default_permissions_by_type() {
 async fn test_create_file_atomic_success() {
     let test_app = TestApp::new("test_create_file_atomic_success").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -106,7 +110,7 @@ async fn test_create_file_atomic_success() {
         app_data: None,
     };
 
-    let result = create_file_with_content(&mut conn, request).await;
+    let result = create_file_with_content(&mut conn, &storage, request).await;
     assert!(result.is_ok(), "File creation should succeed");
 
     let file_with_content = result.unwrap();
@@ -118,6 +122,7 @@ async fn test_create_file_atomic_success() {
 async fn test_version_deduplication() {
     let test_app = TestApp::new("test_version_deduplication").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -136,7 +141,7 @@ async fn test_version_deduplication() {
         content: serde_json::json!({"text": "original"}),
         app_data: None,
     };
-    let created = create_file_with_content(&mut conn, request).await.unwrap();
+    let created = create_file_with_content(&mut conn, &storage, request).await.unwrap();
     let file_id = created.file.id;
     let original_version_id = created.latest_version.id;
 
@@ -147,7 +152,7 @@ async fn test_version_deduplication() {
         content: serde_json::json!({"text": "original"}),
         app_data: None,
     };
-    let updated = create_version(&mut conn, file_id, update_request).await.unwrap();
+    let updated = create_version(&mut conn, &storage, file_id, update_request).await.unwrap();
 
     // 3. Verify it's the SAME version ID (deduplicated)
     assert_eq!(updated.id, original_version_id, "Should return existing version for identical content");
@@ -157,6 +162,7 @@ async fn test_version_deduplication() {
 async fn test_version_history() {
     let test_app = TestApp::new("test_version_history").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -175,7 +181,7 @@ async fn test_version_history() {
         content: serde_json::json!({"v": 1}),
         app_data: None,
     };
-    let created = create_file_with_content(&mut conn, request).await.unwrap();
+    let created = create_file_with_content(&mut conn, &storage, request).await.unwrap();
     let file_id = created.file.id;
 
     // 2. Add v2
@@ -185,9 +191,9 @@ async fn test_version_history() {
         content: serde_json::json!({"v": 2}),
         app_data: None,
     };
-    create_version(&mut conn, file_id, update_request).await.unwrap();
+    create_version(&mut conn, &storage, file_id, update_request).await.unwrap();
 
     // 3. Verify get_file_with_content returns v2
-    let fetched = get_file_with_content(&mut conn, file_id).await.unwrap();
+    let fetched = get_file_with_content(&mut conn, &storage, file_id).await.unwrap();
     assert_eq!(fetched.latest_version.content_raw["v"], 2);
 }

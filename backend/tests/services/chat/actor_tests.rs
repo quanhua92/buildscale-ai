@@ -1,7 +1,9 @@
 use crate::common::TestApp;
+use buildscale::load_config;
 use buildscale::services::chat::actor::{ChatActor, ChatActorArgs};
 use buildscale::services::chat::rig_engine::RigService;
 use buildscale::services::chat::registry::{AgentRegistry, AgentCommand};
+use buildscale::services::storage::FileStorageService;
 use uuid::Uuid;
 use std::sync::Arc;
 use tokio::time::{Duration};
@@ -13,6 +15,7 @@ async fn test_chat_actor_inactivity_timeout() {
     let workspace_id = Uuid::new_v4();
     let rig_service = Arc::new(RigService::dummy());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     // Use a short timeout for testing (200ms)
     let timeout = Duration::from_millis(200);
@@ -21,6 +24,7 @@ async fn test_chat_actor_inactivity_timeout() {
         workspace_id,
         pool: app.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -45,6 +49,7 @@ async fn test_agent_registry_cleanup() {
     let rig_service = Arc::new(RigService::dummy());
     let registry = AgentRegistry::new();
     let event_tx = registry.get_or_create_bus(chat_id).await;
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     // Use a short timeout for testing (200ms)
     let timeout = Duration::from_millis(200);
@@ -53,6 +58,7 @@ async fn test_agent_registry_cleanup() {
         workspace_id,
         pool: app.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -78,6 +84,7 @@ async fn test_chat_actor_timeout_reset() {
     let workspace_id = Uuid::new_v4();
     let rig_service = Arc::new(RigService::dummy());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     // Use a 500ms timeout
     let timeout = Duration::from_millis(500);
@@ -86,6 +93,7 @@ async fn test_chat_actor_timeout_reset() {
         workspace_id,
         pool: app.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,

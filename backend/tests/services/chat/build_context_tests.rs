@@ -13,12 +13,15 @@ use buildscale::models::requests::CreateFileRequest;
 use buildscale::queries::chat;
 use buildscale::services::chat::{AttachmentKey, ChatService, DEFAULT_CONTEXT_TOKEN_LIMIT};
 use buildscale::services::files::create_file_with_content;
+use buildscale::services::storage::FileStorageService;
+use buildscale::load_config;
 use crate::common::database::TestApp;
 
 #[tokio::test]
 async fn test_build_context_with_persona() {
     let test_app = TestApp::new("test_build_context_with_persona").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -37,11 +40,11 @@ async fn test_build_context_with_persona() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -54,6 +57,7 @@ async fn test_build_context_with_persona() {
 async fn test_build_context_with_history() {
     let test_app = TestApp::new("test_build_context_with_history").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -72,7 +76,7 @@ async fn test_build_context_with_history() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -103,7 +107,7 @@ async fn test_build_context_with_history() {
     .await
     .expect("Failed to insert message");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -117,6 +121,7 @@ async fn test_build_context_with_history() {
 async fn test_build_context_with_file_attachments() {
     let test_app = TestApp::new("test_build_context_with_file_attachments").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -135,7 +140,7 @@ async fn test_build_context_with_file_attachments() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -154,7 +159,7 @@ async fn test_build_context_with_file_attachments() {
         content: serde_json::json!({"text": "Hello World"}),
         app_data: None,
     };
-    let file = create_file_with_content(&mut conn, file_request)
+    let file = create_file_with_content(&mut conn, &storage, file_request)
         .await
         .expect("Failed to create file");
 
@@ -181,7 +186,7 @@ async fn test_build_context_with_file_attachments() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -201,6 +206,7 @@ async fn test_build_context_with_file_attachments() {
 async fn test_build_context_workspace_isolation() {
     let test_app = TestApp::new("test_build_context_workspace_isolation").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user1, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
     let (_user2, workspace2) = test_app.create_test_workspace_with_user().await.unwrap();
@@ -220,7 +226,7 @@ async fn test_build_context_workspace_isolation() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -239,7 +245,7 @@ async fn test_build_context_workspace_isolation() {
         content: serde_json::json!({"text": "Secret data"}),
         app_data: None,
     };
-    let file = create_file_with_content(&mut conn, file_request)
+    let file = create_file_with_content(&mut conn, &storage, file_request)
         .await
         .expect("Failed to create file in workspace 2");
 
@@ -266,7 +272,7 @@ async fn test_build_context_workspace_isolation() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, workspace1.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace1.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -278,6 +284,7 @@ async fn test_build_context_workspace_isolation() {
 async fn test_build_context_empty_chat() {
     let test_app = TestApp::new("test_build_context_empty_chat").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -296,11 +303,11 @@ async fn test_build_context_empty_chat() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -314,6 +321,7 @@ async fn test_build_context_empty_chat() {
 async fn test_build_context_token_limit_optimization() {
     let test_app = TestApp::new("test_build_context_token_limit_optimization").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -332,7 +340,7 @@ async fn test_build_context_token_limit_optimization() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -371,7 +379,7 @@ async fn test_build_context_token_limit_optimization() {
             content: serde_json::json!({"text": "A".repeat(1000)}),
             app_data: None,
         };
-        let file = create_file_with_content(&mut conn, file_request)
+        let file = create_file_with_content(&mut conn, &storage, file_request)
             .await
             .expect("Failed to create file");
 
@@ -398,7 +406,7 @@ async fn test_build_context_token_limit_optimization() {
         .expect("Failed to insert message with attachment");
     }
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 
@@ -426,6 +434,7 @@ async fn test_build_context_token_limit_optimization() {
 async fn test_build_context_fragment_ordering() {
     let test_app = TestApp::new("test_build_context_fragment_ordering").await;
     let mut conn = test_app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -444,7 +453,7 @@ async fn test_build_context_fragment_ordering() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -477,7 +486,7 @@ async fn test_build_context_fragment_ordering() {
         content: serde_json::json!({"text": "File content"}),
         app_data: None,
     };
-    let file = create_file_with_content(&mut conn, file_request)
+    let file = create_file_with_content(&mut conn, &storage, file_request)
         .await
         .expect("Failed to create file");
 
@@ -503,7 +512,7 @@ async fn test_build_context_fragment_ordering() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, chat.file.id, workspace.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
         .await
         .expect("Failed to build context");
 

@@ -55,7 +55,7 @@ impl Tool for TouchTool {
                 is_remote: None,
                 permission: None,
                 file_type,
-                content: serde_json::json!({ "text": "" }), 
+                content: serde_json::json!(""), 
                 app_data: None,
             };
             

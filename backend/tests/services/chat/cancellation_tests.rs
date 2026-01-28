@@ -1,4 +1,5 @@
 use crate::common::database::TestApp;
+use buildscale::load_config;
 use buildscale::models::chat::{ChatMessageRole, NewChatMessage};
 use buildscale::models::files::FileType;
 use buildscale::models::requests::CreateFileRequest;
@@ -7,6 +8,7 @@ use buildscale::services::chat::actor::{ChatActor, ChatActorArgs};
 use buildscale::services::chat::registry::AgentCommand;
 use buildscale::services::chat::rig_engine::RigService;
 use buildscale::services::files::create_file_with_content;
+use buildscale::services::storage::FileStorageService;
 use buildscale::models::sse::SseEvent;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
@@ -15,6 +17,7 @@ use tokio::time::{timeout, Duration};
 async fn test_cancellation_during_streaming() {
     let app = TestApp::new("test_cancellation_during_streaming").await;
     let mut conn = app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = app.create_test_workspace_with_user().await.unwrap();
 
@@ -33,7 +36,7 @@ async fn test_cancellation_during_streaming() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -57,12 +60,14 @@ async fn test_cancellation_during_streaming() {
 
     let rig_service = Arc::new(RigService::dummy());
     let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(100);
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
         pool: app.test_db.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -126,6 +131,7 @@ async fn test_cancellation_during_streaming() {
 async fn test_cancellation_sends_stopped_event() {
     let app = TestApp::new("test_cancellation_sends_stopped_event").await;
     let mut conn = app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = app.create_test_workspace_with_user().await.unwrap();
 
@@ -144,7 +150,7 @@ async fn test_cancellation_sends_stopped_event() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -168,12 +174,14 @@ async fn test_cancellation_sends_stopped_event() {
 
     let rig_service = Arc::new(RigService::dummy());
     let (event_tx, event_rx) = tokio::sync::broadcast::channel(100);
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
         pool: app.test_db.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -229,6 +237,7 @@ async fn test_cancellation_sends_stopped_event() {
 async fn test_multiple_cancel_requests() {
     let app = TestApp::new("test_multiple_cancel_requests").await;
     let mut conn = app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = app.create_test_workspace_with_user().await.unwrap();
 
@@ -247,7 +256,7 @@ async fn test_multiple_cancel_requests() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -271,12 +280,14 @@ async fn test_multiple_cancel_requests() {
 
     let rig_service = Arc::new(RigService::dummy());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
         pool: app.test_db.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -319,6 +330,7 @@ async fn test_multiple_cancel_requests() {
 async fn test_cancellation_token_propagation() {
     let app = TestApp::new("test_cancellation_token_propagation").await;
     let mut conn = app.get_connection().await;
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = app.create_test_workspace_with_user().await.unwrap();
 
@@ -337,7 +349,7 @@ async fn test_cancellation_token_propagation() {
         content: serde_json::json!({}),
         app_data: None,
     };
-    let chat = create_file_with_content(&mut conn, chat_request)
+    let chat = create_file_with_content(&mut conn, &storage, chat_request)
         .await
         .expect("Failed to create chat file");
 
@@ -361,12 +373,14 @@ async fn test_cancellation_token_propagation() {
 
     let rig_service = Arc::new(RigService::dummy());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
         pool: app.test_db.pool.clone(),
         rig_service,
+        storage,
         default_persona: "test".to_string(),
         default_context_token_limit: 1000,
         event_tx,
