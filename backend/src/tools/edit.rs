@@ -12,6 +12,16 @@ use serde_json::Value;
 use uuid::Uuid;
 use super::Tool;
 
+/// Helper to get file content with disk fallback
+async fn get_file_content_for_edit(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    file_id: Uuid,
+) -> Result<serde_json::Value> {
+    let file_with_content = files::get_file_with_content(conn, storage, file_id).await?;
+    Ok(file_with_content.latest_version.content_raw)
+}
+
 /// Shared logic for edit tool
 async fn perform_edit(
     conn: &mut DbConn,
@@ -54,9 +64,12 @@ async fn perform_edit(
         }));
     }
 
-    // Get latest content
+    // Get latest content (with disk fallback)
+    let content_raw = get_file_content_for_edit(conn, storage, file.id).await?;
+
+    // Get the version hash for validation
     let latest_version = file_queries::get_latest_version(conn, file.id).await?;
-    
+
     // Optional: Reject if not read latest modification
     if let Some(last_read_hash) = args.last_read_hash
         && latest_version.hash != last_read_hash
@@ -68,14 +81,14 @@ async fn perform_edit(
     }
 
     // Extract text representation for editing
-    let content_text = match latest_version.content_raw.get("text") {
+    let content_text = match content_raw.get("text") {
         Some(Value::String(s)) => s.clone(),
         _ => {
-            if let Some(s) = latest_version.content_raw.as_str() {
+            if let Some(s) = content_raw.as_str() {
                 s.to_string()
             } else {
                 // For non-standard types, try recursive extraction
-                let extracted = files::extract_text_recursively(&latest_version.content_raw);
+                let extracted = files::extract_text_recursively(&content_raw);
                 if extracted.is_empty() {
                     return Err(Error::Validation(ValidationErrors::Single {
                         field: "path".to_string(),
@@ -107,8 +120,9 @@ async fn perform_edit(
 
     // Replace
     let new_content_text = content_text.replacen(&args.old_string, &args.new_string, 1);
-    
-    let final_content = serde_json::json!({ "text": new_content_text });
+
+    // Store as raw string (not wrapped in {"text": ...})
+    let final_content = serde_json::json!(new_content_text);
 
     // Save new version
     let version = files::create_version(conn, storage, file.id, CreateVersionRequest {

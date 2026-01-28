@@ -11,7 +11,7 @@ async fn test_edit_success() {
     
     // 1. Create initial file
     let initial_text = "Hello world!\nThis is a test file.\nBuildScale is awesome.";
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": initial_text})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(initial_text)).await;
 
     // 2. Perform edit
     let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
@@ -35,8 +35,8 @@ async fn test_edit_not_found() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Edit Not Found Test").await;
-    
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "content"})).await;
+
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("content")).await;
 
     let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
         "path": "/test.txt",
@@ -55,9 +55,9 @@ async fn test_edit_multiple_matches() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Edit Multi Match Test").await;
-    
+
     let text = "repeat repeat repeat";
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": text})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(text)).await;
 
     let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
         "path": "/test.txt",
@@ -76,8 +76,8 @@ async fn test_edit_empty_old_string() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Edit Empty Test").await;
-    
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "content"})).await;
+
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("content")).await;
 
     let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
         "path": "/test.txt",
@@ -120,9 +120,9 @@ async fn test_edit_stale_hash() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Edit Stale Hash Test").await;
-    
+
     // 1. Create file
-    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "initial content"})).await;
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("initial content")).await;
 
     // 2. Try to edit with wrong hash
     let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
