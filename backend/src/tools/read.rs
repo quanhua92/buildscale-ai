@@ -49,25 +49,10 @@ impl Tool for ReadTool {
         }
         
         let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
-        
-        // Normalize output: unwrap simple documents for ease of AI/API access
-        let content = if file.file_type == crate::models::files::FileType::Document {
-            if let Some(obj) = file_with_content.latest_version.content_raw.as_object() {
-                if obj.len() == 1 && obj.contains_key("text") {
-                    obj["text"].clone()
-                } else {
-                    file_with_content.latest_version.content_raw
-                }
-            } else {
-                file_with_content.latest_version.content_raw
-            }
-        } else {
-            file_with_content.latest_version.content_raw
-        };
 
         let result = ReadResult {
             path,
-            content,
+            content: file_with_content.latest_version.content_raw,
             hash: file_with_content.latest_version.hash,
         };
         

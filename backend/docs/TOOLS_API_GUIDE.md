@@ -8,7 +8,6 @@ HTTP REST API for the BuildScale extensible tool execution system.
 - [Quick Reference](#quick-reference)
 - [Overview](#overview)
 - [API Endpoint](#api-endpoint)
-- [File Type Content Handling](#file-type-content-handling)
 - [Tool Specifications](#tool-specifications)
   - [ls - List Directory Contents](#ls---list-directory-contents)
   - [read - Read File Contents](#read---read-file-contents)
@@ -154,77 +153,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
----
-
-## File Type Content Handling
-
-The Tools API handles content differently based on file types to optimize for AI/developer experience:
-
-### Document Files (Auto-Wrap/Unwrap)
-Document files use automatic wrapping and unwrapping for convenience:
-
-**Write Behavior:**
-- Raw strings are auto-wrapped: `"hello"` → `{"text": "hello"}`
-- Explicit objects accepted: `{"text": "hello"}` → stored as-is
-- **Why:** Simplifies AI input - no need to wrap every string in an object
-
-**Read Behavior:**
-- Simple documents auto-unwrapped: `{"text": "hello"}` → `"hello"`
-- Complex documents preserved: `{"text": "hello", "metadata": {}}` → returned as-is
-- **Why:** AI gets clean string content without JSON nesting
-
-**Edit & Edit-Many Behavior:**
-- Operates on the inner `text` field for `Document` types.
-- Resilient: Automatically handles both wrapped (`{"text": "..."}`) and raw string content during the search phase.
-- **Result:** Always commits a new version using the standard wrapped structure (`{"text": "..."}`).
-
-**Grep Behavior:**
-- Searches specifically within the `text` field of `Document` files.
-- Resilient: Searches both wrapped and raw string content in the database.
-- High performance: Executes regex directly in the database (PostgreSQL).
-- Returns line-accurate results including line numbers and text chunks.
-
-**Examples:**
-```json
-// Write - all three work:
-{"content": "raw string"}           // Auto-wrapped
-{"content": {"text": "explicit"}}   // Explicit object
-
-// Read - returns:
-{"result": {"content": "raw string"}}  // Unwrapped for convenience
-```
-
-### Other File Types (Raw JSONB)
-Canvas, Whiteboard, Chat, Agent, Skill files preserve raw JSON:
-
-**Write Behavior:**
-- No auto-wrapping
-- Content must match expected JSON structure for the type
-
-**Read Behavior:**
-- No auto-unwrapping
-- Returns exact stored JSON structure
-
-**Examples (Canvas):**
-```json
-// Write:
-{
-  "content": {
-    "elements": [{"type": "rect", "x": 10}],
-    "version": 1
-  }
-}
-
-// Read - returns same structure:
-{
-  "result": {
-    "content": {
-      "elements": [{"type": "rect", "x": 10}],
-      "version": 1
-    }
-  }
-}
-```
+**Note:** The backend stores all file content uniformly as JSON. Content is returned as-is without modification - the AI is responsible for formatting and structure.
 
 ---
 
@@ -362,29 +291,24 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 }
 ```
 
-**Note:** For Document types, the `content` field is auto-unwrapped to return just the text string (not `{"text": "..."}`) for convenience. For other file types, returns the full JSON structure.
-
 #### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was read |
-| `result.content` | string or object | File content - unwrapped string for Documents, JSON object for other types |
+| `result.content` | string or object | File content as stored |
 | `result.hash` | string | SHA-256 hash of the content |
 
 #### Behavior Notes
 
 - **Latest version**: Always returns the most recent file version
-- **Auto-unwrap for Documents**: Simple Document files (`{text: "..."}`) are automatically unwrapped to return just the string value
-- **Complex Documents**: Documents with additional fields beyond `text` are returned as-is without unwrapping
-- **Other types**: Canvas, Whiteboard, Chat, etc. return raw JSON without modification
+- **No content modification**: Content is returned as-is without any transformation
 - **Not found error**: Returns 404 if path does not exist
 
 **CRITICAL USAGE NOTES:**
 - Returns `hash` field that MUST be used with `edit` tool's `last_read_hash` parameter
 - Cannot read folders - will return validation error if path is a folder
 - Always read a file before editing to get the latest content hash
-- For Document files, content is automatically unwrapped from `{"text": "..."}` to just the string value
 
 ---
 
@@ -424,27 +348,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   }'
 ```
 
-**Note:** For Document types, you can pass either a raw string (auto-wrapped to `{text: "..."}`) or an explicit `{text: "..."}` object. The example above uses the raw string format for simplicity.
-
-#### Request Example (Create Document with Explicit Object)
-
-```bash
-curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "write",
-    "args": {
-      "path": "/docs/report.md",
-      "content": {
-        "text": "# Report\n\nContent here..."
-      },
-      "file_type": "document"
-    }
-  }'
-```
-
-#### Request Example (Create Specialized Type)
+#### Request Example (Create File with JSON Object)
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
@@ -473,9 +377,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "write",
     "args": {
       "path": "/documents/notes.md",
-      "content": {
-        "text": "# Updated Notes\n\nModified content"
-      }
+      "content": "# Updated Notes\n\nModified content"
     }
   }'
 ```
@@ -508,9 +410,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Create mode**: If file doesn't exist, creates new file with content
 - **Update mode**: If file exists, creates new version with updated content
-- **Auto-wrap for Documents**: Raw strings are automatically wrapped to `{text: "..."}` for Document types
-- **Document validation**: For Document types with explicit objects, must contain a `text` field with a string value
-- **Other types**: Canvas, Whiteboard, Chat, etc. require their specific JSON structure without auto-wrapping
+- **No content modification**: Content is stored as-is without transformation
 - **Auto-folder creation**: Uses `create_file_with_content()` with path to create nested folders
 - **Versioning**: All writes create a new `FileVersion` on the `main` branch
 - **File type**: Supported types are `document`, `folder`, `canvas`, `chat`, `whiteboard`, `agent`, `skill`. Defaults to `document`.
@@ -519,9 +419,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 **CRITICAL USAGE NOTES:**
 - **NOT for partial edits** - this replaces the ENTIRE file content. Use `edit` tool for partial modifications
-- For new files: use raw strings for Documents, or full JSON objects for other types
+- For new files: content can be any JSON value (string, number, object, array)
 - For existing files: complete content replacement occurs - original content is lost
-- Auto-wrapping only applies to Document types: `"hello"` becomes `{"text": "hello"}`
 - Use `edit` tool instead when modifying specific sections of existing files
 
 ---
@@ -806,10 +705,10 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Update**: If file exists, updates its `updated_at` timestamp.
 - **Create**: If file does not exist, creates a new empty `document` file.
 - **Recursive**: Automatically creates parent folders if missing during creation.
-- **File Type**: New files are created with `document` type and empty text content.
+- **File Type**: New files are created with `document` type and empty content.
 
 **CRITICAL USAGE NOTES:**
-- Creates **empty Document files** with content `{"text": ""}`
+- Creates **empty Document files** with content `""`
 - Use this to create placeholder files or refresh timestamps
 - Does **not create directories** - use `mkdir` instead
 - Existing files only get timestamp updated, content is unchanged
@@ -1319,9 +1218,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
     "tool": "write",
     "args": {
       "path": "/notes/thoughts.md",
-      "content": {
-        "text": "# My Thoughts\n\nThis is a new file."
-      }
+      "content": "# My Thoughts\n\nThis is a new file."
     }
   }'
 ```
@@ -1350,9 +1247,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/$WORKSPACE_ID/tools \
     "tool": "write",
     "args": {
       "path": "/notes/thoughts.md",
-      "content": {
-        "text": "# Updated Thoughts\n\nThis is the updated content."
-      }
+      "content": "# Updated Thoughts\n\nThis is the updated content."
     }
   }'
 ```
@@ -1471,9 +1366,7 @@ const files = await client.ls(workspaceId, '/documents');
 const content = await client.read(workspaceId, '/notes/thoughts.md');
 
 // Write file
-await client.write(workspaceId, '/notes/new-file.md', {
-  text: 'Hello from Tools API!'
-});
+await client.write(workspaceId, '/notes/new-file.md', 'Hello from Tools API!');
 
 // Delete file
 await client.rm(workspaceId, '/notes/old-file.md');

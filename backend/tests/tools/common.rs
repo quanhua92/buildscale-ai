@@ -56,14 +56,18 @@ pub async fn execute_tool(
 /// * `workspace_id` - Workspace ID string
 /// * `token` - Authentication token string
 /// * `path` - File path
-/// * `content` - File content as JSON value
+/// * `content` - File content (can be string or JSON value)
 ///
 /// # Returns
 /// * `String` - File ID of created/updated file
 ///
 /// # Example
 /// \`\`\`no_run
-/// let file_id = write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!({"text": "hello"})).await;
+/// // Write raw text content
+/// let file_id = write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("hello")).await;
+///
+/// // Write JSON content
+/// let file_id = write_file(&app, &workspace_id, &token, "/canvas.json", serde_json::json!({"data": "value"})).await;
 /// \`\`
 pub async fn write_file(
     app: &TestApp,
@@ -97,12 +101,12 @@ pub async fn write_file(
 /// * `path` - File path
 ///
 /// # Returns
-/// * `serde_json::Value` - File content as JSON value
+/// * `serde_json::Value` - File content (may be string or JSON object)
 ///
 /// # Example
 /// \`\`\`no_run
 /// let content = read_file(&app, &workspace_id, &token, "/test.txt").await;
-/// assert_eq!(content["text"], "hello");
+/// assert_eq!(content.as_str().unwrap(), "hello");
 /// \`\`
 pub async fn read_file(
     app: &TestApp,

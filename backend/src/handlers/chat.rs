@@ -82,7 +82,7 @@ pub async fn create_chat(
         file_id: chat_file.id,
         workspace_id,
         branch: "main".to_string(),
-        content_raw: serde_json::json!({"messages": []}),
+        content_raw: serde_json::json!(""),
         app_data,
         hash: "initial".to_string(),
         author_id: Some(user.id),

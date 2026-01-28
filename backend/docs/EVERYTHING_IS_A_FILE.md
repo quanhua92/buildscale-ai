@@ -14,8 +14,8 @@ In BuildScale.ai, **Identity** is separated from **Content**.
 
 **Default Type & Validation**:
 *   The system defaults to `file_type = 'document'` if not specified.
-*   **Documents** are strictly validated to ensure they contain a `text` field with string content.
-*   Specialized types like `canvas` or `chat` allow arbitrary JSON structures but must be valid JSON.
+*   **Documents** and **Chats** can contain raw text content or JSON objects.
+*   **Canvas** and **Whiteboard** types use JSON structures for complex data.
 *   **Folders** are identity-only nodes and do not typically hold text content.
 
 ## Storage Layout

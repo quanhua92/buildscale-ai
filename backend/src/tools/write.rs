@@ -120,8 +120,8 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    /// Validates and normalizes content based on the file type.
-    /// Handles auto-wrapping raw strings into the expected JSON structure for Documents.
+    /// Validates content based on the file type.
+    /// Documents and Chat files can contain raw text or arbitrary JSON.
     fn prepare_content_for_type(
         actual_type: FileType,
         content: Value,
@@ -135,30 +135,8 @@ impl WriteTool {
             }));
         }
 
-        // 2. Handle Document normalization and validation
-        if matches!(actual_type, FileType::Document) {
-            // Auto-wrap raw strings: "hello" -> {"text": "hello"}
-            if content.is_string() {
-                return Ok(serde_json::json!({ "text": content.as_str().unwrap() }));
-            }
-
-            // Check if 'text' field exists
-            if !content.get("text").is_some_and(|v| v.is_string()) {
-                // If 'text' field is missing entirely
-                if content.get("text").is_none() {
-                    return Err(Error::Validation(ValidationErrors::Single {
-                        field: "content".to_string(),
-                        message: "Document content must contain a 'text' field".to_string(),
-                    }));
-                }
-                // If 'text' field exists but is not a string
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "content".to_string(),
-                    message: "Document content must contain a 'text' field with a string value".to_string(),
-                }));
-            }
-        }
-
+        // Content is passed through as-is for all file types
+        // Documents and Chat files can be raw strings or JSON objects
         Ok(content)
     }
 }

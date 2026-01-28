@@ -21,7 +21,8 @@ use uuid::Uuid;
 pub const DEFAULT_FOLDER_PERMISSION: i32 = 755;
 pub const DEFAULT_FILE_PERMISSION: i32 = 600;
 
-/// Hashes JSON content using SHA-256 for content-addressing
+/// Hashes content using SHA-256 for content-addressing
+/// Hashes the JSON serialization of the content
 pub fn hash_content(content: &serde_json::Value) -> Result<String> {
     let content_str = serde_jcs::to_string(content)
         .map_err(|e| Error::Internal(format!("Failed to serialize to canonical JSON: {}", e)))?;
@@ -29,16 +30,6 @@ pub fn hash_content(content: &serde_json::Value) -> Result<String> {
     hasher.update(content_str.as_bytes());
     let result = hasher.finalize();
     Ok(hex::encode(result))
-}
-
-/// Normalizes content for a specific file type.
-/// For Documents, raw strings are auto-wrapped in `{"text": "..."}`.
-pub fn auto_wrap_document_content(file_type: FileType, content: serde_json::Value) -> serde_json::Value {
-    if matches!(file_type, FileType::Document) && content.is_string() {
-        serde_json::json!({ "text": content.as_str().unwrap() })
-    } else {
-        content
-    }
 }
 
 /// Converts a display name into a URL-safe slug.
@@ -225,14 +216,15 @@ pub async fn create_file_with_content(
     };
     let mut file = files::create_file_identity(&mut tx, new_file).await?;
 
-    // 5. Create initial version record (Ensures structural consistency for all file types)
-    // NORMALIZATION:
-    let content = auto_wrap_document_content(file.file_type, request.content);
-    
+    // 5. Create initial version record
+    let content = request.content;
+
     // PERSISTENCE (Hybrid): Write to Disk
-    let content_bytes = serde_json::to_vec_pretty(&content)
+    // Serialize content as JSON (for both strings and objects)
+    // AI is responsible for writing in their desired format
+    let content_bytes = serde_json::to_vec(&content)
         .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?;
-    
+
     let hash = storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
 
     // DATABASE: Store metadata only
@@ -293,10 +285,11 @@ pub async fn create_version(
     // 1. Get file to obtain file_type and workspace_id
     let file = files::get_file_by_id(conn, file_id).await?;
 
-    let content = auto_wrap_document_content(file.file_type, request.content);
-    
+    let content = request.content;
+
     // PERSISTENCE: Write to disk to get hash
-    let content_bytes = serde_json::to_vec_pretty(&content)
+    // Serialize content as JSON (AI is responsible for format)
+    let content_bytes = serde_json::to_vec(&content)
         .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?;
     
     // We calculate hash locally first to check deduplication BEFORE writing to disk if possible,
@@ -374,6 +367,7 @@ pub async fn get_file_with_content(
     if !file.is_remote {
         match storage.read_file(file.workspace_id, &file.path).await {
             Ok(bytes) => {
+                // Deserialize JSON content (AI is responsible for format)
                 let content: serde_json::Value = serde_json::from_slice(&bytes)
                     .map_err(|e| Error::Internal(format!("Failed to deserialize file content: {}", e)))?;
                 latest_version.content_raw = content;
