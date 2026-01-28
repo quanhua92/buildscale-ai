@@ -79,12 +79,14 @@ async fn test_virtual_file_lifecycle() {
     assert!(edit_field_error.contains("Cannot edit a virtual file"));
 
     // 5. Verify Write-Through (Read)
-    // The initial creation should have snapshotted the goal message
+    // The initial creation should have snapshotted the goal message as markdown
     let read_content = read_file(&app, &workspace_id, &token, chat_path).await;
-    // Content should be the ChatSession JSON
-    assert!(read_content["messages"].as_array().unwrap().len() >= 1);
-    let first_msg = &read_content["messages"][0];
-    assert_eq!(first_msg["content"].as_str().unwrap(), "Test Chat Goal");
+    // Content should be a markdown string, not JSON
+    let content_str = read_content.as_str().expect("Chat content should be a string (markdown)");
+    // Verify the markdown contains the initial goal message
+    assert!(content_str.contains("Test Chat Goal"), "Markdown should contain initial goal");
+    // Verify it has markdown formatting with role headers
+    assert!(content_str.contains("### "), "Markdown should have role headers");
 
     // 6. Verify Write-Through (Update via API -> Read)
     // Post a new message
@@ -100,10 +102,10 @@ async fn test_virtual_file_lifecycle() {
         .unwrap();
     assert_eq!(post_response.status(), 202);
 
-    // Read again - should contain new message
+    // Read again - should contain new message in markdown
     let read_content_2 = read_file(&app, &workspace_id, &token, chat_path).await;
-    let messages_2 = read_content_2["messages"].as_array().unwrap();
-    assert!(messages_2.iter().any(|m| m["content"].as_str() == Some(msg_content)));
+    let content_str_2 = read_content_2.as_str().expect("Chat content should be a string (markdown)");
+    assert!(content_str_2.contains(msg_content), "Markdown should contain the new message");
 
     // 7. Verify Write-Through (Grep)
     let grep_response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({

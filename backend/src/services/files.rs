@@ -389,24 +389,8 @@ pub async fn get_file_with_content(
     let latest_version = files::get_latest_version(conn, file_id).await?;
 
     // Fetch content from appropriate source
-    let content = if matches!(file.file_type, FileType::Chat) {
-        // SPECIAL CASE: Chat files - return messages from database as structured JSON
-        use crate::queries::chat;
-        let messages = chat::get_messages_by_file_id(conn, file.workspace_id, file.id).await?;
-        let messages_json: Vec<serde_json::Value> = messages.into_iter().map(|msg| {
-            serde_json::json!({
-                "id": msg.id,
-                "role": msg.role,
-                "content": msg.content,
-                "created_at": msg.created_at,
-                "metadata": msg.metadata
-            })
-        }).collect();
-        serde_json::json!({
-            "messages": messages_json
-        })
-    } else if !file.is_remote {
-        // HYBRID READ: Fetch content from disk for non-remote files
+    let content = if !file.is_remote {
+        // HYBRID READ: Fetch content from disk for non-remote files (including chat files)
         // Use the full file.path to read from correct hierarchical location
         let storage_path = file.path.clone();
 
