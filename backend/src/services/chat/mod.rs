@@ -165,10 +165,8 @@ impl ChatService {
         let file = queries::files::get_file_by_id(conn, file_id).await?;
 
         let markdown_entry = format_message_as_markdown(&msg);
-        // Use flat storage path for consistency with file storage changes
-        // Files are stored at /{slug} instead of their full logical path
-        let storage_path = format!("/{}", file.slug);
-        storage.append_to_file(workspace_id, &storage_path, &markdown_entry).await?;
+        // Use full hierarchical path for consistency with file storage
+        storage.append_to_file(workspace_id, &file.path, &markdown_entry).await?;
 
         // 3. Touch file to update timestamp
         queries::files::touch_file(conn, file_id).await?;

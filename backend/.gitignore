@@ -14,7 +14,6 @@ Thumbs.db
 
 # Rust
 /target/
-Cargo.lock
 **/*.rs.bk
 **/*.rs.bk
 

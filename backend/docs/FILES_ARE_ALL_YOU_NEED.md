@@ -90,11 +90,11 @@ To maintain consistency and provide both version history and fast access, every 
 2.  **Archive** (First Write): The content is written to CAS (`./storage/workspaces/{workspace_id}/archive/`).
     *   **Purpose**: Version history, deduplication, and restoration.
     *   **Benefit**: Multiple versions with same content share storage (O(1) space).
-3.  **Commit** (Second Write): The content is written to the Latest directory at `/{slug}` (flat storage).
+3.  **Commit** (Second Write): The content is written to the Latest directory at `{full_path}` (hierarchical storage).
     *   **Purpose**: Fast O(1) access for reads, grep, and AI tools.
     *   **Benefit**: No database query needed to read file content.
 4.  **Index**: The database is updated with the new metadata and hash reference.
-    *   **Purpose**: Maps logical paths to physical slugs and stores version metadata.
+    *   **Purpose**: Stores file metadata and version hash references.
     *   Stores only hash, not content.
 
 ### Implications for Tools

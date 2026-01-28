@@ -143,15 +143,8 @@ impl FileStorageService {
     pub async fn create_folder(&self, workspace_id: Uuid, path: &str) -> Result<()> {
         let dir_path = self.get_file_path(workspace_id, path);
 
-        // Ensure parent directories exist
-        if let Some(parent) = dir_path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                Error::Internal(format!("Failed to create parent directory {:?}: {}", parent, e))
-            })?;
-        }
-
-        // Create the folder directory
-        fs::create_dir(&dir_path).await.map_err(|e| {
+        // Create the folder directory (idempotent - won't fail if already exists)
+        fs::create_dir_all(&dir_path).await.map_err(|e| {
             Error::Internal(format!("Failed to create folder directory {:?}: {}", dir_path, e))
         })?;
 

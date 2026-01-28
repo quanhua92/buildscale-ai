@@ -31,22 +31,22 @@ The system manages workspace directories within `/app/storage/workspaces/` (conf
 ```
 
 ### 1. The Latest (`latest/`)
-*   **Structure**: Flat storage - files stored at `/{slug}` (not full logical path)
-*   **Example**: `./storage/workspaces/{workspace_id}/latest/main.rs` (not `/projects/backend/src/main.rs`)
+*   **Structure**: Hierarchical storage - files stored at full logical path
+*   **Example**: `./storage/workspaces/{workspace_id}/latest/projects/backend/src/main.rs`
 *   **Usage**: All `read`, `ls`, `grep`, and AI tool operations hit this directory.
 *   **State**: Always contains the `latest_version` of file.
-*   **Note**: Folders are virtual (database-only), not physical directories
+*   **Note**: Folders are created as actual directories on disk
 
 ### 2. The Archive (`archive/`)
-*   **Structure**: Flat, content-addressable storage (CAS) with 2-level sharding.
+*   **Structure**: Content-addressable storage (CAS) with 2-level sharding.
 *   **Example**: `./storage/workspaces/{workspace_id}/archive/e3/b0/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
 *   **Usage**: History lookup, deduplication, restoration.
 *   **State**: Immutable blobs.
 *   **Key**: The `hash` column in `file_versions` points to these files.
 
 ### 3. The Trash (`trash/`)
-*   **Structure**: Flat list of deleted bundles per workspace.
-*   **Example**: `./storage/workspaces/{workspace_id}/trash/<timestamp>_<original_filename>`
+*   **Structure**: Hierarchical list of deleted files preserving folder structure.
+*   **Example**: `./storage/workspaces/{workspace_id}/trash/projects/backend/main.rs`
 *   **Usage**: Soft delete recovery.
 
 ## Schema Overview
