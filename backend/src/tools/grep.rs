@@ -1,4 +1,4 @@
-use crate::{DbConn, error::{Error, Result}};
+use crate::{DbConn, error::{Error, Result}, queries};
 use crate::models::requests::{ToolResponse, GrepArgs, GrepMatch, GrepResult};
 use crate::services::storage::FileStorageService;
 use uuid::Uuid;
@@ -31,7 +31,7 @@ impl Tool for GrepTool {
 
     async fn execute(
         &self,
-        _conn: &mut DbConn,
+        conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
@@ -86,6 +86,14 @@ impl Tool for GrepTool {
                 matches.push(grep_match);
             }
         }
+
+        // Map storage paths to logical database paths
+        let mut matches = map_storage_paths_to_logical_paths(conn, workspace_id, matches).await?;
+
+        // Sort matches by path, then line number for deterministic output
+        matches.sort_by(|a, b| {
+            a.path.cmp(&b.path).then_with(|| a.line_number.cmp(&b.line_number))
+        });
 
         let result = GrepResult { matches };
 
@@ -216,4 +224,55 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
         line_number,
         line_text,
     })
+}
+
+/// Maps storage paths to logical database paths.
+/// For files stored with flat storage (/{slug}), queries the database
+/// to get the full logical path (e.g., /chats/chat-{id}).
+/// Preserves the order of input matches.
+async fn map_storage_paths_to_logical_paths(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    matches: Vec<GrepMatch>,
+) -> Result<Vec<GrepMatch>> {
+    let mut updated_matches = Vec::new();
+
+    for m in matches {
+        let storage_path = &m.path;
+
+        // Extract slug from storage path and try to map to logical path
+        if let Some(slug) = extract_slug_from_path(storage_path) {
+            // Try to find file by slug in database
+            if let Ok(Some(file)) = queries::files::get_file_by_slug_any_parent(conn, workspace_id, &slug).await {
+                // Use logical path from database
+                updated_matches.push(GrepMatch {
+                    path: file.path.clone(),
+                    line_number: m.line_number,
+                    line_text: m.line_text,
+                });
+                continue;
+            }
+        }
+
+        // If no mapping found, use original path
+        updated_matches.push(GrepMatch {
+            path: m.path.clone(),
+            line_number: m.line_number,
+            line_text: m.line_text,
+        });
+    }
+
+    Ok(updated_matches)
+}
+
+/// Extracts slug from a storage path.
+/// - "/chat-{id}" -> "chat-{id}"
+/// - "/work/file.txt" -> "file.txt"
+/// - "/folder/subfolder/file.md" -> "file.md"
+fn extract_slug_from_path(path: &str) -> Option<String> {
+    // Remove leading slash
+    let without_prefix = path.strip_prefix('/')?;
+
+    // Get the last component (filename)
+    without_prefix.split('/').last().map(|s| s.to_string())
 }

@@ -238,7 +238,16 @@ pub async fn create_file_with_content(
     };
 
     let hash = hash_content(&content)?;
-    storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+
+    // For non-folder files, use flat storage (just the filename) to avoid directory creation issues
+    // Folders are virtual (database-only), so we don't create physical directories for them
+    let storage_path = if matches!(file.file_type, FileType::Folder) {
+        file.path.clone()
+    } else {
+        format!("/{}", file.slug)
+    };
+
+    storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
 
     // DATABASE: Store metadata only
     let content_metadata = serde_json::json!({
@@ -316,17 +325,24 @@ pub async fn create_version(
     // Let's use the helper.
     let hash = hash_content(&content)?;
 
+    // Use flat storage path for non-folder files (same as in create_file_with_content)
+    let storage_path = if matches!(file.file_type, FileType::Folder) {
+        file.path.clone()
+    } else {
+        format!("/{}", file.slug)
+    };
+
     // 2. Check if the latest version already has this hash (deduplication)
     let latest = files::get_latest_version_optional(conn, file_id).await?;
     if let Some(v) = latest.filter(|v| v.hash == hash) {
         // Even if DB has it, ensure it's physically on disk (e.g. after a restore or sync issue)
         // This is a "healing" write - effectively a touch
-        storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+        storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
         return Ok(v);
     }
 
     // Write to storage now that we know we need a new version
-    let written_hash = storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+    let written_hash = storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
     
     // Sanity check
     if written_hash != hash {
@@ -373,16 +389,40 @@ pub async fn create_version(
 
 /// Gets a file and its latest version together
 pub async fn get_file_with_content(
-    conn: &mut DbConn, 
+    conn: &mut DbConn,
     storage: &FileStorageService,
     file_id: Uuid
 ) -> Result<FileWithContent> {
     let file = files::get_file_by_id(conn, file_id).await?;
     let mut latest_version = files::get_latest_version(conn, file_id).await?;
 
-    // HYBRID READ: Fetch content from disk
-    if !file.is_remote {
-        match storage.read_file(file.workspace_id, &file.path).await {
+    // SPECIAL CASE: Chat files - return messages from database as structured JSON
+    if matches!(file.file_type, FileType::Chat) {
+        use crate::queries::chat;
+        let messages = chat::get_messages_by_file_id(conn, file.workspace_id, file.id).await?;
+        let messages_json: Vec<serde_json::Value> = messages.into_iter().map(|msg| {
+            serde_json::json!({
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at,
+                "metadata": msg.metadata
+            })
+        }).collect();
+        latest_version.content_raw = serde_json::json!({
+            "messages": messages_json
+        });
+    }
+    // HYBRID READ: Fetch content from disk for non-chat files
+    else if !file.is_remote {
+        // Use flat storage path for non-folder files (same as in create_file_with_content)
+        let storage_path = if matches!(file.file_type, FileType::Folder) {
+            file.path.clone()
+        } else {
+            format!("/{}", file.slug)
+        };
+
+        match storage.read_file(file.workspace_id, &storage_path).await {
             Ok(bytes) => {
                 // Try to parse as JSON first (for objects/arrays/numbers/bool)
                 // If that fails, treat as raw string (for text content)
@@ -397,7 +437,7 @@ pub async fn get_file_with_content(
                 // Fallback: If not found on disk, check if it's in archive using the hash
                 if let Ok(bytes) = storage.read_version(file.workspace_id, &latest_version.hash).await {
                      // Heal: Write back to working tree
-                     let _ = storage.write_file(file.workspace_id, &file.path, &bytes).await;
+                     let _ = storage.write_file(file.workspace_id, &storage_path, &bytes).await;
                      let content: serde_json::Value = serde_json::from_slice(&bytes)
                         .unwrap_or_else(|_| {
                             // Not valid JSON, treat as raw UTF-8 string
@@ -563,7 +603,9 @@ pub async fn soft_delete_file(
 
     // HYBRID: Move from Working Tree to Trash on disk
     if !matches!(file.file_type, FileType::Folder) {
-        storage.move_to_trash(file.workspace_id, &file.path).await?;
+        // Use flat storage path for non-folder files
+        let storage_path = format!("/{}", file.slug);
+        storage.move_to_trash(file.workspace_id, &storage_path).await?;
     }
 
     let rows_affected = files::soft_delete_file(conn, file_id).await?;

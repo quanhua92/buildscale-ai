@@ -295,6 +295,48 @@ pub async fn get_file_by_slug(
     Ok(file)
 }
 
+/// Resolves a file by its slug and workspace_id (any parent).
+/// Useful for mapping storage paths back to logical paths.
+pub async fn get_file_by_slug_any_parent(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    slug: &str,
+) -> Result<Option<File>> {
+    let file = sqlx::query_as!(
+        File,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        FROM files
+        WHERE workspace_id = $1
+          AND slug = $2
+          AND deleted_at IS NULL
+        "#,
+        workspace_id,
+        slug
+    )
+    .fetch_optional(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(file)
+}
+
 /// Lists all active files in a workspace/folder.
 pub async fn list_files_in_folder(
     conn: &mut DbConn,
