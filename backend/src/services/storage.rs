@@ -54,10 +54,22 @@ impl FileStorageService {
         self.get_workspace_root(workspace_id).join("trash")
     }
 
-    fn get_file_path(&self, workspace_id: Uuid, path: &str) -> PathBuf {
-        // Ensure path doesn't escape workspace root (basic safety)
+    fn get_file_path(&self, workspace_id: Uuid, path: &str) -> Result<PathBuf> {
+        // Validate path components to prevent traversal
+        let path_obj = std::path::Path::new(path);
+
+        // Reject parent directory references (..) which could escape workspace
+        if path_obj.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "path".to_string(),
+                message: "Path cannot contain '..' (parent directory references)".to_string(),
+            }));
+        }
+
+        // Normalize (strip leading slash for consistency)
         let clean_path = path.trim_start_matches('/');
-        self.get_latest_root(workspace_id).join(clean_path)
+
+        Ok(self.get_latest_root(workspace_id).join(clean_path))
     }
 
     fn get_archive_path(&self, workspace_id: Uuid, hash: &str) -> PathBuf {
@@ -75,7 +87,7 @@ impl FileStorageService {
 
     /// Reads a file from Latest directory (O(1) access)
     pub async fn read_file(&self, workspace_id: Uuid, path: &str) -> Result<Vec<u8>> {
-        let full_path = self.get_file_path(workspace_id, path);
+        let full_path = self.get_file_path(workspace_id, path)?;
 
         if !full_path.exists() {
             return Err(Error::NotFound(format!("File not found on disk: {}", path)));
@@ -123,7 +135,7 @@ impl FileStorageService {
         }
 
         // 3. Latest directory
-        let file_path = self.get_file_path(workspace_id, path);
+        let file_path = self.get_file_path(workspace_id, path)?;
 
         // Ensure parent directories exist
         if let Some(parent) = file_path.parent() {
@@ -141,7 +153,7 @@ impl FileStorageService {
 
     /// Creates a directory for a folder
     pub async fn create_folder(&self, workspace_id: Uuid, path: &str) -> Result<()> {
-        let dir_path = self.get_file_path(workspace_id, path);
+        let dir_path = self.get_file_path(workspace_id, path)?;
 
         // Create the folder directory (idempotent - won't fail if already exists)
         fs::create_dir_all(&dir_path).await.map_err(|e| {
@@ -157,7 +169,7 @@ impl FileStorageService {
     pub async fn append_to_file(&self, workspace_id: Uuid, path: &str, content: &str) -> Result<()> {
         use tokio::io::AsyncWriteExt;
 
-        let file_path = self.get_file_path(workspace_id, path);
+        let file_path = self.get_file_path(workspace_id, path)?;
 
         // Ensure parent directories exist
         if let Some(parent) = file_path.parent() {
@@ -182,7 +194,7 @@ impl FileStorageService {
 
     /// Soft deletes a file by moving it to Trash
     pub async fn move_to_trash(&self, workspace_id: Uuid, path: &str) -> Result<()> {
-        let source_path = self.get_file_path(workspace_id, path);
+        let source_path = self.get_file_path(workspace_id, path)?;
 
         if !source_path.exists() {
             // If file doesn't exist on disk, we just ignore it (db metadata might be out of sync,
@@ -215,7 +227,7 @@ impl FileStorageService {
     /// If file exists in Latest, does nothing.
     /// Otherwise, attempts to restore from Archive using the provided hash.
     pub async fn ensure_file_restored(&self, workspace_id: Uuid, path: &str, hash: &str) -> Result<()> {
-        let target_path = self.get_file_path(workspace_id, path);
+        let target_path = self.get_file_path(workspace_id, path)?;
 
         if target_path.exists() {
             return Ok(());
@@ -243,8 +255,8 @@ impl FileStorageService {
 
     /// Handles rename/move operations on disk
     pub async fn move_file(&self, workspace_id: Uuid, old_path: &str, new_path: &str) -> Result<()> {
-        let source = self.get_file_path(workspace_id, old_path);
-        let target = self.get_file_path(workspace_id, new_path);
+        let source = self.get_file_path(workspace_id, old_path)?;
+        let target = self.get_file_path(workspace_id, new_path)?;
 
         if !source.exists() {
              return Err(Error::NotFound(format!("File not found for move: {}", old_path)));
