@@ -33,7 +33,10 @@ This document tracks planned improvements and future work for the BuildScale.ai 
 
 ## 📂 File System Core
 
-### 1. Storage Evolution
+### 1. Lifecycle & Maintenance
+- [x] **Recently Deleted UI**: Support for soft-delete and batch restoration.
+- [x] **Irreversible Purge**: Hard-deletion endpoint with cascade cleanup.
+- [x] **Storage GC**: Automated background worker to clean orphaned archive blobs.
 - [ ] **S3 Storage Driver**: Move `FileType::Binary` and large content blobs from Postgres to S3.
 - [ ] **Pre-signed URLs**: Support for direct client uploads to S3.
 - [ ] **Streaming Downloads**: Efficient handling of large file retrieval.

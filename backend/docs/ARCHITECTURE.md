@@ -41,16 +41,23 @@ src/
 │   ├── roles.rs     # Role creation, default role setup
 │   ├── workspace_members.rs # Member assignment and validation
 │   ├── invitations.rs # Invitation creation, acceptance, revocation
-│   └── sessions.rs  # Session management, cleanup, monitoring
-└── queries/         # Database operations layer (SQLx)
+│   ├── sessions.rs  # Session management, cleanup, monitoring
+│   └── files.rs     # File management, lifecycle, and search
+├── queries/         # Database operations layer (SQLx)
+│   ├── mod.rs       # Module exports
+│   ├── users.rs     # User CRUD operations
+│   ├── workspaces.rs # Workspace CRUD operations
+│   ├── roles.rs     # Role CRUD operations
+│   ├── workspace_members.rs # Member CRUD operations
+│   ├── invitations.rs # Invitation CRUD operations
+│   ├── sessions.rs  # Session CRUD operations
+│   └── files.rs     # File registry and versioning queries
+└── workers/         # Background maintenance tasks
     ├── mod.rs       # Module exports
-    ├── users.rs     # User CRUD operations
-    ├── workspaces.rs # Workspace CRUD operations
-    ├── roles.rs     # Role CRUD operations
-    ├── workspace_members.rs # Member CRUD operations
-    ├── invitations.rs # Invitation CRUD operations
-    └── sessions.rs  # Session CRUD operations
+    ├── revoked_token_cleanup.rs # Auth token maintenance
+    └── archive_cleanup.rs       # Physical storage garbage collection
 ```
+
 
 ## Entity Relationships
 
@@ -199,6 +206,15 @@ CREATE TABLE workspace_invitations (
     accepted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+#### `file_archive_cleanup_queue` - Storage Maintenance
+```sql
+CREATE TABLE file_archive_cleanup_queue (
+    hash TEXT PRIMARY KEY,
+    workspace_id UUID NOT NULL,
+    marked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 

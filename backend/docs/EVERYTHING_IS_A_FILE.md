@@ -81,7 +81,9 @@ The `files` table is the central registry for all objects in the system.
 **Trash Logic:**
 *   **Soft Delete**: When a file is deleted, `deleted_at` is set to the current timestamp.
 *   **Unique Constraints**: A deleted file releases its claim on the `slug` and `path`. You can create a new file with the same path as a deleted one.
-*   **Retention**: A background job permanently deletes files where `deleted_at < NOW() - INTERVAL '30 days'`.
+*   **Purge (Hard Delete)**: An irreversible operation that removes the file registry entry from the database.
+*   **Cascade Cleanup**: Deleting a file automatically triggers an `ON DELETE CASCADE` in the database, removing its Versions, Tags, Links, and Chat Messages.
+*   **Automated Archive Cleanup**: A background worker periodically identifies orphaned blobs in the `archive/` folder (hashes no longer referenced by any file version) and physically deletes them from disk using a `SKIP LOCKED` concurrency pattern.
 
 ### 2. The Content: `file_versions`
 
