@@ -127,8 +127,9 @@ pub struct CleanupItem {
     pub workspace_id: Uuid,
 }
 
-/// Claims a batch of items from the cleanup queue using FOR UPDATE SKIP LOCKED
-pub async fn claim_cleanup_batch(conn: &mut DbConn, limit: i64) -> Result<Vec<CleanupItem>> {
+/// Claims a batch of items from the cleanup queue using FOR UPDATE SKIP LOCKED.
+/// Can optionally filter by workspace_id for isolated testing or targeted cleanup.
+pub async fn claim_cleanup_batch(conn: &mut DbConn, workspace_id: Option<Uuid>, limit: i64) -> Result<Vec<CleanupItem>> {
     let items = sqlx::query_as!(
         CleanupItem,
         r#"
@@ -136,12 +137,14 @@ pub async fn claim_cleanup_batch(conn: &mut DbConn, limit: i64) -> Result<Vec<Cl
         WHERE hash IN (
             SELECT hash
             FROM file_archive_cleanup_queue
+            WHERE ($1::uuid IS NULL OR workspace_id = $1)
             ORDER BY marked_at ASC
-            LIMIT $1
+            LIMIT $2
             FOR UPDATE SKIP LOCKED
         )
         RETURNING hash, workspace_id
         "#,
+        workspace_id,
         limit
     )
     .fetch_all(conn)

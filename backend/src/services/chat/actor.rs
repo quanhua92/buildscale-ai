@@ -331,21 +331,38 @@ impl ChatActor {
                                 "Tool execution completed".to_string()
                             };
 
-                            // Heuristic: if the output contains "Error:" it's likely a failure
-                            let success = !output.to_lowercase().contains("error:");
-
-                            tracing::info!("[ChatActor] [Rig] Tool execution finished for chat {} (success: {})", self.chat_id, success);
-                            let _ = self.event_tx.send(SseEvent::Observation { output, success });
+                             // Heuristic: if the output contains "Error:" it's likely a failure
+                             let success = !output.to_lowercase().contains("error:");
+ 
+                             tracing::info!(
+                                 "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}", 
+                                 self.chat_id, 
+                                 success,
+                                 if output.len() > 100 { 
+                                     let mut end = 100;
+                                     while end > 0 && !output.is_char_boundary(end) {
+                                         end -= 1;
+                                     }
+                                     format!("{}...", &output[..end]) 
+                                 } else { 
+                                     output.clone() 
+                                 }
+                             );
+                             let _ = self.event_tx.send(SseEvent::Observation { output, success });
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("[ChatActor] [Rig] AI stream encountered an error for chat {}: {:?}", self.chat_id, e);
-
+                    tracing::error!(
+                        chat_id = %self.chat_id,
+                        error = ?e,
+                        "[ChatActor] [Rig] AI stream encountered a fatal error"
+                    );
+ 
                     // Clear agent cache on error to force fresh agent on next interaction
                     *self.cached_agent.lock().await = None;
-
-                    return Err(crate::error::Error::Llm(e.to_string()));
+ 
+                    return Err(crate::error::Error::Llm(format!("AI Engine fatal error: {:?}", e)));
                 }
                 _ => {}
             }

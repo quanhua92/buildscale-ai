@@ -129,7 +129,24 @@ impl ToolExecutor {
         user_id: Uuid,
         args: Value,
     ) -> Result<ToolResponse> {
-        match self {
+        let name = match self {
+            ToolExecutor::Ls => "ls",
+            ToolExecutor::Read => "read",
+            ToolExecutor::Write => "write",
+            ToolExecutor::Rm => "rm",
+            ToolExecutor::Mv => "mv",
+            ToolExecutor::Touch => "touch",
+            ToolExecutor::Edit => "edit",
+            ToolExecutor::Grep => "grep",
+            ToolExecutor::Mkdir => "mkdir",
+        };
+
+        let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
+        let _enter = span.enter();
+
+        tracing::debug!(args = %args, "Tool input");
+
+        let result = match self {
             ToolExecutor::Ls => ls::LsTool.execute(conn, storage, workspace_id, user_id, args).await,
             ToolExecutor::Read => read::ReadTool.execute(conn, storage, workspace_id, user_id, args).await,
             ToolExecutor::Write => write::WriteTool.execute(conn, storage, workspace_id, user_id, args).await,
@@ -139,6 +156,27 @@ impl ToolExecutor {
             ToolExecutor::Edit => edit::EditTool.execute(conn, storage, workspace_id, user_id, args).await,
             ToolExecutor::Grep => grep::GrepTool.execute(conn, storage, workspace_id, user_id, args).await,
             ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, storage, workspace_id, user_id, args).await,
+        };
+
+        match &result {
+            Ok(resp) => {
+                if resp.success {
+                    tracing::info!("Tool execution successful");
+                } else {
+                    tracing::error!(
+                        error = ?resp.error,
+                        "Tool returned logical failure"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = ?e,
+                    "Tool execution crashed with internal error"
+                );
+            }
         }
+
+        result
     }
 }

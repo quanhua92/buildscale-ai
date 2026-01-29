@@ -1,3 +1,5 @@
+import React from "react"
+
 // FileType definition matching backend/docs/EVERYTHING_IS_A_FILE.md
 export type FileType = "document" | "folder" | "canvas" | "chat" | "whiteboard"
 
@@ -18,6 +20,7 @@ export interface LsResult {
 export interface ReadResult {
   path: string
   content: any
+  hash: string
 }
 
 export interface ToolResponse<T> {
@@ -42,12 +45,16 @@ export interface FileExplorerContextType {
   createFile: (name: string, content: any, fileType?: FileType | string) => Promise<void>
   createFolder: (name: string) => Promise<void>
   updateFile: (path: string, content: any) => Promise<void>
-  deleteItem: (path: string) => Promise<void>
+  deleteItems: (paths: string[]) => Promise<void>
+  moveItems: (sources: string[], destination: string) => Promise<void>
   readFile: (path: string) => Promise<ReadResult | null>
+  callTool: <T>(tool: string, args: any) => Promise<T | null>
   
   // Selection
   rowSelection: Record<string, boolean>
   setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
+  selectedEntries: LsEntry[]
+  selectedPaths: string[]
   
   // UI State
   isEditorOpen: boolean
@@ -58,6 +65,8 @@ export interface FileExplorerContextType {
   setFolderOpen: (open: boolean) => void
   isDeleteOpen: boolean
   setDeleteOpen: (open: boolean) => void
+  isMoveOpen: boolean
+  setMoveOpen: (open: boolean) => void
   
   activeFile: LsEntry | null
   setActiveFile: (file: LsEntry | null) => void

@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::time::interval;
 use tokio::sync::mpsc;
 use tracing::{info, warn, error};
+use uuid::Uuid;
 use sqlx::Connection;
 
 /// Background worker that periodically cleans up orphaned archive blobs
@@ -67,7 +68,7 @@ async fn drain_cleanup_queue(pool: &sqlx::PgPool, storage: &FileStorageService, 
             }
         };
 
-        match process_cleanup_batch(&mut conn, storage, batch_size).await {
+        match process_cleanup_batch(&mut conn, storage, None, batch_size).await {
             Ok(0) => break, // Queue is empty
             Ok(count) => {
                 info!("[StorageWorker] Processed batch of {} hashes", count);
@@ -84,13 +85,14 @@ async fn drain_cleanup_queue(pool: &sqlx::PgPool, storage: &FileStorageService, 
 pub async fn process_cleanup_batch(
     conn: &mut sqlx::PgConnection,
     storage: &FileStorageService,
+    workspace_id: Option<Uuid>,
     batch_size: i64,
 ) -> crate::error::Result<usize> {
     // Start a transaction to atomize queue claiming
     let mut tx = conn.begin().await.map_err(crate::error::Error::Sqlx)?;
 
-    // Claim items to check. We can use a large batch size now that logic is simple.
-    let items = files::claim_cleanup_batch(&mut *tx, batch_size).await?;
+    // Claim items to check.
+    let items = files::claim_cleanup_batch(&mut *tx, workspace_id, batch_size).await?;
     let count = items.len();
 
     if count == 0 {

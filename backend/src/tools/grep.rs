@@ -40,14 +40,15 @@ impl Tool for GrepTool {
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
 
-        let workspace_path = storage.get_workspace_path(workspace_id);
+        // Search only in the 'latest' directory (working tree)
+        let search_path = storage.get_workspace_path(workspace_id);
 
-        // Check if workspace directory exists
-        if !workspace_path.exists() {
+        // Check if search directory exists
+        if !search_path.exists() {
             return Ok(ToolResponse {
-                success: false,
-                result: Value::Null,
-                error: Some(format!("Workspace directory not found: {:?}", workspace_path)),
+                success: true,
+                result: serde_json::to_value(GrepResult { matches: Vec::new() })?,
+                error: None,
             });
         }
 
@@ -56,7 +57,7 @@ impl Tool for GrepTool {
             &grep_args.pattern,
             grep_args.path_pattern.as_deref(),
             grep_args.case_sensitive.unwrap_or(false),
-            &workspace_path,
+            &search_path,
         )?;
 
         // Detect if we're using ripgrep (by checking the command)
@@ -70,9 +71,23 @@ impl Tool for GrepTool {
             Error::Internal(format!("Failed to execute grep command: {}", e))
         })?;
 
+        // Handle exit codes
+        // 0 = matches found
+        // 1 = no matches found (successful search)
+        // >1 = error
         if !output.status.success() {
+            let code = output.status.code().unwrap_or(2);
+            if code == 1 {
+                // No matches - return success with empty list
+                return Ok(ToolResponse {
+                    success: true,
+                    result: serde_json::to_value(GrepResult { matches: Vec::new() })?,
+                    error: None,
+                });
+            }
+
             let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::error!("Grep command failed: {}", stderr);
+            tracing::error!("Grep command failed (code {}): {}", code, stderr);
             return Ok(ToolResponse {
                 success: false,
                 result: Value::Null,
@@ -96,7 +111,7 @@ impl Tool for GrepTool {
                     break;
                 }
 
-                if let Some(grep_match) = parse_json_grep_output(line, &workspace_path, &mut file_path_cache) {
+                if let Some(grep_match) = parse_json_grep_output(line, &search_path, &mut file_path_cache) {
                     matches.push(grep_match);
                 }
             }
@@ -108,7 +123,7 @@ impl Tool for GrepTool {
                     break;
                 }
 
-                if let Some(grep_match) = parse_grep_output(line, &workspace_path) {
+                if let Some(grep_match) = parse_grep_output(line, &search_path) {
                     matches.push(grep_match);
                 }
             }

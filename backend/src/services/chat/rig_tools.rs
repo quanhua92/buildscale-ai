@@ -105,25 +105,50 @@ macro_rules! define_rig_tool {
                 let user_id = self.user_id;
 
                 async move {
+                    let args_val = serde_json::to_value(args).map_err(Error::Json)?;
                     let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
                     let tool = $core_tool;
+
+                    tracing::debug!(
+                        tool = $name,
+                        workspace_id = %workspace_id,
+                        user_id = %user_id,
+                        args = %args_val,
+                        "Executing tool"
+                    );
+
                     let response = tools::Tool::execute(
                         &tool,
                         &mut conn,
                         &storage,
                         workspace_id,
                         user_id,
-                        serde_json::to_value(args)?,
+                        args_val.clone(),
                     )
                     .await?;
+
                     if response.success {
+                        tracing::debug!(
+                            tool = $name,
+                            "Tool execution successful"
+                        );
                         Ok(response.result)
                     } else {
-                        Err(Error::Internal(
-                            response
-                                .error
-                                .unwrap_or_else(|| "Unknown tool error".to_string()),
-                        ))
+                        let error_msg = response
+                            .error
+                            .unwrap_or_else(|| "Unknown tool error".to_string());
+
+                        tracing::error!(
+                            tool = $name,
+                            args = %args_val,
+                            error = %error_msg,
+                            "Tool execution failed"
+                        );
+
+                        Err(Error::Internal(format!(
+                            "Tool '{}' failed with input {}: {}",
+                            $name, args_val, error_msg
+                        )))
                     }
                 }
             }

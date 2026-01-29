@@ -65,10 +65,10 @@ async fn test_archive_cleanup_worker() {
 
     // 6. Run the cleanup batch
     let mut processed = 0;
-    for _ in 0..3 {
-        processed += process_cleanup_batch(&mut *conn, &storage, 10).await.unwrap();
+    for _ in 0..10 {
+        processed += process_cleanup_batch(&mut *conn, &storage, Some(workspace_id), 10).await.unwrap();
         if processed >= 1 { break; }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert!(processed >= 1, "Should have processed at least the hash of the deleted version");
 
@@ -134,12 +134,17 @@ async fn test_archive_cleanup_version_isolation() {
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", v1.id)
         .execute(&mut *conn).await.unwrap();
 
+    // Debug: Check if trigger fired
+    let count: Option<i64> = sqlx::query_scalar!("SELECT count(*) FROM file_archive_cleanup_queue WHERE hash = $1", h1)
+        .fetch_one(&mut *conn).await.unwrap();
+    assert_eq!(count, Some(1), "Trigger should have inserted hash into cleanup queue");
+
     // 2. Run cleanup (with retries for stability)
     let mut processed = 0;
-    for _ in 0..3 {
-        processed += process_cleanup_batch(&mut *conn, &storage, 10).await.unwrap();
+    for _ in 0..10 {
+        processed += process_cleanup_batch(&mut *conn, &storage, Some(workspace_id), 10).await.unwrap();
         if processed >= 1 { break; }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert!(processed >= 1, "Should have processed v1 hash");
 
@@ -150,17 +155,16 @@ async fn test_archive_cleanup_version_isolation() {
     assert!(!std::path::Path::new(&p1).exists(), "v1 blob should be deleted");
     assert!(std::path::Path::new(&p2).exists(), "v2 blob should remain");
 
-
     // 4. Delete Version 2
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", v2.id)
         .execute(&mut *conn).await.unwrap();
 
     // 5. Run cleanup again
     let mut processed = 0;
-    for _ in 0..3 {
-        processed += process_cleanup_batch(&mut *conn, &storage, 10).await.unwrap();
+    for _ in 0..10 {
+        processed += process_cleanup_batch(&mut *conn, &storage, Some(workspace_id), 10).await.unwrap();
         if processed >= 1 { break; }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert!(processed >= 1, "Should have processed v2 hash");
 

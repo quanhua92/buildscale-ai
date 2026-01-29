@@ -262,7 +262,7 @@ impl FileStorageService {
     /// Deletes a specific version blob from Archive
     pub async fn delete_archive_blob(&self, workspace_id: Uuid, hash: &str) -> Result<()> {
         let full_path = self.get_archive_path(workspace_id, hash);
-
+        
         if !full_path.exists() {
             return Ok(()); // Already gone
         }

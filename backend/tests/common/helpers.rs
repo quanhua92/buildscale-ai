@@ -22,7 +22,8 @@ pub fn generate_test_email() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    format!("test_{}@example.com", timestamp)
+    let random: u32 = rand::random();
+    format!("test_{}_{}@example.com", timestamp, random)
 }
 
 /// Registers and logs in a user, returning the access token
