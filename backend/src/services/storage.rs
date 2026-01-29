@@ -253,6 +253,21 @@ impl FileStorageService {
         Ok(())
     }
 
+    /// Deletes a specific version blob from Archive
+    pub async fn delete_archive_blob(&self, workspace_id: Uuid, hash: &str) -> Result<()> {
+        let full_path = self.get_archive_path(workspace_id, hash);
+
+        if !full_path.exists() {
+            return Ok(()); // Already gone
+        }
+
+        fs::remove_file(&full_path).await.map_err(|e| {
+            Error::Internal(format!("Failed to delete archive blob {:?}: {}", full_path, e))
+        })?;
+
+        Ok(())
+    }
+
     /// Handles rename/move operations on disk
     pub async fn move_file(&self, workspace_id: Uuid, old_path: &str, new_path: &str) -> Result<()> {
         let source = self.get_file_path(workspace_id, old_path)?;

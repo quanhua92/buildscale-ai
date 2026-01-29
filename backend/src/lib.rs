@@ -22,14 +22,14 @@ pub use handlers::{
     health::health_check, health::health_cache,
     members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
     workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
-    files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::list_trash,
+    files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::purge_file, files::list_trash,
     files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
     files::semantic_search,
     tools::execute_tool,
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
-pub use workers::revoked_token_cleanup_worker;
+pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker};
 
 /// Load configuration from environment variables
 pub fn load_config() -> Result<Config> {
@@ -266,6 +266,14 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
                 )),
         )
         .route(
+            "/{id}/files/{file_id}/purge",
+            delete(file_handlers::purge_file)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
             "/{id}/files/trash",
             get(file_handlers::list_trash)
                 .route_layer(axum_middleware::from_fn_with_state(
@@ -420,23 +428,31 @@ pub async fn run_api_server(
         .await
         .map_err(|e| Error::Internal(format!("Failed to connect to database: {}", e)))?;
 
-    // Spawn revoked token cleanup worker
-    let (revoked_cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);
-    let pool_clone = pool.clone();
-    let revoked_cleanup_shutdown_tx_clone = revoked_cleanup_shutdown_tx.clone();
+    // Spawn cleanup workers
+    let (cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);
+    
+    // Archive cleanup channel
+    let (archive_cleanup_tx, archive_cleanup_rx) = tokio::sync::mpsc::unbounded_channel();
 
+    // Auth Worker
+    let pool_auth = pool.clone();
+    let shutdown_auth = cleanup_shutdown_tx.subscribe();
     tokio::spawn(async move {
-        revoked_token_cleanup_worker(
-            pool_clone,
-            revoked_cleanup_shutdown_tx_clone.subscribe(),
-        ).await;
+        revoked_token_cleanup_worker(pool_auth, shutdown_auth).await;
+    });
+
+    // Storage Worker
+    let pool_storage = pool.clone();
+    let shutdown_storage = cleanup_shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        archive_cleanup_worker(pool_storage, shutdown_storage, archive_cleanup_rx).await;
     });
 
     // Create user cache with configured TTL
     let user_cache = Cache::new_local(CacheConfig::default());
 
     // Build the application state with cache, user_cache, database pool, and config
-    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone());
+    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone(), archive_cleanup_tx);
 
     let api_routes = create_api_router(app_state.clone());
 
@@ -557,7 +573,7 @@ pub async fn run_api_server(
             .await
             .expect("failed to install CTRL+C handler");
         tracing::info!("Shutdown signal received");
-        revoked_cleanup_shutdown_tx.send(()).ok();
+        cleanup_shutdown_tx.send(()).ok();
     };
 
     // Start server with shutdown signal

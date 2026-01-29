@@ -4,6 +4,46 @@
  */
 
 // ============================================================================
+// File Types
+// ============================================================================
+
+export type FileType = 
+  | "folder" 
+  | "document" 
+  | "canvas" 
+  | "chat" 
+  | "whiteboard" 
+  | "agent" 
+  | "skill"
+
+export type FileStatus = 
+  | "pending" 
+  | "uploading" 
+  | "waiting" 
+  | "processing" 
+  | "ready" 
+  | "failed"
+
+export interface File {
+  id: string
+  workspace_id: string
+  parent_id?: string | null
+  author_id?: string | null
+  file_type: FileType
+  status: FileStatus
+  name: string
+  slug: string
+  path: string
+  is_virtual: boolean
+  is_remote: boolean
+  permission: number
+  latest_version_id?: string | null
+  deleted_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================================
 // Tool Types
 // ============================================================================
 

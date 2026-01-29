@@ -117,6 +117,94 @@ pub async fn touch_file(conn: &mut DbConn, file_id: Uuid) -> Result<()> {
     Ok(())
 }
 
+// ============================================================================
+// ARCHIVE CLEANUP QUERIES
+// ============================================================================
+
+pub struct CleanupItem {
+    pub hash: String,
+    pub workspace_id: Uuid,
+}
+
+/// Claims a batch of items from the cleanup queue using FOR UPDATE SKIP LOCKED
+pub async fn claim_cleanup_batch(conn: &mut DbConn, limit: i64) -> Result<Vec<CleanupItem>> {
+    let items = sqlx::query_as!(
+        CleanupItem,
+        r#"
+        DELETE FROM file_archive_cleanup_queue
+        WHERE hash IN (
+            SELECT hash
+            FROM file_archive_cleanup_queue
+            ORDER BY marked_at ASC
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING hash, workspace_id
+        "#,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(items)
+}
+
+/// Checks if a hash is still referenced by any file version
+pub async fn is_hash_referenced(conn: &mut DbConn, hash: &str) -> Result<bool> {
+    let result = sqlx::query!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM file_versions WHERE hash = $1
+        ) as "exists!"
+        "#,
+        hash
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(result.exists)
+}
+
+/// Gets all unique hashes for all versions of a file.
+pub async fn get_file_version_hashes(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<String>> {
+    let hashes = sqlx::query!(
+        r#"
+        SELECT DISTINCT hash FROM file_versions WHERE file_id = $1
+        "#,
+        file_id
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?
+    .into_iter()
+    .map(|r| r.hash)
+    .collect();
+
+    Ok(hashes)
+}
+
+/// Hard deletes a file from the database.
+pub async fn hard_delete_file(conn: &mut DbConn, workspace_id: Uuid, file_id: Uuid) -> Result<()> {
+    let result = sqlx::query!(
+        r#"
+        DELETE FROM files WHERE id = $1 AND workspace_id = $2
+        "#,
+        file_id,
+        workspace_id
+    )
+    .execute(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    if result.rows_affected() == 0 {
+        return Err(Error::NotFound(format!("File not found or already deleted: {}", file_id)));
+    }
+
+    Ok(())
+}
+
 /// Gets a file by its ID.
 pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
     let file = sqlx::query_as!(
@@ -146,7 +234,10 @@ pub async fn get_file_by_id(conn: &mut DbConn, id: Uuid) -> Result<File> {
     )
     .fetch_one(conn)
     .await
-    .map_err(Error::Sqlx)?;
+    .map_err(|e| match e {
+        sqlx::Error::RowNotFound => Error::NotFound(format!("File not found: {}", id)),
+        _ => Error::Sqlx(e),
+    })?;
 
     Ok(file)
 }

@@ -21,7 +21,7 @@ use crate::common::database::TestApp;
 async fn test_build_context_with_persona() {
     let test_app = TestApp::new("test_build_context_with_persona").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -57,7 +57,7 @@ async fn test_build_context_with_persona() {
 async fn test_build_context_with_history() {
     let test_app = TestApp::new("test_build_context_with_history").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -121,7 +121,7 @@ async fn test_build_context_with_history() {
 async fn test_build_context_with_file_attachments() {
     let test_app = TestApp::new("test_build_context_with_file_attachments").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -206,7 +206,7 @@ async fn test_build_context_with_file_attachments() {
 async fn test_build_context_workspace_isolation() {
     let test_app = TestApp::new("test_build_context_workspace_isolation").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user1, workspace1) = test_app.create_test_workspace_with_user().await.unwrap();
     let (_user2, workspace2) = test_app.create_test_workspace_with_user().await.unwrap();
@@ -284,7 +284,7 @@ async fn test_build_context_workspace_isolation() {
 async fn test_build_context_empty_chat() {
     let test_app = TestApp::new("test_build_context_empty_chat").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -321,7 +321,7 @@ async fn test_build_context_empty_chat() {
 async fn test_build_context_token_limit_optimization() {
     let test_app = TestApp::new("test_build_context_token_limit_optimization").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 
@@ -434,7 +434,7 @@ async fn test_build_context_token_limit_optimization() {
 async fn test_build_context_fragment_ordering() {
     let test_app = TestApp::new("test_build_context_fragment_ordering").await;
     let mut conn = test_app.get_connection().await;
-    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
+    let storage = FileStorageService::new(&load_config().unwrap().storage.base_path);
 
     let (user, workspace) = test_app.create_test_workspace_with_user().await.unwrap();
 

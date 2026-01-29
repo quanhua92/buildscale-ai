@@ -625,6 +625,18 @@ pub async fn restore_file(
     files::restore_file(conn, file_id).await
 }
 
+/// Hard deletes a file (Purge).
+/// Currently only removes from Database. Physical trash files are cleaned up by retention policy.
+pub async fn purge_file(conn: &mut DbConn, workspace_id: Uuid, file_id: Uuid) -> Result<Vec<String>> {
+    // 1. Get hashes before they are deleted by cascade
+    let hashes = files::get_file_version_hashes(conn, file_id).await?;
+
+    // 2. Perform hard delete
+    files::hard_delete_file(conn, workspace_id, file_id).await?;
+
+    Ok(hashes)
+}
+
 /// Lists all items in the trash for a workspace
 pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>> {
     files::list_trash(conn, workspace_id).await
