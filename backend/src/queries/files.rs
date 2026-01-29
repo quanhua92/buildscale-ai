@@ -151,23 +151,6 @@ pub async fn claim_cleanup_batch(conn: &mut DbConn, limit: i64) -> Result<Vec<Cl
     Ok(items)
 }
 
-/// Checks if a hash is still referenced by any file version
-pub async fn is_hash_referenced(conn: &mut DbConn, hash: &str) -> Result<bool> {
-    let result = sqlx::query!(
-        r#"
-        SELECT EXISTS(
-            SELECT 1 FROM file_versions WHERE hash = $1
-        ) as "exists!"
-        "#,
-        hash
-    )
-    .fetch_one(conn)
-    .await
-    .map_err(Error::Sqlx)?;
-
-    Ok(result.exists)
-}
-
 /// Gets all unique hashes for all versions of a file.
 pub async fn get_file_version_hashes(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<String>> {
     let hashes = sqlx::query!(
