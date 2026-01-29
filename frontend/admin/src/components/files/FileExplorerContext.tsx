@@ -22,13 +22,14 @@ export function FileExplorerProvider({
   const [files, setFiles] = useState<LsEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
-  const [rowSelection, setRowSelection] = useState({})
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
   
   // UI States
   const [isEditorOpen, setEditorOpen] = useState(false)
   const [isViewerOpen, setViewerOpen] = useState(false)
   const [isFolderOpen, setFolderOpen] = useState(false)
   const [isDeleteOpen, setDeleteOpen] = useState(false)
+  const [isMoveOpen, setMoveOpen] = useState(false)
   const [activeFile, setActiveFile] = useState<LsEntry | null>(null)
 
   // API Helper
@@ -108,15 +109,68 @@ export function FileExplorerProvider({
     await refresh()
   }, [callTool, refresh])
 
-  const deleteItem = useCallback(async (path: string) => {
-    await callTool('rm', { path })
-    await refresh()
-    setRowSelection({})
-  }, [callTool, refresh])
+  const performBatchOperation = useCallback(async <T,>(
+    items: T[],
+    operation: (item: T) => Promise<any>,
+    successMessage: (count: number) => string,
+    failureMessage: (failedCount: number, totalCount: number) => string
+  ) => {
+    setIsLoading(true)
+    try {
+      const results = await Promise.allSettled(items.map(item => operation(item)))
+      const successfulCount = results.filter(r => r.status === 'fulfilled' && r.value !== null).length
+      const failedCount = items.length - successfulCount
+
+      if (failedCount === 0) {
+        toast.success(successMessage(successfulCount))
+      } else if (successfulCount > 0) {
+        toast.warning(failureMessage(failedCount, items.length))
+      } else {
+        toast.error(failureMessage(items.length, items.length))
+      }
+
+      await refresh()
+      setRowSelection({})
+    } finally {
+      setIsLoading(false)
+    }
+  }, [refresh])
+
+  const deleteItems = useCallback(async (paths: string[]) => {
+    await performBatchOperation(
+      paths,
+      path => callTool('rm', { path }),
+      count => `Moved ${count} items to trash`,
+      (failed, total) => `Failed to move ${failed} of ${total} items to trash`
+    )
+  }, [callTool, performBatchOperation])
+
+  const moveItems = useCallback(async (sources: string[], destination: string) => {
+    // Ensure destination ends with / for directory move
+    const targetDir = destination.endsWith('/') ? destination : `${destination}/`
+    
+    await performBatchOperation(
+      sources,
+      source => callTool('mv', { source, destination: targetDir }),
+      count => `Moved ${count} items to ${destination}`,
+      (failed, total) => `Failed to move ${failed} of ${total} items. See console for errors.`
+    )
+  }, [callTool, performBatchOperation])
 
   const readFile = useCallback(async (path: string) => {
     return await callTool<ReadResult>('read', { path })
   }, [callTool])
+
+  const selectedEntries = React.useMemo(() => {
+    return Object.keys(rowSelection)
+      .filter(id => rowSelection[id])
+      .map(id => files.find(f => f.id === id))
+      .filter((f): f is LsEntry => !!f)
+  }, [rowSelection, files])
+
+  const selectedPaths = React.useMemo(() => {
+    return selectedEntries.map(e => e.path)
+  }, [selectedEntries])
 
   return (
     <FileExplorerContext.Provider value={{
@@ -131,10 +185,14 @@ export function FileExplorerProvider({
       createFile,
       createFolder,
       updateFile,
-      deleteItem,
+      deleteItems,
+      moveItems,
       readFile,
+      callTool,
       rowSelection,
       setRowSelection,
+      selectedEntries,
+      selectedPaths,
       isEditorOpen,
       setEditorOpen,
       isViewerOpen,
@@ -143,6 +201,8 @@ export function FileExplorerProvider({
       setFolderOpen,
       isDeleteOpen,
       setDeleteOpen,
+      isMoveOpen,
+      setMoveOpen,
       activeFile,
       setActiveFile
     }}>
