@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { LsEntry } from "./types"
-import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor } from "lucide-react"
+import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor, Move } from "lucide-react"
 import { formatDateTime } from "@buildscale/sdk"
 import { Button } from "@buildscale/sdk"
 import {
@@ -19,6 +19,7 @@ declare module '@tanstack/react-table' {
     onEdit?: (file: TData) => void
     onDelete?: (file: TData) => void
     onView?: (file: TData) => void
+    onMove?: (file: TData) => void
   }
 }
 
@@ -114,6 +115,13 @@ export const columns: ColumnDef<LsEntry>[] = [
                 Edit
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onClick={(e) => {
+              e.stopPropagation()
+              meta?.onMove?.(entry)
+            }}>
+              <Move className="mr-2 h-4 w-4" />
+              Move
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={(e) => {
               e.stopPropagation()

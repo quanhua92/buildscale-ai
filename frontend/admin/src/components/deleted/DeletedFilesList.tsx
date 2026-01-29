@@ -33,6 +33,7 @@ export function DeletedFilesList({ files, onRestore, onRestoreBatch, onPurge }: 
   const table = useReactTable({
     data: files,
     columns,
+    getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
     onSortingChange: setSorting,
     getSortedRowModel: getSortedRowModel(),
