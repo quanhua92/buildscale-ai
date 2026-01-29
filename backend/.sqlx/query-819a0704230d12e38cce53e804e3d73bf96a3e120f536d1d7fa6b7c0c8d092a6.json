@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM file_archive_cleanup_queue\n        WHERE hash IN (\n            SELECT hash\n            FROM file_archive_cleanup_queue\n            WHERE ($1::uuid IS NULL OR workspace_id = $1)\n            ORDER BY marked_at ASC\n            LIMIT $2\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING hash, workspace_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "819a0704230d12e38cce53e804e3d73bf96a3e120f536d1d7fa6b7c0c8d092a6"
+}

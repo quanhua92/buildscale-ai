@@ -49,18 +49,23 @@ impl Tool for MvTool {
         let (target_parent_id, target_name) = if destination_path.ends_with('/') {
             // Case A: Explicit directory move "/folder/"
             let dir_path = destination_path.trim_end_matches('/');
-            let dir_file = file_queries::get_file_by_path(conn, workspace_id, dir_path)
-                .await?
-                .ok_or_else(|| Error::NotFound(format!("Destination directory not found: {}", dir_path)))?;
+            if dir_path.is_empty() {
+                // Moving to Root
+                (Some(None), source_file.name.clone())
+            } else {
+                let dir_file = file_queries::get_file_by_path(conn, workspace_id, dir_path)
+                    .await?
+                    .ok_or_else(|| Error::NotFound(format!("Destination directory not found: {}", dir_path)))?;
+                    
+                if !matches!(dir_file.file_type, crate::models::files::FileType::Folder) {
+                    return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                        field: "destination".to_string(),
+                        message: "Destination path ends with / but is not a directory".to_string(),
+                    }));
+                }
                 
-            if !matches!(dir_file.file_type, crate::models::files::FileType::Folder) {
-                return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                    field: "destination".to_string(),
-                    message: "Destination path ends with / but is not a directory".to_string(),
-                }));
+                (Some(Some(dir_file.id)), source_file.name.clone())
             }
-            
-            (Some(Some(dir_file.id)), source_file.name.clone())
         } else {
             // Case B: Check if destination exists and is a directory
             if let Some(dest_file) = file_queries::get_file_by_path(conn, workspace_id, &destination_path).await? {
@@ -94,6 +99,18 @@ impl Tool for MvTool {
                 (parent_id, filename)
             }
         };
+        
+        // 3. Safety check: prevent moving a folder into itself or a subfolder
+        if source_file.file_type == crate::models::files::FileType::Folder {
+            if let Some(Some(parent_id)) = target_parent_id {
+                if file_queries::is_descendant_of(conn, parent_id, source_file.id).await? {
+                    return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                        field: "destination".to_string(),
+                        message: "Cannot move a folder into itself or a subfolder.".to_string(),
+                    }));
+                }
+            }
+        }
         
         let update_request = crate::models::requests::UpdateFileRequest {
             parent_id: target_parent_id,
