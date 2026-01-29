@@ -38,11 +38,11 @@ The system manages workspace directories within `/app/storage/workspaces/` (conf
 *   **Note**: Folders are created as actual directories on disk
 
 ### 2. The Archive (`archive/`)
-*   **Structure**: Content-addressable storage (CAS) with 2-level sharding.
+*   **Structure**: Version-unique storage with 2-level sharding.
 *   **Example**: `./storage/workspaces/{workspace_id}/archive/e3/b0/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
-*   **Usage**: History lookup, deduplication, restoration.
+*   **Usage**: History lookup, irreversible restoration.
 *   **State**: Immutable blobs.
-*   **Key**: The `hash` column in `file_versions` points to these files.
+*   **Key**: The `hash` column in `file_versions` points to these files. Hashes are salted with `version_id` to ensure every version has a unique physical blob, simplifying reliable storage reclamation.
 
 ### 3. The Trash (`trash/`)
 *   **Structure**: Hierarchical list of deleted files preserving folder structure.
@@ -90,9 +90,10 @@ The `files` table is the central registry for all objects in the system.
 Stores the history and metadata of file changes.
 
 **Architectural Change**:
-*   Content is stored exclusively on disk in the **Content-Addressable Archive**.
+*   Content is stored exclusively on disk in the **Archive**.
 *   The `hash` column points to the file content at `./archive/{hash}`.
 *   Database stores only metadata (no content).
+*   **Isolation**: Every version has a unique hash salted with its `version_id`. This ensures that deleting one version or file never affects another, enabling safe and immediate physical cleanup.
 
 | Column | Type | Description |
 |---|---|---|
@@ -101,7 +102,7 @@ Stores the history and metadata of file changes.
 | `workspace_id` | UUID | **Tenant isolation.** Denormalized for performance. |
 | `author_id` | UUID | Who created this specific version. Supports user deletion. |
 | `app_data` | JSONB | Machine metadata (storage type, size, preview, AI tags, etc.). |
-| `hash` | TEXT | **The Key**. SHA-256 hash of content. Points to file in `./archive`. |
+| `hash` | TEXT | **The Key**. Unique SHA-256 hash of content salted with `version_id`. |
 | `branch` | TEXT | Default `main`. Supports A/B variants. |
 | `created_at` | TIMESTAMPTZ | Version creation timestamp. |
 | `updated_at` | TIMESTAMPTZ | Metadata update timestamp. |

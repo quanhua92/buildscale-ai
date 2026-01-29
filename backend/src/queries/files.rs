@@ -55,8 +55,8 @@ pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> R
     let version = sqlx::query_as!(
         FileVersion,
         r#"
-        INSERT INTO file_versions (file_id, workspace_id, branch, app_data, hash, author_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO file_versions (id, file_id, workspace_id, branch, app_data, hash, author_id)
+        VALUES (COALESCE($1, uuidv7()), $2, $3, $4, $5, $6, $7)
         RETURNING
             id,
             file_id,
@@ -68,6 +68,7 @@ pub async fn create_version(conn: &mut DbConn, new_version: NewFileVersion) -> R
             created_at,
             updated_at
         "#,
+        new_version.id,
         new_version.file_id,
         new_version.workspace_id,
         new_version.branch,

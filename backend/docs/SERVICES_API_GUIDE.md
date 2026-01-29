@@ -226,7 +226,7 @@ pub async fn semantic_search(
 ) -> Result<Vec<SearchResult>>
 
 // File Utility Functions
-pub fn hash_content(content: &serde_json::Value) -> Result<String>
+pub fn hash_content(version_id: Uuid, content: &serde_json::Value) -> Result<String>
 pub fn auto_wrap_document_content(file_type: FileType, content: serde_json::Value) -> serde_json::Value
 pub fn slugify(name: &str) -> String
 pub fn calculate_path(parent_path: Option<&str>, slug: &str) -> String

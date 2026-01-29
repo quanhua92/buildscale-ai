@@ -88,6 +88,7 @@ pub struct FileVersion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewFileVersion {
+    pub id: Option<Uuid>,
     pub file_id: Uuid,
     pub workspace_id: Uuid,
     pub branch: String,

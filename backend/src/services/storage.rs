@@ -116,13 +116,26 @@ impl FileStorageService {
     /// 2. Write to Archive (if new)
     /// 3. Write to Latest directory (overwrite)
     pub async fn write_file(&self, workspace_id: Uuid, path: &str, content: &[u8]) -> Result<String> {
-        // 1. Calculate Hash
+        // Calculate standard content hash for callers that don't provide one
         let mut hasher = Sha256::new();
         hasher.update(content);
         let hash = hex::encode(hasher.finalize());
 
-        // 2. Archive (Content-Addressable)
-        let archive_path = self.get_archive_path(workspace_id, &hash);
+        self.write_file_with_hash(workspace_id, path, content, &hash).await?;
+        Ok(hash)
+    }
+
+    /// Writes content with a pre-calculated hash.
+    /// This allows salting the hash (e.g. with file_id) for safer deduplication.
+    pub async fn write_file_with_hash(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+        content: &[u8],
+        hash: &str,
+    ) -> Result<()> {
+        // 1. Archive (Content-Addressable)
+        let archive_path = self.get_archive_path(workspace_id, hash);
         if !archive_path.exists() {
             if let Some(parent) = archive_path.parent() {
                 fs::create_dir_all(parent).await.map_err(|e| {
@@ -134,7 +147,7 @@ impl FileStorageService {
             })?;
         }
 
-        // 3. Latest directory
+        // 2. Latest directory
         let file_path = self.get_file_path(workspace_id, path)?;
 
         // Ensure parent directories exist
@@ -148,7 +161,7 @@ impl FileStorageService {
             Error::Internal(format!("Failed to write working file {:?}: {}", file_path, e))
         })?;
 
-        Ok(hash)
+        Ok(())
     }
 
     /// Creates a directory for a folder

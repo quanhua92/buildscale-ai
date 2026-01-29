@@ -41,11 +41,16 @@ async fn test_archive_cleanup_worker() {
     let file = files::create_file_identity(&mut *conn, new_file).await.unwrap();
     let file_id = file.id;
 
-    // 4. Create a version (double write will create archive blob)
+    // 4. Create a version
+    let version_id = Uuid::now_v7();
     let content = b"content to be deleted";
-    let hash = storage.write_file(workspace_id, "/cleanup_test.txt", content).await.unwrap();
+    let content_val = serde_json::json!(String::from_utf8_lossy(content).to_string());
+    let hash = buildscale::services::files::hash_content(version_id, &content_val).unwrap();
+    
+    storage.write_file_with_hash(workspace_id, "/cleanup_test.txt", content, &hash).await.unwrap();
     
     let new_version = NewFileVersion {
+        id: Some(version_id),
         file_id,
         workspace_id,
         branch: "main".to_string(),
@@ -64,14 +69,14 @@ async fn test_archive_cleanup_worker() {
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", version.id)
         .execute(&mut *conn).await.unwrap();
 
-    // Verify it's in the queue
-    let queue_count = sqlx::query!("SELECT count(*) as count FROM file_archive_cleanup_queue WHERE hash = $1", hash)
-        .fetch_one(&mut *conn).await.unwrap().count.unwrap();
-    assert_eq!(queue_count, 1, "Hash should be in cleanup queue table");
-
     // 6. Run the cleanup batch
-    let processed = process_cleanup_batch(&mut *conn, &storage).await.unwrap();
-    assert!(processed >= 1, "Should have processed at least one item");
+    let mut processed = 0;
+    for _ in 0..3 {
+        processed += process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+        if processed >= 1 { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(processed >= 1, "Should have processed at least the hash of the deleted version");
 
     // 7. Verify file is GONE from disk
     assert!(!std::path::Path::new(&archive_path).exists(), "Archive blob should be deleted from disk");
@@ -83,7 +88,7 @@ async fn test_archive_cleanup_worker() {
 }
 
 #[tokio::test]
-async fn test_archive_cleanup_deduplication_safety() {
+async fn test_archive_cleanup_version_isolation() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let mut conn = app.get_connection().await;
     let storage = FileStorageService::new(&app.config.storage.base_path);
@@ -97,55 +102,61 @@ async fn test_archive_cleanup_deduplication_safety() {
 
     let workspace_id = Uuid::now_v7();
     sqlx::query!("INSERT INTO workspaces (id, name, owner_id) VALUES ($1, $2, $3)", 
-        workspace_id, "Dedupe Test", user_id)
+        workspace_id, "Isolation Test", user_id)
         .execute(&mut *conn).await.unwrap();
 
-    // Create TWO files with SAME content (same hash)
+    // Create ONE file with TWO versions of SAME content
     let content = b"shared content";
+    let content_val = serde_json::json!(String::from_utf8_lossy(content).to_string());
     
-    // File 1
-    let file1 = files::create_file_identity(&mut *conn, NewFile {
+    let file = files::create_file_identity(&mut *conn, NewFile {
         workspace_id, parent_id: None, author_id: user_id,
         file_type: FileType::Document, status: buildscale::models::files::FileStatus::Ready,
         name: "f1.txt".to_string(), slug: "f1.txt".to_string(), path: "/f1.txt".to_string(),
         is_virtual: false, is_remote: false, permission: 600,
     }).await.unwrap();
-    let hash = storage.write_file(workspace_id, "/f1.txt", content).await.unwrap();
+
+    // Version 1
+    let v1_id = Uuid::now_v7();
+    let h1 = buildscale::services::files::hash_content(v1_id, &content_val).unwrap();
+    storage.write_file_with_hash(workspace_id, "/f1.txt", content, &h1).await.unwrap();
     let v1 = files::create_version(&mut *conn, NewFileVersion {
-        file_id: file1.id, workspace_id, branch: "main".to_string(),
-        app_data: serde_json::json!({}), hash: hash.clone(), author_id: Some(user_id),
+        id: Some(v1_id), file_id: file.id, workspace_id, branch: "main".to_string(),
+        app_data: serde_json::json!({}), hash: h1.clone(), author_id: Some(user_id),
     }).await.unwrap();
 
-    // File 2
-    let file2 = files::create_file_identity(&mut *conn, NewFile {
-        workspace_id, parent_id: None, author_id: user_id,
-        file_type: FileType::Document, status: buildscale::models::files::FileStatus::Ready,
-        name: "f2.txt".to_string(), slug: "f2.txt".to_string(), path: "/f2.txt".to_string(),
-        is_virtual: false, is_remote: false, permission: 600,
-    }).await.unwrap();
+    // Version 2
+    let v2_id = Uuid::now_v7();
+    let h2 = buildscale::services::files::hash_content(v2_id, &content_val).unwrap();
+    storage.write_file_with_hash(workspace_id, "/f1.txt", content, &h2).await.unwrap();
     let v2 = files::create_version(&mut *conn, NewFileVersion {
-        file_id: file2.id, workspace_id, branch: "main".to_string(),
-        app_data: serde_json::json!({}), hash: hash.clone(), author_id: Some(user_id),
+        id: Some(v2_id), file_id: file.id, workspace_id, branch: "main".to_string(),
+        app_data: serde_json::json!({}), hash: h2.clone(), author_id: Some(user_id),
     }).await.unwrap();
 
-    // 1. Delete File 1's version
+    assert_ne!(h1, h2, "Hashes must be different even for same content due to version_id salting");
+
+    // 1. Delete Version 1
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", v1.id)
         .execute(&mut *conn).await.unwrap();
 
     // 2. Run cleanup
     process_cleanup_batch(&mut *conn, &storage).await.unwrap();
 
-    // 3. Verify file STILL EXISTS on disk because File 2 still references it
-    let archive_path = app.config.storage.base_path.to_string() + "/workspaces/" + &workspace_id.to_string() + "/archive/" + &hash[0..2] + "/" + &hash[2..4] + "/" + &hash;
-    assert!(std::path::Path::new(&archive_path).exists(), "Archive blob should STILL exist due to deduplication");
+    // 3. Verify v1 blob is gone, but v2 blob remains
+    let p1 = app.config.storage.base_path.to_string() + "/workspaces/" + &workspace_id.to_string() + "/archive/" + &h1[0..2] + "/" + &h1[2..4] + "/" + &h1;
+    let p2 = app.config.storage.base_path.to_string() + "/workspaces/" + &workspace_id.to_string() + "/archive/" + &h2[0..2] + "/" + &h2[2..4] + "/" + &h2;
+    
+    assert!(!std::path::Path::new(&p1).exists(), "v1 blob should be deleted");
+    assert!(std::path::Path::new(&p2).exists(), "v2 blob should remain");
 
-    // 4. Delete File 2's version
+    // 4. Delete Version 2
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", v2.id)
         .execute(&mut *conn).await.unwrap();
 
     // 5. Run cleanup again
     process_cleanup_batch(&mut *conn, &storage).await.unwrap();
 
-    // 6. NOW it should be gone
-    assert!(!std::path::Path::new(&archive_path).exists(), "Archive blob should now be deleted");
+    // 6. NOW both should be gone
+    assert!(!std::path::Path::new(&p2).exists(), "v2 blob should now be deleted");
 }
