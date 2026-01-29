@@ -102,7 +102,11 @@ impl TestApp {
     /// ```
     pub async fn new_with_options(options: TestAppOptions) -> Self {
         // Load config
-        let config = load_config().expect("Failed to load config");
+        let mut config = load_config().expect("Failed to load config");
+
+        // Disable storage worker background processing in tests to avoid race conditions
+        // during manual logic verification.
+        config.storage_worker.cleanup_batch_size = 0;
 
         // Initialize cache
         let cache = Cache::new_local(CacheConfig {
