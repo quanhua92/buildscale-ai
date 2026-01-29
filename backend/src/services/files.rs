@@ -25,8 +25,6 @@ pub const DEFAULT_FILE_PERMISSION: i32 = 600;
 /// Includes version_id in the calculation to ensure hashes are globally unique per version,
 /// simplifying storage reclamation (every version has its own physical blob).
 pub fn hash_content(version_id: Uuid, content: &serde_json::Value) -> Result<String> {
-    use sha2::Digest;
-
     let bytes = match content {
         // For strings, hash the raw string bytes (not JSON-encoded)
         serde_json::Value::String(s) => s.as_bytes().to_vec(),

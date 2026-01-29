@@ -1,4 +1,4 @@
-use buildscale::models::files::{FileType, NewFile, NewFileVersion};
+use buildscale::models::files::{FileType, NewFile};
 use buildscale::queries::files;
 use buildscale::services::storage::FileStorageService;
 use buildscale::workers::archive_cleanup::process_cleanup_batch;
@@ -42,24 +42,18 @@ async fn test_archive_cleanup_worker() {
     let file_id = file.id;
 
     // 4. Create a version
-    let version_id = Uuid::now_v7();
     let content = b"content to be deleted";
     let content_val = serde_json::json!(String::from_utf8_lossy(content).to_string());
-    let hash = buildscale::services::files::hash_content(version_id, &content_val).unwrap();
     
-    storage.write_file_with_hash(workspace_id, "/cleanup_test.txt", content, &hash).await.unwrap();
-    
-    let new_version = NewFileVersion {
-        id: Some(version_id),
-        file_id,
-        workspace_id,
-        branch: "main".to_string(),
-        app_data: serde_json::json!({}),
-        hash: hash.clone(),
+    // We let the service handle hash calculation and version creation
+    let new_version_req = buildscale::models::requests::CreateVersionRequest {
+        content: content_val,
+        app_data: None,
+        branch: None,
         author_id: Some(user_id),
     };
-    let version = files::create_version(&mut *conn, new_version).await.unwrap();
-    files::update_latest_version_id(&mut *conn, file_id, version.id).await.unwrap();
+    let version = buildscale::services::files::create_version(&mut *conn, &storage, file_id, new_version_req).await.unwrap();
+    let hash = version.hash.clone();
 
     // Verify file exists in archive
     let archive_path = app.config.storage.base_path.to_string() + "/workspaces/" + &workspace_id.to_string() + "/archive/" + &hash[0..2] + "/" + &hash[2..4] + "/" + &hash;
@@ -117,22 +111,22 @@ async fn test_archive_cleanup_version_isolation() {
     }).await.unwrap();
 
     // Version 1
-    let v1_id = Uuid::now_v7();
-    let h1 = buildscale::services::files::hash_content(v1_id, &content_val).unwrap();
-    storage.write_file_with_hash(workspace_id, "/f1.txt", content, &h1).await.unwrap();
-    let v1 = files::create_version(&mut *conn, NewFileVersion {
-        id: Some(v1_id), file_id: file.id, workspace_id, branch: "main".to_string(),
-        app_data: serde_json::json!({}), hash: h1.clone(), author_id: Some(user_id),
+    let v1 = buildscale::services::files::create_version(&mut *conn, &storage, file.id, buildscale::models::requests::CreateVersionRequest {
+        content: content_val.clone(),
+        app_data: None,
+        branch: None,
+        author_id: Some(user_id),
     }).await.unwrap();
+    let h1 = v1.hash.clone();
 
     // Version 2
-    let v2_id = Uuid::now_v7();
-    let h2 = buildscale::services::files::hash_content(v2_id, &content_val).unwrap();
-    storage.write_file_with_hash(workspace_id, "/f1.txt", content, &h2).await.unwrap();
-    let v2 = files::create_version(&mut *conn, NewFileVersion {
-        id: Some(v2_id), file_id: file.id, workspace_id, branch: "main".to_string(),
-        app_data: serde_json::json!({}), hash: h2.clone(), author_id: Some(user_id),
+    let v2 = buildscale::services::files::create_version(&mut *conn, &storage, file.id, buildscale::models::requests::CreateVersionRequest {
+        content: content_val.clone(),
+        app_data: None,
+        branch: None,
+        author_id: Some(user_id),
     }).await.unwrap();
+    let h2 = v2.hash.clone();
 
     assert_ne!(h1, h2, "Hashes must be different even for same content due to version_id salting");
 
@@ -141,7 +135,13 @@ async fn test_archive_cleanup_version_isolation() {
         .execute(&mut *conn).await.unwrap();
 
     // 2. Run cleanup
-    process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+    let mut processed = 0;
+    for _ in 0..3 {
+        processed += process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+        if processed >= 1 { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(processed >= 1, "Should have processed v1 hash");
 
     // 3. Verify v1 blob is gone, but v2 blob remains
     let p1 = app.config.storage.base_path.to_string() + "/workspaces/" + &workspace_id.to_string() + "/archive/" + &h1[0..2] + "/" + &h1[2..4] + "/" + &h1;
@@ -155,8 +155,14 @@ async fn test_archive_cleanup_version_isolation() {
         .execute(&mut *conn).await.unwrap();
 
     // 5. Run cleanup again
-    process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+    let mut processed = 0;
+    for _ in 0..3 {
+        processed += process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+        if processed >= 1 { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(processed >= 1, "Should have processed v2 hash");
 
-    // 6. NOW both should be gone
+    // 6. NOW it should be gone
     assert!(!std::path::Path::new(&p2).exists(), "v2 blob should now be deleted");
 }

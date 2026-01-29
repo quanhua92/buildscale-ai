@@ -134,7 +134,7 @@ impl FileStorageService {
         content: &[u8],
         hash: &str,
     ) -> Result<()> {
-        // 1. Archive (Content-Addressable)
+        // 1. Archive (Version-Unique)
         let archive_path = self.get_archive_path(workspace_id, hash);
         if !archive_path.exists() {
             if let Some(parent) = archive_path.parent() {

@@ -26,7 +26,7 @@ The system manages workspace directories within `/app/storage/workspaces/` (conf
 ```
 /app/storage/workspaces/{workspace_id}/
 ├── latest/       # Current files (Source of Truth)
-├── archive/      # All file versions (Content-Addressable Store)
+├── archive/      # All file versions (Version-Unique Store)
 └── trash/        # Soft-deleted files
 ```
 

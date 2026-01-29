@@ -57,39 +57,17 @@ Each workspace is **self-contained** within `/app/storage/workspaces/` directory
 ```
 /app/storage/workspaces/{workspace_id}/
 ├── latest/       # Current files (Source of Truth)
-├── archive/      # All file versions (Content-Addressable Store)
-└── trash/        # Soft-deleted files
-```
-
-**Components:**
-1.  **The Latest (`latest/`)**:
-    *   This is **Source of Truth** for current state.
-    *   Files are stored hierarchically using their full `path` (e.g., `/projects/backend/main.rs`, `/notes/personal/note1.md`).
-    *   Folders are created as actual directories on disk to preserve the folder structure.
-    *   **Benefit**: Fast access, natural folder structure, easy navigation and browsing.
-
+├── archive/      # All file versions (Version-Unique Store)
+...
 2.  **The Archive (`archive/`)**:
-    *   A **Content-Addressable Store** (CAS) containing every file version ever written for this workspace.
-    *   Files are stored by their SHA-256 hash with 2-level sharding (e.g., `./archive/e3/b0/e3b0...`).
-    *   **Benefit**: Infinite version history with automatic deduplication per workspace.
+    *   A **Version-Unique Store** containing every file version ever written for this workspace.
+    *   Files are stored by a unique hash salted with the `version_id` (e.g., `./archive/e3/b0/e3b0...`).
+    *   **Benefit**: Guaranteed isolation. Deleting or purging one file or version never affects others, enabling safe and immediate storage reclamation.
+...
+2.  **Archive** (First Write): The content is written to the Archive (`./storage/workspaces/{workspace_id}/archive/`).
+    *   **Purpose**: Version history and point-in-time restoration.
+    *   **Benefit**: Every version has a unique physical blob, preventing race conditions during deletion.
 
-3.  **The Trash (`trash/`)**:
-    *   Soft-deleted files for this workspace.
-    *   Supports recovery before permanent deletion.
-
-4.  **The Index (PostgreSQL)**:
-    *   Stores metadata (Permissions, Authorship, Relationships, Vector Embeddings).
-    *   Maps logical paths (e.g., `/projects/backend/main.rs`) to physical storage (`/main.rs`).
-    *   Stores only hash references to archive, not content.
-
-### The "Double Write" Protocol
-
-To maintain consistency and provide both version history and fast access, every write operation performs **two disk writes**:
-
-1.  **Hash**: The content is hashed (SHA-256).
-2.  **Archive** (First Write): The content is written to CAS (`./storage/workspaces/{workspace_id}/archive/`).
-    *   **Purpose**: Version history, deduplication, and restoration.
-    *   **Benefit**: Multiple versions with same content share storage (O(1) space).
 3.  **Commit** (Second Write): The content is written to the Latest directory at `{full_path}` (hierarchical storage).
     *   **Purpose**: Fast O(1) access for reads, grep, and AI tools.
     *   **Benefit**: No database query needed to read file content.

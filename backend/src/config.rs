@@ -20,7 +20,7 @@ pub struct StorageConfig {
     /// Base path for storage (default: "./data")
     /// Within this, the system manages:
     /// - /data (Working Tree)
-    /// - /archive (CAS History)
+    /// - /archive (Version History)
     /// - /trash (Recycle Bin)
     pub base_path: String,
 }
