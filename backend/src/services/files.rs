@@ -21,12 +21,10 @@ use uuid::Uuid;
 pub const DEFAULT_FOLDER_PERMISSION: i32 = 755;
 pub const DEFAULT_FILE_PERMISSION: i32 = 600;
 
-/// Hashes content using SHA-256 for content-addressing
-/// For strings: hashes raw bytes (preserves newlines, special chars)
-/// For other types: hashes JSON serialization
-pub fn hash_content(content: &serde_json::Value) -> Result<String> {
-    use sha2::Digest;
-
+/// Hashes content using SHA-256 for content-addressing.
+/// Includes version_id in the calculation to ensure hashes are globally unique per version,
+/// simplifying storage reclamation (every version has its own physical blob).
+pub fn hash_content(version_id: Uuid, content: &serde_json::Value) -> Result<String> {
     let bytes = match content {
         // For strings, hash the raw string bytes (not JSON-encoded)
         serde_json::Value::String(s) => s.as_bytes().to_vec(),
@@ -36,8 +34,12 @@ pub fn hash_content(content: &serde_json::Value) -> Result<String> {
             .into_bytes(),
     };
 
+    // Prepend version_id to the bytes to ensure global uniqueness
+    let mut final_bytes = version_id.as_bytes().to_vec();
+    final_bytes.extend(bytes);
+
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    hasher.update(&final_bytes);
     Ok(hex::encode(hasher.finalize()))
 }
 
@@ -237,7 +239,8 @@ pub async fn create_file_with_content(
             .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?,
     };
 
-    let hash = hash_content(&content)?;
+    let version_id = Uuid::now_v7();
+    let hash = hash_content(version_id, &content)?;
 
     // HYBRID: Write to Disk
     if matches!(file.file_type, FileType::Folder) {
@@ -245,7 +248,7 @@ pub async fn create_file_with_content(
         storage.create_folder(file.workspace_id, &file.path).await?;
     } else {
         // Files: Write content using the full file.path to preserve folder structure on disk
-        storage.write_file(file.workspace_id, &file.path, &content_bytes).await?;
+        storage.write_file_with_hash(file.workspace_id, &file.path, &content_bytes, &hash).await?;
     }
 
     // DATABASE: Store metadata only
@@ -258,6 +261,7 @@ pub async fn create_file_with_content(
     }
 
     let new_version = NewFileVersion {
+        id: Some(version_id),
         file_id: file.id,
         workspace_id: file.workspace_id,
         branch: "main".to_string(),
@@ -316,32 +320,14 @@ pub async fn create_version(
             .map_err(|e| Error::Internal(format!("Failed to serialize content: {}", e)))?,
     };
 
-    // We calculate hash locally first to check deduplication BEFORE writing to disk if possible,
-    // but FileStorageService handles double-write logic.
-    // Let's rely on storage service to be efficient.
-    // However, for DB deduplication we need the hash.
-    // Let's use the helper.
-    let hash = hash_content(&content)?;
-
     // Use the full file.path to preserve folder structure on disk
     let storage_path = file.path.clone();
 
-    // 2. Check if the latest version already has this hash (deduplication)
-    let latest = files::get_latest_version_optional(conn, file_id).await?;
-    if let Some(v) = latest.filter(|v| v.hash == hash) {
-        // Even if DB has it, ensure it's physically on disk (e.g. after a restore or sync issue)
-        // This is a "healing" write - effectively a touch
-        storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
-        return Ok(v);
-    }
+    let version_id = Uuid::now_v7();
+    let hash = hash_content(version_id, &content)?;
 
-    // Write to storage now that we know we need a new version
-    let written_hash = storage.write_file(file.workspace_id, &storage_path, &content_bytes).await?;
-    
-    // Sanity check
-    if written_hash != hash {
-        tracing::warn!("Calculated hash {} differs from storage hash {}", hash, written_hash);
-    }
+    // Write to storage using unique hash
+    storage.write_file_with_hash(file.workspace_id, &storage_path, &content_bytes, &hash).await?;
 
     // 3. Start transaction
     let mut tx = conn.begin().await.map_err(|e| {
@@ -358,6 +344,7 @@ pub async fn create_version(
     }
 
     let new_version = NewFileVersion {
+        id: Some(version_id),
         file_id,
         workspace_id: file.workspace_id,
         branch: request.branch.unwrap_or_else(|| "main".to_string()),
@@ -405,11 +392,11 @@ pub async fn get_file_with_content(
                         serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
                     })
             },
-            Err(Error::NotFound(_)) => {
+             Err(Error::NotFound(_)) => {
                 // Fallback: If not found on disk, check if it's in archive using the hash
                 if let Ok(bytes) = storage.read_version(file.workspace_id, &latest_version.hash).await {
-                     // Heal: Write back to working tree
-                     let _ = storage.write_file(file.workspace_id, &storage_path, &bytes).await;
+                     // Heal: Write back to working tree (bypass archive write since it's already there)
+                     let _ = storage.write_latest_file(file.workspace_id, &storage_path, &bytes).await;
                      serde_json::from_slice(&bytes)
                         .unwrap_or_else(|_| {
                             // Not valid JSON, treat as raw UTF-8 string
@@ -623,6 +610,19 @@ pub async fn restore_file(
     }
 
     files::restore_file(conn, file_id).await
+}
+
+/// Hard deletes a file (Purge).
+/// This removes the file from the database, and its associated physical blobs
+/// are queued for deletion by a background worker.
+pub async fn purge_file(conn: &mut DbConn, workspace_id: Uuid, file_id: Uuid) -> Result<Vec<String>> {
+    // 1. Get hashes before they are deleted by cascade
+    let hashes = files::get_file_version_hashes(conn, workspace_id, file_id).await?;
+
+    // 2. Perform hard delete
+    files::hard_delete_file(conn, workspace_id, file_id).await?;
+
+    Ok(hashes)
 }
 
 /// Lists all items in the trash for a workspace

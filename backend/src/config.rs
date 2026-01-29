@@ -13,6 +13,24 @@ pub struct Config {
     pub server: ServerConfig,
     pub ai: AiConfig,
     pub storage: StorageConfig,
+    pub storage_worker: StorageWorkerConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StorageWorkerConfig {
+    /// Interval for periodic archive cleanup in seconds (default: 3600 = 1 hour)
+    pub cleanup_interval_seconds: u64,
+    /// Batch size for archive cleanup (default: 100)
+    pub cleanup_batch_size: i64,
+}
+
+impl Default for StorageWorkerConfig {
+    fn default() -> Self {
+        Self {
+            cleanup_interval_seconds: 3600,
+            cleanup_batch_size: 100,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -20,7 +38,7 @@ pub struct StorageConfig {
     /// Base path for storage (default: "./data")
     /// Within this, the system manages:
     /// - /data (Working Tree)
-    /// - /archive (CAS History)
+    /// - /archive (Version History)
     /// - /trash (Recycle Bin)
     pub base_path: String,
 }

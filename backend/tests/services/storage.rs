@@ -80,10 +80,10 @@ async fn test_write_file_rejects_malicious_paths() {
     ];
 
     for path in malicious_paths {
-        let result = storage.write_file(workspace_id, path, content).await;
+        let result = storage.write_latest_file(workspace_id, path, content).await;
         assert!(
             result.is_err(),
-            "Malicious path '{}' should be rejected by write_file",
+            "Malicious path '{}' should be rejected by write_latest_file",
             path
         );
     }
@@ -97,7 +97,7 @@ async fn test_workspace_isolation() {
 
     // Write a file to workspace1
     let content1 = b"workspace 1 data";
-    let result = storage.write_file(workspace1, "safe_file.txt", content1).await;
+    let result = storage.write_latest_file(workspace1, "safe_file.txt", content1).await;
     assert!(result.is_ok(), "Should successfully write to workspace1");
 
     // Try to access workspace1's file from workspace2 using traversal

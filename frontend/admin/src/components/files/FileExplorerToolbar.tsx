@@ -9,10 +9,11 @@ import {
   BreadcrumbSeparator,
   Button,
 } from "@buildscale/sdk"
-import { RefreshCw, FolderPlus, FilePlus, ChevronRight, Home } from "lucide-react"
+import { Link } from '@tanstack/react-router'
+import { RefreshCw, FolderPlus, FilePlus, ChevronRight, Home, Trash2 } from "lucide-react"
 
 export function FileExplorerToolbar() {
-  const { currentPath, navigate, refresh, isLoading, setEditorOpen, setFolderOpen, setActiveFile } = useFileExplorer()
+  const { currentPath, navigate, refresh, isLoading, setEditorOpen, setFolderOpen, setActiveFile, workspaceId } = useFileExplorer()
 
   const pathParts = currentPath.split('/').filter(Boolean)
   
@@ -74,6 +75,11 @@ export function FileExplorerToolbar() {
       </div>
       
       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <Button variant="ghost" size="icon" asChild title="Recently Deleted">
+          <Link to="/workspaces/$workspaceId/deleted" params={{ workspaceId }}>
+            <Trash2 className="h-4 w-4" />
+          </Link>
+        </Button>
         <Button variant="ghost" size="icon" onClick={() => refresh()} disabled={isLoading}>
           <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
         </Button>

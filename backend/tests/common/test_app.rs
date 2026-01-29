@@ -121,8 +121,11 @@ impl TestApp {
         // Initialize Rig service for tests (dummy key)
         let rig_service = std::sync::Arc::new(buildscale::services::chat::rig_engine::RigService::dummy());
 
+        // Initialize archive cleanup channel
+        let (archive_cleanup_tx, _archive_cleanup_rx) = tokio::sync::mpsc::unbounded_channel();
+
         // Build application state with cache, user_cache, database pool, and config
-        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service, config.clone());
+        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service, config.clone(), archive_cleanup_tx);
 
         // Build API v1 routes using the shared router function
         let api_routes = create_api_router(app_state.clone());

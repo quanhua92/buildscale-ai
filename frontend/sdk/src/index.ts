@@ -142,11 +142,14 @@ export type {
   CreateWorkspaceResponse,
   WorkspaceMemberDetailed,
   GetMembershipResponse,
+  File,
+  FileType,
+  FileStatus,
 } from './api/types'
 
 // Errors
 export { ApiError, TokenTheftError } from './api/errors'
 
 // Utils
-export { cn, formatDate, formatDateTime } from './utils'
+export { cn, formatDate, formatDateTime, formatTime } from './utils'
 

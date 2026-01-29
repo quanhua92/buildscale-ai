@@ -33,7 +33,7 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
 | **Users** | `register_user`, `register_user_with_workspace`, `login_user`, `validate_session`, `logout_user`, `get_user_by_id`, `update_password`, `is_email_available`, `verify_password`, `generate_session_token`, `get_session_info`, `get_user_active_sessions` |
 | **Workspaces** | `create_workspace`, `get_workspace`, `list_user_workspaces`, `update_workspace_owner`, `can_access_workspace` |
 | **Members** | `list_members`, `get_my_membership`, `add_member_by_email`, `update_member_role`, `remove_member` |
-| **Files** | `create_file_with_content`, `create_version`, `get_file_with_content`, `move_or_rename_file`, `soft_delete_file`, `restore_file`, `list_trash`, `hash_content`, `auto_wrap_document_content`, `slugify`, `calculate_path`, `ensure_path_exists`, `chunk_text`, `extract_text_recursively` |
+| **Files** | `create_file_with_content`, `create_version`, `get_file_with_content`, `move_or_rename_file`, `soft_delete_file`, `restore_file`, `purge_file`, `list_trash`, `hash_content`, `auto_wrap_document_content`, `slugify`, `calculate_path`, `ensure_path_exists`, `chunk_text`, `extract_text_recursively` |
 | **Network** | `add_tag`, `remove_tag`, `list_files_by_tag`, `link_files`, `remove_link`, `get_file_network` |
 | **AI Engine** | `process_file_for_ai`, `semantic_search` |
 | **Chat & AI** | `save_message`, `get_chat_session`, `build_context`, `format_file_fragment`, `format_history_fragment`, `AttachmentManager`, `HistoryManager` |
@@ -206,6 +206,7 @@ pub async fn create_version(
 pub async fn move_or_rename_file(conn: &mut DbConn, file_id: Uuid, request: UpdateFileHttp) -> Result<File>
 pub async fn soft_delete_file(conn: &mut DbConn, file_id: Uuid) -> Result<()>
 pub async fn restore_file(conn: &mut DbConn, file_id: Uuid) -> Result<File>
+pub async fn purge_file(conn: &mut DbConn, file_id: Uuid) -> Result<()>
 pub async fn list_trash(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<File>>
 
 // Knowledge Graph
@@ -225,7 +226,7 @@ pub async fn semantic_search(
 ) -> Result<Vec<SearchResult>>
 
 // File Utility Functions
-pub fn hash_content(content: &serde_json::Value) -> Result<String>
+pub fn hash_content(version_id: Uuid, content: &serde_json::Value) -> Result<String>
 pub fn auto_wrap_document_content(file_type: FileType, content: serde_json::Value) -> serde_json::Value
 pub fn slugify(name: &str) -> String
 pub fn calculate_path(parent_path: Option<&str>, slug: &str) -> String

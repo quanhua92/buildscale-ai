@@ -26,7 +26,7 @@ The system manages workspace directories within `/app/storage/workspaces/` (conf
 ```
 /app/storage/workspaces/{workspace_id}/
 ├── latest/       # Current files (Source of Truth)
-├── archive/      # All file versions (Content-Addressable Store)
+├── archive/      # All file versions (Version-Unique Store)
 └── trash/        # Soft-deleted files
 ```
 
@@ -38,11 +38,11 @@ The system manages workspace directories within `/app/storage/workspaces/` (conf
 *   **Note**: Folders are created as actual directories on disk
 
 ### 2. The Archive (`archive/`)
-*   **Structure**: Content-addressable storage (CAS) with 2-level sharding.
+*   **Structure**: Version-unique storage with 2-level sharding.
 *   **Example**: `./storage/workspaces/{workspace_id}/archive/e3/b0/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
-*   **Usage**: History lookup, deduplication, restoration.
+*   **Usage**: History lookup, irreversible restoration.
 *   **State**: Immutable blobs.
-*   **Key**: The `hash` column in `file_versions` points to these files.
+*   **Key**: The `hash` column in `file_versions` points to these files. Hashes are salted with `version_id` to ensure every version has a unique physical blob, simplifying reliable storage reclamation.
 
 ### 3. The Trash (`trash/`)
 *   **Structure**: Hierarchical list of deleted files preserving folder structure.
@@ -81,16 +81,19 @@ The `files` table is the central registry for all objects in the system.
 **Trash Logic:**
 *   **Soft Delete**: When a file is deleted, `deleted_at` is set to the current timestamp.
 *   **Unique Constraints**: A deleted file releases its claim on the `slug` and `path`. You can create a new file with the same path as a deleted one.
-*   **Retention**: A background job permanently deletes files where `deleted_at < NOW() - INTERVAL '30 days'`.
+*   **Purge (Hard Delete)**: An irreversible operation that removes the file registry entry from the database.
+*   **Cascade Cleanup**: Deleting a file automatically triggers an `ON DELETE CASCADE` in the database, removing its Versions, Tags, Links, and Chat Messages.
+*   **Automated Archive Cleanup**: A background worker periodically identifies orphaned blobs in the `archive/` folder (hashes no longer referenced by any file version) and physically deletes them from disk using a `SKIP LOCKED` concurrency pattern.
 
 ### 2. The Content: `file_versions`
 
 Stores the history and metadata of file changes.
 
 **Architectural Change**:
-*   Content is stored exclusively on disk in the **Content-Addressable Archive**.
+*   Content is stored exclusively on disk in the **Archive**.
 *   The `hash` column points to the file content at `./archive/{hash}`.
 *   Database stores only metadata (no content).
+*   **Isolation**: Every version has a unique hash salted with its `version_id`. This ensures that deleting one version or file never affects another, enabling safe and immediate physical cleanup.
 
 | Column | Type | Description |
 |---|---|---|
@@ -99,7 +102,7 @@ Stores the history and metadata of file changes.
 | `workspace_id` | UUID | **Tenant isolation.** Denormalized for performance. |
 | `author_id` | UUID | Who created this specific version. Supports user deletion. |
 | `app_data` | JSONB | Machine metadata (storage type, size, preview, AI tags, etc.). |
-| `hash` | TEXT | **The Key**. SHA-256 hash of content. Points to file in `./archive`. |
+| `hash` | TEXT | **The Key**. Unique SHA-256 hash of content salted with `version_id`. |
 | `branch` | TEXT | Default `main`. Supports A/B variants. |
 | `created_at` | TIMESTAMPTZ | Version creation timestamp. |
 | `updated_at` | TIMESTAMPTZ | Metadata update timestamp. |

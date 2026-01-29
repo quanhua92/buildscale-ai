@@ -15,6 +15,7 @@ import type {
   UpdateWorkspaceResponse,
   GetMembershipResponse,
   GetChatResponse,
+  File,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -344,6 +345,24 @@ class ApiClient {
   async getMembership(workspaceId: string): Promise<GetMembershipResponse> {
     return this.request<GetMembershipResponse>(`/workspaces/${workspaceId}/members/me`, {
       method: 'GET',
+    })
+  }
+
+  async listDeletedFiles(workspaceId: string): Promise<File[]> {
+    return this.request<File[]>(`/workspaces/${workspaceId}/files/trash`, {
+      method: 'GET',
+    })
+  }
+
+  async restoreFile(workspaceId: string, fileId: string): Promise<File> {
+    return this.request<File>(`/workspaces/${workspaceId}/files/${fileId}/restore`, {
+      method: 'POST',
+    })
+  }
+
+  async purgeFile(workspaceId: string, fileId: string): Promise<void> {
+    return this.request<void>(`/workspaces/${workspaceId}/files/${fileId}/purge`, {
+      method: 'DELETE',
     })
   }
 

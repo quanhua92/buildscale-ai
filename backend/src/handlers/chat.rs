@@ -79,6 +79,7 @@ pub async fn create_chat(
     });
 
     let version = queries::files::create_version(&mut conn, crate::models::files::NewFileVersion {
+        id: None,
         file_id: chat_file.id,
         workspace_id,
         branch: "main".to_string(),

@@ -20,6 +20,7 @@ import { Route as AuthWorkspacesWorkspaceIdIndexRouteImport } from './routes/_au
 import { Route as AuthWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_auth/workspaces/$workspaceId/settings'
 import { Route as AuthWorkspacesWorkspaceIdFilesRouteImport } from './routes/_auth/workspaces/$workspaceId/files'
 import { Route as AuthWorkspacesWorkspaceIdEditRouteImport } from './routes/_auth/workspaces/$workspaceId/edit'
+import { Route as AuthWorkspacesWorkspaceIdDeletedRouteImport } from './routes/_auth/workspaces/$workspaceId/deleted'
 import { Route as AuthWorkspacesWorkspaceIdChatRouteImport } from './routes/_auth/workspaces/$workspaceId/chat'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -80,6 +81,12 @@ const AuthWorkspacesWorkspaceIdEditRoute =
     path: '/workspaces/$workspaceId/edit',
     getParentRoute: () => AuthRoute,
   } as any)
+const AuthWorkspacesWorkspaceIdDeletedRoute =
+  AuthWorkspacesWorkspaceIdDeletedRouteImport.update({
+    id: '/workspaces/$workspaceId/deleted',
+    path: '/workspaces/$workspaceId/deleted',
+    getParentRoute: () => AuthRoute,
+  } as any)
 const AuthWorkspacesWorkspaceIdChatRoute =
   AuthWorkspacesWorkspaceIdChatRouteImport.update({
     id: '/workspaces/$workspaceId/chat',
@@ -95,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/workspaces/all': typeof AuthWorkspacesAllRoute
   '/workspaces/new': typeof AuthWorkspacesNewRoute
   '/workspaces/$workspaceId/chat': typeof AuthWorkspacesWorkspaceIdChatRoute
+  '/workspaces/$workspaceId/deleted': typeof AuthWorkspacesWorkspaceIdDeletedRoute
   '/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
   '/workspaces/$workspaceId/files': typeof AuthWorkspacesWorkspaceIdFilesRoute
   '/workspaces/$workspaceId/settings': typeof AuthWorkspacesWorkspaceIdSettingsRoute
@@ -108,6 +116,7 @@ export interface FileRoutesByTo {
   '/workspaces/all': typeof AuthWorkspacesAllRoute
   '/workspaces/new': typeof AuthWorkspacesNewRoute
   '/workspaces/$workspaceId/chat': typeof AuthWorkspacesWorkspaceIdChatRoute
+  '/workspaces/$workspaceId/deleted': typeof AuthWorkspacesWorkspaceIdDeletedRoute
   '/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
   '/workspaces/$workspaceId/files': typeof AuthWorkspacesWorkspaceIdFilesRoute
   '/workspaces/$workspaceId/settings': typeof AuthWorkspacesWorkspaceIdSettingsRoute
@@ -123,6 +132,7 @@ export interface FileRoutesById {
   '/_auth/workspaces/all': typeof AuthWorkspacesAllRoute
   '/_auth/workspaces/new': typeof AuthWorkspacesNewRoute
   '/_auth/workspaces/$workspaceId/chat': typeof AuthWorkspacesWorkspaceIdChatRoute
+  '/_auth/workspaces/$workspaceId/deleted': typeof AuthWorkspacesWorkspaceIdDeletedRoute
   '/_auth/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
   '/_auth/workspaces/$workspaceId/files': typeof AuthWorkspacesWorkspaceIdFilesRoute
   '/_auth/workspaces/$workspaceId/settings': typeof AuthWorkspacesWorkspaceIdSettingsRoute
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/workspaces/all'
     | '/workspaces/new'
     | '/workspaces/$workspaceId/chat'
+    | '/workspaces/$workspaceId/deleted'
     | '/workspaces/$workspaceId/edit'
     | '/workspaces/$workspaceId/files'
     | '/workspaces/$workspaceId/settings'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/workspaces/all'
     | '/workspaces/new'
     | '/workspaces/$workspaceId/chat'
+    | '/workspaces/$workspaceId/deleted'
     | '/workspaces/$workspaceId/edit'
     | '/workspaces/$workspaceId/files'
     | '/workspaces/$workspaceId/settings'
@@ -165,6 +177,7 @@ export interface FileRouteTypes {
     | '/_auth/workspaces/all'
     | '/_auth/workspaces/new'
     | '/_auth/workspaces/$workspaceId/chat'
+    | '/_auth/workspaces/$workspaceId/deleted'
     | '/_auth/workspaces/$workspaceId/edit'
     | '/_auth/workspaces/$workspaceId/files'
     | '/_auth/workspaces/$workspaceId/settings'
@@ -257,6 +270,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthWorkspacesWorkspaceIdEditRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/workspaces/$workspaceId/deleted': {
+      id: '/_auth/workspaces/$workspaceId/deleted'
+      path: '/workspaces/$workspaceId/deleted'
+      fullPath: '/workspaces/$workspaceId/deleted'
+      preLoaderRoute: typeof AuthWorkspacesWorkspaceIdDeletedRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/workspaces/$workspaceId/chat': {
       id: '/_auth/workspaces/$workspaceId/chat'
       path: '/workspaces/$workspaceId/chat'
@@ -272,6 +292,7 @@ interface AuthRouteChildren {
   AuthWorkspacesAllRoute: typeof AuthWorkspacesAllRoute
   AuthWorkspacesNewRoute: typeof AuthWorkspacesNewRoute
   AuthWorkspacesWorkspaceIdChatRoute: typeof AuthWorkspacesWorkspaceIdChatRoute
+  AuthWorkspacesWorkspaceIdDeletedRoute: typeof AuthWorkspacesWorkspaceIdDeletedRoute
   AuthWorkspacesWorkspaceIdEditRoute: typeof AuthWorkspacesWorkspaceIdEditRoute
   AuthWorkspacesWorkspaceIdFilesRoute: typeof AuthWorkspacesWorkspaceIdFilesRoute
   AuthWorkspacesWorkspaceIdSettingsRoute: typeof AuthWorkspacesWorkspaceIdSettingsRoute
@@ -283,6 +304,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthWorkspacesAllRoute: AuthWorkspacesAllRoute,
   AuthWorkspacesNewRoute: AuthWorkspacesNewRoute,
   AuthWorkspacesWorkspaceIdChatRoute: AuthWorkspacesWorkspaceIdChatRoute,
+  AuthWorkspacesWorkspaceIdDeletedRoute: AuthWorkspacesWorkspaceIdDeletedRoute,
   AuthWorkspacesWorkspaceIdEditRoute: AuthWorkspacesWorkspaceIdEditRoute,
   AuthWorkspacesWorkspaceIdFilesRoute: AuthWorkspacesWorkspaceIdFilesRoute,
   AuthWorkspacesWorkspaceIdSettingsRoute:

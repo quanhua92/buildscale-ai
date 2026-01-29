@@ -199,6 +199,7 @@ impl ChatService {
         let new_app_data = serde_json::to_value(agent_config).map_err(Error::Json)?;
 
         let new_version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
+            id: None,
             file_id: chat_file_id,
             workspace_id,
             branch: "main".to_string(),

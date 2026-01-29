@@ -531,3 +531,46 @@ async fn test_slug_normalization() {
     assert_eq!(renamed_body["name"], "RENAMED DOC.md");
     assert_eq!(renamed_body["slug"], "renamed-doc.md");
 }
+
+#[tokio::test]
+async fn test_purge_lifecycle() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Purge Test WS").await;
+
+    // 1. Create file
+    let create_resp = app.client.post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&CreateFileHttp {
+            parent_id: None,
+            name: "purge_me.md".to_string(),
+            slug: None,
+            path: None,
+            is_virtual: None,
+            is_remote: None,
+            permission: None,
+            file_type: FileType::Document,
+            content: serde_json::json!({}),
+            app_data: None,
+        }).send().await.unwrap();
+    let file_id = create_resp.json::<serde_json::Value>().await.unwrap()["file"]["id"].as_str().unwrap().to_string();
+
+    // 2. Purge it (Delete Forever)
+    let purge_resp = app.client.delete(&app.url(&format!("/api/v1/workspaces/{}/files/{}/purge", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    assert_eq!(purge_resp.status(), 200);
+
+    // 3. Verify it's gone
+    let get_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/{}", workspace_id, file_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    assert_eq!(get_resp.status(), 404);
+
+    // 4. Verify it's not in trash
+    let trash_resp = app.client.get(&app.url(&format!("/api/v1/workspaces/{}/files/trash", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .send().await.unwrap();
+    let trash_items: Vec<serde_json::Value> = trash_resp.json().await.unwrap();
+    assert!(!trash_items.iter().any(|i| i["id"] == file_id));
+}

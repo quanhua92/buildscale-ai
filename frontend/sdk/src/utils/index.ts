@@ -7,5 +7,5 @@ export type { TokenCallbacks, StorageCallbacks, FullStorageCallbacks } from './s
 export { BrowserStorage } from './storage'
 export { STORAGE_KEYS, STORAGE_PREFIX } from './constants'
 export { safeLocalStorage } from './safeLocalStorage'
-export { formatDate, formatDateTime } from './date'
+export { formatDate, formatDateTime, formatTime } from './date'
 
