@@ -1,28 +1,26 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Checkbox } from "@/components/ui/checkbox"
-import type { LsEntry } from "./types"
-import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor } from "lucide-react"
-import { formatDateTime } from "@buildscale/sdk"
-import { Button } from "@buildscale/sdk"
+import type { File } from "@buildscale/sdk"
+import { FolderIcon, FileTextIcon, MoreHorizontal, RotateCcw, Presentation, MessageSquare, Monitor, Trash2 } from "lucide-react"
+import { formatDate, formatTime, Button } from "@buildscale/sdk"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@buildscale/sdk"
 
 import '@tanstack/react-table'
 
+// Extend table meta to include onRestore
 declare module '@tanstack/react-table' {
   interface TableMeta<TData> {
-    onEdit?: (file: TData) => void
-    onDelete?: (file: TData) => void
-    onView?: (file: TData) => void
+    onRestore?: (file: TData) => void
+    onPurge?: (file: TData) => void
   }
 }
 
-export const columns: ColumnDef<LsEntry>[] = [
+export const columns: ColumnDef<File>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -47,8 +45,9 @@ export const columns: ColumnDef<LsEntry>[] = [
   {
     accessorKey: "name",
     header: "Name",
+    size: 500, // Give Name column more space
     cell: ({ row }) => {
-      const fileType = row.original.file_type
+      const fileType = row.original.file_type as string
       
       const config: Record<string, { Icon: any; color: string }> = {
         folder: { Icon: FolderIcon, color: "text-blue-500" },
@@ -76,12 +75,18 @@ export const columns: ColumnDef<LsEntry>[] = [
     size: 100,
   },
   {
-    accessorKey: "updated_at",
-    header: "Last Modified",
+    accessorKey: "deleted_at",
+    header: "Date Deleted",
     cell: ({ row }) => {
-      return <div className="text-muted-foreground whitespace-nowrap">{formatDateTime(row.getValue("updated_at"))}</div>
+      const date = row.getValue("deleted_at") as string
+      return (
+        <div className="text-muted-foreground whitespace-nowrap">
+          <span>{formatDate(date)}</span>
+          <span className="ml-2 text-xs opacity-70">{formatTime(date)}</span>
+        </div>
+      )
     },
-    size: 180,
+    size: 150,
   },
   {
     id: "actions",
@@ -100,27 +105,17 @@ export const columns: ColumnDef<LsEntry>[] = [
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={(e) => {
               e.stopPropagation()
-              meta?.onView?.(entry)
+              meta?.onRestore?.(entry)
             }}>
-              <Eye className="mr-2 h-4 w-4" />
-              {entry.file_type === 'folder' ? 'Open' : 'View'}
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Restore
             </DropdownMenuItem>
-            {entry.file_type !== 'folder' && (
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation()
-                meta?.onEdit?.(entry)
-              }}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={(e) => {
               e.stopPropagation()
-              meta?.onDelete?.(entry)
+              meta?.onPurge?.(entry)
             }} className="text-destructive focus:text-destructive">
-              <Trash className="mr-2 h-4 w-4" />
-              Delete
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Forever
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -129,4 +124,3 @@ export const columns: ColumnDef<LsEntry>[] = [
     size: 50,
   },
 ]
-

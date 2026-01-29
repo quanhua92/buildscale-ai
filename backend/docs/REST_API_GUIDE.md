@@ -166,6 +166,15 @@ Restore a soft-deleted file from the trash.
 
 ---
 
+### Purge File
+Permanently delete a file from the database. This action is irreversible.
+
+**Endpoint**: `DELETE /api/v1/workspaces/:id/files/:file_id/purge`
+
+**Authentication**: Required (JWT access token)
+
+---
+
 ### List Trash
 List all soft-deleted files in the workspace.
 

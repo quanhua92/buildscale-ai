@@ -1,7 +1,7 @@
 import { Link, useMatches } from '@tanstack/react-router'
 
 import { useState } from 'react'
-import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare } from 'lucide-react'
+import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2 } from 'lucide-react'
 import { NavigationMenu, ThemeToggle, useAuth } from '@buildscale/sdk'
 import tanstackLogo from '/tanstack-word-logo-white.svg'
 
@@ -73,6 +73,13 @@ export default function Header() {
                       icon={<Settings size={20} />}
                     >
                       Settings
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item 
+                      to="/workspaces/$workspaceId/deleted" 
+                      params={{ workspaceId }}
+                      icon={<Trash2 size={20} />}
+                    >
+                      Recently Deleted
                     </NavigationMenu.Item>
                   </NavigationMenu.Section>
                   <NavigationMenu.Separator />

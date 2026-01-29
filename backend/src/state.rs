@@ -4,6 +4,14 @@ use crate::{
     services::storage::FileStorageService,
 };
 use std::sync::Arc;
+use tokio::sync::mpsc;
+
+/// Message sent to the archive cleanup worker
+#[derive(Debug, Clone)]
+pub struct ArchiveCleanupMessage {
+    pub workspace_id: uuid::Uuid,
+    pub hashes: Vec<String>,
+}
 
 /// Application state shared across all HTTP handlers
 ///
@@ -25,6 +33,8 @@ pub struct AppState {
     pub storage: Arc<FileStorageService>,
     /// Application configuration
     pub config: Config,
+    /// Channel to notify archive cleanup worker
+    pub archive_cleanup_tx: mpsc::UnboundedSender<ArchiveCleanupMessage>,
 }
 
 impl AppState {
@@ -36,12 +46,14 @@ impl AppState {
     /// * `pool` - Database connection pool
     /// * `rig_service` - Rig service instance
     /// * `config` - Application configuration
+    /// * `archive_cleanup_tx` - Channel sender for archive cleanup
     pub fn new(
         cache: Cache<String>,
         user_cache: Cache<User>,
         pool: DbPool,
         rig_service: Arc<RigService>,
         config: Config,
+        archive_cleanup_tx: mpsc::UnboundedSender<ArchiveCleanupMessage>,
     ) -> Self {
         let storage = Arc::new(FileStorageService::new(&config.storage.base_path));
         // Note: Storage init is async, so we might want to call it from main before creating AppState,
@@ -56,6 +68,7 @@ impl AppState {
             rig_service,
             storage,
             config,
+            archive_cleanup_tx,
         }
     }
 }

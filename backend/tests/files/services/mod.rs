@@ -154,8 +154,8 @@ async fn test_version_deduplication() {
     };
     let updated = create_version(&mut conn, &storage, file_id, update_request).await.unwrap();
 
-    // 3. Verify it's the SAME version ID (deduplicated)
-    assert_eq!(updated.id, original_version_id, "Should return existing version for identical content");
+    // 3. Verify it's a DIFFERENT version ID (no longer deduplicated)
+    assert_ne!(updated.id, original_version_id, "Should return new version even for identical content");
 }
 
 #[tokio::test]

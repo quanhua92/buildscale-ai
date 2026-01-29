@@ -166,6 +166,37 @@ pub async fn restore_file(
 }
 
 // ============================================================================
+// PURGE FILE
+// ============================================================================
+
+/// DELETE /api/v1/workspaces/:id/files/:file_id/purge
+///
+/// Permanently deletes a file.
+pub async fn purge_file(
+    State(state): State<AppState>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
+    Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(&state, "purge_file").await?;
+
+    let hashes = file_services::purge_file(&mut conn, workspace_access.workspace_id, file_id)
+        .await
+        .inspect_err(|e| log_handler_error("purge_file", e))?;
+
+    // Notify worker for immediate physical cleanup
+    if !hashes.is_empty() {
+        if let Err(e) = state.archive_cleanup_tx.send(crate::state::ArchiveCleanupMessage {
+            workspace_id: workspace_access.workspace_id,
+            hashes,
+        }) {
+            tracing::warn!("Failed to send message to archive cleanup worker: {}", e);
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "message": "File permanently deleted" })))
+}
+
+// ============================================================================
 // LIST TRASH
 // ============================================================================
 

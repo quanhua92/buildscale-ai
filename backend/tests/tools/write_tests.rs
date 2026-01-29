@@ -81,7 +81,7 @@ async fn test_write_duplicate_content() {
     let second_body: serde_json::Value = second_write.json().await.unwrap();
     let second_version_id = second_body["result"]["version_id"].as_str().unwrap();
 
-    assert_eq!(first_version_id, second_version_id);
+    assert_ne!(first_version_id, second_version_id);
 }
 
 #[tokio::test]

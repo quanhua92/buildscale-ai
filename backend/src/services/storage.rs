@@ -1,6 +1,5 @@
 use crate::error::{Error, Result};
 use crate::services::files::slugify;
-use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;
@@ -111,30 +110,9 @@ impl FileStorageService {
         })
     }
 
-    /// Writes content using "Double Write" protocol:
-    /// 1. Hash content
-    /// 2. Write to Archive (if new)
-    /// 3. Write to Latest directory (overwrite)
-    pub async fn write_file(&self, workspace_id: Uuid, path: &str, content: &[u8]) -> Result<String> {
-        // 1. Calculate Hash
-        let mut hasher = Sha256::new();
-        hasher.update(content);
-        let hash = hex::encode(hasher.finalize());
-
-        // 2. Archive (Content-Addressable)
-        let archive_path = self.get_archive_path(workspace_id, &hash);
-        if !archive_path.exists() {
-            if let Some(parent) = archive_path.parent() {
-                fs::create_dir_all(parent).await.map_err(|e| {
-                    Error::Internal(format!("Failed to create archive directory {:?}: {}", parent, e))
-                })?;
-            }
-            fs::write(&archive_path, content).await.map_err(|e| {
-                Error::Internal(format!("Failed to write archive blob {:?}: {}", archive_path, e))
-            })?;
-        }
-
-        // 3. Latest directory
+    /// Writes content only to the Latest directory (Working Tree).
+    /// Used for "Healing" the working tree from the archive.
+    pub async fn write_latest_file(&self, workspace_id: Uuid, path: &str, content: &[u8]) -> Result<()> {
         let file_path = self.get_file_path(workspace_id, path)?;
 
         // Ensure parent directories exist
@@ -148,7 +126,35 @@ impl FileStorageService {
             Error::Internal(format!("Failed to write working file {:?}: {}", file_path, e))
         })?;
 
-        Ok(hash)
+        Ok(())
+    }
+
+    /// Writes content with a pre-calculated hash.
+    /// This allows salting the hash (e.g. with version_id) for safer deduplication.
+    pub async fn write_file_with_hash(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+        content: &[u8],
+        hash: &str,
+    ) -> Result<()> {
+        // 1. Archive (Version-Unique)
+        let archive_path = self.get_archive_path(workspace_id, hash);
+        if !archive_path.exists() {
+            if let Some(parent) = archive_path.parent() {
+                fs::create_dir_all(parent).await.map_err(|e| {
+                    Error::Internal(format!("Failed to create archive directory {:?}: {}", parent, e))
+                })?;
+            }
+            fs::write(&archive_path, content).await.map_err(|e| {
+                Error::Internal(format!("Failed to write archive blob {:?}: {}", archive_path, e))
+            })?;
+        }
+
+        // 2. Latest directory
+        self.write_latest_file(workspace_id, path, content).await?;
+
+        Ok(())
     }
 
     /// Creates a directory for a folder
@@ -248,6 +254,21 @@ impl FileStorageService {
 
         fs::copy(&archive_path, &target_path).await.map_err(|e| {
             Error::Internal(format!("Failed to restore file from archive: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    /// Deletes a specific version blob from Archive
+    pub async fn delete_archive_blob(&self, workspace_id: Uuid, hash: &str) -> Result<()> {
+        let full_path = self.get_archive_path(workspace_id, hash);
+
+        if !full_path.exists() {
+            return Ok(()); // Already gone
+        }
+
+        fs::remove_file(&full_path).await.map_err(|e| {
+            Error::Internal(format!("Failed to delete archive blob {:?}: {}", full_path, e))
         })?;
 
         Ok(())
