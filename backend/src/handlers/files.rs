@@ -185,10 +185,12 @@ pub async fn purge_file(
 
     // Notify worker for immediate physical cleanup
     if !hashes.is_empty() {
-        let _ = state.archive_cleanup_tx.send(crate::state::ArchiveCleanupMessage {
+        if let Err(e) = state.archive_cleanup_tx.send(crate::state::ArchiveCleanupMessage {
             workspace_id: workspace_access.workspace_id,
             hashes,
-        });
+        }) {
+            tracing::warn!("Failed to send message to archive cleanup worker: {}", e);
+        }
     }
 
     Ok(Json(serde_json::json!({ "message": "File permanently deleted" })))

@@ -29,7 +29,6 @@ function DeletedFilesPage() {
   const fetchDeletedFiles = useCallback(async () => {
     try {
       setIsLoading(true)
-      // Cast client to any to avoid type issues if tsc hasn't picked up the new method yet in IDE
       const deletedFiles = await apiClient.listDeletedFiles(workspaceId)
       setFiles(deletedFiles)
     } catch (error) {

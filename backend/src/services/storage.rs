@@ -1,6 +1,5 @@
 use crate::error::{Error, Result};
 use crate::services::files::slugify;
-use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;
@@ -111,22 +110,27 @@ impl FileStorageService {
         })
     }
 
-    /// Writes content using "Double Write" protocol:
-    /// 1. Hash content
-    /// 2. Write to Archive (if new)
-    /// 3. Write to Latest directory (overwrite)
-    pub async fn write_file(&self, workspace_id: Uuid, path: &str, content: &[u8]) -> Result<String> {
-        // Calculate standard content hash for callers that don't provide one
-        let mut hasher = Sha256::new();
-        hasher.update(content);
-        let hash = hex::encode(hasher.finalize());
+    /// Writes content only to the Latest directory (Working Tree).
+    /// Used for "Healing" the working tree from the archive.
+    pub async fn write_latest_file(&self, workspace_id: Uuid, path: &str, content: &[u8]) -> Result<()> {
+        let file_path = self.get_file_path(workspace_id, path)?;
 
-        self.write_file_with_hash(workspace_id, path, content, &hash).await?;
-        Ok(hash)
+        // Ensure parent directories exist
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                Error::Internal(format!("Failed to create directory {:?}: {}", parent, e))
+            })?;
+        }
+
+        fs::write(&file_path, content).await.map_err(|e| {
+            Error::Internal(format!("Failed to write working file {:?}: {}", file_path, e))
+        })?;
+
+        Ok(())
     }
 
     /// Writes content with a pre-calculated hash.
-    /// This allows salting the hash (e.g. with file_id) for safer deduplication.
+    /// This allows salting the hash (e.g. with version_id) for safer deduplication.
     pub async fn write_file_with_hash(
         &self,
         workspace_id: Uuid,
@@ -148,18 +152,7 @@ impl FileStorageService {
         }
 
         // 2. Latest directory
-        let file_path = self.get_file_path(workspace_id, path)?;
-
-        // Ensure parent directories exist
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                Error::Internal(format!("Failed to create directory {:?}: {}", parent, e))
-            })?;
-        }
-
-        fs::write(&file_path, content).await.map_err(|e| {
-            Error::Internal(format!("Failed to write working file {:?}: {}", file_path, e))
-        })?;
+        self.write_latest_file(workspace_id, path, content).await?;
 
         Ok(())
     }

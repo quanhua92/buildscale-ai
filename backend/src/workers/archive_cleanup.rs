@@ -36,7 +36,19 @@ pub async fn archive_cleanup_worker(
                 break;
             }
             message = archive_cleanup_rx.recv() => {
-                if message.is_some() {
+                if let Some(msg) = message {
+                    // Optimized: Process message hashes immediately
+                    for hash in msg.hashes {
+                        // Since hashes are salted with version_id, they are globally unique.
+                        // We can safely delete the physical blob immediately.
+                        if let Err(e) = storage.delete_archive_blob(msg.workspace_id, &hash).await {
+                            warn!("[StorageWorker] Failed to delete blob {}: {}", hash, e);
+                        } else {
+                            info!("[StorageWorker] Deleted orphaned blob {}", hash);
+                        }
+                    }
+
+                    // Then drain any remaining items in the DB queue (safety net)
                     drain_cleanup_queue(&pool, &storage).await;
                 }
             }

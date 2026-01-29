@@ -392,11 +392,11 @@ pub async fn get_file_with_content(
                         serde_json::Value::String(String::from_utf8_lossy(&bytes).to_string())
                     })
             },
-            Err(Error::NotFound(_)) => {
+             Err(Error::NotFound(_)) => {
                 // Fallback: If not found on disk, check if it's in archive using the hash
                 if let Ok(bytes) = storage.read_version(file.workspace_id, &latest_version.hash).await {
-                     // Heal: Write back to working tree
-                     let _ = storage.write_file(file.workspace_id, &storage_path, &bytes).await;
+                     // Heal: Write back to working tree (bypass archive write since it's already there)
+                     let _ = storage.write_latest_file(file.workspace_id, &storage_path, &bytes).await;
                      serde_json::from_slice(&bytes)
                         .unwrap_or_else(|_| {
                             // Not valid JSON, treat as raw UTF-8 string
@@ -613,7 +613,8 @@ pub async fn restore_file(
 }
 
 /// Hard deletes a file (Purge).
-/// Currently only removes from Database. Physical trash files are cleaned up by retention policy.
+/// This removes the file from the database, and its associated physical blobs
+/// are queued for deletion by a background worker.
 pub async fn purge_file(conn: &mut DbConn, workspace_id: Uuid, file_id: Uuid) -> Result<Vec<String>> {
     // 1. Get hashes before they are deleted by cascade
     let hashes = files::get_file_version_hashes(conn, file_id).await?;
