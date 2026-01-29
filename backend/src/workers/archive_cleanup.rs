@@ -1,6 +1,5 @@
 use crate::queries::files;
 use crate::services::storage::FileStorageService;
-use crate::Config;
 use crate::state::ArchiveCleanupMessage;
 use std::time::Duration;
 use tokio::time::interval;
@@ -15,20 +14,15 @@ pub async fn archive_cleanup_worker(
     pool: sqlx::PgPool,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     mut archive_cleanup_rx: mpsc::UnboundedReceiver<ArchiveCleanupMessage>,
+    worker_config: crate::config::StorageWorkerConfig,
+    storage_config: crate::config::StorageConfig,
 ) {
     // Initialize once to avoid redundant I/O and allocations in the loop
-    let config = match Config::load() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            error!("[StorageWorker] Failed to load config: {}", e);
-            return;
-        }
-    };
-    let storage = FileStorageService::new(&config.storage.base_path);
-    let mut cleanup_interval = interval(Duration::from_secs(config.storage_worker.cleanup_interval_seconds));
-    let batch_size = config.storage_worker.cleanup_batch_size;
+    let storage = FileStorageService::new(&storage_config.base_path);
+    let mut cleanup_interval = interval(Duration::from_secs(worker_config.cleanup_interval_seconds));
+    let batch_size = worker_config.cleanup_batch_size;
 
-    info!("[StorageWorker] Started (runs every {}s or on-demand)", config.storage_worker.cleanup_interval_seconds);
+    info!("[StorageWorker] Started (runs every {}s or on-demand)", worker_config.cleanup_interval_seconds);
 
     loop {
         tokio::select! {

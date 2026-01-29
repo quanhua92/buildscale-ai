@@ -444,8 +444,10 @@ pub async fn run_api_server(
     // Storage Worker
     let pool_storage = pool.clone();
     let shutdown_storage = cleanup_shutdown_tx.subscribe();
+    let worker_config = config.storage_worker.clone();
+    let storage_config = config.storage.clone();
     tokio::spawn(async move {
-        archive_cleanup_worker(pool_storage, shutdown_storage, archive_cleanup_rx).await;
+        archive_cleanup_worker(pool_storage, shutdown_storage, archive_cleanup_rx, worker_config, storage_config).await;
     });
 
     // Create user cache with configured TTL
