@@ -66,7 +66,7 @@ async fn test_archive_cleanup_worker() {
     // 6. Run the cleanup batch
     let mut processed = 0;
     for _ in 0..3 {
-        processed += process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+        processed += process_cleanup_batch(&mut *conn, &storage, 10).await.unwrap();
         if processed >= 1 { break; }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
@@ -134,10 +134,10 @@ async fn test_archive_cleanup_version_isolation() {
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", v1.id)
         .execute(&mut *conn).await.unwrap();
 
-    // 2. Run cleanup
+    // 2. Run cleanup (with retries for stability)
     let mut processed = 0;
     for _ in 0..3 {
-        processed += process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+        processed += process_cleanup_batch(&mut *conn, &storage, 10).await.unwrap();
         if processed >= 1 { break; }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
@@ -150,6 +150,7 @@ async fn test_archive_cleanup_version_isolation() {
     assert!(!std::path::Path::new(&p1).exists(), "v1 blob should be deleted");
     assert!(std::path::Path::new(&p2).exists(), "v2 blob should remain");
 
+
     // 4. Delete Version 2
     sqlx::query!("DELETE FROM file_versions WHERE id = $1", v2.id)
         .execute(&mut *conn).await.unwrap();
@@ -157,11 +158,12 @@ async fn test_archive_cleanup_version_isolation() {
     // 5. Run cleanup again
     let mut processed = 0;
     for _ in 0..3 {
-        processed += process_cleanup_batch(&mut *conn, &storage).await.unwrap();
+        processed += process_cleanup_batch(&mut *conn, &storage, 10).await.unwrap();
         if processed >= 1 { break; }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     assert!(processed >= 1, "Should have processed v2 hash");
+
 
     // 6. NOW it should be gone
     assert!(!std::path::Path::new(&p2).exists(), "v2 blob should now be deleted");

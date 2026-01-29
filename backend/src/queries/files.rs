@@ -152,12 +152,13 @@ pub async fn claim_cleanup_batch(conn: &mut DbConn, limit: i64) -> Result<Vec<Cl
 }
 
 /// Gets all unique hashes for all versions of a file.
-pub async fn get_file_version_hashes(conn: &mut DbConn, file_id: Uuid) -> Result<Vec<String>> {
+pub async fn get_file_version_hashes(conn: &mut DbConn, workspace_id: Uuid, file_id: Uuid) -> Result<Vec<String>> {
     let hashes = sqlx::query!(
         r#"
-        SELECT DISTINCT hash FROM file_versions WHERE file_id = $1
+        SELECT DISTINCT hash FROM file_versions WHERE file_id = $1 AND workspace_id = $2
         "#,
-        file_id
+        file_id,
+        workspace_id
     )
     .fetch_all(conn)
     .await

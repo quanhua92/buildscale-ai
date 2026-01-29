@@ -25,9 +25,10 @@ pub async fn archive_cleanup_worker(
         }
     };
     let storage = FileStorageService::new(&config.storage.base_path);
-    let mut cleanup_interval = interval(Duration::from_secs(3600)); // Every hour
+    let mut cleanup_interval = interval(Duration::from_secs(config.storage_worker.cleanup_interval_seconds));
+    let batch_size = config.storage_worker.cleanup_batch_size;
 
-    info!("[StorageWorker] Started (runs every hour or on-demand)");
+    info!("[StorageWorker] Started (runs every {}s or on-demand)", config.storage_worker.cleanup_interval_seconds);
 
     loop {
         tokio::select! {
@@ -49,11 +50,11 @@ pub async fn archive_cleanup_worker(
                     }
 
                     // Then drain any remaining items in the DB queue (safety net)
-                    drain_cleanup_queue(&pool, &storage).await;
+                    drain_cleanup_queue(&pool, &storage, batch_size).await;
                 }
             }
             _ = cleanup_interval.tick() => {
-                drain_cleanup_queue(&pool, &storage).await;
+                drain_cleanup_queue(&pool, &storage, batch_size).await;
             }
         }
     }
@@ -62,7 +63,7 @@ pub async fn archive_cleanup_worker(
 }
 
 /// Drains the cleanup queue by processing batches until empty
-async fn drain_cleanup_queue(pool: &sqlx::PgPool, storage: &FileStorageService) {
+async fn drain_cleanup_queue(pool: &sqlx::PgPool, storage: &FileStorageService, batch_size: i64) {
     loop {
         let mut conn = match pool.acquire().await {
             Ok(conn) => conn,
@@ -72,7 +73,7 @@ async fn drain_cleanup_queue(pool: &sqlx::PgPool, storage: &FileStorageService) 
             }
         };
 
-        match process_cleanup_batch(&mut conn, storage).await {
+        match process_cleanup_batch(&mut conn, storage, batch_size).await {
             Ok(0) => break, // Queue is empty
             Ok(count) => {
                 info!("[StorageWorker] Processed batch of {} hashes", count);
@@ -89,12 +90,13 @@ async fn drain_cleanup_queue(pool: &sqlx::PgPool, storage: &FileStorageService) 
 pub async fn process_cleanup_batch(
     conn: &mut sqlx::PgConnection,
     storage: &FileStorageService,
+    batch_size: i64,
 ) -> crate::error::Result<usize> {
     // Start a transaction to atomize queue claiming
     let mut tx = conn.begin().await.map_err(crate::error::Error::Sqlx)?;
 
     // Claim items to check. We can use a large batch size now that logic is simple.
-    let items = files::claim_cleanup_batch(&mut *tx, 100).await?;
+    let items = files::claim_cleanup_batch(&mut *tx, batch_size).await?;
     let count = items.len();
 
     if count == 0 {

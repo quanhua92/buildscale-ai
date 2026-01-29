@@ -617,7 +617,7 @@ pub async fn restore_file(
 /// are queued for deletion by a background worker.
 pub async fn purge_file(conn: &mut DbConn, workspace_id: Uuid, file_id: Uuid) -> Result<Vec<String>> {
     // 1. Get hashes before they are deleted by cascade
-    let hashes = files::get_file_version_hashes(conn, file_id).await?;
+    let hashes = files::get_file_version_hashes(conn, workspace_id, file_id).await?;
 
     // 2. Perform hard delete
     files::hard_delete_file(conn, workspace_id, file_id).await?;

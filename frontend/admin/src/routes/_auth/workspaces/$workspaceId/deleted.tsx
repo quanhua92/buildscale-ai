@@ -57,13 +57,31 @@ function DeletedFilesPage() {
 
   const handleBatchRestore = async (filesToRestore: File[]) => {
     try {
-      const promises = filesToRestore.map(file => apiClient.restoreFile(workspaceId, file.id))
-      await Promise.all(promises)
-      toast.success(`Restored ${filesToRestore.length} files`)
+      const results = await Promise.allSettled(
+        filesToRestore.map(file => apiClient.restoreFile(workspaceId, file.id))
+      )
+
+      const successfulCount = results.filter(r => r.status === 'fulfilled').length
+      const failedCount = filesToRestore.length - successfulCount
+
+      if (failedCount === 0) {
+        toast.success(`Restored ${successfulCount} files`)
+      } else if (successfulCount > 0) {
+        toast.warning(`Restored ${successfulCount} of ${filesToRestore.length} files. See console for errors.`)
+      } else {
+        toast.error(`Failed to restore ${filesToRestore.length} files. See console for errors.`)
+      }
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to restore '${filesToRestore[index].name}':`, result.reason)
+        }
+      })
+
       fetchDeletedFiles()
     } catch (error) {
-      console.error('Failed to restore files:', error)
-      toast.error("Failed to restore some files")
+      console.error('Unexpected error during batch restore:', error)
+      toast.error("Failed to process batch restore")
     }
   }
 
