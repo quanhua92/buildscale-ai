@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Chat, useChat, type ChatMessageItem } from '@buildscale/sdk'
 import { z } from 'zod'
+import { useState } from 'react'
 
 const chatSearchSchema = z.object({
   chatId: z.string().optional(),
@@ -37,8 +38,21 @@ function ChatRoute() {
 }
 
 function ChatContent() {
-  const { messages, isStreaming, clearMessages, model, setModel } = useChat()
+  const {
+    messages,
+    isStreaming,
+    clearMessages,
+    model,
+    setModel,
+    mode,
+    planFile,
+    currentQuestion,
+    submitAnswer,
+    dismissQuestion,
+    setMode,
+  } = useChat()
   const navigate = Route.useNavigate()
+  const [isChangingMode, setIsChangingMode] = useState(false)
 
   const handleNewChat = () => {
     clearMessages()
@@ -48,6 +62,16 @@ function ChatContent() {
     })
   }
 
+  const handleModeChange = async (newMode: 'plan' | 'build') => {
+    if (newMode === mode) return // Already in this mode
+    setIsChangingMode(true)
+    try {
+      await setMode(newMode)
+    } finally {
+      setIsChangingMode(false)
+    }
+  }
+
   return (
     <Chat containerClassName="max-w-4xl flex flex-col h-full">
       <Chat.Header
@@ -55,7 +79,27 @@ function ChatContent() {
         onNewChat={handleNewChat}
         model={model}
         onModelChange={setModel}
-      />
+      >
+        {/* Mode Toggle and Indicator in header */}
+        <div className="flex items-center gap-4">
+          <Chat.ModeToggle
+            currentMode={mode}
+            onModeChange={handleModeChange}
+            disabled={isChangingMode}
+          />
+          <Chat.ModeIndicator mode={mode} planFile={planFile} />
+        </div>
+      </Chat.Header>
+
+      {/* Question Bar (appears when AI asks a question) */}
+      {currentQuestion && (
+        <Chat.QuestionBar
+          question={currentQuestion}
+          onSubmit={submitAnswer}
+          onDismiss={dismissQuestion}
+        />
+      )}
+
       <Chat.MessageList className="max-h-[calc(100vh-200px)] pb-32">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center space-y-4 py-20">
