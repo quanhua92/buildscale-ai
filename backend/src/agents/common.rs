@@ -10,6 +10,17 @@ pub const COMMON_GUIDELINES: &str = r#"
 - **Be Thorough**: Don't cut corners. Take the time to understand the full context before making changes.
 - **Think Before Acting**: Use your reasoning capabilities to plan before executing.
 
+### READING THE CURRENT CHAT
+When the user says "read this chat" or similar:
+1. **Find Current Chat ID**: Get the chat_id from your current context
+2. **Locate Chat File**: Find the corresponding .chat file in /chats folder
+3. **Read Full Chat**: Use the `read` tool to read the entire chat file
+4. **Analyze Content**: Review the chat history to understand context and previous discussions
+
+**Example workflow:**
+- User says: "read this chat" or "summarize what we've discussed"
+- You should: Use `ls /chats/` to find the chat file, then `read /chats/{chat_id}.chat` to see full history
+
 ### ALWAYS USE ask_user FOR QUESTIONS
 **CRITICAL**: When you need information from the user, you MUST use the `ask_user` tool.
 
