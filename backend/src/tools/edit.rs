@@ -167,7 +167,34 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &'static str {
-        "Edits a file by replacing a unique search string with a replacement string. CRITICAL: (1) old_string MUST be non-empty and unique in file. (2) This is a REPLACE operation - old_string is completely removed and replaced by new_string. (3) To preserve original content, you MUST include it in new_string. (4) Always use last_read_hash from prior read to prevent conflicts. Fails if old_string is empty, not found, or found multiple times."
+        r#"Edits a file by replacing a unique search string with a replacement string.
+
+⚠️ MANDATORY WORKFLOW (MUST FOLLOW IN ORDER):
+1. READ the file FIRST using read tool → this gives you exact current content AND last_read_hash
+2. COPY the exact text from read response to use as old_string (character-perfect match)
+3. EDIT by passing that exact text as old_string, your replacement as new_string, AND the last_read_hash
+
+❌ WRONG: Edit without reading first → old_string won't match → edit fails
+✓ CORRECT: read file → use exact content from response as old_string → edit succeeds
+
+CRITICAL REQUIREMENTS:
+• old_string MUST be non-empty and must match file content EXACTLY (use copy-paste from read response)
+• old_string must be UNIQUE (appears exactly once in the file)
+• This is a REPLACE operation - old_string is completely removed, replaced by new_string
+• To preserve original content, you MUST include it in new_string
+• Always include last_read_hash from the most recent read (prevents edit conflicts)
+
+ERROR EXAMPLE: If you edit without reading, old_string might have wrong whitespace/formatting → fails with "Search string not found"
+
+🔄 IF EDIT FAILS (search string not found), FOLLOW THESE STEPS IN ORDER:
+1. Re-read the file to get fresh content (file may have changed)
+2. Try a SMALLER, more unique substring (2-3 unique words instead of entire paragraph)
+3. Try different unique text near your target edit location
+4. Only use write tool as LAST RESORT (write overwrites entire file, risk of data loss)
+
+EXAMPLE - EDIT FAILS, WHAT TO DO:
+❌ BAD: edit fails → immediately use write (loses data you didn't intend to change)
+✓ GOOD: edit fails → re-read file → find smaller unique text → try edit again → if still fails, then consider write"#
     }
 
     fn definition(&self) -> Value {
