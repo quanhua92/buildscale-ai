@@ -559,7 +559,11 @@ export function ChatProvider({
               { content, model } as PostChatMessageRequest
             )
             if (response?.status !== "accepted") throw new Error('Message not accepted')
-            connectToSse(chatId)
+
+            // Only reconnect if SSE is not currently connected to this chat
+            if (connectingRef.current !== chatId) {
+              connectToSse(chatId)
+            }
 
             // Update message status to completed
             setMessages((prev) => {
