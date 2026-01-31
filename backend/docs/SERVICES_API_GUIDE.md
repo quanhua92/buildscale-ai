@@ -407,6 +407,16 @@ pub async fn get_chat_session(
     chat_file_id: Uuid,
 ) -> Result<ChatSession>
 
+// Update chat metadata (mode, plan_file)
+pub async fn update_chat_metadata(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    workspace_id: Uuid,
+    chat_file_id: Uuid,
+    mode: String,
+    plan_file: Option<String>,
+) -> Result<()>
+
 // Build AI context with attachments and history
 pub async fn build_context(
     conn: &mut DbConn,

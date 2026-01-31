@@ -66,6 +66,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | GET | Get chat history and config | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats/:cid` | PATCH | Update chat metadata (mode, plan_file) | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/stop` | POST | Stop AI generation | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
 
@@ -385,6 +386,69 @@ Retrieve full message history and configuration for a chat session.
       "created_at": "2024-01-26T12:00:00Z"
     }
   ]
+}
+```
+
+---
+
+### Update Chat Metadata
+
+Update chat configuration metadata (mode, plan_file).
+
+**Endpoint**: `PATCH /api/v1/workspaces/:id/chats/:chat_id`
+
+**Authentication**: Required (JWT access token)
+
+**Permission**: Required (Workspace Member)
+
+##### Request
+
+```json
+{
+  "app_data": {
+    "mode": "build",
+    "plan_file": "/plans/example.plan"
+  }
+}
+```
+
+##### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `app_data` | object | Yes | Application data to update |
+| `app_data.mode` | string | No | Chat mode: `"plan"` (default) or `"build"` |
+| `app_data.plan_file` | string or null | No | Absolute path to .plan file (required in build mode, null in plan mode) |
+
+##### Response (200 OK)
+
+```json
+{
+  "mode": "build",
+  "plan_file": "/plans/example.plan"
+}
+```
+
+##### Behavior Notes
+
+- **Mode Switching**: Changing mode triggers a `mode_changed` SSE event to all connected clients
+- **Agent Cache Clearing**: Switching modes clears the agent cache, forcing a new agent to be created
+- **Plan Mode** (`"plan"`): Strategic planning phase, AI asks questions and creates plan files
+- **Build Mode** (`"build"`): Execution phase, AI executes the plan with write/edit/create tools
+- **plan_file requirement**:
+  - In Plan Mode: `plan_file` should be `null` or omitted
+  - In Build Mode: `plan_file` must be a valid absolute path to a `.plan` file
+
+##### Error Responses
+
+**400 Bad Request** - Invalid mode
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "fields": {
+    "mode": "mode must be either 'plan' or 'build'"
+  }
 }
 ```
 
