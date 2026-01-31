@@ -233,6 +233,8 @@ impl ChatActor {
                 temperature: 0.7,
                 persona_override: Some(context.persona),
                 previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
             }
         };
 
@@ -333,19 +335,103 @@ impl ChatActor {
 
                              // Heuristic: if the output contains "Error:" it's likely a failure
                              let success = !output.to_lowercase().contains("error:");
- 
+
+                             // Check if this is an ask_user tool result with question_pending
+                             // Only ask_user returns question_pending status
+                             if success {
+                                 if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
+                                     // Handle question_pending (ask_user tool)
+                                     if let Some(status) = result_json.get("status").and_then(|s| s.as_str()) {
+                                         if status == "question_pending" {
+                                             // Extract question data
+                                             if let Some(questions) = result_json.get("questions").and_then(|q| q.as_array()) {
+                                                 let parsed_questions: Vec<crate::models::sse::Question> = questions
+                                                     .iter()
+                                                     .filter_map(|q| serde_json::from_value(q.clone()).ok())
+                                                     .collect();
+
+                                                 if let Some(question_id) = result_json.get("question_id").and_then(|id| id.as_str()) {
+                                                     if let Ok(qid) = uuid::Uuid::parse_str(question_id) {
+                                                         tracing::info!(
+                                                             "[ChatActor] Emitting QuestionPending event with {} questions for chat {}",
+                                                             parsed_questions.len(),
+                                                             self.chat_id
+                                                         );
+                                                         let _ = self.event_tx.send(SseEvent::QuestionPending {
+                                                             question_id: qid,
+                                                             questions: parsed_questions,
+                                                             created_at: chrono::Utc::now(),
+                                                         });
+                                                     }
+                                                 }
+                                             }
+                                         }
+                                     }
+
+                                     // Handle mode transition (exit_plan_mode tool)
+                                     // Check if result has mode field = "build"
+                                     if let Some(mode) = result_json.get("mode").and_then(|m| m.as_str()) {
+                                         if mode == "build" {
+                                             let plan_file = result_json.get("plan_file")
+                                                 .and_then(|p| p.as_str())
+                                                 .unwrap_or("");
+
+                                             tracing::info!(
+                                                 "[ChatActor] exit_plan_mode succeeded, transitioning chat {} to Build Mode with plan file {}",
+                                                 self.chat_id,
+                                                 plan_file
+                                             );
+
+                                             // Update chat metadata in database using ChatService
+                                             // This properly creates a new FileVersion and commits the transaction
+                                             if let Ok(mut conn) = self.pool.acquire().await.map_err(crate::error::Error::Sqlx) {
+                                                 if let Err(e) = ChatService::update_chat_metadata(
+                                                     &mut conn,
+                                                     &self.storage,
+                                                     self.workspace_id,
+                                                     self.chat_id,
+                                                     mode.to_string(),
+                                                     if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
+                                                 ).await {
+                                                     tracing::error!(
+                                                         "[ChatActor] Failed to update chat metadata: {:?}",
+                                                         e
+                                                     );
+                                                 } else {
+                                                     tracing::info!(
+                                                         "[ChatActor] Successfully updated chat {} metadata: mode={}, plan_file={}",
+                                                         self.chat_id,
+                                                         mode,
+                                                         plan_file
+                                                     );
+                                                 }
+                                             }
+
+                                             // Emit mode_changed event to frontend
+                                             let _ = self.event_tx.send(SseEvent::ModeChanged {
+                                                 mode: "build".to_string(),
+                                                 plan_file: if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
+                                             });
+
+                                             // Clear agent cache to force new agent with build mode
+                                             *self.cached_agent.lock().await = None;
+                                         }
+                                     }
+                                 }
+                             }
+
                              tracing::info!(
-                                 "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}", 
-                                 self.chat_id, 
+                                 "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}",
+                                 self.chat_id,
                                  success,
-                                 if output.len() > 100 { 
+                                 if output.len() > 100 {
                                      let mut end = 100;
                                      while end > 0 && !output.is_char_boundary(end) {
                                          end -= 1;
                                      }
-                                     format!("{}...", &output[..end]) 
-                                 } else { 
-                                     output.clone() 
+                                     format!("{}...", &output[..end])
+                                 } else {
+                                     output.clone()
                                  }
                              );
                              let _ = self.event_tx.send(SseEvent::Observation { output, success });
@@ -538,6 +624,7 @@ impl ChatActor {
                 self.pool.clone(),
                 self.storage.clone(),
                 self.workspace_id,
+                self.chat_id,
                 user_id,
                 session,
                 ai_config,
