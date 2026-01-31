@@ -63,8 +63,8 @@ pub async fn create_chat(
     }).await?;
 
     // 3. Update the file with its actual ID in the path/slug
-    let correct_path = format!("/chats/chat-{}", chat_file.id);
-    let correct_slug = format!("chat-{}", chat_file.id);
+    let correct_path = format!("/chats/chat-{}.chat", chat_file.id);
+    let correct_slug = format!("chat-{}.chat", chat_file.id);
     let chat_file = queries::files::update_file_path_and_slug(&mut conn, chat_file.id, correct_path, correct_slug).await?;
 
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
