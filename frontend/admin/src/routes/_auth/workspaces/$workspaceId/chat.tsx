@@ -45,7 +45,6 @@ function ChatContent() {
     model,
     setModel,
     mode,
-    planFile,
     currentQuestion,
     submitAnswer,
     dismissQuestion,
