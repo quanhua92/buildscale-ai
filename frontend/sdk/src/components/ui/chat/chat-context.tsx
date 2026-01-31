@@ -694,7 +694,20 @@ export function ChatProvider({
             if (parts.length > 0) messageText += `\n[Constraints: ${parts.join(', ')}]`
           }
 
-          messageText += `\n[Answered: ${JSON.stringify(ans)}]\n\n`
+          // If answer matches a button choice, show label + value
+          if (q.buttons) {
+            const matchingButton = q.buttons.find((b: any) => b.value === ans)
+            if (matchingButton) {
+              messageText += `\n[Answered: "${matchingButton.label}" (value: ${JSON.stringify(ans)})]\n\n`
+            } else {
+              messageText += `\n[Answered: ${JSON.stringify(ans)}]\n\n`
+            }
+          } else if (Array.isArray(ans) && q.schema?.items?.enum) {
+            // For array answers (checkboxes), show selected values
+            messageText += `\n[Answered: ${ans.join(', ')}]\n\n`
+          } else {
+            messageText += `\n[Answered: ${JSON.stringify(ans)}]\n\n`
+          }
         }
 
         try {
