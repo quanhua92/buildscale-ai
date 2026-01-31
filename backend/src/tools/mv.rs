@@ -7,7 +7,7 @@ use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Move/Rename file tool
 ///
@@ -34,16 +34,25 @@ impl Tool for MvTool {
         _storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let mv_args: MvArgs = serde_json::from_value(args)?;
         let source_path = super::normalize_path(&mv_args.source);
         let destination_path = super::normalize_path(&mv_args.destination);
-        
+
         // 1. Resolve source file
         let source_file = file_queries::get_file_by_path(conn, workspace_id, &source_path)
             .await?
             .ok_or_else(|| Error::NotFound(format!("Source file not found: {}", source_path)))?;
+
+        // Plan Mode Guard: Check source file type
+        if config.plan_mode && !matches!(source_file.file_type, crate::models::files::FileType::Plan) {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "source".to_string(),
+                message: super::PLAN_MODE_ERROR.to_string(),
+            }));
+        }
             
         // 2. Resolve destination logic
         let (target_parent_id, target_name) = if destination_path.ends_with('/') {

@@ -2,7 +2,7 @@ use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, RmA
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Delete file tool
 ///
@@ -29,15 +29,24 @@ impl Tool for RmTool {
         storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let rm_args: RmArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&rm_args.path);
-        
+
+        // Plan Mode Guard: Only allow /plans/ directory operations
+        if config.plan_mode && !path.starts_with("/plans/") {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "path".to_string(),
+                message: super::PLAN_MODE_ERROR.to_string(),
+            }));
+        }
+
         let file = file_queries::get_file_by_path(conn, workspace_id, &path)
             .await?
             .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
-        
+
         files::soft_delete_file(conn, storage, file.id).await?;
         
         let result = RmResult {

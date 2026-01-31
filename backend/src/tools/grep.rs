@@ -8,7 +8,7 @@ use std::process::Command as StdCommand;
 use tokio::process::Command as TokioCommand;
 use std::path::Path;
 use std::collections::HashMap;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Grep tool for searching file contents using external binaries
 ///
@@ -36,6 +36,7 @@ impl Tool for GrepTool {
         storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
+        _config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;

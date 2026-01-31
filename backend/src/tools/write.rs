@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::str::FromStr;
 use uuid::Uuid;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Write file contents tool
 ///
@@ -24,7 +24,7 @@ impl Tool for WriteTool {
     }
 
     fn description(&self) -> &'static str {
-        "Creates a new file or completely replaces existing file content. For Document files, raw string content is auto-wrapped into {\"text\": \"...\"} format. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement."
+        "Creates a new file or completely replaces existing file content. Content is stored as-is: strings are stored as raw text, JSON objects are stored as structured data. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement."
     }
 
     fn definition(&self) -> Value {
@@ -37,12 +37,32 @@ impl Tool for WriteTool {
         storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let write_args: WriteArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&write_args.path);
-        
+
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
+
+        // Plan Mode Guard: Only allow Plan files in plan mode
+        if config.plan_mode {
+            // For new files, check if it's a .plan file
+            // For existing files, check the file type
+            let is_plan_file = if let Some(ref file) = existing_file {
+                matches!(file.file_type, FileType::Plan)
+            } else {
+                // New file - check extension
+                path.ends_with(".plan")
+            };
+
+            if !is_plan_file {
+                return Err(Error::Validation(ValidationErrors::Single {
+                    field: "path".to_string(),
+                    message: super::PLAN_MODE_ERROR.to_string(),
+                }));
+            }
+        }
         
         // Virtual File Protection: Prevent direct writes to system-managed files (e.g. Chats)
         if let Some(ref file) = existing_file {

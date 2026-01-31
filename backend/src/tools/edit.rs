@@ -10,7 +10,7 @@ use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Helper to get file content with disk fallback
 async fn get_file_content_for_edit(
@@ -28,10 +28,11 @@ async fn perform_edit(
     storage: &FileStorageService,
     workspace_id: Uuid,
     user_id: Uuid,
+    config: ToolConfig,
     args: EditArgs,
 ) -> Result<ToolResponse> {
     let path = super::normalize_path(&args.path);
-    
+
     // Validation: old_string cannot be empty
     if args.old_string.is_empty() {
          return Err(Error::Validation(ValidationErrors::Single {
@@ -41,12 +42,20 @@ async fn perform_edit(
     }
 
     let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
-    
+
     let file = if let Some(f) = existing_file {
         f
     } else {
         return Err(Error::NotFound(format!("File not found: {}", path)));
     };
+
+    // Plan Mode Guard: Only allow Plan files in plan mode
+    if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "path".to_string(),
+            message: super::PLAN_MODE_ERROR.to_string(),
+        }));
+    }
 
     // Virtual File Protection: Prevent direct edits to system-managed files (e.g. Chats)
     if file.is_virtual {
@@ -171,9 +180,10 @@ impl Tool for EditTool {
         storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let edit_args: EditArgs = serde_json::from_value(args)?;
-        perform_edit(conn, storage, workspace_id, user_id, edit_args).await
+        perform_edit(conn, storage, workspace_id, user_id, config, edit_args).await
     }
 }
