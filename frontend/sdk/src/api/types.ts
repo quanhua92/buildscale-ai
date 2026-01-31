@@ -175,6 +175,9 @@ export interface AgentConfig {
   model: string
   temperature: number
   persona_override?: string | null
+  previous_response_id?: string | null
+  mode: 'plan' | 'build'
+  plan_file?: string | null
 }
 
 export interface ChatSession {
@@ -216,4 +219,68 @@ export interface ErrorResponse {
   message: string
   error?: string
   code?: string
+}
+
+// ============================================================================
+// Plan Mode Types
+// ============================================================================
+
+export type ChatMode = 'plan' | 'build'
+
+export interface ChatMetadata {
+  mode: ChatMode
+  plan_file: string | null
+}
+
+// Question Types
+export interface QuestionPendingData {
+  question_id: string
+  questions: Question[]  // Array of questions from backend
+  created_at: string
+}
+
+export interface Question {
+  id?: string  // question_id (added by frontend)
+  name: string
+  question: string
+  schema: JSONSchema
+  buttons?: QuestionButton[]
+  createdAt?: Date  // added by frontend
+}
+
+export interface QuestionButton {
+  label: string
+  value: any
+  variant?: 'primary' | 'secondary' | 'danger'
+}
+
+export interface UserAnswer {
+  question_id: string
+  answer: any
+}
+
+// Mode Changed Event
+export interface ModeChangedData {
+  mode: ChatMode
+  plan_file: string | null
+  timestamp: string
+}
+
+// JSON Schema Types
+export type JSONSchemaType = 'string' | 'number' | 'boolean' | 'array' | 'object'
+
+export interface JSONSchema {
+  type: JSONSchemaType
+  description?: string
+  enum?: any[]
+  pattern?: string
+  minLength?: number
+  maxLength?: number
+  minimum?: number
+  maximum?: number
+  minItems?: number
+  maxItems?: number
+  properties?: Record<string, JSONSchema>
+  items?: JSONSchema
+  required?: string[]
 }

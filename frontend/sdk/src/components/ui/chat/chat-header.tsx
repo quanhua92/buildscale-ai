@@ -17,58 +17,69 @@ export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   onNewChat?: () => void
   model?: ChatModel
   onModelChange?: (model: ChatModel) => void
+  children?: React.ReactNode
 }
 
 const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
-  ({ className, modelName, onNewChat, model, onModelChange, ...props }, ref) => {
+  ({ className, modelName, onNewChat, model, onModelChange, children, ...props }, ref) => {
     return (
       <div
         ref={ref}
         className={cn(
-          "flex items-center justify-between py-2 px-4 border-b border-border/50 shrink-0",
+          "flex flex-col items-center justify-between py-2 px-4 border-b border-border/50 shrink-0 gap-2",
           className
         )}
         {...props}
       >
-        {/* Spacer for center alignment */}
-        <div className="w-24" />
+        {/* Main header row */}
+        <div className="flex items-center justify-between w-full">
+          {/* Spacer for center alignment */}
+          <div className="w-24" />
 
-        {/* Center: Model Selector */}
-        <div className="flex-1 flex justify-center">
-          {model && onModelChange ? (
-            <Select value={model} onValueChange={onModelChange}>
-              <SelectTrigger className="w-[180px] h-7 text-xs">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {CHAT_MODELS.map((modelOption) => (
-                  <SelectItem key={modelOption} value={modelOption} className="text-xs">
-                    {modelOption}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : modelName ? (
-            <div className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1 rounded">
-              {modelName}
-            </div>
-          ) : null}
+          {/* Center: Model Selector */}
+          <div className="flex-1 flex justify-center">
+            {model && onModelChange ? (
+              <Select value={model} onValueChange={onModelChange}>
+                <SelectTrigger className="w-[180px] h-7 text-xs">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHAT_MODELS.map((modelOption) => (
+                    <SelectItem key={modelOption} value={modelOption} className="text-xs">
+                      {modelOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : modelName ? (
+              <div className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1 rounded">
+                {modelName}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Right: New Chat Button */}
+          <div className="w-24 flex justify-end">
+            {onNewChat && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onNewChat}
+                className="h-7 gap-1.5 text-xs"
+              >
+                <Plus className="size-3.5" />
+                <span>New Chat</span>
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Right: New Chat Button */}
-        <div className="w-24 flex justify-end">
-          {onNewChat && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onNewChat}
-              className="h-7 gap-1.5 text-xs"
-            >
-              <Plus className="size-3.5" />
-              <span>New Chat</span>
-            </Button>
-          )}
-        </div>
+        {/* Optional: Children row (e.g., Mode Toggle, Mode Indicator) */}
+        {children && (
+          <div className="flex items-center justify-center w-full">
+            {children}
+          </div>
+        )}
       </div>
     )
   }

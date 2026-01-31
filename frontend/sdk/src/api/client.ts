@@ -57,14 +57,18 @@ class ApiClient {
   /**
    * Performs a raw request and returns the Response object.
    * Handles authentication headers and 401 retry logic.
+   * @param options.timeout - Custom timeout in ms, or false to disable timeout (for SSE)
    */
   public async requestRaw(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit & { timeout?: number | false } = {}
   ): Promise<Response> {
     const url = endpoint.startsWith('http') ? endpoint : `${this.baseURL}${endpoint}`
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+    // Use custom timeout, options timeout, or default timeout
+    // Allow false to disable timeout (for SSE connections)
+    const timeout = options.timeout !== undefined ? options.timeout : this.timeout
+    const timeoutId = timeout !== false ? setTimeout(() => controller.abort(), timeout) : null
 
     try {
       let headers = new Headers(options.headers)
@@ -80,7 +84,7 @@ class ApiClient {
 
       let response = await this.fetchWithAuth(url, options, headers, controller.signal)
 
-      clearTimeout(timeoutId)
+      if (timeoutId !== null) clearTimeout(timeoutId)
 
       // Handle 401 - try token refresh (except for auth endpoints)
       if (response.status === 401 && !this.shouldSkipRefresh(endpoint)) {
@@ -387,6 +391,13 @@ class ApiClient {
 
   async delete<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: 'DELETE' })
+  }
+
+  async patch<T>(endpoint: string, data: unknown): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   }
 }
 

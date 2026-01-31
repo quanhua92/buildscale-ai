@@ -7,6 +7,10 @@ import { ChatBubble } from "./chat-bubble"
 import { ChatThought } from "./chat-thought"
 import { ChatEvents } from "./chat-events"
 import { ChatInput } from "./chat-input"
+import { ChatQuestionBar } from "./chat-question-bar"
+import { ChatSchemaForm } from "./chat-schema-form"
+import { ChatModeIndicator } from "./chat-mode-indicator"
+import { ChatModeToggle } from "./chat-mode-toggle"
 
 export const Chat = Object.assign(ChatRoot, {
   Provider: ChatProvider,
@@ -17,6 +21,20 @@ export const Chat = Object.assign(ChatRoot, {
   Thought: ChatThought,
   Events: ChatEvents,
   Input: ChatInput,
+  QuestionBar: ChatQuestionBar,
+  SchemaForm: ChatSchemaForm,
+  ModeIndicator: ChatModeIndicator,
+  ModeToggle: ChatModeToggle,
 })
 
-export { useChat, type ChatMessageItem, type ChatModel, CHAT_MODELS, DEFAULT_MODEL }
+export {
+  useChat,
+  type ChatMessageItem,
+  type ChatModel,
+  CHAT_MODELS,
+  DEFAULT_MODEL,
+  ChatQuestionBar,
+  ChatSchemaForm,
+  ChatModeIndicator,
+  ChatModeToggle,
+}
