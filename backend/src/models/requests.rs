@@ -222,6 +222,12 @@ pub struct PostChatMessageRequest {
     pub model: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateChatRequest {
+    /// Application data to update (mode, plan_file, etc.)
+    pub app_data: serde_json::Value,
+}
+
 /// Tool-specific argument structures
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LsArgs {
@@ -275,6 +281,39 @@ pub struct GrepArgs {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TouchArgs {
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AskUserArgs {
+    /// Array of questions (always array, single = 1-item array)
+    pub questions: Vec<QuestionInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QuestionInput {
+    /// Question identifier (used in answer object)
+    pub name: String,
+    /// Question text (Markdown)
+    pub question: String,
+    /// JSON Schema for answer validation and UI generation (JSON string)
+    pub schema: String,
+    /// Optional button definitions (overrides schema-based rendering)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<Vec<QuestionButtonInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QuestionButtonInput {
+    pub label: String,
+    /// Button value (JSON string that will be parsed)
+    pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExitPlanModeArgs {
+    pub plan_file_path: String,
 }
 
 /// Unified tool response structure
@@ -352,4 +391,17 @@ pub struct MkdirResult {
 pub struct TouchResult {
     pub path: String,
     pub file_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AskUserResult {
+    pub status: String,
+    pub question_id: Uuid,
+    pub questions: Vec<crate::models::sse::Question>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExitPlanModeResult {
+    pub mode: String,
+    pub plan_file: String,
 }

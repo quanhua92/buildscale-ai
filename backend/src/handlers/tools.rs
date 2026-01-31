@@ -59,15 +59,20 @@ pub async fn execute_tool(
     );
 
     let mut conn = acquire_db_connection(&state, "execute_tool").await?;
-    
+
     let executor = tools::get_tool_executor(&request.tool)?;
-    
+
+    // TODO: Phase 3 - Extract ToolConfig from chat metadata
+    // For now, use default config (plan_mode: true for safety)
+    let config = tools::ToolConfig::default();
+
     let response = executor
         .execute(
             &mut conn,
             &state.storage,
             workspace_access.workspace_id,
             workspace_access.user_id,
+            config,
             request.args,
         )
         .await
