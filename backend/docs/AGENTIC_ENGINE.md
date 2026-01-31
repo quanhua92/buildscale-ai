@@ -71,7 +71,7 @@ When an actor is re-spawned, it "hydrates" its state by querying the latest mess
 *   **Focus:** Ad-hoc debugging, Q&A, and exploration.
 
 ### Scenario 2: plan_then_execute (Engineering Operator)
-*   **Phase 1 (Planning):** If `plan_id` is null, a Planner Agent (often injected by the server) generates a detailed task list in a `/chats/plan.md` file.
+*   **Phase 1 (Planning):** If `plan_id` is null, a Planner Agent (often injected by the server) generates a detailed task list in a `/plans/*.plan` file.
 *   **Phase 2 (Execution):** Once approved, a Coder Agent follows the Markdown checklist, committing each change as a version and flushing to disk.
 
 ### Scenario 3: parallel_agents (The Matrix)

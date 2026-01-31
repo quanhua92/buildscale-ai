@@ -159,8 +159,8 @@ Links versions to their chunks.
 For high-volume data like Chat Sessions, we employ a hybrid persistence strategy.
 
 1.  **Runtime**: Messages are inserted into the `chat_messages` table for O(1) retrieval of structured history during the conversation.
-2.  **Persistence**: Simultaneously, the message is formatted as Markdown and appended to `./storage/workspaces/{workspace_id}/latest/chats/<session_id>.md`.
-3.  **Consistency**: The `.md` file on disk is the "File Representation" that agents see when they browse directories.
+2.  **Persistence**: Simultaneously, the message is formatted as Markdown and appended to `./storage/workspaces/{workspace_id}/latest/chats/chat-{id}.chat`.
+3.  **Consistency**: The `.chat` file on disk is the "File Representation" that agents see when they browse directories (includes YAML frontmatter for metadata).
 
 ### 7. Remote Files (Object Storage)
 
