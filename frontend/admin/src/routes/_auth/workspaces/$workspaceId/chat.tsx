@@ -80,15 +80,12 @@ function ChatContent() {
         model={model}
         onModelChange={setModel}
       >
-        {/* Mode Toggle and Indicator in header */}
-        <div className="flex items-center gap-4">
-          <Chat.ModeToggle
-            currentMode={mode}
-            onModeChange={handleModeChange}
-            disabled={isChangingMode}
-          />
-          <Chat.ModeIndicator mode={mode} planFile={planFile} />
-        </div>
+        {/* Mode Toggle in header */}
+        <Chat.ModeToggle
+          currentMode={mode}
+          onModeChange={handleModeChange}
+          disabled={isChangingMode}
+        />
       </Chat.Header>
 
       {/* Question Bar (appears when AI asks a question) */}
