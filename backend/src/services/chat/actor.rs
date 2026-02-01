@@ -40,6 +40,17 @@ struct AgentState {
     current_mode: Option<String>,
 }
 
+impl AgentState {
+    /// Check if the cached agent can be reused for the given session and user.
+    /// Agent can be reused only if all criteria match: model, user_id, and mode.
+    fn can_reuse(&self, session: &crate::models::chat::ChatSession, user_id: Uuid) -> bool {
+        self.cached_agent.is_some()
+            && self.current_model_name.as_ref() == Some(&session.agent_config.model)
+            && self.current_user_id.as_ref() == Some(&user_id)
+            && self.current_mode.as_ref() == Some(&session.agent_config.mode)
+    }
+}
+
 /// Current tool execution tracking
 /// These fields are always read/written together
 struct ToolTracking {
@@ -502,28 +513,30 @@ impl ChatActor {
 
                                              // Update chat metadata in database using ChatService
                                              // This properly creates a new FileVersion and commits the transaction
-                                             if let Ok(mut conn) = self.pool.acquire().await.map_err(crate::error::Error::Sqlx) {
-                                                 if let Err(e) = ChatService::update_chat_metadata(
-                                                     &mut conn,
-                                                     &self.storage,
-                                                     self.workspace_id,
-                                                     self.chat_id,
-                                                     mode.to_string(),
-                                                     if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
-                                                 ).await {
-                                                     tracing::error!(
-                                                         "[ChatActor] Failed to update chat metadata: {:?}",
-                                                         e
-                                                     );
-                                                 } else {
-                                                     tracing::info!(
-                                                         "[ChatActor] Successfully updated chat {} metadata: mode={}, plan_file={}",
-                                                         self.chat_id,
-                                                         mode,
-                                                         plan_file
-                                                     );
-                                                 }
-                                             }
+                                             // CRITICAL: If this fails, we must propagate the error to prevent state mismatch
+                                             let mut conn = self.pool.acquire().await
+                                                 .map_err(|e| {
+                                                     tracing::error!("[ChatActor] Failed to acquire DB connection for metadata update: {:?}", e);
+                                                     crate::error::Error::Sqlx(e)
+                                                 })?;
+                                             ChatService::update_chat_metadata(
+                                                 &mut conn,
+                                                 &self.storage,
+                                                 self.workspace_id,
+                                                 self.chat_id,
+                                                 mode.to_string(),
+                                                 if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
+                                             ).await.map_err(|e| {
+                                                 tracing::error!("[ChatActor] Failed to update chat metadata: {:?}", e);
+                                                 e
+                                             })?;
+
+                                             tracing::info!(
+                                                 "[ChatActor] Successfully updated chat {} metadata: mode={}, plan_file={}",
+                                                 self.chat_id,
+                                                 mode,
+                                                 plan_file
+                                             );
 
                                              // Emit mode_changed event to frontend
                                              let _ = self.event_tx.send(SseEvent::ModeChanged {
@@ -809,13 +822,7 @@ impl ChatActor {
         let mut state = self.state.lock().await;
 
         // Check if we can reuse the cached agent
-        // Must match: model, user, AND mode (mode changes require new agent)
-        let can_reuse = state.agent_state.cached_agent.is_some()
-            && state.agent_state.current_model_name.as_ref() == Some(&session.agent_config.model)
-            && state.agent_state.current_user_id.as_ref() == Some(&user_id)
-            && state.agent_state.current_mode.as_ref() == Some(&session.agent_config.mode);
-
-        if can_reuse {
+        if state.agent_state.can_reuse(session, user_id) {
             Ok(state.agent_state.cached_agent.as_ref().unwrap().clone())
         } else {
             tracing::info!(

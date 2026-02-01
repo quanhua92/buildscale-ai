@@ -141,9 +141,9 @@ Array/checkbox (multi-select):
             }));
         }
 
-        // Generate unique question ID
-        // TODO: Use UUID v7 for time-ordered when timestamp is available
-        let question_id = Uuid::new_v4();
+        // Generate time-ordered unique question ID using UUID v7
+        // This provides better debugging and logging capabilities compared to random v4 IDs
+        let question_id = Uuid::now_v7();
 
         // Convert QuestionInput to SSE Question format
         let questions: Vec<crate::models::sse::Question> = ask_args.questions

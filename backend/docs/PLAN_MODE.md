@@ -36,7 +36,7 @@ pub struct ToolConfig {
 impl Default for ToolConfig {
     fn default() -> Self {
         Self {
-            plan_mode: true, // Default to true for safety
+            plan_mode: false, // Default to Build Mode for normal operation
             active_plan_path: None,
         }
     }
