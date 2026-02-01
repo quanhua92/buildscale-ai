@@ -13,6 +13,7 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
   - [File Management & AI](#file-management--ai)
   - [Permissions & RBAC](#permissions--rbac)
   - [Roles](#roles)
+  - [AI Providers](#ai-providers)
   - [Invitations API](#invitations-api)
   - [Sessions API](#sessions-api)
   - [Refresh Token Service](#refresh-token-service)
@@ -36,6 +37,7 @@ Service layer API reference and usage examples for the multi-tenant workspace-ba
 | **Files** | `create_file_with_content`, `create_version`, `get_file_with_content`, `move_or_rename_file`, `soft_delete_file`, `restore_file`, `purge_file`, `list_trash`, `hash_content`, `auto_wrap_document_content`, `slugify`, `calculate_path`, `ensure_path_exists`, `chunk_text`, `extract_text_recursively` |
 | **Network** | `add_tag`, `remove_tag`, `list_files_by_tag`, `link_files`, `remove_link`, `get_file_network` |
 | **AI Engine** | `process_file_for_ai`, `semantic_search` |
+| **AI Providers** | `RigService::from_config`, `RigService::create_agent`, `ModelIdentifier::parse`, `AiProvider::from_str`, `get_models_by_provider`, `get_enabled_models`, `get_workspace_enabled_models` |
 | **Chat & AI** | `save_message`, `get_chat_session`, `build_context`, `format_file_fragment`, `format_history_fragment`, `AttachmentManager`, `HistoryManager` |
 | **Refresh Tokens** | `generate_refresh_token`, `verify_refresh_token` |
 | **Permissions** | `validate_workspace_permission`, `validate_any_workspace_permission`, `require_workspace_permission`, `get_user_workspace_permissions` |
@@ -286,6 +288,249 @@ pub async fn get_role_by_name(conn: &mut DbConn, workspace_id: Uuid, name: &str)
 pub async fn list_workspace_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>>
 pub async fn get_role(conn: &mut DbConn, id: Uuid) -> Result<Role>
 ```
+
+### AI Providers
+
+The multi-provider AI system supports OpenAI and OpenRouter with flexible configuration and workspace-level provider overrides.
+
+**Core Types**:
+
+```rust
+use backend::providers::{AiProvider, ModelIdentifier};
+
+// Supported AI providers
+pub enum AiProvider {
+    OpenAi,
+    OpenRouter,
+}
+
+impl AiProvider {
+    pub fn as_str(&self) -> &'static str
+}
+
+// Parse provider from string
+impl FromStr for AiProvider {
+    type Err = String;
+}
+
+// Model identifier with provider
+pub struct ModelIdentifier {
+    pub provider: AiProvider,
+    pub model: String,
+}
+
+impl ModelIdentifier {
+    // Parse "provider:model" or legacy "model" format
+    pub fn parse(input: &str, default_provider: AiProvider) -> Result<Self, String>
+}
+```
+
+**RigService**:
+
+```rust
+use backend::services::chat::rig_engine::RigService;
+
+// Multi-provider AI service
+pub struct RigService {
+    openai: Option<Arc<OpenAiProvider>>,
+    openrouter: Option<Arc<OpenRouterProvider>>,
+    default_provider: AiProvider,
+}
+
+impl RigService {
+    // Create from AI configuration
+    pub fn from_config(ai_config: &AiConfig) -> Result<Self, String>
+
+    // Check if provider is configured
+    pub fn is_provider_configured(&self, provider: AiProvider) -> bool
+
+    // Get list of configured providers
+    pub fn configured_providers(&self) -> Vec<AiProvider>
+
+    // Create AI agent for chat session
+    pub async fn create_agent(
+        &self,
+        pool: DbPool,
+        storage: Arc<FileStorageService>,
+        workspace_id: Uuid,
+        chat_id: Uuid,
+        user_id: Uuid,
+        session: &ChatSession,
+    ) -> Result<rig::agent::AgentBox, PromptError>
+}
+```
+
+**Provider Query Functions**:
+
+```rust
+use backend::queries::ai_models;
+
+// Get models by provider
+pub async fn get_models_by_provider(
+    pool: &PgPool,
+    provider: &str,
+) -> Result<Vec<AiModel>>
+
+// Get all enabled models
+pub async fn get_enabled_models(
+    pool: &PgPool,
+) -> Result<Vec<AiModel>>
+
+// Get workspace enabled models
+pub async fn get_workspace_enabled_models(
+    pool: &PgPool,
+    workspace_id: Uuid,
+) -> Result<Vec<AiModel>>
+
+// Check workspace model access
+pub async fn check_workspace_model_access(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    model_id: Uuid,
+) -> Result<bool>
+
+// Grant workspace model access
+pub async fn grant_workspace_model_access(
+    pool: &PgPool,
+    new_model: &NewWorkspaceAiModel,
+) -> Result<WorkspaceAiModel>
+
+// Revoke workspace model access
+pub async fn revoke_workspace_model_access(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    model_id: Uuid,
+) -> Result<u64>
+```
+
+**Configuration**:
+
+```rust
+use backend::config::{AiConfig, ProviderConfig, OpenAIConfig, OpenRouterConfig};
+
+// Provider configuration structure
+pub struct ProviderConfig {
+    pub openai: Option<OpenAIConfig>,
+    pub openrouter: Option<OpenRouterConfig>,
+    pub default_provider: String,
+}
+
+// OpenAI-specific configuration
+pub struct OpenAIConfig {
+    pub api_key: SecretString,
+    pub base_url: Option<String>,
+    pub enable_reasoning_summaries: bool,
+    pub reasoning_effort: String,  // "low", "medium", "high"
+}
+
+// OpenRouter configuration
+pub struct OpenRouterConfig {
+    pub api_key: SecretString,
+    pub base_url: Option<String>,
+}
+```
+
+**Model Identifier Format**:
+
+The system supports both new and legacy model identifier formats:
+
+```rust
+// New format (recommended): "provider:model"
+let model = ModelIdentifier::parse("openai:gpt-4o", AiProvider::OpenAi)?;
+// Returns: ModelIdentifier { provider: OpenAi, model: "gpt-4o" }
+
+let model = ModelIdentifier::parse("openrouter:anthropic/claude-3.5-sonnet", AiProvider::OpenRouter)?;
+// Returns: ModelIdentifier { provider: OpenRouter, model: "anthropic/claude-3.5-sonnet" }
+
+// Legacy format (backward compatible): "model"
+let model = ModelIdentifier::parse("gpt-4o", AiProvider::OpenAi)?;
+// Returns: ModelIdentifier { provider: OpenAi, model: "gpt-4o" }
+```
+
+**Usage Example**:
+
+```rust
+use backend::providers::{AiProvider, ModelIdentifier};
+use backend::services::chat::rig_engine::RigService;
+use backend::config::AiConfig;
+
+// Load AI configuration
+let ai_config = AiConfig::load()?;
+
+// Create RigService from config
+let rig_service = RigService::from_config(&ai_config)?;
+
+// Check provider availability
+if rig_service.is_provider_configured(AiProvider::OpenAi) {
+    println!("OpenAI provider is configured");
+}
+
+// Parse model identifier
+let model_id = ModelIdentifier::parse("openai:gpt-4o", AiProvider::OpenAi)?;
+
+// Create AI agent for chat
+let agent = rig_service.create_agent(
+    pool,
+    storage,
+    workspace_id,
+    chat_id,
+    user_id,
+    &chat_session,
+).await?;
+
+// Use agent with Rig.rs framework
+let response = agent.prompt(&user_message).await?;
+```
+
+**Environment Variables**:
+
+```bash
+# OpenAI Provider
+BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-...
+BUILDSCALE__AI__PROVIDERS__OPENAI__ENABLE_REASONING_SUMMARIES=true
+BUILDSCALE__AI__PROVIDERS__OPENAI__REASONING_EFFORT=medium
+
+# OpenRouter Provider
+BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-...
+
+# Default Provider
+BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
+
+# Legacy (deprecated, auto-migrates to providers.openai.api_key)
+BUILDSCALE__AI__OPENAI_API_KEY=sk-...
+```
+
+**Workspace Provider Override**:
+
+Workspaces can override the default provider:
+
+```rust
+use backend::models::workspaces::UpdateWorkspace;
+
+// Set workspace to use OpenRouter
+let update = UpdateWorkspace {
+    name: None,
+    owner_id: None,
+    ai_provider_override: Some(Some("openrouter".to_string())),
+};
+
+workspaces::update_workspace(&mut conn, workspace_id, update).await?;
+
+// Clear override (use global default)
+let update = UpdateWorkspace {
+    name: None,
+    owner_id: None,
+    ai_provider_override: Some(None),  // Set to NULL
+};
+```
+
+**Key Features**:
+- **Multi-Provider Support**: OpenAI and OpenRouter with unified interface
+- **Backward Compatible**: Legacy model strings auto-migrated to new format
+- **Workspace Override**: Per-workspace provider configuration
+- **OpenAI Reasoning**: Configurable reasoning effort for GPT-5 models
+- **Model Access Control**: Global and workspace-level model availability
+- **Runtime Migration**: Automatic legacy format detection and migration
 
 ### Invitations API
 ```rust

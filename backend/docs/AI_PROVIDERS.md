@@ -143,7 +143,130 @@ CREATE TABLE workspace_ai_models (
 - `disabled` - Workspace cannot use this model
 - `restricted` - Special access control (e.g., premium models)
 
+### workspaces Table
+
+```sql
+ALTER TABLE workspaces
+ADD COLUMN ai_provider_override TEXT;
+
+COMMENT ON COLUMN workspaces.ai_provider_override IS
+'Optional per-workspace AI provider override (e.g., "openai", "openrouter").
+If NULL, uses global default provider.';
+```
+
+**Usage**:
+- Set to `"openai"` or `"openrouter"` to override default provider for a workspace
+- `NULL` uses global default from `BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER`
+- Allows different workspaces to use different providers
+
+## Frontend Integration
+
+### Model Selection Flow
+
+1. **Mount**: ChatProvider fetches available models from `/workspaces/:id/providers`
+2. **Display**: Model selector groups models by provider with labels
+3. **Selection**: User selects model, full model ID sent to backend
+4. **Legacy Fallback**: If providers API fails, uses hardcoded legacy models
+
+### Frontend Types
+
+```typescript
+// Model identifier
+interface ChatModel {
+  id: string              // "openai:gpt-4o"
+  provider: AiProvider    // "openai" | "openrouter"
+  name: string            // "GPT-4o"
+  model: string           // "gpt-4o"
+  description?: string
+  contextWindow?: number
+}
+
+// Provider API response
+interface ProviderInfo {
+  provider: AiProvider
+  display_name: string
+  configured: boolean
+  models: ChatModelInfo[]
+}
+```
+
+### Backward Compatibility
+
+Frontend automatically handles legacy model strings:
+- `parseModelIdentifier("gpt-4o")` → `{ provider: "openai", model: "gpt-4o" }`
+- `parseModelIdentifier("openai:gpt-4o")` → `{ provider: "openai", model: "gpt-4o" }`
+
 ## API Usage
+
+### HTTP Endpoints
+
+#### Get All Providers
+
+```http
+GET /api/v1/providers
+Authorization: Bearer <access_token>
+```
+
+Returns all configured providers and their available models.
+
+**Response**:
+```json
+{
+  "providers": [
+    {
+      "provider": "openai",
+      "display_name": "OpenAI",
+      "configured": true,
+      "models": [
+        {
+          "id": "openai:gpt-4o",
+          "provider": "openai",
+          "model": "gpt-4o",
+          "display_name": "GPT-4o",
+          "description": "Latest GPT-4 model",
+          "context_window": 128000
+        },
+        {
+          "id": "openai:gpt-5-mini",
+          "provider": "openai",
+          "model": "gpt-5-mini",
+          "display_name": "GPT-5 Mini",
+          "description": "Efficient GPT-5 model",
+          "context_window": 128000
+        }
+      ]
+    },
+    {
+      "provider": "openrouter",
+      "display_name": "OpenRouter",
+      "configured": false,
+      "models": []
+    }
+  ],
+  "default_provider": "openai"
+}
+```
+
+**Response Fields**:
+- `provider` - Provider identifier ("openai", "openrouter")
+- `display_name` - Human-readable provider name
+- `configured` - Whether this provider has API credentials configured
+- `models` - Array of available models (empty if not configured)
+- `default_provider` - Default provider to use for legacy model strings
+
+#### Get Workspace Providers
+
+```http
+GET /api/v1/workspaces/{workspace_id}/providers
+Authorization: Bearer <access_token>
+```
+
+Returns providers and models available to a specific workspace. Filters models based on:
+- Which providers are configured (have API keys)
+- Which models are enabled in the ai_models table
+- TODO: workspace_ai_models access control (currently returns all enabled models)
+
+**Response Format**: Same as `/providers` endpoint
 
 ### Query Functions
 
@@ -233,9 +356,9 @@ AND workspace_id IN (
 
 ## Migration Strategy
 
-### Legacy Model Strings
+### Database Migration
 
-The system automatically migrates legacy model strings to the new format:
+**Migration File**: `20260201210000_migrate_legacy_model_strings.up.sql`
 
 ```sql
 -- Convert legacy "gpt-4o" to "openai:gpt-4o"
@@ -249,12 +372,47 @@ WHERE app_data ? 'model'
 AND (app_data->>'model') NOT LIKE '%:%';
 ```
 
+**Rollback**:
+```sql
+-- Remove "openai:" prefix from model strings
+UPDATE file_versions
+SET app_data = jsonb_set(
+    app_data,
+    '{model}',
+    substring((app_data->>'model') from '^openai:(.+)$')::jsonb
+)
+WHERE app_data ? 'model'
+AND (app_data->>'model') LIKE 'openai:%';
+```
+
+**To Run**:
+```bash
+cd backend
+sqlx migrate run
+```
+
 ### Runtime Migration
 
-In `get_chat_session()`, legacy format is detected and migrated automatically:
-- Detects strings without colon (`:`)
-- Prepends default provider
-- Logs migration warning for monitoring
+In `src/services/chat/mod.rs::get_chat_session()`, legacy format is detected and migrated automatically:
+
+```rust
+// Runtime migration: Convert legacy model strings to new format
+// Detects legacy format (no colon) and adds "openai:" prefix
+if !agent_config.model.contains(':') {
+    tracing::warn!(
+        chat_file_id = %chat_file_id,
+        legacy_model = %agent_config.model,
+        "Migrating legacy model format to new provider:model format"
+    );
+    agent_config.model = format!("openai:{}", agent_config.model);
+}
+```
+
+**Benefits**:
+- Zero downtime migration
+- Works alongside database migration
+- Logs migration events for monitoring
+- Handles any legacy strings missed by database migration
 
 ## Provider Capabilities
 
@@ -418,3 +576,89 @@ AND (model_name LIKE '%claude%' OR model_name LIKE '%gpt-5%');
 - [RIG_INTEGRATION.md](./RIG_INTEGRATION.md) - How Rig providers are integrated
 - [CONFIGURATION.md](./CONFIGURATION.md) - Full configuration reference
 - [SERVICES_API_GUIDE.md](./SERVICES_API_GUIDE.md) - API endpoint documentation
+
+## Deployment Checklist
+
+When deploying the multi-provider AI system:
+
+### 1. Configure Environment Variables
+
+```bash
+# .env
+BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-...
+BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
+
+# Optional: Add OpenRouter
+BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-...
+```
+
+### 2. Run Database Migrations
+
+```bash
+cd backend
+sqlx migrate run
+```
+
+Expected output:
+```
+Migrating `20260201210000_migrate_legacy_model_strings`
+Migrating `20260201204956_add_workspace_provider_override`
+```
+
+### 3. Verify Configuration
+
+```bash
+# Check server starts without errors
+cargo run
+
+# Test providers endpoint
+curl http://localhost:3000/api/v1/providers \
+  -H "Authorization: Bearer <access_token>"
+
+# Expected: JSON with providers array and models
+```
+
+### 4. Monitor Runtime Migration
+
+Check logs for migration warnings:
+```
+WARN Migrating legacy model format to new provider:model format
+  chat_file_id=xxx-xxx-xxx
+  legacy_model=gpt-4o
+```
+
+### 5. Frontend Verification
+
+1. Open web application
+2. Create a new chat
+3. Click model selector dropdown
+4. Verify models are grouped by provider (OpenAI, OpenRouter)
+5. Select a model and send a message
+6. Verify chat works correctly
+
+### Rollback Plan
+
+If issues occur:
+
+```bash
+# Revert database migration
+sqlx migrate revert
+
+# Restart with legacy configuration
+BUILDSCALE__AI__OPENAI_API_KEY=sk-...  # Use legacy env var
+```
+
+### Troubleshooting
+
+**Problem**: Models not showing in selector
+- **Solution**: Check provider API keys are configured correctly
+- **Check**: `/api/v1/providers` endpoint returns models
+
+**Problem**: Chat fails with "Provider not configured"
+- **Solution**: Add API key for the provider in `.env`
+- **Check**: `BUILDSCALE__AI__PROVIDERS__<PROVIDER>__API_KEY` is set
+
+**Problem**: Legacy chats show wrong model
+- **Solution**: Runtime migration will handle automatically
+- **Monitor**: Logs for migration warnings
+
