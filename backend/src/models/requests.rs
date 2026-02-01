@@ -285,6 +285,11 @@ pub struct WriteArgs {
     pub path: String,
     pub content: JsonValue,
     pub file_type: Option<String>,
+    /// If false (default), returns error when file exists to prevent accidental overwrites.
+    /// Set to true to explicitly overwrite existing files.
+    /// Recommendation: Use 'edit' tool for modifying existing files instead of overwriting.
+    #[serde(default)]
+    pub overwrite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

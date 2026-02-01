@@ -46,7 +46,8 @@ async fn test_virtual_file_lifecycle() {
     // 3. Verify Protection (Write Blocked)
     let write_response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": chat_path,
-        "content": {"some": "junk"}
+        "content": {"some": "junk"},
+        "overwrite": true
     })).await;
     
     assert_eq!(write_response.status(), 400); // Bad Request (Validation Error)

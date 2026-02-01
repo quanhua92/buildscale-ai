@@ -24,7 +24,7 @@ impl Tool for WriteTool {
     }
 
     fn description(&self) -> &'static str {
-        "Creates a new file or completely replaces existing file content. Content is stored as-is: strings are stored as raw text, JSON objects are stored as structured data. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement."
+        "Creates a new file or completely replaces existing file content. Content is stored as-is: strings are stored as raw text, JSON objects are stored as structured data. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement. OVERWRITE PROTECTION: By default (overwrite=false), returns error if file exists to prevent accidental overwrites. Set overwrite=true to explicitly replace existing files. For modifying existing files, 'edit' tool is recommended."
     }
 
     fn definition(&self) -> Value {
@@ -36,7 +36,11 @@ impl Tool for WriteTool {
                     "type": "string",
                     "description": "File content as a string (for JSON content, pass as serialized JSON string)"
                 },
-                "file_type": {"type": ["string", "null"]}
+                "file_type": {"type": ["string", "null"]},
+                "overwrite": {
+                    "type": "boolean",
+                    "description": "If false (default), returns error when file exists to prevent accidental overwrites. Set to true to explicitly overwrite existing files. Recommendation: Use 'edit' tool for modifying existing files instead of overwriting."
+                }
             },
             "required": ["path", "content"],
             "additionalProperties": false
@@ -56,6 +60,18 @@ impl Tool for WriteTool {
         let path = super::normalize_path(&write_args.path);
 
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
+
+        // Overwrite Protection: Prevent accidental file overwrites
+        if existing_file.is_some() && !write_args.overwrite {
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "path".to_string(),
+                message: format!(
+                    "File already exists: {}. To overwrite, set overwrite=true. \
+                    However, for modifying existing files, the 'edit' tool is recommended instead of overwriting.",
+                    path
+                ),
+            }));
+        }
 
         // Plan Mode Guard: Only allow Plan files in plan mode
         if config.plan_mode {
