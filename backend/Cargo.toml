@@ -23,7 +23,6 @@ rand = "0.9"
 regex = "1"
 scc = "3"
 tokio-stream = { version = "0.1", features = ["sync", "time"] }
-schemars = { version = "0.8.21", features = ["uuid1", "chrono"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 subtle = "2.6"
 serde = { version = "1.0.228", features = ["derive"] }
