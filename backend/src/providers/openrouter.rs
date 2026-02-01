@@ -2,6 +2,7 @@
 
 use rig::providers::openrouter::Client;
 use secrecy::{ExposeSecret, SecretString};
+use std::fmt;
 
 /// OpenRouter provider (OpenAI-compatible)
 ///
@@ -9,6 +10,14 @@ use secrecy::{ExposeSecret, SecretString};
 /// It's OpenAI-compatible, so we can use similar patterns.
 pub struct OpenRouterProvider {
     client: Client,
+}
+
+impl fmt::Debug for OpenRouterProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenRouterProvider")
+            .field("client", &"<OpenRouter Client>")
+            .finish()
+    }
 }
 
 impl OpenRouterProvider {

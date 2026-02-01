@@ -2,12 +2,23 @@
 
 use rig::providers::openai::Client;
 use secrecy::{ExposeSecret, SecretString};
+use std::fmt;
 
 /// OpenAI provider with reasoning support
 pub struct OpenAiProvider {
     client: Client,
     enable_reasoning: bool,
     reasoning_effort: String,
+}
+
+impl fmt::Debug for OpenAiProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAiProvider")
+            .field("enable_reasoning", &self.enable_reasoning)
+            .field("reasoning_effort", &self.reasoning_effort)
+            .field("client", &"<OpenAI Client>")
+            .finish()
+    }
 }
 
 impl OpenAiProvider {
