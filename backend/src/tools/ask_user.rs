@@ -101,7 +101,16 @@ Array/checkbox (multi-select):
                                     "type": "object",
                                     "properties": {
                                         "label": {"type": "string"},
-                                        "value": {"type": "string"},
+                                        "value": {
+                                            "description": "Button value - can be a string, number, boolean, object, or array",
+                                            "anyOf": [
+                                                {"type": "string"},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {"type": "object"},
+                                                {"type": "array"}
+                                            ]
+                                        },
                                         "variant": {"type": ["string", "null"]}
                                     },
                                     "required": ["label", "value"],
