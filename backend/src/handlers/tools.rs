@@ -23,9 +23,18 @@ use crate::{
 /// ```json
 /// {
 ///   "tool": "read",
-///   "args": { "path": "/file.txt" }
+///   "args": { "path": "/file.txt" },
+///   "plan_mode": false
 /// }
 /// ```
+///
+/// # Mode Selection
+/// - `plan_mode: false` (default): Build mode - Full tool access
+///   - All tools available: read, write, edit, rm, mv, ls, grep, mkdir, touch
+///   - Can modify any file in the workspace
+/// - `plan_mode: true`: Plan mode - Restricted to plan files
+///   - Only read, ls, grep available for non-plan files
+///   - write, edit, rm, mv restricted to `/plans/` directory
 ///
 /// # Available Tools
 /// - `ls`: List directory contents
@@ -33,8 +42,22 @@ use crate::{
 /// - `read`: Read file contents
 ///   - args: { "path": "/file.txt" }
 /// - `write`: Write or update file
-///   - args: { "path": "/file.txt", "content": {...} }
+///   - args: { "path": "/file.txt", "content": "...", "overwrite": false }
+///   - Plan mode: Only allowed in /plans/ directory
+/// - `edit`: Edit file by replacing text
+///   - args: { "path": "/file.txt", "old_string": "...", "new_string": "..." }
+///   - Plan mode: Only allowed for .plan files
 /// - `rm`: Delete file or folder
+///   - args: { "path": "/file.txt" }
+///   - Plan mode: Only allowed for .plan files
+/// - `mv`: Move/rename file
+///   - args: { "source": "/old.txt", "destination": "/new.txt" }
+///   - Plan mode: Only allowed within /plans/ directory
+/// - `grep`: Search for text pattern
+///   - args: { "pattern": "search", "path_pattern": "*.rs"?, "case_sensitive": false? }
+/// - `mkdir`: Create directory
+///   - args: { "path": "/folder" }
+/// - `touch`: Create empty file
 ///   - args: { "path": "/file.txt" }
 ///
 /// # Response
@@ -62,9 +85,11 @@ pub async fn execute_tool(
 
     let executor = tools::get_tool_executor(&request.tool)?;
 
-    // TODO: Phase 3 - Extract ToolConfig from chat metadata
-    // For now, use default config (plan_mode: true for safety)
-    let config = tools::ToolConfig::default();
+    // Build ToolConfig from request (explicit mode selection)
+    let config = tools::ToolConfig {
+        plan_mode: request.plan_mode,
+        active_plan_path: None, // Public API has no active plan context
+    };
 
     let response = executor
         .execute(

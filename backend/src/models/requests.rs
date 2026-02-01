@@ -249,6 +249,11 @@ pub struct SearchResult {
 pub struct ToolRequest {
     pub tool: String,
     pub args: serde_json::Value,
+    /// Optional mode override (default: false = build mode)
+    /// - false: Build mode - full tool access (write, edit, rm, mv, etc.)
+    /// - true: Plan mode - restricted to plan files only
+    #[serde(default)]
+    pub plan_mode: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
