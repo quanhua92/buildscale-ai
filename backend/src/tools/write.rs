@@ -32,7 +32,16 @@ impl Tool for WriteTool {
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "content": {"type": "string"},
+                "content": {
+                    "description": "File content - can be a string, object, array, number, boolean, or null",
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "object"},
+                        {"type": "array"},
+                        {"type": "number"},
+                        {"type": "boolean"}
+                    ]
+                },
                 "file_type": {"type": ["string", "null"]}
             },
             "required": ["path", "content"],
