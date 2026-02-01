@@ -204,12 +204,7 @@ impl RigService {
             .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
 
         // Build additional parameters for OpenAI Responses API
-        // CRITICAL: Set store: false to use stateless mode
-        // This prevents OpenAI from requiring reasoning items to be maintained across requests
-        // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
-        let mut params = serde_json::json!({
-            "store": false
-        });
+        let mut params = serde_json::json!({});
 
         // Enable reasoning with effort and summaries based on configuration
         if ai_config.enable_reasoning_summaries {
@@ -220,6 +215,11 @@ impl RigService {
                 }));
             }
         }
+
+        tracing::info!(
+            "Agent additional_params: {}",
+            serde_json::to_string(&params).unwrap_or_else(|_| "INVALID".to_string())
+        );
 
         let agent_builder = agent_builder.additional_params(params);
 

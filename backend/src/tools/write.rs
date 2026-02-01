@@ -35,7 +35,8 @@ impl Tool for WriteTool {
                 "content": {"type": "string"},
                 "file_type": {"type": ["string", "null"]}
             },
-            "required": ["path", "content"]
+            "required": ["path", "content"],
+            "additionalProperties": false
         })
     }
     

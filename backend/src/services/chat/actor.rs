@@ -166,7 +166,7 @@ impl ChatActor {
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
-        tracing::info!("[ChatActor] Processing interaction for chat {} (CODE VERSION: FinalResponse support added)", self.chat_id);
+        tracing::info!("[ChatActor] Processing interaction for chat {} (CODE VERSION: Hardcoded write schema with content as string)", self.chat_id);
 
         // Create a new cancellation token for this interaction
         let cancellation_token = CancellationToken::new();

@@ -1,5 +1,5 @@
 # =============================================================================
-# Multi-Stage Production Dockerfile for BuildScale AI Monorepo
+# Multi-Stage Production Dockerfile v2 for BuildScale AI Monorepo
 # =============================================================================
 # This Dockerfile builds:
 # - SDK shared package (TypeScript + tsup)
