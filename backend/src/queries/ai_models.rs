@@ -58,10 +58,10 @@ pub async fn get_enabled_models(pool: &PgPool) -> Result<Vec<AiModel>> {
     Ok(models)
 }
 
-/// Get models by provider
+/// Get models by provider (only enabled models)
 pub async fn get_models_by_provider(pool: &PgPool, provider: &str) -> Result<Vec<AiModel>> {
     let models = sqlx::query_as::<Postgres, AiModel>(
-        "SELECT * FROM ai_models WHERE provider = $1 ORDER BY display_name"
+        "SELECT * FROM ai_models WHERE provider = $1 AND is_enabled = true ORDER BY display_name"
     )
     .bind(provider)
     .fetch_all(pool)
