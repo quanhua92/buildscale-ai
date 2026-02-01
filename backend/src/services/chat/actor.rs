@@ -33,6 +33,8 @@ pub struct ChatActor {
     current_model_name: Arc<Mutex<Option<String>>>,
     /// Track user_id to detect when to recreate agent
     current_user_id: Arc<Mutex<Option<Uuid>>>,
+    /// Track mode to detect when to recreate agent (mode changes require new ToolConfig)
+    current_mode: Arc<Mutex<Option<String>>>,
     /// Accumulate file modification tool actions during streaming for logging
     tool_actions_log: Arc<Mutex<Vec<String>>>,
     /// Track current tool name for logging when ToolResult arrives
@@ -80,6 +82,7 @@ impl ChatActor {
             cached_agent: Arc::new(Mutex::new(None)),
             current_model_name: Arc::new(Mutex::new(None)),
             current_user_id: Arc::new(Mutex::new(None)),
+            current_mode: Arc::new(Mutex::new(None)),
             tool_actions_log: Arc::new(Mutex::new(Vec::new())),
             current_tool_name: Arc::new(Mutex::new(None)),
             current_tool_args: Arc::new(Mutex::new(None)),
@@ -754,11 +757,14 @@ impl ChatActor {
         let mut cached = self.cached_agent.lock().await;
         let current_model_name = self.current_model_name.lock().await;
         let current_user = self.current_user_id.lock().await;
+        let current_mode = self.current_mode.lock().await;
 
         // Check if we can reuse the cached agent
+        // Must match: model, user, AND mode (mode changes require new agent)
         let can_reuse = cached.is_some()
             && current_model_name.as_ref() == Some(&session.agent_config.model)
-            && current_user.as_ref() == Some(&user_id);
+            && current_user.as_ref() == Some(&user_id)
+            && current_mode.as_ref() == Some(&session.agent_config.mode);
 
         if can_reuse {
             Ok(cached.as_ref().unwrap().clone())
@@ -785,6 +791,7 @@ impl ChatActor {
             *self.current_model_name.lock().await = Some(session.agent_config.model.clone());
             drop(current_user);
             *self.current_user_id.lock().await = Some(user_id);
+            *self.current_mode.lock().await = Some(session.agent_config.mode.clone());
 
             Ok(agent)
         }
