@@ -361,6 +361,7 @@ impl TestApp {
         let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_test_workspace", self.test_prefix()),
             owner_id: user.id,
+            ai_provider_override: None,
         };
         let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
@@ -377,6 +378,7 @@ impl TestApp {
         buildscale::models::workspaces::NewWorkspace {
             name: workspace_name,
             owner_id,
+            ai_provider_override: None,
         }
     }
 
@@ -391,6 +393,7 @@ impl TestApp {
         let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_workspace", self.test_prefix()),
             owner_id,
+            ai_provider_override: None,
         };
         let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
@@ -409,6 +412,7 @@ impl TestApp {
         let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_test_workspace", self.test_prefix()),
             owner_id: user.id,
+            ai_provider_override: None,
         };
         let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;
@@ -425,6 +429,7 @@ impl TestApp {
         buildscale::models::workspaces::NewWorkspace {
             name: workspace_name,
             owner_id,
+            ai_provider_override: None,
         }
     }
 
@@ -549,6 +554,7 @@ impl TestApp {
         let workspace_data = buildscale::models::workspaces::NewWorkspace {
             name: format!("{}_test_workspace", self.test_prefix()),
             owner_id: user.id,
+            ai_provider_override: None,
         };
         let workspace = buildscale::queries::workspaces::create_workspace(&mut conn, workspace_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("Workspace creation failed: {}", e)))?;

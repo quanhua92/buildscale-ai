@@ -11,12 +11,13 @@ pub async fn create_workspace(conn: &mut DbConn, new_workspace: NewWorkspace) ->
     let workspace = sqlx::query_as!(
         Workspace,
         r#"
-        INSERT INTO workspaces (name, owner_id)
-        VALUES ($1, $2)
-        RETURNING id, name, owner_id, NULL as "role_name?", created_at, updated_at
+        INSERT INTO workspaces (name, owner_id, ai_provider_override)
+        VALUES ($1, $2, $3)
+        RETURNING id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
         "#,
         new_workspace.name,
-        new_workspace.owner_id
+        new_workspace.owner_id,
+        new_workspace.ai_provider_override
     )
     .fetch_one(conn)
     .await
@@ -30,7 +31,7 @@ pub async fn get_workspace_by_id(conn: &mut DbConn, id: Uuid) -> Result<Workspac
     let workspace = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
         FROM workspaces
         WHERE id = $1
         "#,
@@ -48,7 +49,7 @@ pub async fn get_workspace_by_id_optional(conn: &mut DbConn, id: Uuid) -> Result
     let workspace = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
         FROM workspaces
         WHERE id = $1
         "#,
@@ -66,7 +67,7 @@ pub async fn get_workspaces_by_owner(conn: &mut DbConn, owner_id: Uuid) -> Resul
     let workspaces = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
         FROM workspaces
         WHERE owner_id = $1
         ORDER BY created_at DESC
@@ -85,7 +86,7 @@ pub async fn list_workspaces(conn: &mut DbConn) -> Result<Vec<Workspace>> {
     let workspaces = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT id, name, owner_id, NULL as "role_name?", created_at, updated_at
+        SELECT id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
         FROM workspaces
         ORDER BY created_at DESC
         "#,
@@ -99,23 +100,49 @@ pub async fn list_workspaces(conn: &mut DbConn) -> Result<Vec<Workspace>> {
 
 /// Updates an existing workspace's details.
 pub async fn update_workspace(conn: &mut DbConn, id: Uuid, update_workspace: UpdateWorkspace) -> Result<Workspace> {
-    let workspace = sqlx::query_as!(
-        Workspace,
-        r#"
-        UPDATE workspaces
-        SET name = COALESCE($1, name),
-            owner_id = COALESCE($2, owner_id),
-            updated_at = now()
-        WHERE id = $3
-        RETURNING id, name, owner_id, NULL as "role_name?", created_at, updated_at
-        "#,
-        update_workspace.name,
-        update_workspace.owner_id,
-        id
-    )
-    .fetch_one(conn)
-    .await
-    .map_err(Error::Sqlx)?;
+    // Handle the nested Option for ai_provider_override
+    // - None: don't update the field
+    // - Some(None): set to NULL
+    // - Some(Some(value)): set to value
+    let workspace = if update_workspace.ai_provider_override.is_some() {
+        sqlx::query_as!(
+            Workspace,
+            r#"
+            UPDATE workspaces
+            SET name = COALESCE($1, name),
+                owner_id = COALESCE($2, owner_id),
+                ai_provider_override = $3,
+                updated_at = now()
+            WHERE id = $4
+            RETURNING id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
+            "#,
+            update_workspace.name,
+            update_workspace.owner_id,
+            update_workspace.ai_provider_override.flatten(),
+            id
+        )
+        .fetch_one(conn)
+        .await
+        .map_err(Error::Sqlx)?
+    } else {
+        sqlx::query_as!(
+            Workspace,
+            r#"
+            UPDATE workspaces
+            SET name = COALESCE($1, name),
+                owner_id = COALESCE($2, owner_id),
+                updated_at = now()
+            WHERE id = $3
+            RETURNING id, name, owner_id, NULL as "role_name?", ai_provider_override, created_at, updated_at
+            "#,
+            update_workspace.name,
+            update_workspace.owner_id,
+            id
+        )
+        .fetch_one(conn)
+        .await
+        .map_err(Error::Sqlx)?
+    };
 
     Ok(workspace)
 }
