@@ -23,9 +23,22 @@ impl fmt::Debug for OpenAiProvider {
 
 impl OpenAiProvider {
     /// Create a new OpenAI provider
-    pub fn new(api_key: &SecretString, _base_url: Option<&str>) -> Self {
-        let client = Client::new(api_key.expose_secret())
-            .expect("Failed to create OpenAI client");
+    pub fn new(api_key: &SecretString, base_url: Option<&str>) -> Self {
+        let client = if let Some(url) = base_url {
+            tracing::info!(
+                base_url = %url,
+                "Creating OpenAI provider with custom base URL"
+            );
+            Client::builder()
+                .api_key(api_key.expose_secret())
+                .base_url(url)
+                .build()
+                .expect("Failed to create OpenAI client with custom base URL")
+        } else {
+            tracing::info!("Creating OpenAI provider with default base URL");
+            Client::new(api_key.expose_secret())
+                .expect("Failed to create OpenAI client")
+        };
 
         Self {
             client,
@@ -75,5 +88,14 @@ mod tests {
         let provider = OpenAiProvider::new(&api_key, None).with_reasoning(true, "high".to_string());
         assert!(provider.is_reasoning_enabled());
         assert_eq!(provider.reasoning_effort(), "high");
+    }
+
+    #[test]
+    fn test_openai_provider_with_custom_base_url() {
+        let api_key = SecretString::new("test-key".to_string().into());
+        let custom_url = "https://custom.openai.com/v1";
+        let _provider = OpenAiProvider::new(&api_key, Some(custom_url));
+        // Test passes if provider was created without panicking
+        // In real usage, this would connect to the custom URL
     }
 }
