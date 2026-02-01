@@ -92,7 +92,7 @@ pub struct AgentConfig {
     pub persona_override: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_response_id: Option<String>, // OpenAI Responses API response_id for conversation continuity
-    /// Chat mode: "plan" (default) or "build"
+    /// Chat mode: "plan" or "build" (default: "build")
     #[serde(default = "default_mode")]
     pub mode: String,
     /// Absolute path to associated .plan file (only in build mode)
@@ -101,7 +101,7 @@ pub struct AgentConfig {
 }
 
 fn default_mode() -> String {
-    "plan".to_string()
+    "build".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,8 +7,8 @@ use buildscale::tools::ToolConfig;
 #[test]
 fn test_toolconfig_default() {
     let config = ToolConfig::default();
-    // Default is Plan Mode (plan_mode: true) for safety
-    assert!(config.plan_mode, "Default should be plan mode");
+    // Default is Build Mode (plan_mode: false) for normal operation
+    assert!(!config.plan_mode, "Default should be build mode");
     assert!(config.active_plan_path.is_none(), "Default should have no active plan");
 }
 

@@ -70,14 +70,14 @@ pub async fn create_chat(
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
 
     // 4. Create initial version with config in app_data
-    // New chats default to Plan Mode
+    // New chats default to Build Mode
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
         "model": req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
-        "persona": crate::agents::get_persona(req.role.as_deref(), Some("plan"), None),
+        "persona": crate::agents::get_persona(req.role.as_deref(), Some("build"), None),
         "temperature": 0.7,
-        "mode": "plan",
+        "mode": "build",
         "plan_file": null
     });
 
