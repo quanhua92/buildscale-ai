@@ -36,6 +36,7 @@ pub async fn create_workspace(conn: &mut DbConn, request: CreateWorkspaceRequest
     let new_workspace = NewWorkspace {
         name: validate_required_string(&request.name, "Workspace name")?,
         owner_id: request.owner_id,
+        ai_provider_override: None, // Default to None (uses global default provider)
     };
     let workspace = workspaces::create_workspace(&mut tx, new_workspace).await?;
 
@@ -87,6 +88,7 @@ pub async fn create_workspace_with_members(conn: &mut DbConn, request: CreateWor
     let new_workspace = NewWorkspace {
         name: validate_required_string(&request.name, "Workspace name")?,
         owner_id: request.owner_id,
+        ai_provider_override: None, // Default to None (uses global default provider)
     };
     let workspace = workspaces::create_workspace(&mut tx, new_workspace).await?;
 
@@ -215,6 +217,7 @@ pub async fn update_workspace_owner(
     let update_workspace = crate::models::workspaces::UpdateWorkspace {
         name: None,
         owner_id: Some(new_owner_id),
+        ai_provider_override: None, // Don't update provider override
     };
 
     let updated_workspace = workspaces::update_workspace(&mut tx, workspace_id, update_workspace).await?;
@@ -243,6 +246,7 @@ pub async fn update_workspace(
     let workspace_update = crate::models::workspaces::UpdateWorkspace {
         name: Some(validate_required_string(&update.name, "Workspace name")?),
         owner_id: None,  // Ownership changes use update_workspace_owner
+        ai_provider_override: None, // Don't update provider override
     };
 
     let updated = workspaces::update_workspace(conn, workspace_id, workspace_update).await?;

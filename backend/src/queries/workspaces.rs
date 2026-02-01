@@ -197,12 +197,13 @@ pub async fn get_workspaces_by_user_membership(
     let workspaces = sqlx::query_as!(
         Workspace,
         r#"
-        SELECT DISTINCT 
-            w.id, 
-            w.name, 
-            w.owner_id, 
+        SELECT DISTINCT
+            w.id,
+            w.name,
+            w.owner_id,
             CASE WHEN r.id IS NOT NULL THEN r.name ELSE NULL END as "role_name?",
-            w.created_at, 
+            w.ai_provider_override,
+            w.created_at,
             w.updated_at
         FROM workspaces w
         LEFT JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $1

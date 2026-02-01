@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, owner_id, NULL as \"role_name?\", created_at, updated_at\n        FROM workspaces\n        WHERE id = $1\n        ",
+  "query": "\n            UPDATE workspaces\n            SET name = COALESCE($1, name),\n                owner_id = COALESCE($2, owner_id),\n                updated_at = now()\n            WHERE id = $3\n            RETURNING id, name, owner_id, NULL as \"role_name?\", ai_provider_override, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -25,17 +25,24 @@
       },
       {
         "ordinal": 4,
+        "name": "ai_provider_override",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
+        "Uuid",
         "Uuid"
       ]
     },
@@ -44,9 +51,10 @@
       false,
       false,
       null,
+      true,
       false,
       false
     ]
   },
-  "hash": "a4a551f608672aeb4c4131b5ff7ad142ad39b2869c43f49d18738fa46ac2b209"
+  "hash": "43d188b828fcf6f2c607c4bcc255e213139517733bac3e2ca0ca40cfa6e71853"
 }
