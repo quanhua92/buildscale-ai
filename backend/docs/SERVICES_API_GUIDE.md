@@ -413,6 +413,7 @@ pub struct ProviderConfig {
     pub openai: Option<OpenAIConfig>,
     pub openrouter: Option<OpenRouterConfig>,
     pub default_provider: String,
+    pub default_model: String,  // e.g., "openai:gpt-5-mini" or "gpt-5-mini"
 }
 
 // OpenAI-specific configuration
@@ -504,11 +505,16 @@ BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-...
 # Default Provider
 BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
 
+# Default Model (e.g., "openai:gpt-5-mini" or "gpt-5-mini" for provider default)
+BUILDSCALE__AI__PROVIDERS__DEFAULT_MODEL=openai:gpt-5-mini
+
 # Legacy (deprecated, auto-migrates to providers.openai.api_key)
 BUILDSCALE__AI__OPENAI_API_KEY=sk-...
 ```
 
-**Note**: The `BASE_URL` environment variables are optional and only needed for custom endpoints (Azure OpenAI, proxy servers, or self-hosted instances).
+**Note**:
+- The `BASE_URL` environment variables are optional and only needed for custom endpoints (Azure OpenAI, proxy servers, or self-hosted instances)
+- The `DEFAULT_MODEL` can use either the new format (`"provider:model"`) or legacy format (`"model"`) which will use the default_provider
 
 **Workspace Provider Override**:
 

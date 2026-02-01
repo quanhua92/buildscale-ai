@@ -1904,7 +1904,8 @@ curl http://localhost:3000/api/v1/providers \
       "models": []
     }
   ],
-  "default_provider": "openai"
+  "default_provider": "openai",
+  "default_model": "openai:gpt-5-mini"
 }
 ```
 
@@ -1924,6 +1925,7 @@ curl http://localhost:3000/api/v1/providers \
 | `providers[].models[].description` | string or null | Model description |
 | `providers[].models[].context_window` | integer or null | Context window size in tokens |
 | `default_provider` | string | Default provider identifier |
+| `default_model` | string | Default model for new chat sessions (e.g., "openai:gpt-5-mini") |
 
 #### Use Cases
 
