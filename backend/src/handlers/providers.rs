@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
-    queries::ai_models::get_models_by_provider,
+    queries::ai_models::{get_models_by_provider, get_workspace_models_by_provider},
     state::AppState,
 };
 
@@ -202,7 +202,7 @@ pub async fn get_providers(
 pub async fn get_workspace_providers(
     Extension(_user): Extension<AuthenticatedUser>,
     State(state): State<AppState>,
-    axum::extract::Path(_workspace_id): axum::extract::Path<Uuid>,
+    axum::extract::Path(workspace_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<ProvidersResponse>> {
     let pool = &state.pool;
 
@@ -219,9 +219,7 @@ pub async fn get_workspace_providers(
 
     // Get workspace-enabled models for each configured provider
     if openai_configured {
-        // For now, return all enabled OpenAI models
-        // TODO: Filter by workspace_ai_models table
-        let models = get_models_by_provider(pool, "openai")
+        let models = get_workspace_models_by_provider(pool, workspace_id, "openai")
             .await
             .unwrap_or_default();
 
@@ -246,9 +244,7 @@ pub async fn get_workspace_providers(
     }
 
     if openrouter_configured {
-        // For now, return all enabled OpenRouter models
-        // TODO: Filter by workspace_ai_models table
-        let models = get_models_by_provider(pool, "openrouter")
+        let models = get_workspace_models_by_provider(pool, workspace_id, "openrouter")
             .await
             .unwrap_or_default();
 

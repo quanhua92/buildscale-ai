@@ -87,6 +87,35 @@ pub async fn get_model_by_provider_and_name(
     Ok(model)
 }
 
+/// Get enabled models for a workspace by provider
+pub async fn get_workspace_models_by_provider(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    provider: &str,
+) -> Result<Vec<AiModel>> {
+    let models = sqlx::query_as!(
+        AiModel,
+        r#"
+        SELECT m.id, m.provider, m.model_name, m.display_name,
+               m.description, m.context_window, m.is_enabled,
+               m.created_at, m.updated_at
+        FROM ai_models m
+        INNER JOIN workspace_ai_models wm ON m.id = wm.model_id
+        WHERE wm.workspace_id = $1
+          AND m.provider = $2
+          AND m.is_enabled = true
+          AND wm.status = 'active'
+        ORDER BY m.display_name
+        "#,
+        workspace_id,
+        provider
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(models)
+}
+
 /// Get a model by ID
 pub async fn get_model_by_id(pool: &PgPool, model_id: Uuid) -> Result<Option<AiModel>> {
     let model = sqlx::query_as::<Postgres, AiModel>(
