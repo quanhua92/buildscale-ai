@@ -212,10 +212,21 @@ impl RigService {
         });
 
         // Enable reasoning with effort and summaries based on configuration
-        if ai_config.enable_reasoning_summaries {
+        // Check if OpenAI provider has reasoning enabled
+        let reasoning_enabled = ai_config.providers.openai
+            .as_ref()
+            .map(|config| config.enable_reasoning_summaries)
+            .unwrap_or(false);
+
+        let reasoning_effort = ai_config.providers.openai
+            .as_ref()
+            .map(|config| config.reasoning_effort.clone())
+            .unwrap_or_else(|| "low".to_string());
+
+        if reasoning_enabled {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert("reasoning".to_string(), serde_json::json!({
-                    "effort": ai_config.reasoning_effort,
+                    "effort": reasoning_effort,
                     "summary": "auto"
                 }));
             }

@@ -6,6 +6,7 @@ pub mod error;
 pub mod handlers;
 pub mod middleware;
 pub mod models;
+pub mod providers;
 pub mod queries;
 pub mod services;
 pub mod state;
