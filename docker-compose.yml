@@ -58,8 +58,17 @@ services:
       - BUILDSCALE__JWT__SECRET=BuildScaleJWT2025SecureRandomKeyForAccessTokensStrong
       - BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES=15
       - BUILDSCALE__JWT__REFRESH_TOKEN_SECRET=BuildScaleRefresh2025SecureRandomKeyForTokensStrong
-      # AI Configuration
-      - BUILDSCALE__AI__OPENAI_API_KEY=sk-placeholder-replace-with-your-key
+      # AI Providers Configuration
+      # OpenAI Provider
+      - BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-placeholder-replace-with-your-key
+      - BUILDSCALE__AI__PROVIDERS__OPENAI__ENABLE_REASONING_SUMMARIES=true
+      - BUILDSCALE__AI__PROVIDERS__OPENAI__REASONING_EFFORT=medium
+      # OpenRouter Provider (optional - remove if not using)
+      # - BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-placeholder-replace-with-your-key
+      # Default Provider (openai or openrouter)
+      - BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
+      # Legacy format (deprecated - auto-migrates to providers.openai.api_key)
+      # - BUILDSCALE__AI__OPENAI_API_KEY=sk-placeholder-replace-with-your-key
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
