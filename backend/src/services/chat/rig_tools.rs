@@ -13,113 +13,6 @@ use std::future::Future;
 use std::sync::Arc;
 use uuid::Uuid;
 
-fn enforce_strict_schema(mut schema: serde_json::Value) -> serde_json::Value {
-    tracing::debug!(
-        schema_before = %serde_json::to_string(&schema).unwrap_or_default(),
-        "enforce_strict_schema called"
-    );
-
-    // Recursively add additionalProperties: false to all object schemas
-    fn add_additional_properties_recursive(value: &mut serde_json::Value) {
-        if let Some(obj) = value.as_object_mut() {
-            // Don't modify schemas that use anyOf/oneOf/allOf/not
-            // These already define their own validation logic
-            if obj.contains_key("anyOf") || obj.contains_key("oneOf") || obj.contains_key("allOf") || obj.contains_key("not") {
-                // Still recurse into the anyOf/oneOf arrays to fix nested schemas
-                for key in &["anyOf", "oneOf", "allOf"] {
-                    if let Some(arr) = obj.get_mut(*key).and_then(|v| v.as_array_mut()) {
-                        for item in arr.iter_mut() {
-                            add_additional_properties_recursive(item);
-                        }
-                    }
-                }
-                if let Some(s) = obj.get_mut("not") {
-                    add_additional_properties_recursive(s);
-                }
-                return;
-            }
-
-            // Add additionalProperties: false if type is "object"
-            if obj.get("type").and_then(|t| t.as_str()) == Some("object") {
-                obj.entry("additionalProperties").or_insert(serde_json::json!(false));
-            }
-
-            // Recurse into nested structures
-            if let Some(definitions) = obj.get_mut("definitions").and_then(|d| d.as_object_mut()) {
-                for (_key, def) in definitions.iter_mut() {
-                    add_additional_properties_recursive(def);
-                }
-            }
-
-            if let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                for (_key, prop) in properties.iter_mut() {
-                    add_additional_properties_recursive(prop);
-                }
-            }
-
-            if let Some(items) = obj.get_mut("items") {
-                add_additional_properties_recursive(items);
-            }
-        }
-    }
-
-    // Recursively ensure all object schemas have required arrays
-    fn fix_required_arrays(value: &mut serde_json::Value) {
-        if let Some(obj) = value.as_object_mut() {
-            // Don't modify schemas that use anyOf/oneOf - they have their own validation logic
-            if obj.contains_key("anyOf") || obj.contains_key("oneOf") || obj.contains_key("allOf") || obj.contains_key("not") {
-                // Still recurse into the arrays to fix nested schemas
-                for key in &["anyOf", "oneOf", "allOf"] {
-                    if let Some(arr) = obj.get_mut(*key).and_then(|v| v.as_array_mut()) {
-                        for item in arr.iter_mut() {
-                            fix_required_arrays(item);
-                        }
-                    }
-                }
-                if let Some(s) = obj.get_mut("not") {
-                    fix_required_arrays(s);
-                }
-                return;
-            }
-
-            // Add all properties to required array for OpenAI strict mode
-            if obj.get("type").and_then(|t| t.as_str()) == Some("object") {
-                if let Some(properties) = obj.get("properties").and_then(|p| p.as_object()) {
-                    let all_keys: Vec<String> = properties.keys().cloned().collect();
-                    obj.insert("required".to_string(), serde_json::json!(all_keys));
-                }
-            }
-
-            // Recurse into nested structures
-            if let Some(definitions) = obj.get_mut("definitions").and_then(|d| d.as_object_mut()) {
-                for (_key, def) in definitions.iter_mut() {
-                    fix_required_arrays(def);
-                }
-            }
-
-            if let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                for (_key, prop) in properties.iter_mut() {
-                    fix_required_arrays(prop);
-                }
-            }
-
-            if let Some(items) = obj.get_mut("items") {
-                fix_required_arrays(items);
-            }
-        }
-    }
-
-    add_additional_properties_recursive(&mut schema);
-    fix_required_arrays(&mut schema);
-
-    tracing::debug!(
-        schema_after = %serde_json::to_string(&schema).unwrap_or_default(),
-        "enforce_strict_schema completed"
-    );
-
-    schema
-}
-
 /// Macro to generate Rig-compatible wrapper for BuildScale tools.
 ///
 /// This macro reduces boilerplate by generating the struct definition and RigTool impl
@@ -181,23 +74,10 @@ macro_rules! define_rig_tool {
             ) -> impl Future<Output = ToolDefinition> + Send + Sync {
                 let name = Self::NAME.to_string();
                 async move {
-                    let schema_raw = schemars::schema_for!($args_type);
-                    tracing::debug!(
-                        tool = $name,
-                        args_type = std::any::type_name::<$args_type>(),
-                        schema_raw = %serde_json::to_string(&schema_raw).unwrap_or_default(),
-                        "Generating tool definition"
-                    );
-
-                    let schema = enforce_strict_schema(
-                        serde_json::to_value(schema_raw).unwrap_or_default(),
-                    );
-
-                    tracing::info!(
-                        tool = $name,
-                        parameters = %serde_json::to_string(&schema).unwrap_or_default(),
-                        "Tool definition generated"
-                    );
+                    // Use the core tool's hardcoded definition (no schemars)
+                    use crate::tools::Tool;
+                    let core_tool = $core_tool;
+                    let schema = core_tool.definition();
 
                     ToolDefinition {
                         name,

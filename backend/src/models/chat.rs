@@ -50,6 +50,16 @@ pub struct ChatMessageMetadata {
     pub model: Option<String>, // Model that generated this message (e.g., "gpt-5", "gpt-5-mini", "gpt-4o")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_id: Option<String>, // OpenAI Responses API response_id for conversation continuity
+    /// Question answer metadata (from ask_user tool responses)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_answer: Option<QuestionAnswerMetadata>,
+}
+
+/// Question answer metadata stored with user messages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionAnswerMetadata {
+    pub question_id: Uuid,
+    pub answers: serde_json::Value, // Object mapping question names to answers
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

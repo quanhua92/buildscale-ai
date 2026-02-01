@@ -166,7 +166,7 @@ impl ChatActor {
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
-        tracing::info!("[ChatActor] Processing interaction for chat {}", self.chat_id);
+        tracing::info!("[ChatActor] Processing interaction for chat {} (CODE VERSION: FinalResponse support added)", self.chat_id);
 
         // Create a new cancellation token for this interaction
         let cancellation_token = CancellationToken::new();
@@ -251,16 +251,43 @@ impl ChatActor {
         let ai_config = crate::config::Config::load()?.ai;
 
         // 8. Get or create cached Rig Agent
+        tracing::info!(
+            chat_id = %self.chat_id,
+            user_id = %user_id,
+            model = %session.agent_config.model,
+            mode = %session.agent_config.mode,
+            "Getting or creating agent"
+        );
         let agent = self.get_or_create_agent(user_id, &session, &ai_config).await?;
+        tracing::info!(
+            chat_id = %self.chat_id,
+            "Agent created/retrieved successfully"
+        );
 
         // 9. Stream from Rig with persona, history, and attachments in prompt
+        tracing::info!(
+            chat_id = %self.chat_id,
+            prompt_len = prompt.len(),
+            history_len = history.len(),
+            "Starting agent.stream_chat"
+        );
         let mut stream = agent
             .stream_chat(&prompt, history)
             .await;
 
+        tracing::info!(
+            chat_id = %self.chat_id,
+            "Stream created, entering response loop"
+        );
+
         let mut full_response = String::new();
         let mut has_started_responding = false;
         let mut item_count = 0usize;
+
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            "Starting stream loop"
+        );
 
         loop {
             // Check for cancellation before each stream iteration
@@ -275,18 +302,46 @@ impl ChatActor {
                     tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
                     return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
                 },
-                item = stream.next() => { item }
+                item = stream.next() => {
+                    match &item {
+                        Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = item_count, "Received stream item"),
+                        Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
+                        None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                    }
+                    item
+                }
             };
 
             let item = match item {
                 Some(i) => i,
-                None => break, // Stream finished naturally
+                None => {
+                    tracing::info!(chat_id = %self.chat_id, items_received = item_count, "Stream finished naturally");
+                    break; // Stream finished naturally
+                }
             };
 
             // Track stream items for debugging
             item_count += 1;
 
+            // Debug: Log the item type before matching
+            tracing::debug!(
+                chat_id = %self.chat_id,
+                item_num = item_count,
+                is_err = item.is_err(),
+                is_ok = item.is_ok(),
+                "Processing stream item"
+            );
+
             match item {
+                Err(e) => {
+                    tracing::error!(
+                        chat_id = %self.chat_id,
+                        error = %e,
+                        item_num = item_count,
+                        "Stream item error, wrapping as Internal error"
+                    );
+                    return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
+                }
                 Ok(rig::agent::MultiTurnStreamItem::StreamAssistantItem(content)) => {
                     match content {
                         rig::streaming::StreamedAssistantContent::Text(text) => {
@@ -438,19 +493,35 @@ impl ChatActor {
                         }
                     }
                 }
-                Err(e) => {
-                    tracing::error!(
+                Ok(rig::agent::MultiTurnStreamItem::FinalResponse(final_response)) => {
+                    tracing::info!(
                         chat_id = %self.chat_id,
-                        error = ?e,
-                        "[ChatActor] [Rig] AI stream encountered a fatal error"
+                        response_len = final_response.response().len(),
+                        response_text = %final_response.response(),
+                        usage = ?final_response.usage(),
+                        "Received FinalResponse from stream"
                     );
- 
-                    // Clear agent cache on error to force fresh agent on next interaction
-                    *self.cached_agent.lock().await = None;
- 
-                    return Err(crate::error::Error::Llm(format!("AI Engine fatal error: {:?}", e)));
+
+                    // Send the final response as text if not empty
+                    let response_text = final_response.response();
+                    if !response_text.is_empty() {
+                        if !has_started_responding {
+                            tracing::info!("[ChatActor] AI started responding (via FinalResponse) for chat {}", self.chat_id);
+                            has_started_responding = true;
+                        }
+                        full_response.push_str(response_text);
+                        let _ = self.event_tx.send(SseEvent::Chunk { text: response_text.to_string() });
+                    }
                 }
-                _ => {}
+                // Catch-all for future Rig variants (MultiTurnStreamItem is non-exhaustive)
+                Ok(other) => {
+                    tracing::warn!(
+                        chat_id = %self.chat_id,
+                        item_num = item_count,
+                        "Unhandled stream item variant: {:?}",
+                        std::mem::discriminant(&other)
+                    );
+                }
             }
         }
 
