@@ -285,8 +285,10 @@ export function ChatProvider({
                 if (!lastMessage || lastMessage.role !== "assistant" || lastMessage.status === "completed") {
                   if (type === "session_init" || type === "file_updated") return prev
 
+                  const newId = generateId()
+                  console.log('[Chat] Creating new assistant message:', { newId, type, prevMessagesCount: newMessages.length })
                   lastMessage = {
-                    id: generateId(),
+                    id: newId,
                     role: "assistant",
                     parts: [],
                     status: "streaming",
@@ -314,10 +316,13 @@ export function ChatProvider({
                     updatedMessage.status = "streaming"
                     break
                   case "chunk":
+                    console.log('[Chat] Chunk received:', { text: data.text, lastMessage: updatedMessage.id, partsCount: updatedMessage.parts.length })
                     if (lastPart?.type === "text") {
                       lastPart.content += (data.text || "")
+                      console.log('[Chat] Appended to existing text part:', { newContent: lastPart.content })
                     } else {
                       updatedMessage.parts.push({ type: "text", content: (data.text || "") })
+                      console.log('[Chat] Created new text part:', { content: data.text })
                     }
                     updatedMessage.status = "streaming"
                     break
@@ -338,6 +343,7 @@ export function ChatProvider({
                     updatedMessage.status = "streaming"
                     break
                   case "done":
+                    console.log('[Chat] Done event received:', { messageId: updatedMessage.id, partsCount: updatedMessage.parts.length })
                     updatedMessage.status = "completed"
                     if (currentConnectionId === connectionIdRef.current) {
                       setIsStreaming(false)
