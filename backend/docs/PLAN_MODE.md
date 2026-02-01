@@ -61,7 +61,7 @@ pub trait Tool: Send + Sync {
 }
 ```
 
-### 3.3 Guard & Enforcement Logic
+### 3.4 Guard & Enforcement Logic
 - **Write/Edit Tools**: If `config.plan_mode` is `true`, these tools check the target file's type.
     - If `FileType` is `Plan`, the operation is **Allowed**.
     - For all other types, the operation is **Denied** with an error: *"System is in Plan Mode. You can only modify the plan. Switch to Build Mode to apply changes."*
