@@ -401,7 +401,7 @@ pub struct ReadResult {
     pub hash: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteResult {
     pub path: String,
     pub file_id: Uuid,
@@ -409,25 +409,25 @@ pub struct WriteResult {
     pub hash: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RmResult {
     pub path: String,
     pub file_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MvResult {
     pub from_path: String,
     pub to_path: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MkdirResult {
     pub path: String,
     pub file_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TouchResult {
     pub path: String,
     pub file_id: Uuid,

@@ -33,6 +33,12 @@ pub struct ChatActor {
     current_model_name: Arc<Mutex<Option<String>>>,
     /// Track user_id to detect when to recreate agent
     current_user_id: Arc<Mutex<Option<Uuid>>>,
+    /// Accumulate file modification tool actions during streaming for logging
+    tool_actions_log: Arc<Mutex<Vec<String>>>,
+    /// Track current tool name for logging when ToolResult arrives
+    current_tool_name: Arc<Mutex<Option<String>>>,
+    /// Track current tool arguments for logging when ToolResult arrives
+    current_tool_args: Arc<Mutex<Option<serde_json::Value>>>,
 }
 
 pub struct ChatActorArgs {
@@ -74,6 +80,9 @@ impl ChatActor {
             cached_agent: Arc::new(Mutex::new(None)),
             current_model_name: Arc::new(Mutex::new(None)),
             current_user_id: Arc::new(Mutex::new(None)),
+            tool_actions_log: Arc::new(Mutex::new(Vec::new())),
+            current_tool_name: Arc::new(Mutex::new(None)),
+            current_tool_args: Arc::new(Mutex::new(None)),
         };
 
         tokio::spawn(async move {
@@ -365,6 +374,9 @@ impl ChatActor {
                         }
                         rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
                             tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
+                            // Track tool name and arguments for logging when ToolResult arrives
+                            *self.current_tool_name.lock().await = Some(tool_call.function.name.clone());
+                            *self.current_tool_args.lock().await = Some(serde_json::to_value(&tool_call.function.arguments).unwrap_or_default());
                             let path = tool_call.function.arguments.get("path")
                                 .or_else(|| tool_call.function.arguments.get("source"))
                                 .and_then(|v| v.as_str())
@@ -489,7 +501,37 @@ impl ChatActor {
                                      output.clone()
                                  }
                              );
-                             let _ = self.event_tx.send(SseEvent::Observation { output, success });
+                             let _ = self.event_tx.send(SseEvent::Observation { output: output.clone(), success });
+
+                             // Log successful file modification tools
+                             if success {
+                                 let (name_opt, args_opt) = {
+                                     let name_guard = self.current_tool_name.lock().await;
+                                     let args_guard = self.current_tool_args.lock().await;
+                                     (name_guard.clone(), args_guard.clone())
+                                 };
+
+                                 if let Some(tname) = name_opt {
+                                     if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
+                                         let args_ref = args_opt.as_ref();
+                                         if let Some(log_msg) = ChatService::format_tool_action(
+                                             &tname,
+                                             &result_json,
+                                             args_ref,
+                                         ) {
+                                             tracing::info!(
+                                                 "[ChatActor] Adding tool action to log: {}",
+                                                 log_msg
+                                             );
+                                             self.tool_actions_log.lock().await.push(log_msg);
+                                         }
+                                     }
+                                 }
+                             }
+
+                             // Clear current tool name and arguments
+                             *self.current_tool_name.lock().await = None;
+                             *self.current_tool_args.lock().await = None;
                         }
                     }
                 }
@@ -534,6 +576,38 @@ impl ChatActor {
             );
         }
 
+        // Save tool actions log before AI response
+        let log = self.tool_actions_log.lock().await.clone();
+        if !log.is_empty() {
+            tracing::info!(
+                "[ChatActor] Saving {} tool actions log before AI response for chat {}",
+                log.len(),
+                self.chat_id
+            );
+            let combined_log = log.join("\n");
+
+            // Send tool action log via SSE for real-time display
+            let _ = self.event_tx.send(SseEvent::Chunk { text: combined_log.clone() });
+
+            let mut log_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+            ChatService::save_message(
+                &mut log_conn,
+                &self.storage,
+                self.workspace_id,
+                NewChatMessage {
+                    file_id: self.chat_id,
+                    workspace_id: self.workspace_id,
+                    role: ChatMessageRole::Assistant,
+                    content: combined_log,
+                    metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
+                        model: Some(session.agent_config.model.clone()),
+                        ..Default::default()
+                    }),
+                },
+            )
+            .await?;
+        }
+
         // 7. Save Assistant Response
         if !full_response.is_empty() {
             tracing::info!("[ChatActor] Saving AI response to database for chat {} (model: {})", self.chat_id, session.agent_config.model);
@@ -564,6 +638,9 @@ impl ChatActor {
 
         // Clear the cancellation token for this interaction
         *self.current_cancellation_token.lock().await = None;
+
+        // Clear tool actions log for next interaction
+        self.tool_actions_log.lock().await.clear();
 
         Ok(())
     }
