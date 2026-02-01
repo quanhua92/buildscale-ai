@@ -23,7 +23,14 @@ impl Tool for MkdirTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(MkdirArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"}
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(

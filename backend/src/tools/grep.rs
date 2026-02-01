@@ -27,7 +27,16 @@ impl Tool for GrepTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(GrepArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path_pattern": {"type": ["string", "null"]},
+                "case_sensitive": {"type": ["boolean", "null"]}
+            },
+            "required": ["pattern"],
+            "additionalProperties": false
+        })
     }
 
     async fn execute(

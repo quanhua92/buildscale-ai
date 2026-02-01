@@ -198,7 +198,17 @@ EXAMPLE - EDIT FAILS, WHAT TO DO:
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(EditArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_string": {"type": "string"},
+                "new_string": {"type": "string"},
+                "last_read_hash": {"type": ["string", "null"]}
+            },
+            "required": ["path", "old_string", "new_string"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(

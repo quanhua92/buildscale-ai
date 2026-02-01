@@ -20,7 +20,14 @@ impl Tool for LsTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(LsArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": ["string", "null"]},
+                "recursive": {"type": ["boolean", "null"]}
+            },
+            "additionalProperties": false
+        })
     }
     
     async fn execute(

@@ -144,7 +144,14 @@ Remember: BUTTON CLICK = ask_user response, CHAT MESSAGE = user typing"#
     }
 
     fn definition(&self) -> Value {
-        super::strict_tool_schema::<ExitPlanModeArgs>()
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "plan_file_path": {"type": "string"}
+            },
+            "required": ["plan_file_path"],
+            "additionalProperties": false
+        })
     }
 
     async fn execute(

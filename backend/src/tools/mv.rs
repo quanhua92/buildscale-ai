@@ -25,7 +25,15 @@ impl Tool for MvTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(MvArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": {"type": "string"},
+                "destination": {"type": "string"}
+            },
+            "required": ["source", "destination"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(

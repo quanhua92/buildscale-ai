@@ -42,7 +42,7 @@ pub const PLAN_MODE_ERROR: &str = "System is in Plan Mode. To switch to Build Mo
 ///     active_plan_path: Some("/plans/project-roadmap.plan".to_string()),
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ToolConfig {
     /// Whether the system is in Plan Mode (true) or Build Mode (false)
     ///
@@ -61,6 +61,15 @@ pub struct ToolConfig {
     // pub skills: Vec<String>,
     // pub agent_id: Uuid,
     // pub session_id: Uuid,
+}
+
+impl Default for ToolConfig {
+    fn default() -> Self {
+        Self {
+            plan_mode: true, // Default to Plan Mode for safety
+            active_plan_path: None,
+        }
+    }
 }
 
 /// Tool trait for extensible toolset
@@ -104,50 +113,6 @@ pub trait Tool: Send + Sync {
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse>;
-}
-
-/// Creates a strict JSON Schema for tool parameters
-///
-/// OpenAI requires `additionalProperties: false` for all function parameters.
-/// This helper takes any schemars-generated schema and adds this field automatically.
-///
-/// # Example
-///
-/// ```rust
-/// use buildscale::tools::strict_tool_schema;
-/// use serde_json::json;
-///
-/// // Instead of manually constructing JSON Schema:
-/// // let schema = json!({
-/// //     "type": "object",
-/// //     "properties": {...},
-/// //     "additionalProperties": false  // Easy to forget!
-/// // });
-///
-/// // Use the helper:
-/// let schema = strict_tool_schema::<MyToolArgs>();
-/// ```
-pub fn strict_tool_schema<T>() -> Value
-where
-    T: schemars::JsonSchema,
-{
-    let type_name = std::any::type_name::<T>();
-    tracing::debug!(tool_type = type_name, "Generating strict tool schema");
-
-    let mut schema = serde_json::to_value(schemars::schema_for!(T))
-        .unwrap_or_else(|_| serde_json::json!({"type": "object"}));
-
-    if let Some(obj) = schema.as_object_mut() {
-        obj.insert("additionalProperties".into(), serde_json::json!(false));
-        tracing::debug!(
-            tool_type = type_name,
-            has_additional_properties = obj.contains_key("additionalProperties"),
-            "Schema generated with additionalProperties"
-        );
-    }
-
-    tracing::trace!(tool_type = type_name, schema = %serde_json::to_string(&schema).unwrap_or_default(), "Final schema output");
-    schema
 }
 
 /// Get tool by name from registry

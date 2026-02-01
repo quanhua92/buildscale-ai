@@ -28,7 +28,15 @@ impl Tool for WriteTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(WriteArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+                "file_type": {"type": ["string", "null"]}
+            },
+            "required": ["path", "content"]
+        })
     }
     
     async fn execute(
@@ -76,7 +84,7 @@ impl Tool for WriteTool {
 
         let result = if let Some(file) = existing_file {
             // Prepare content: handle auto-wrapping for documents
-            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
@@ -106,7 +114,7 @@ impl Tool for WriteTool {
             };
 
             // Prepare content: handle auto-wrapping for documents
-            let final_content = Self::prepare_content_for_type(file_type, write_args.content, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_type(file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
