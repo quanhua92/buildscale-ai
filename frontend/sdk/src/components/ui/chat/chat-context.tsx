@@ -217,6 +217,56 @@ export function ChatProvider({
     setChatId(initialChatId)
   }, [initialChatId])
 
+  // Fetch available models from backend providers API
+  React.useEffect(() => {
+    let mounted = true
+
+    const fetchProviders = async () => {
+      try {
+        const response = await apiClientRef.current.get<{ providers: any[], default_provider: string }>(
+          `/workspaces/${workspaceId}/providers`
+        )
+
+        if (mounted && response?.providers) {
+          // Convert backend provider response to ChatModel array
+          const models: ChatModel[] = []
+
+          for (const provider of response.providers) {
+            if (!provider.configured || !provider.models) continue
+
+            for (const model of provider.models) {
+              models.push({
+                id: model.id,
+                provider: provider.provider,
+                name: model.display_name,
+                model: model.model,
+                description: model.description,
+                contextWindow: model.context_window
+              })
+            }
+          }
+
+          // Update available models if we got any
+          if (models.length > 0) {
+            updateAvailableModels(models)
+          }
+        }
+      } catch (error) {
+        // If providers API fails, fall back to legacy models
+        console.warn('[Chat] Failed to fetch providers, using legacy models:', error)
+        if (mounted) {
+          updateAvailableModels(LEGACY_CHAT_MODELS)
+        }
+      }
+    }
+
+    fetchProviders()
+
+    return () => {
+      mounted = false
+    }
+  }, [workspaceId])
+
   const stopGeneration = React.useCallback(async () => {
     if (!chatId) return
 
