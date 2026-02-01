@@ -204,7 +204,12 @@ impl RigService {
             .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
 
         // Build additional parameters for OpenAI Responses API
-        let mut params = serde_json::json!({});
+        // CRITICAL: Set store: false to use stateless mode
+        // This prevents OpenAI from requiring reasoning items to be maintained across requests
+        // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
+        let mut params = serde_json::json!({
+            "store": false
+        });
 
         // Enable reasoning with effort and summaries based on configuration
         if ai_config.enable_reasoning_summaries {
