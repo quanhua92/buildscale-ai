@@ -648,23 +648,26 @@ export function ChatProvider({
         // All questions answered - send with structured metadata
         const answerCount = pendingQuestionSession.allQuestions.length
 
-        // Build a simple summary message for readability
-        let summaryText = `[User answered ${answerCount} question${answerCount > 1 ? 's' : ''}]`
+        // Build summary with each answer on separate lines
+        const answerLines: string[] = []
+        answerLines.push(`[User answered ${answerCount} question${answerCount > 1 ? 's' : ''}]`)
 
-        // Add brief summary of button answers for clarity
-        const buttonAnswers: string[] = []
+        // Add each answer with question text
         for (const q of pendingQuestionSession.allQuestions) {
           const ans = newAnswers[q.name!]
+          answerLines.push(`Q: ${q.question}`)
           if (q.buttons && q.buttons.length > 0) {
             const matchingButton = q.buttons.find((b: any) => b.value === ans)
             if (matchingButton) {
-              buttonAnswers.push(matchingButton.label)
+              answerLines.push(`[Answered: "${matchingButton.label}"]`)
             }
+          } else {
+            // Non-button answers (text input, etc.)
+            answerLines.push(`[Answered: ${JSON.stringify(ans)}]`)
           }
         }
-        if (buttonAnswers.length > 0) {
-          summaryText += `: ${buttonAnswers.join(', ')}`
-        }
+
+        let summaryText = answerLines.join('\n')
 
         try {
           // Send message with structured metadata
