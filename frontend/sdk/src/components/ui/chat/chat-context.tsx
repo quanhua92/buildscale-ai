@@ -190,6 +190,7 @@ export function ChatProvider({
   const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
   const [model, setModel] = React.useState<ChatModel>(DEFAULT_MODEL)
+  const [availableModels, setAvailableModelsState] = React.useState<ChatModel[]>([...LEGACY_CHAT_MODELS])
 
   // Plan Mode State
   const [mode, setModeState] = React.useState<ChatMode>('plan')
@@ -223,15 +224,19 @@ export function ChatProvider({
 
     const fetchProviders = async () => {
       try {
+        console.log('[Chat] Fetching providers from workspace:', workspaceId)
         const response = await apiClientRef.current.get<{ providers: any[], default_provider: string }>(
           `/workspaces/${workspaceId}/providers`
         )
+
+        console.log('[Chat] Providers API response:', response)
 
         if (mounted && response?.providers) {
           // Convert backend provider response to ChatModel array
           const models: ChatModel[] = []
 
           for (const provider of response.providers) {
+            console.log('[Chat] Processing provider:', provider.provider, 'configured:', provider.configured, 'models:', provider.models?.length || 0)
             if (!provider.configured || !provider.models) continue
 
             for (const model of provider.models) {
@@ -246,16 +251,22 @@ export function ChatProvider({
             }
           }
 
+          console.log('[Chat] Total models fetched:', models.length, models)
           // Update available models if we got any
           if (models.length > 0) {
-            updateAvailableModels(models)
+            if (mounted) {
+              setAvailableModelsState(models)
+            }
+            console.log('[Chat] Updated available models')
+          } else {
+            console.warn('[Chat] No models found in provider response')
           }
         }
       } catch (error) {
         // If providers API fails, fall back to legacy models
-        console.warn('[Chat] Failed to fetch providers, using legacy models:', error)
+        console.error('[Chat] Failed to fetch providers, using legacy models:', error)
         if (mounted) {
-          updateAvailableModels(LEGACY_CHAT_MODELS)
+          setAvailableModelsState(LEGACY_CHAT_MODELS)
         }
       }
     }
@@ -880,12 +891,12 @@ export function ChatProvider({
   const value = React.useMemo(
     () => ({
       messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId,
-      model, setModel, availableModels: getAvailableModels(),
+      model, setModel, availableModels,
       // Plan Mode
       mode, planFile, pendingQuestionSession, currentQuestion,
       submitAnswer, dismissQuestion, setMode
     }),
-    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel,
+    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel, availableModels,
      mode, planFile, pendingQuestionSession, currentQuestion, submitAnswer, dismissQuestion, setMode]
   )
 

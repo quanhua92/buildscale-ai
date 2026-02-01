@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "../select"
 import type { ChatModel, AiProvider } from "./chat-context"
-import { getAvailableModels, groupModelsByProvider, LEGACY_CHAT_MODELS, DEFAULT_MODEL } from "./chat-context"
+import { useChat, LEGACY_CHAT_MODELS, DEFAULT_MODEL } from "./chat-context"
 
 export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   modelName?: string
@@ -28,10 +28,22 @@ const PROVIDER_NAMES: Record<AiProvider, string> = {
 
 const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
   ({ className, modelName, onNewChat, model, onModelChange, children, ...props }, ref) => {
+    // Get available models from chat context
+    const { availableModels } = useChat()
+
     // Group models by provider
     const groupedModels = React.useMemo(() => {
-      return groupModelsByProvider()
-    }, [])
+      const grouped: Record<string, ChatModel[]> = { openai: [], openrouter: [] }
+      console.log('[ChatHeader] availableModels:', availableModels)
+      for (const m of availableModels) {
+        if (!grouped[m.provider]) {
+          grouped[m.provider] = []
+        }
+        grouped[m.provider].push(m)
+      }
+      console.log('[ChatHeader] groupedModels:', grouped)
+      return grouped
+    }, [availableModels])
 
     // For backward compatibility, if model is a string (legacy), convert it
     const currentModel = typeof model === 'string'
@@ -61,9 +73,8 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
           <div className="flex-1 flex justify-center">
             {currentModel && onModelChange ? (
               <Select value={currentModel.id} onValueChange={(value) => {
-                // Find the model object by id
-                const allModels = getAvailableModels()
-                const selectedModel = allModels.find(m => m.id === value)
+                // Find the model object by id from availableModels
+                const selectedModel = availableModels.find(m => m.id === value)
                 if (selectedModel) {
                   onModelChange(selectedModel)
                 }
