@@ -392,8 +392,8 @@ pub async fn update_chat(
             chat_id
         );
 
-        // Clear agent cache to force new agent creation
-        let _ = state.agents.get_handle(&chat_id).await;
+        // Clear agent cache to force new agent creation with updated mode
+        state.agents.remove(&chat_id).await;
     }
 
     Ok(Json(serde_json::json!({
