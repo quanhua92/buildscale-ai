@@ -74,7 +74,7 @@ function ChatContent() {
   return (
     <Chat containerClassName="max-w-4xl flex flex-col h-full">
       <Chat.Header
-        modelName={model}
+        modelName={model.name}
         onNewChat={handleNewChat}
         model={model}
         onModelChange={setModel}
