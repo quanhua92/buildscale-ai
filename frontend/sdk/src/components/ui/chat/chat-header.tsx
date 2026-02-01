@@ -9,8 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../select"
-import type { ChatModel } from "./chat-context"
-import { CHAT_MODELS } from "./chat-context"
+import type { ChatModel, AiProvider } from "./chat-context"
+import { getAvailableModels, groupModelsByProvider, LEGACY_CHAT_MODELS, DEFAULT_MODEL } from "./chat-context"
 
 export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   modelName?: string
@@ -20,8 +20,30 @@ export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   children?: React.ReactNode
 }
 
+// Provider display names
+const PROVIDER_NAMES: Record<AiProvider, string> = {
+  openai: "OpenAI",
+  openrouter: "OpenRouter"
+}
+
 const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
   ({ className, modelName, onNewChat, model, onModelChange, children, ...props }, ref) => {
+    // Group models by provider
+    const groupedModels = React.useMemo(() => {
+      return groupModelsByProvider()
+    }, [])
+
+    // For backward compatibility, if model is a string (legacy), convert it
+    const modelId = typeof model === 'string' ? model : model?.id
+    const currentModel = typeof model === 'string'
+      ? LEGACY_CHAT_MODELS.find(m => m.legacyId === model) || DEFAULT_MODEL
+      : model
+
+    // Get all available provider names
+    const availableProviders = Object.keys(groupedModels).filter(
+      provider => groupedModels[provider as AiProvider]?.length > 0
+    ) as AiProvider[]
+
     return (
       <div
         ref={ref}
@@ -38,17 +60,48 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
 
           {/* Center: Model Selector */}
           <div className="flex-1 flex justify-center">
-            {model && onModelChange ? (
-              <Select value={model} onValueChange={onModelChange}>
-                <SelectTrigger className="w-[180px] h-7 text-xs">
-                  <SelectValue placeholder="Select model" />
+            {currentModel && onModelChange ? (
+              <Select value={currentModel.id} onValueChange={(value) => {
+                // Find the model object by id
+                const allModels = getAvailableModels()
+                const selectedModel = allModels.find(m => m.id === value)
+                if (selectedModel) {
+                  onModelChange(selectedModel)
+                }
+              }}>
+                <SelectTrigger className="w-[220px] h-7 text-xs">
+                  <SelectValue placeholder="Select model">
+                    {currentModel.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {CHAT_MODELS.map((modelOption) => (
-                    <SelectItem key={modelOption} value={modelOption} className="text-xs">
-                      {modelOption}
-                    </SelectItem>
-                  ))}
+                  {availableProviders.map((provider, providerIndex) => {
+                    const providerModels = groupedModels[provider]
+                    if (!providerModels || providerModels.length === 0) return null
+
+                    return (
+                      <React.Fragment key={provider}>
+                        {/* Provider Label */}
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                          {PROVIDER_NAMES[provider]}
+                        </div>
+                        {/* Models for this provider */}
+                        {providerModels.map((modelOption) => (
+                          <SelectItem
+                            key={modelOption.id}
+                            value={modelOption.id}
+                            className="text-xs pl-6"
+                          >
+                            {modelOption.name}
+                          </SelectItem>
+                        ))}
+                        {/* Separator between providers (except last) */}
+                        {providerIndex < availableProviders.length - 1 && (
+                          <div className="my-1 border-t border-border/50" />
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             ) : modelName ? (
