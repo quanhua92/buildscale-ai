@@ -1885,7 +1885,8 @@ curl http://localhost:3000/api/v1/providers \
           "model": "gpt-4o",
           "display_name": "GPT-4o",
           "description": "Latest GPT-4 model",
-          "context_window": 128000
+          "context_window": 128000,
+          "is_default": false
         },
         {
           "id": "openai:gpt-5-mini",
@@ -1893,15 +1894,26 @@ curl http://localhost:3000/api/v1/providers \
           "model": "gpt-5-mini",
           "display_name": "GPT-5 Mini",
           "description": "Efficient GPT-5 model",
-          "context_window": 128000
+          "context_window": 128000,
+          "is_default": true
         }
       ]
     },
     {
       "provider": "openrouter",
       "display_name": "OpenRouter",
-      "configured": false,
-      "models": []
+      "configured": true,
+      "models": [
+        {
+          "id": "openrouter:moonshotai/kimi-k2.5",
+          "provider": "openrouter",
+          "model": "moonshotai/kimi-k2.5",
+          "display_name": "Kimi K2.5",
+          "description": "Moonshot AI's latest model",
+          "context_window": 128000,
+          "is_default": false
+        }
+      ]
     }
   ],
   "default_provider": "openai",
@@ -1922,8 +1934,9 @@ curl http://localhost:3000/api/v1/providers \
 | `providers[].models[].provider` | string | Provider name |
 | `providers[].models[].model` | string | Model name without provider prefix |
 | `providers[].models[].display_name` | string | Human-readable model name |
-| `providers[].models[].description` | string or null | Model description |
-| `providers[].models[].context_window` | integer or null | Context window size in tokens |
+| `providers[].models[].description` | string | Optional model description |
+| `providers[].models[].context_window` | number | Context window size in tokens |
+| `providers[].models[].is_default` | boolean | **Whether this is the default model** (only one model should be `true`) |
 | `default_provider` | string | Default provider identifier |
 | `default_model` | string | Default model for new chat sessions (e.g., "openai:gpt-5-mini") |
 

@@ -34,6 +34,7 @@ export interface ChatModel {
   legacyId?: string       // For backward compatibility with old model strings
   description?: string    // Optional model description
   contextWindow?: number  // Optional context window size in tokens
+  is_default?: boolean    // Whether this is the default model from the API
 }
 
 // Legacy models for backward compatibility
@@ -246,7 +247,8 @@ export function ChatProvider({
                 name: model.display_name,
                 model: model.model,
                 description: model.description,
-                contextWindow: model.context_window
+                contextWindow: model.context_window,
+                is_default: model.is_default
               })
             }
           }
@@ -256,6 +258,13 @@ export function ChatProvider({
           if (models.length > 0) {
             if (mounted) {
               setAvailableModelsState(models)
+
+              // Set default model based on is_default flag
+              const defaultModel = models.find(m => m.is_default)
+              if (defaultModel) {
+                console.log('[Chat] Setting default model from API:', defaultModel)
+                setModel(defaultModel)
+              }
             }
             console.log('[Chat] Updated available models')
           } else {

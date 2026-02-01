@@ -45,6 +45,8 @@ pub struct ModelInfo {
     /// Context window size in tokens
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<i32>,
+    /// Whether this is the default model for this workspace
+    pub is_default: bool,
 }
 
 /// Provider configuration response
@@ -110,8 +112,18 @@ pub async fn get_providers(
     // Get AI configuration to determine which providers are configured
     let ai_config = &state.config.ai;
 
-    // Get default provider
+    // Get default provider and model
     let default_provider = ai_config.providers.default_provider.clone();
+    let default_model = ai_config.providers.default_model.clone();
+
+    // Parse default model identifier to extract provider and model name
+    // Format: "provider:model" or "model" (uses default_provider)
+    let (default_provider_for_model, default_model_name) = if default_model.contains(':') {
+        let parts: Vec<&str> = default_model.splitn(2, ':').collect();
+        (parts[0].to_string(), parts[1].to_string())
+    } else {
+        (default_provider.clone(), default_model.clone())
+    };
 
     // Check which providers are configured
     let openai_configured = ai_config.providers.openai.is_some();
@@ -128,13 +140,18 @@ pub async fn get_providers(
 
         let model_infos: Vec<ModelInfo> = models
             .into_iter()
-            .map(|m| ModelInfo {
-                id: format!("openai:{}", m.model_name),
-                provider: "openai".to_string(),
-                model: m.model_name,
-                display_name: m.display_name,
-                description: m.description,
-                context_window: m.context_window,
+            .map(|m| {
+                let is_default = default_provider_for_model == "openai"
+                    && default_model_name == m.model_name;
+                ModelInfo {
+                    id: format!("openai:{}", m.model_name),
+                    provider: "openai".to_string(),
+                    model: m.model_name,
+                    display_name: m.display_name,
+                    description: m.description,
+                    context_window: m.context_window,
+                    is_default,
+                }
             })
             .collect();
 
@@ -154,13 +171,18 @@ pub async fn get_providers(
 
         let model_infos: Vec<ModelInfo> = models
             .into_iter()
-            .map(|m| ModelInfo {
-                id: format!("openrouter:{}", m.model_name),
-                provider: "openrouter".to_string(),
-                model: m.model_name,
-                display_name: m.display_name,
-                description: m.description,
-                context_window: m.context_window,
+            .map(|m| {
+                let is_default = default_provider_for_model == "openrouter"
+                    && default_model_name == m.model_name;
+                ModelInfo {
+                    id: format!("openrouter:{}", m.model_name),
+                    provider: "openrouter".to_string(),
+                    model: m.model_name,
+                    display_name: m.display_name,
+                    description: m.description,
+                    context_window: m.context_window,
+                    is_default,
+                }
             })
             .collect();
 
@@ -209,6 +231,16 @@ pub async fn get_workspace_providers(
     // Get AI configuration
     let ai_config = &state.config.ai;
     let default_provider = ai_config.providers.default_provider.clone();
+    let default_model = ai_config.providers.default_model.clone();
+
+    // Parse default model identifier to extract provider and model name
+    // Format: "provider:model" or "model" (uses default_provider)
+    let (default_provider_for_model, default_model_name) = if default_model.contains(':') {
+        let parts: Vec<&str> = default_model.splitn(2, ':').collect();
+        (parts[0].to_string(), parts[1].to_string())
+    } else {
+        (default_provider.clone(), default_model.clone())
+    };
 
     // Check which providers are configured
     let openai_configured = ai_config.providers.openai.is_some();
@@ -225,13 +257,18 @@ pub async fn get_workspace_providers(
 
         let model_infos: Vec<ModelInfo> = models
             .into_iter()
-            .map(|m| ModelInfo {
-                id: format!("openai:{}", m.model_name),
-                provider: "openai".to_string(),
-                model: m.model_name,
-                display_name: m.display_name,
-                description: m.description,
-                context_window: m.context_window,
+            .map(|m| {
+                let is_default = default_provider_for_model == "openai"
+                    && default_model_name == m.model_name;
+                ModelInfo {
+                    id: format!("openai:{}", m.model_name),
+                    provider: "openai".to_string(),
+                    model: m.model_name,
+                    display_name: m.display_name,
+                    description: m.description,
+                    context_window: m.context_window,
+                    is_default,
+                }
             })
             .collect();
 
@@ -250,13 +287,18 @@ pub async fn get_workspace_providers(
 
         let model_infos: Vec<ModelInfo> = models
             .into_iter()
-            .map(|m| ModelInfo {
-                id: format!("openrouter:{}", m.model_name),
-                provider: "openrouter".to_string(),
-                model: m.model_name,
-                display_name: m.display_name,
-                description: m.description,
-                context_window: m.context_window,
+            .map(|m| {
+                let is_default = default_provider_for_model == "openrouter"
+                    && default_model_name == m.model_name;
+                ModelInfo {
+                    id: format!("openrouter:{}", m.model_name),
+                    provider: "openrouter".to_string(),
+                    model: m.model_name,
+                    display_name: m.display_name,
+                    description: m.description,
+                    context_window: m.context_window,
+                    is_default,
+                }
             })
             .collect();
 

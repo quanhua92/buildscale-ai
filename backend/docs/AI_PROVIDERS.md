@@ -232,7 +232,8 @@ Returns all configured providers and their available models.
           "model": "gpt-4o",
           "display_name": "GPT-4o",
           "description": "Latest GPT-4 model",
-          "context_window": 128000
+          "context_window": 128000,
+          "is_default": false
         },
         {
           "id": "openai:gpt-5-mini",
@@ -240,15 +241,26 @@ Returns all configured providers and their available models.
           "model": "gpt-5-mini",
           "display_name": "GPT-5 Mini",
           "description": "Efficient GPT-5 model",
-          "context_window": 128000
+          "context_window": 128000,
+          "is_default": true
         }
       ]
     },
     {
       "provider": "openrouter",
       "display_name": "OpenRouter",
-      "configured": false,
-      "models": []
+      "configured": true,
+      "models": [
+        {
+          "id": "openrouter:moonshotai/kimi-k2.5",
+          "provider": "openrouter",
+          "model": "moonshotai/kimi-k2.5",
+          "display_name": "Kimi K2.5",
+          "description": "Moonshot AI's latest model",
+          "context_window": 128000,
+          "is_default": false
+        }
+      ]
     }
   ],
   "default_provider": "openai",
@@ -261,6 +273,13 @@ Returns all configured providers and their available models.
 - `display_name` - Human-readable provider name
 - `configured` - Whether this provider has API credentials configured
 - `models` - Array of available models (empty if not configured)
+  - `id` - Full model identifier with provider prefix (e.g., "openai:gpt-4o")
+  - `provider` - Provider name
+  - `model` - Model name without provider prefix
+  - `display_name` - Human-readable model name
+  - `description` - Optional model description
+  - `context_window` - Optional context window size in tokens
+  - `is_default` - **Whether this is the default model** (only one model should have this set to `true`)
 - `default_provider` - Default provider to use for legacy model strings
 - `default_model` - Default model for new chat sessions (e.g., "openai:gpt-5-mini")
 
