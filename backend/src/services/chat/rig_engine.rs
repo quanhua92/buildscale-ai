@@ -2,6 +2,7 @@ use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
 use crate::services::chat::rig_tools::{
     RigEditTool, RigGrepTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
     RigRmTool, RigTouchTool, RigWriteTool,
+    RigAskUserTool, RigExitPlanModeTool,
 };
 use crate::services::storage::FileStorageService;
 use crate::DbPool;
@@ -46,6 +47,7 @@ impl RigService {
         pool: DbPool,
         storage: Arc<FileStorageService>,
         workspace_id: Uuid,
+        chat_id: Uuid,
         user_id: Uuid,
         session: &ChatSession,
         ai_config: &crate::config::AiConfig,
@@ -60,8 +62,53 @@ impl RigService {
         };
 
         // 2. Build the Rig Agent with Tools
-        let persona = session.agent_config.persona_override.clone()
-            .unwrap_or_else(|| crate::agents::get_persona(None));
+        // Select persona based on mode (plan vs build)
+        let persona = if let Some(ref override_persona) = session.agent_config.persona_override {
+            override_persona.clone()
+        } else {
+            // Auto-select persona based on chat mode
+            let mode = session.agent_config.mode.as_str();
+
+            // For build mode, read plan content and inject into builder persona
+            if mode == "build" {
+                if let Some(ref plan_file_path) = session.agent_config.plan_file {
+                    // Read plan file content
+                    let mut conn = pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+                    // Get plan file
+                    if let Ok(Some(plan_file)) = crate::queries::files::get_file_by_path(
+                        &mut conn, workspace_id, plan_file_path
+                    ).await {
+                        if let Ok(plan_with_content) = crate::services::files::get_file_with_content(
+                            &mut conn, &storage, plan_file.id
+                        ).await {
+                            let plan_content = plan_with_content.content.to_string();
+                            // Builder persona with plan content
+                            crate::agents::get_persona(Some("builder"), None, Some(&plan_content))
+                        } else {
+                            // Failed to read plan, use builder without plan
+                            crate::agents::get_persona(Some("builder"), None, Some("# Error: Could not read plan file"))
+                        }
+                    } else {
+                        // Plan file not found, use builder without plan
+                        crate::agents::get_persona(Some("builder"), None, Some("# Error: Plan file not found"))
+                    }
+                } else {
+                    // No plan file specified, use builder without plan
+                    crate::agents::get_persona(Some("builder"), None, Some("# Error: No plan file specified in build mode"))
+                }
+            } else {
+                // Plan mode or default
+                crate::agents::get_persona(None, Some(mode), None)
+            }
+        };
+
+        // TODO: Phase 3 - Extract ToolConfig from chat metadata
+        // For now, derive ToolConfig from agent_config.mode and agent_config.plan_file
+        let tool_config = crate::tools::ToolConfig {
+            plan_mode: session.agent_config.mode == "plan",
+            active_plan_path: session.agent_config.plan_file.clone(),
+        };
 
         // 3. Build agent with optional reasoning parameters
         let agent_builder = self.client.agent(model_name)
@@ -70,55 +117,89 @@ impl RigService {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigReadTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigWriteTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigRmTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigMvTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigTouchTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigEditTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigGrepTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
             })
             .tool(RigMkdirTool {
                 pool: pool.clone(),
                 storage: storage.clone(),
                 workspace_id,
+                chat_id,
                 user_id,
+                tool_config: tool_config.clone(),
+            })
+            .tool(RigAskUserTool {
+                pool: pool.clone(),
+                storage: storage.clone(),
+                workspace_id,
+                chat_id,
+                user_id,
+                tool_config: tool_config.clone(),
+            })
+            .tool(RigExitPlanModeTool {
+                pool: pool.clone(),
+                storage: storage.clone(),
+                workspace_id,
+                chat_id,
+                user_id,
+                tool_config: tool_config.clone(),
             })
             .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
 
@@ -127,20 +208,23 @@ impl RigService {
         // This prevents OpenAI from requiring reasoning items to be maintained across requests
         // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
         let mut params = serde_json::json!({
-            "store": false,
-            "reasoning": {
-                "effort": ai_config.reasoning_effort
-            }
+            "store": false
         });
 
-        // Enable reasoning summaries based on configuration
+        // Enable reasoning with effort and summaries based on configuration
         if ai_config.enable_reasoning_summaries {
-            if let Some(obj) = params.get_mut("reasoning") {
-                if let Some(reasoning_obj) = obj.as_object_mut() {
-                    reasoning_obj.insert("summary".to_string(), serde_json::json!("auto"));
-                }
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert("reasoning".to_string(), serde_json::json!({
+                    "effort": ai_config.reasoning_effort,
+                    "summary": "auto"
+                }));
             }
         }
+
+        tracing::info!(
+            "Agent additional_params: {}",
+            serde_json::to_string(&params).unwrap_or_else(|_| "INVALID".to_string())
+        );
 
         let agent_builder = agent_builder.additional_params(params);
 

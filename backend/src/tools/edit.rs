@@ -10,7 +10,7 @@ use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Helper to get file content with disk fallback
 async fn get_file_content_for_edit(
@@ -28,10 +28,11 @@ async fn perform_edit(
     storage: &FileStorageService,
     workspace_id: Uuid,
     user_id: Uuid,
+    config: ToolConfig,
     args: EditArgs,
 ) -> Result<ToolResponse> {
     let path = super::normalize_path(&args.path);
-    
+
     // Validation: old_string cannot be empty
     if args.old_string.is_empty() {
          return Err(Error::Validation(ValidationErrors::Single {
@@ -41,12 +42,20 @@ async fn perform_edit(
     }
 
     let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
-    
+
     let file = if let Some(f) = existing_file {
         f
     } else {
         return Err(Error::NotFound(format!("File not found: {}", path)));
     };
+
+    // Plan Mode Guard: Only allow Plan files in plan mode
+    if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "path".to_string(),
+            message: super::PLAN_MODE_ERROR.to_string(),
+        }));
+    }
 
     // Virtual File Protection: Prevent direct edits to system-managed files (e.g. Chats)
     if file.is_virtual {
@@ -158,11 +167,48 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &'static str {
-        "Edits a file by replacing a unique search string with a replacement string. CRITICAL: (1) old_string MUST be non-empty and unique in file. (2) This is a REPLACE operation - old_string is completely removed and replaced by new_string. (3) To preserve original content, you MUST include it in new_string. (4) Always use last_read_hash from prior read to prevent conflicts. Fails if old_string is empty, not found, or found multiple times."
+        r#"Edits a file by replacing a unique search string with a replacement string.
+
+⚠️ MANDATORY WORKFLOW (MUST FOLLOW IN ORDER):
+1. READ the file FIRST using read tool → this gives you exact current content AND last_read_hash
+2. COPY the exact text from read response to use as old_string (character-perfect match)
+3. EDIT by passing that exact text as old_string, your replacement as new_string, AND the last_read_hash
+
+❌ WRONG: Edit without reading first → old_string won't match → edit fails
+✓ CORRECT: read file → use exact content from response as old_string → edit succeeds
+
+CRITICAL REQUIREMENTS:
+• old_string MUST be non-empty and must match file content EXACTLY (use copy-paste from read response)
+• old_string must be UNIQUE (appears exactly once in the file)
+• This is a REPLACE operation - old_string is completely removed, replaced by new_string
+• To preserve original content, you MUST include it in new_string
+• Always include last_read_hash from the most recent read (prevents edit conflicts)
+
+ERROR EXAMPLE: If you edit without reading, old_string might have wrong whitespace/formatting → fails with "Search string not found"
+
+🔄 IF EDIT FAILS (search string not found), FOLLOW THESE STEPS IN ORDER:
+1. Re-read the file to get fresh content (file may have changed)
+2. Try a SMALLER, more unique substring (2-3 unique words instead of entire paragraph)
+3. Try different unique text near your target edit location
+4. Only use write tool as LAST RESORT (write overwrites entire file, risk of data loss)
+
+EXAMPLE - EDIT FAILS, WHAT TO DO:
+❌ BAD: edit fails → immediately use write (loses data you didn't intend to change)
+✓ GOOD: edit fails → re-read file → find smaller unique text → try edit again → if still fails, then consider write"#
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(EditArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_string": {"type": "string"},
+                "new_string": {"type": "string"},
+                "last_read_hash": {"type": ["string", "null"]}
+            },
+            "required": ["path", "old_string", "new_string"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(
@@ -171,9 +217,10 @@ impl Tool for EditTool {
         storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let edit_args: EditArgs = serde_json::from_value(args)?;
-        perform_edit(conn, storage, workspace_id, user_id, edit_args).await
+        perform_edit(conn, storage, workspace_id, user_id, config, edit_args).await
     }
 }

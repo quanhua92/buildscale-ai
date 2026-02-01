@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::str::FromStr;
 use uuid::Uuid;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Write file contents tool
 ///
@@ -24,11 +24,27 @@ impl Tool for WriteTool {
     }
 
     fn description(&self) -> &'static str {
-        "Creates a new file or completely replaces existing file content. For Document files, raw string content is auto-wrapped into {\"text\": \"...\"} format. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement."
+        "Creates a new file or completely replaces existing file content. Content is stored as-is: strings are stored as raw text, JSON objects are stored as structured data. CRITICAL: This is NOT for partial edits - use 'edit' tool to modify specific sections. Use 'write' only for new files or complete file replacement. OVERWRITE PROTECTION: By default (overwrite=false), returns error if file exists to prevent accidental overwrites. Set overwrite=true to explicitly replace existing files. For modifying existing files, 'edit' tool is recommended."
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(WriteArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {
+                    "type": "string",
+                    "description": "File content as a string (for JSON content, pass as serialized JSON string)"
+                },
+                "file_type": {"type": ["string", "null"]},
+                "overwrite": {
+                    "type": "boolean",
+                    "description": "If false (default), returns error when file exists to prevent accidental overwrites. Set to true to explicitly overwrite existing files. Recommendation: Use 'edit' tool for modifying existing files instead of overwriting."
+                }
+            },
+            "required": ["path", "content"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(
@@ -37,12 +53,44 @@ impl Tool for WriteTool {
         storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let write_args: WriteArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&write_args.path);
-        
+
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
+
+        // Overwrite Protection: Prevent accidental file overwrites
+        if existing_file.is_some() && !write_args.overwrite {
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "path".to_string(),
+                message: format!(
+                    "File already exists: {}. To overwrite, set overwrite=true. \
+                    However, for modifying existing files, the 'edit' tool is recommended instead of overwriting.",
+                    path
+                ),
+            }));
+        }
+
+        // Plan Mode Guard: Only allow Plan files in plan mode
+        if config.plan_mode {
+            // For new files, check if it's a .plan file
+            // For existing files, check the file type
+            let is_plan_file = if let Some(ref file) = existing_file {
+                matches!(file.file_type, FileType::Plan)
+            } else {
+                // New file - check extension
+                path.ends_with(".plan")
+            };
+
+            if !is_plan_file {
+                return Err(Error::Validation(ValidationErrors::Single {
+                    field: "path".to_string(),
+                    message: super::PLAN_MODE_ERROR.to_string(),
+                }));
+            }
+        }
         
         // Virtual File Protection: Prevent direct writes to system-managed files (e.g. Chats)
         if let Some(ref file) = existing_file {
@@ -56,7 +104,7 @@ impl Tool for WriteTool {
 
         let result = if let Some(file) = existing_file {
             // Prepare content: handle auto-wrapping for documents
-            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
                 author_id: Some(user_id),
@@ -86,7 +134,7 @@ impl Tool for WriteTool {
             };
 
             // Prepare content: handle auto-wrapping for documents
-            let final_content = Self::prepare_content_for_type(file_type, write_args.content, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_type(file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,

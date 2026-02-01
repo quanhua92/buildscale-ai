@@ -5,7 +5,7 @@ use crate::queries::files as file_queries;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Read file contents tool
 ///
@@ -19,11 +19,18 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &'static str {
-        "Reads the content of a file at the specified path. Returns file content with a hash for change detection. Cannot read folders - folders have no content. Always read a file before editing to get the latest hash."
+        "Reads the content of a file at the specified path. Returns file content with a hash for change detection. Content is returned as stored - raw text for text files, JSON for structured data. Cannot read folders - folders have no content. Always read a file before editing to get the latest hash."
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(ReadArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"}
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(
@@ -32,6 +39,7 @@ impl Tool for ReadTool {
         storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
+        _config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let read_args: ReadArgs = serde_json::from_value(args)?;

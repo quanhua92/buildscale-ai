@@ -312,9 +312,17 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ---
 
-### write - Create or Update File
+### write - Create or Replace File
 
-Creates a new file or updates an existing file with new content. Automatically creates nested folders if they don't exist.
+Creates a new file or completely replaces an existing file with new content. Automatically creates nested folders if they don't exist.
+
+**IMPORTANT**: This tool performs **complete file replacement**, not partial edits. For modifying existing files, use the `edit` tool instead.
+
+#### Overwrite Protection
+
+By default (`overwrite=false`), the tool returns an error if the file already exists to prevent accidental overwrites. To explicitly overwrite an existing file, set `overwrite=true`.
+
+**Recommendation**: Use the `edit` tool for modifying existing files instead of overwriting.
 
 #### Arguments
 
@@ -322,7 +330,8 @@ Creates a new file or updates an existing file with new content. Automatically c
 {
   "path": "/file.txt",
   "content": { ... },
-  "file_type": "document"
+  "file_type": "document",
+  "overwrite": false
 }
 ```
 
@@ -331,6 +340,7 @@ Creates a new file or updates an existing file with new content. Automatically c
 | `path` | string | Yes | - | Full path to the file |
 | `content` | object | Yes | - | File content as JSON value |
 | `file_type` | string | No | `document` | Type: `document`, `folder`, `canvas`, `chat`, `whiteboard` |
+| `overwrite` | boolean | No | `false` | Set to `true` to overwrite existing files. Default prevents accidental overwrites. |
 
 #### Request Example (Create New File)
 
@@ -367,7 +377,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   }'
 ```
 
-#### Request Example (Update Existing File)
+#### Request Example (Overwrite Existing File)
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
@@ -377,9 +387,25 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "write",
     "args": {
       "path": "/documents/notes.md",
-      "content": "# Updated Notes\n\nModified content"
+      "content": "# Completely Replaced Content\n\nThis replaces the entire file",
+      "overwrite": true
     }
   }'
+```
+
+**Note**: For partial file modifications, use the `edit` tool instead.
+
+#### Error Example (File Exists Without Overwrite)
+
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "fields": {
+    "path": "File already exists: /documents/notes.md. To overwrite, set overwrite=true. However, for modifying existing files, the 'edit' tool is recommended instead of overwriting."
+  }
+}
 ```
 
 #### Response (200 OK)

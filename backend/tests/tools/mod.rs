@@ -13,4 +13,5 @@ pub mod grep_tests;
 pub mod mkdir_tests;
 pub mod integration_tests;
 pub mod virtual_files_tests;
+pub mod plan_mode_tests;
 pub mod common;

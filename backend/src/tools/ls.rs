@@ -2,7 +2,7 @@ use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, LsA
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// List directory contents tool
 ///
@@ -20,7 +20,14 @@ impl Tool for LsTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(LsArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": ["string", "null"]},
+                "recursive": {"type": ["boolean", "null"]}
+            },
+            "additionalProperties": false
+        })
     }
     
     async fn execute(
@@ -29,6 +36,7 @@ impl Tool for LsTool {
         _storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
+        _config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let ls_args: LsArgs = serde_json::from_value(args)?;

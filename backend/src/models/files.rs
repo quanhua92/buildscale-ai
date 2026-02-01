@@ -18,6 +18,7 @@ pub enum FileType {
     Whiteboard,
     Agent,
     Skill,
+    Plan,
 }
 
 #[derive(

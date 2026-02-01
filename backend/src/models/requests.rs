@@ -4,9 +4,53 @@ use crate::models::{
     workspace_members::WorkspaceMember,
     workspaces::Workspace,
 };
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+/// Wrapper for JSON values with OpenAI-compatible schema
+///
+/// Accepts any JSON value (string, number, boolean, array, object).
+/// The AI should pass JSON as a string, which gets parsed into the actual value.
+#[derive(Debug, Clone)]
+pub struct JsonValue(pub serde_json::Value);
+
+impl<'de> Deserialize<'de> for JsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        // If the value is a string, try to parse it as JSON
+        // This handles cases where the LLM provides a JSON object as a stringified JSON
+        if let serde_json::Value::String(s) = &value {
+            if let Ok(parsed_value) = serde_json::from_str(s) {
+                return Ok(JsonValue(parsed_value));
+            }
+        }
+        Ok(JsonValue(value))
+    }
+}
+
+impl Serialize for JsonValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl From<JsonValue> for serde_json::Value {
+    fn from(val: JsonValue) -> Self {
+        val.0
+    }
+}
+
+impl From<serde_json::Value> for JsonValue {
+    fn from(val: serde_json::Value) -> Self {
+        JsonValue(val)
+    }
+}
 
 /// Request for creating a workspace with automatic setup
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,6 +249,11 @@ pub struct SearchResult {
 pub struct ToolRequest {
     pub tool: String,
     pub args: serde_json::Value,
+    /// Optional mode override (default: false = build mode)
+    /// - false: Build mode - full tool access (write, edit, rm, mv, etc.)
+    /// - true: Plan mode - restricted to plan files only
+    #[serde(default)]
+    pub plan_mode: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -220,44 +269,58 @@ pub struct CreateChatRequest {
 pub struct PostChatMessageRequest {
     pub content: String,
     pub model: Option<String>,
+    /// Optional metadata for the message (e.g., question answers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateChatRequest {
+    /// Application data to update (mode, plan_file, etc.)
+    pub app_data: serde_json::Value,
 }
 
 /// Tool-specific argument structures
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsArgs {
     pub path: Option<String>,
     pub recursive: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadArgs {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteArgs {
     pub path: String,
-    pub content: serde_json::Value,
+    pub content: JsonValue,
     pub file_type: Option<String>,
+    /// If false (default), returns error when file exists to prevent accidental overwrites.
+    /// Set to true to explicitly overwrite existing files.
+    /// Recommendation: Use 'edit' tool for modifying existing files instead of overwriting.
+    #[serde(default)]
+    pub overwrite: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RmArgs {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MvArgs {
     pub source: String,
     pub destination: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MkdirArgs {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditArgs {
     pub path: String,
     pub old_string: String,
@@ -265,16 +328,49 @@ pub struct EditArgs {
     pub last_read_hash: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrepArgs {
     pub pattern: String,
     pub path_pattern: Option<String>,
     pub case_sensitive: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TouchArgs {
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AskUserArgs {
+    /// Array of questions (always array, single = 1-item array)
+    pub questions: Vec<QuestionInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionInput {
+    /// Question identifier (used in answer object)
+    pub name: String,
+    /// Question text (Markdown)
+    pub question: String,
+    /// JSON Schema for answer validation and UI generation
+    pub schema: JsonValue,
+    /// Optional button definitions (overrides schema-based rendering)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<Vec<QuestionButtonInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionButtonInput {
+    pub label: String,
+    /// Button value
+    pub value: JsonValue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExitPlanModeArgs {
+    pub plan_file_path: String,
 }
 
 /// Unified tool response structure
@@ -322,7 +418,7 @@ pub struct ReadResult {
     pub hash: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteResult {
     pub path: String,
     pub file_id: Uuid,
@@ -330,26 +426,39 @@ pub struct WriteResult {
     pub hash: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RmResult {
     pub path: String,
     pub file_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MvResult {
     pub from_path: String,
     pub to_path: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MkdirResult {
     pub path: String,
     pub file_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TouchResult {
     pub path: String,
     pub file_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AskUserResult {
+    pub status: String,
+    pub question_id: Uuid,
+    pub questions: Vec<crate::models::sse::Question>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExitPlanModeResult {
+    pub mode: String,
+    pub plan_file: String,
 }

@@ -13,16 +13,74 @@ pub mod touch;
 pub mod edit;
 pub mod grep;
 pub mod mkdir;
+pub mod ask_user;
+pub mod exit_plan_mode;
 
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, services::storage::FileStorageService};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
 
+/// Error message shown when tools are restricted in Plan Mode
+///
+/// This constant provides a consistent, helpful error message across all tools
+/// that are restricted in Plan Mode, explaining how to transition to Build Mode.
+pub const PLAN_MODE_ERROR: &str = "System is in Plan Mode. To switch to Build Mode: 1) Use ask_user with Accept/Reject buttons to request approval, 2) When user clicks Accept (you'll see [Answered: \"Accept\"]), call exit_plan_mode with your plan file path.";
+
+/// Tool configuration for execution context
+///
+/// This configuration object is passed to all tools during execution
+/// and provides context about the current execution mode and state.
+///
+/// # Examples
+///
+/// ```rust
+/// use buildscale::tools::ToolConfig;
+///
+/// let config = ToolConfig {
+///     plan_mode: true,
+///     active_plan_path: Some("/plans/project-roadmap.plan".to_string()),
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct ToolConfig {
+    /// Whether the system is in Plan Mode (true) or Build Mode (false)
+    ///
+    /// In Plan Mode, file modification tools are restricted to .plan files only.
+    /// In Build Mode, all tools have full access.
+    pub plan_mode: bool,
+
+    /// Path to the active plan file (only set in Build Mode)
+    ///
+    /// This is the absolute path to the .plan file that was approved and
+    /// is now being executed. The plan content is injected into the Builder
+    /// agent's context.
+    pub active_plan_path: Option<String>,
+
+    // Future extensibility:
+    // pub skills: Vec<String>,
+    // pub agent_id: Uuid,
+    // pub session_id: Uuid,
+}
+
+impl Default for ToolConfig {
+    fn default() -> Self {
+        Self {
+            plan_mode: false, // Default to Build Mode for normal operation
+            active_plan_path: None,
+        }
+    }
+}
+
 /// Tool trait for extensible toolset
 ///
 /// All tools implement this trait to provide a unified execution interface.
 /// This allows for easy addition of new tools to the system.
+///
+/// # Breaking Change Notice
+/// As of Plan Mode implementation, all tools must accept a `ToolConfig` parameter
+/// in their execute method. This provides context about the current execution mode
+/// (Plan vs Build) and allows tools to enforce mode-specific restrictions.
 #[async_trait]
 pub trait Tool: Send + Sync {
     /// Returns the name of this tool
@@ -41,6 +99,7 @@ pub trait Tool: Send + Sync {
     /// * `storage` - File storage service
     /// * `workspace_id` - ID of workspace to operate on
     /// * `user_id` - ID of authenticated user executing the tool
+    /// * `config` - Tool execution configuration (Plan/Build mode context)
     /// * `args` - Tool-specific arguments as JSON value
     ///
     /// # Returns
@@ -51,6 +110,7 @@ pub trait Tool: Send + Sync {
         storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse>;
 }
@@ -76,6 +136,8 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "edit" => Ok(ToolExecutor::Edit),
         "grep" => Ok(ToolExecutor::Grep),
         "mkdir" => Ok(ToolExecutor::Mkdir),
+        "ask_user" => Ok(ToolExecutor::AskUser),
+        "exit_plan_mode" => Ok(ToolExecutor::ExitPlanMode),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -118,6 +180,8 @@ pub enum ToolExecutor {
     Edit,
     Grep,
     Mkdir,
+    AskUser,
+    ExitPlanMode,
 }
 
 impl ToolExecutor {
@@ -127,6 +191,7 @@ impl ToolExecutor {
         storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let name = match self {
@@ -139,6 +204,8 @@ impl ToolExecutor {
             ToolExecutor::Edit => "edit",
             ToolExecutor::Grep => "grep",
             ToolExecutor::Mkdir => "mkdir",
+            ToolExecutor::AskUser => "ask_user",
+            ToolExecutor::ExitPlanMode => "exit_plan_mode",
         };
 
         let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
@@ -147,15 +214,17 @@ impl ToolExecutor {
         tracing::debug!(args = %args, "Tool input");
 
         let result = match self {
-            ToolExecutor::Ls => ls::LsTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Read => read::ReadTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Write => write::WriteTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Rm => rm::RmTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Mv => mv::MvTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Touch => touch::TouchTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Edit => edit::EditTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Grep => grep::GrepTool.execute(conn, storage, workspace_id, user_id, args).await,
-            ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, storage, workspace_id, user_id, args).await,
+            ToolExecutor::Ls => ls::LsTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Read => read::ReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Write => write::WriteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Rm => rm::RmTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Mv => mv::MvTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Touch => touch::TouchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Edit => edit::EditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Grep => grep::GrepTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::AskUser => ask_user::AskUserTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::ExitPlanMode => exit_plan_mode::ExitPlanModeTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {

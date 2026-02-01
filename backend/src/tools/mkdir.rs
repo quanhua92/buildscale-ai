@@ -1,11 +1,11 @@
-use crate::{DbConn, error::Result};
+use crate::{DbConn, error::{Error, Result}};
 use crate::models::requests::{ToolResponse, MkdirArgs, MkdirResult};
 use crate::services::files as file_services;
 use crate::services::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Mkdir tool for creating directories
 ///
@@ -23,7 +23,14 @@ impl Tool for MkdirTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(MkdirArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"}
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(
@@ -32,15 +39,24 @@ impl Tool for MkdirTool {
         _storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let mkdir_args: MkdirArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&mkdir_args.path);
-        
+
+        // Plan Mode Guard: Only allow /plans/ directory operations
+        if config.plan_mode && !path.starts_with("/plans/") {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "path".to_string(),
+                message: super::PLAN_MODE_ERROR.to_string(),
+            }));
+        }
+
         let folder_id = file_services::ensure_path_exists(
-            conn, 
-            workspace_id, 
-            &path, 
+            conn,
+            workspace_id,
+            &path,
             user_id
         ).await?;
         

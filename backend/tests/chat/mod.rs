@@ -3,6 +3,7 @@
 //! Tests for chat model management and persistence.
 
 pub mod model_update_tests;
+pub mod yaml_sync_tests;
 
 use crate::common::TestApp;
 

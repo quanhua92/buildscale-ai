@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::models::requests::{
     EditArgs, GrepArgs, LsArgs, MkdirArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
+    AskUserArgs, ExitPlanModeArgs,
 };
 use crate::services::storage::FileStorageService;
 use crate::tools;
@@ -11,19 +12,6 @@ use rig::tool::Tool as RigTool;
 use std::future::Future;
 use std::sync::Arc;
 use uuid::Uuid;
-
-fn enforce_strict_schema(mut schema: serde_json::Value) -> serde_json::Value {
-    if let Some(obj) = schema.as_object_mut() {
-        obj.insert("additionalProperties".to_string(), serde_json::json!(false));
-
-        // Ensure all properties are in 'required' list for OpenAI strict mode
-        if let Some(properties) = obj.get("properties").and_then(|p| p.as_object()) {
-            let all_keys: Vec<String> = properties.keys().cloned().collect();
-            obj.insert("required".to_string(), serde_json::json!(all_keys));
-        }
-    }
-    schema
-}
 
 /// Macro to generate Rig-compatible wrapper for BuildScale tools.
 ///
@@ -68,7 +56,9 @@ macro_rules! define_rig_tool {
             pub pool: DbPool,
             pub storage: Arc<FileStorageService>,
             pub workspace_id: Uuid,
+            pub chat_id: Uuid,
             pub user_id: Uuid,
+            pub tool_config: tools::ToolConfig,
         }
 
         impl RigTool for $rig_tool_name {
@@ -84,13 +74,15 @@ macro_rules! define_rig_tool {
             ) -> impl Future<Output = ToolDefinition> + Send + Sync {
                 let name = Self::NAME.to_string();
                 async move {
+                    // Use the core tool's hardcoded definition (no schemars)
+                    use crate::tools::Tool;
+                    let core_tool = $core_tool;
+                    let schema = core_tool.definition();
+
                     ToolDefinition {
                         name,
                         description: $description.to_string(),
-                        parameters: enforce_strict_schema(
-                            serde_json::to_value(schemars::schema_for!($args_type))
-                                .unwrap_or_default(),
-                        ),
+                        parameters: schema,
                     }
                 }
             }
@@ -102,17 +94,62 @@ macro_rules! define_rig_tool {
                 let pool = self.pool.clone();
                 let storage = self.storage.clone();
                 let workspace_id = self.workspace_id;
+                let chat_id = self.chat_id;
                 let user_id = self.user_id;
+                let initial_tool_config = self.tool_config.clone();
 
                 async move {
                     let args_val = serde_json::to_value(args).map_err(Error::Json)?;
                     let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
                     let tool = $core_tool;
 
+                    // Read current mode from database to get fresh ToolConfig
+                    // This ensures mode changes mid-stream are respected
+                    let tool_config = if let Ok(version) = crate::queries::files::get_latest_version(&mut conn, chat_id).await {
+                        let agent_config: crate::models::chat::AgentConfig =
+                            serde_json::from_value(version.app_data).unwrap_or_else(|_| {
+                                tracing::warn!(
+                                    tool = $name,
+                                    chat_id = %chat_id,
+                                    "Failed to parse agent_config, using defaults"
+                                );
+                                crate::models::chat::AgentConfig {
+                                    agent_id: None,
+                                    model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
+                                    temperature: 0.7,
+                                    persona_override: None,
+                                    previous_response_id: None,
+                                    mode: "plan".to_string(),
+                                    plan_file: None,
+                                }
+                            });
+
+                        tracing::debug!(
+                            tool = $name,
+                            chat_id = %chat_id,
+                            mode = %agent_config.mode,
+                            plan_file = ?agent_config.plan_file,
+                            "Read current mode from database for ToolConfig"
+                        );
+
+                        crate::tools::ToolConfig {
+                            plan_mode: agent_config.mode == "plan",
+                            active_plan_path: agent_config.plan_file,
+                        }
+                    } else {
+                        tracing::warn!(
+                            tool = $name,
+                            chat_id = %chat_id,
+                            "Failed to read latest version, using initial ToolConfig"
+                        );
+                        initial_tool_config
+                    };
+
                     tracing::debug!(
                         tool = $name,
                         workspace_id = %workspace_id,
                         user_id = %user_id,
+                        plan_mode = tool_config.plan_mode,
                         args = %args_val,
                         "Executing tool"
                     );
@@ -123,6 +160,7 @@ macro_rules! define_rig_tool {
                         &storage,
                         workspace_id,
                         user_id,
+                        tool_config,
                         args_val.clone(),
                     )
                     .await?;
@@ -170,7 +208,7 @@ define_rig_tool!(
     tools::read::ReadTool,
     ReadArgs,
     "read",
-    "Reads the content and hash of a file. For Document types, automatically unwraps the text field. Use this to get the 'hash' before calling 'edit'. PERFORMANCE WARNING: Do NOT use this tool to search for strings in multiple files; use 'grep' instead for efficiency."
+    "Reads the content and hash of a file. Content is returned as stored - raw text for text files, JSON for structured data. Use this to get the 'hash' before calling 'edit'. PERFORMANCE WARNING: Do NOT use this tool to search for strings in multiple files; use 'grep' instead for efficiency."
 );
 
 define_rig_tool!(
@@ -178,7 +216,7 @@ define_rig_tool!(
     tools::write::WriteTool,
     WriteArgs,
     "write",
-    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you MUST prefer 'edit' to ensure safety and preserve surrounding context. Supported file_type: 'document' (default), 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
+    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you MUST prefer 'edit' to ensure safety and preserve surrounding context. Content is stored as-is: strings are stored as raw text, JSON objects as structured data. Supported file_type: 'document' (default), 'plan', 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
 );
 
 define_rig_tool!(
@@ -228,3 +266,21 @@ define_rig_tool!(
     "mkdir",
     "Recursively creates folders to ensure the specified path exists."
 );
+
+// System tools for Plan Mode workflow
+define_rig_tool!(
+    RigAskUserTool,
+    tools::ask_user::AskUserTool,
+    AskUserArgs,
+    "ask_user",
+    "Suspends generation to request structured input or confirmation from the user. Supports asking multiple questions in batch. Questions are ephemeral - they exist only in the SSE stream and frontend memory. User answers come through normal chat messages with metadata."
+);
+
+define_rig_tool!(
+    RigExitPlanModeTool,
+    tools::exit_plan_mode::ExitPlanModeTool,
+    ExitPlanModeArgs,
+    "exit_plan_mode",
+    "Transitions the workspace from Plan Mode to Build Mode. Call this after the user approves the implementation plan. Updates chat metadata and prepares the system for executing the approved plan."
+);
+

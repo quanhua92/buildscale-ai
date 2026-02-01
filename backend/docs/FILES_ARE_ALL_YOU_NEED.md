@@ -16,7 +16,7 @@ Every workspace shares a consistent root structure:
 *   **`/` (Root)**: The container for the entire logical volume.
 *   **`/system/skills/<skill_name>/SKILL.md`**: The "Toolbox." Each subfolder represents a capability (e.g., `github`, `stripe`) with a markdown manifest defining how to use it.
 *   **`/system/agents/<agent_name>/AGENT.md`**: The "Staff." Definitions for agent personas, system prompts, and constraints.
-*   **`/chats/<session_id>.md`**: The "Memory." Active and archived conversation logs.
+*   **`/chats/chat-{id}.chat`**: The "Memory." Active and archived conversation logs (virtual files with YAML frontmatter).
 *   **`/data/`**: The "Knowledge." Ingested raw documents (PDFs, Videos, CSVs).
 *   **`/users/<user_id>/`**: The "Home Directory." User-specific workspace state (scratchpads, private drafts, personal agent configs).
 *   **`/projects/<project_name>/`**: The "Project." The user's actual codebase and working files.

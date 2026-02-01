@@ -84,8 +84,8 @@
 //! // 1. Create Rig service
 //! let rig_service = Arc::new(RigService::from_env());
 //!
-//! // 2. Build agent with tools (requires pool, workspace_id, user_id)
-//! // let agent = rig_service.create_agent(&pool, workspace_id, user_id).await?;
+//! // 2. Build agent with tools (requires pool, workspace_id, chat_id, user_id)
+//! // let agent = rig_service.create_agent(&pool, workspace_id, chat_id, user_id, session, &ai_config).await?;
 //!
 //! // 3. Execute tool calls
 //! // let response = agent.chat("Create a file called hello.txt").await?;
@@ -98,11 +98,14 @@ pub mod context;
 pub mod registry;
 pub mod rig_engine;
 pub mod rig_tools;
+pub mod sync;
 
 pub use context::{
     AttachmentManager, AttachmentKey, AttachmentValue, ESTIMATED_CHARS_PER_TOKEN,
     HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM,
 };
+
+pub use sync::{ChatFrontmatter, YamlFrontmatter};
 
 #[cfg(test)]
 mod tests;
@@ -174,6 +177,104 @@ impl ChatService {
         Ok(msg)
     }
 
+    /// Formats a file modification tool action as a chat message.
+    ///
+    /// This helper method formats tool actions into concise log messages
+    /// that can be saved to chat history. Only file modification tools
+    /// (write, edit, rm, mv, mkdir, touch) are logged.
+    ///
+    /// # Arguments
+    /// * `tool_name` - Name of the tool that was executed
+    /// * `result_json` - Tool result as JSON value
+    /// * `args_json` - Tool arguments as JSON value (for write/edit tools)
+    ///
+    /// # Returns
+    /// * `Some(String)` - Formatted log message if tool should be logged
+    /// * `None` - If tool failed or is not a file modification tool
+    pub fn format_tool_action(
+        tool_name: &str,
+        result_json: &serde_json::Value,
+        args_json: Option<&serde_json::Value>,
+    ) -> Option<String> {
+        let result = match tool_name {
+            "write" => {
+                // Extract path from result
+                let path = result_json.get("path")?.as_str()?;
+                // Extract content preview from args
+                let content = args_json?.get("content")?;
+                let content_preview = Self::extract_content_preview(&crate::models::requests::JsonValue(content.clone()), 10);
+                Some(format!("[AI wrote: {} ({})]", path, content_preview))
+            }
+            "edit" => {
+                let path = result_json.get("path")?.as_str()?;
+                let old_string = args_json?.get("old_string")?.as_str()?;
+                let preview = Self::extract_string_preview(old_string, 5);
+                Some(format!("[AI edited: {} (changed: \"{}\")]", path, preview))
+            }
+            "rm" => {
+                let path = result_json.get("path")?.as_str()?;
+                Some(format!("[AI deleted: {}]", path))
+            }
+            "mv" => {
+                let from_path = result_json.get("from_path")?.as_str()?;
+                let to_path = result_json.get("to_path")?.as_str()?;
+                Some(format!("[AI moved: {} → {}]", from_path, to_path))
+            }
+            "mkdir" => {
+                let path = result_json.get("path")?.as_str()?;
+                Some(format!("[AI created directory: {}]", path))
+            }
+            "touch" => {
+                let path = result_json.get("path")?.as_str()?;
+                Some(format!("[AI created empty file: {}]", path))
+            }
+            _ => None, // Ignore ls, grep, read, ask_user, exit_plan_mode
+        };
+
+        result
+    }
+
+    /// Extracts a preview of content as a string (first N words).
+    ///
+    /// This helper extracts the first N words from content for logging.
+    /// Used by the write tool to show file content preview.
+    ///
+    /// # Arguments
+    /// * `content` - JSON value containing string content
+    /// * `word_count` - Number of words to extract
+    ///
+    /// # Returns
+    /// String preview with "..." appended if truncated
+    fn extract_content_preview(
+        content: &crate::models::requests::JsonValue,
+        word_count: usize,
+    ) -> String {
+        match &content.0 {
+            serde_json::Value::String(s) => Self::extract_string_preview(s, word_count),
+            _ => "<content>".to_string(),
+        }
+    }
+
+    /// Extracts a preview of a string (first N words).
+    ///
+    /// This helper extracts the first N words from a string for logging.
+    ///
+    /// # Arguments
+    /// * `s` - String to preview
+    /// * `word_count` - Number of words to extract
+    ///
+    /// # Returns
+    /// String preview with "..." appended if truncated
+    fn extract_string_preview(s: &str, word_count: usize) -> String {
+        let words: Vec<&str> = s.split_whitespace().take(word_count).collect();
+        let preview = words.join(" ");
+        if s.split_whitespace().count() > word_count {
+            format!("{}...", preview)
+        } else {
+            preview
+        }
+    }
+
     /// Updates the model for a chat session in app_data.
     pub async fn update_chat_model(
         conn: &mut DbConn,
@@ -190,6 +291,8 @@ impl ChatService {
                 temperature: 0.7,
                 persona_override: None,
                 previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
             });
 
         // 2. Update the model field
@@ -213,6 +316,136 @@ impl ChatService {
         tracing::info!("[ChatService] Updated model for chat {} to {}", chat_file_id, new_model);
 
         Ok(())
+    }
+
+    /// Updates chat metadata and syncs to YAML frontmatter in the file.
+    ///
+    /// This method updates the AgentConfig in the database (source of truth)
+    /// and also writes YAML frontmatter to the chat file for display/debugging.
+    pub async fn update_chat_metadata(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+        mode: String,
+        plan_file: Option<String>,
+    ) -> Result<()> {
+        // 1. Get current version to extract existing agent_config
+        let version = queries::files::get_latest_version(conn, chat_file_id).await?;
+        let mut agent_config: AgentConfig = serde_json::from_value(version.app_data)
+            .unwrap_or_else(|_| AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
+            });
+
+        // 2. Update the mode and plan_file fields
+        agent_config.mode = mode.clone();
+        agent_config.plan_file = plan_file.clone();
+
+        // 3. Create new version with updated agent_config
+        let new_app_data = serde_json::to_value(agent_config.clone()).map_err(Error::Json)?;
+
+        let new_version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
+            id: None,
+            file_id: chat_file_id,
+            workspace_id,
+            branch: "main".to_string(),
+            app_data: new_app_data,
+            hash: "metadata-update".to_string(),
+            author_id: None,
+        }).await?;
+
+        queries::files::update_latest_version_id(conn, chat_file_id, new_version.id).await?;
+
+        // 4. Sync YAML frontmatter to file
+        Self::sync_yaml_frontmatter(conn, storage, workspace_id, chat_file_id, &agent_config).await?;
+
+        tracing::info!(
+            "[ChatService] Updated metadata for chat {}: mode={}, plan_file={:?}",
+            chat_file_id,
+            mode,
+            plan_file
+        );
+
+        Ok(())
+    }
+
+    /// Syncs chat metadata to YAML frontmatter in the file.
+    ///
+    /// Reads the current file content, wraps it with YAML frontmatter,
+    /// and writes it back. This keeps the file in sync with database metadata.
+    async fn sync_yaml_frontmatter(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+        agent_config: &AgentConfig,
+    ) -> Result<()> {
+        // 1. Get the file path
+        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+        // 2. Read current file content
+        let current_content = if let Ok(content) = storage.read_file(workspace_id, &file.path).await {
+            String::from_utf8(content).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        // 3. Parse existing content to separate frontmatter from body
+        let parsed = YamlFrontmatter::parse(&current_content);
+        let body_content = if let Ok(parsed) = parsed {
+            parsed.content
+        } else {
+            current_content.clone()
+        };
+
+        // 4. Create new frontmatter with updated metadata
+        let frontmatter = ChatFrontmatter::from_agent_config(agent_config);
+        let yaml_frontmatter = YamlFrontmatter::new(frontmatter, body_content);
+
+        // 5. Serialize with YAML frontmatter
+        let new_content = yaml_frontmatter.serialize()?;
+
+        // 6. Write back to file (convert to bytes)
+        storage.write_latest_file(workspace_id, &file.path, new_content.as_bytes()).await?;
+
+        // 7. Touch file to update timestamp
+        queries::files::touch_file(conn, chat_file_id).await?;
+
+        tracing::debug!("[ChatService] Synced YAML frontmatter for chat {}", chat_file_id);
+
+        Ok(())
+    }
+
+    /// Parses YAML frontmatter from a chat file for debugging/display purposes.
+    ///
+    /// This method reads the chat file and extracts the YAML frontmatter
+    /// for display or debugging. Returns None if the file doesn't exist
+    /// or has no frontmatter.
+    pub async fn get_yaml_frontmatter(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+    ) -> Result<Option<ChatFrontmatter>> {
+        // 1. Get the file path
+        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+        // 2. Read file content
+        let content = match storage.read_file(workspace_id, &file.path).await {
+            Ok(bytes) => String::from_utf8(bytes).unwrap_or_default(),
+            Err(_) => return Ok(None),
+        };
+
+        // 3. Parse YAML frontmatter
+        let parsed = YamlFrontmatter::parse(&content)?;
+
+        Ok(Some(parsed.frontmatter))
     }
 
     /// Retrieves the full chat session including configuration and message history.
@@ -245,6 +478,8 @@ impl ChatService {
                     temperature: 0.7,
                     persona_override: None,
                     previous_response_id: None,
+                    mode: "plan".to_string(),
+                    plan_file: None,
                 })
             } else {
                  crate::models::chat::AgentConfig {
@@ -253,6 +488,8 @@ impl ChatService {
                     temperature: 0.7,
                     persona_override: None,
                     previous_response_id: None,
+                    mode: "plan".to_string(),
+                    plan_file: None,
                 }
             }
         } else {
@@ -262,6 +499,8 @@ impl ChatService {
                 temperature: 0.7,
                 persona_override: None,
                 previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
             }
         };
 

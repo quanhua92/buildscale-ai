@@ -7,7 +7,7 @@ use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
-use super::Tool;
+use super::{Tool, ToolConfig};
 
 /// Move/Rename file tool
 ///
@@ -25,7 +25,15 @@ impl Tool for MvTool {
     }
 
     fn definition(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(MvArgs)).unwrap_or(Value::Null)
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": {"type": "string"},
+                "destination": {"type": "string"}
+            },
+            "required": ["source", "destination"],
+            "additionalProperties": false
+        })
     }
     
     async fn execute(
@@ -34,17 +42,34 @@ impl Tool for MvTool {
         _storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let mv_args: MvArgs = serde_json::from_value(args)?;
         let source_path = super::normalize_path(&mv_args.source);
         let destination_path = super::normalize_path(&mv_args.destination);
-        
+
         // 1. Resolve source file
         let source_file = file_queries::get_file_by_path(conn, workspace_id, &source_path)
             .await?
             .ok_or_else(|| Error::NotFound(format!("Source file not found: {}", source_path)))?;
-            
+
+        // Plan Mode Guard: Check source file type
+        if config.plan_mode && !matches!(source_file.file_type, crate::models::files::FileType::Plan) {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "source".to_string(),
+                message: super::PLAN_MODE_ERROR.to_string(),
+            }));
+        }
+
+        // Plan Mode Guard: Ensure destination is within /plans/ directory
+        if config.plan_mode && !destination_path.starts_with("/plans/") {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "destination".to_string(),
+                message: "In plan mode, files can only be moved within the /plans/ directory".to_string(),
+            }));
+        }
+
         // 2. Resolve destination logic
         let (target_parent_id, target_name) = if destination_path.ends_with('/') {
             // Case A: Explicit directory move "/folder/"

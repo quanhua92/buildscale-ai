@@ -1,10 +1,15 @@
 import * as React from "react"
+import { toast } from "sonner"
 import { useAuth } from "../../../context/AuthContext"
 import {
   type CreateChatRequest,
   type CreateChatResponse,
   type PostChatMessageRequest,
   type PostChatMessageResponse,
+  type ChatMode,
+  type Question,
+  type QuestionPendingData,
+  type ModeChangedData,
 } from "../../../api/types"
 
 export type MessageRole = "user" | "assistant" | "system"
@@ -27,16 +32,34 @@ export interface ChatMessageItem {
   created_at: string
 }
 
+// Multi-question session state
+export interface QuestionSession {
+  questionId: string
+  allQuestions: Question[]
+  currentIndex: number
+  answers: Record<string, any>  // question name -> answer
+  createdAt: Date
+}
+
 interface ChatContextValue {
   messages: ChatMessageItem[]
   isStreaming: boolean
   isLoading: boolean
-  sendMessage: (content: string, attachments?: string[]) => Promise<void>
+  sendMessage: (content: string, attachments?: string[], metadata?: Record<string, any>) => Promise<void>
   stopGeneration: () => void
   clearMessages: () => void
   chatId?: string
   model: ChatModel
   setModel: (model: ChatModel) => void
+  // Plan Mode State
+  mode: ChatMode
+  planFile: string | null
+  pendingQuestionSession: QuestionSession | null
+  currentQuestion: Question | null  // Convenience getter for current question
+  // Plan Mode Actions
+  submitAnswer: (answer: any) => Promise<void>
+  dismissQuestion: () => void
+  setMode: (mode: ChatMode, planFile?: string) => Promise<void>
 }
 
 const ChatContext = React.createContext<ChatContextValue | null>(null)
@@ -84,6 +107,17 @@ export function ChatProvider({
   const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
   const [model, setModel] = React.useState<ChatModel>(DEFAULT_MODEL)
+
+  // Plan Mode State
+  const [mode, setModeState] = React.useState<ChatMode>('plan')
+  const [planFile, setPlanFileState] = React.useState<string | null>(null)
+  const [pendingQuestionSession, setPendingQuestionSession] = React.useState<QuestionSession | null>(null)
+
+  // Convenience getter for current question
+  const currentQuestion = React.useMemo(() => {
+    if (!pendingQuestionSession) return null
+    return pendingQuestionSession.allQuestions[pendingQuestionSession.currentIndex] || null
+  }, [pendingQuestionSession])
 
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const connectingRef = React.useRef<string | null>(null)
@@ -183,6 +217,7 @@ export function ChatProvider({
         {
           headers: { 'Accept': 'text/event-stream' },
           signal: abortController.signal,
+          timeout: false, // Disable timeout for SSE connections
         }
       )
 
@@ -338,6 +373,34 @@ export function ChatProvider({
                     break
                   case "file_updated":
                     return prev
+                  case "question_pending":
+                    // Handle question_pending event
+                    if (currentConnectionId === connectionIdRef.current) {
+                      const questionData: QuestionPendingData = data
+                      // Create a question session with all questions
+                      if (questionData.questions && questionData.questions.length > 0) {
+                        setPendingQuestionSession({
+                          questionId: questionData.question_id,
+                          allQuestions: questionData.questions.map((q) => ({
+                            ...q,
+                            id: questionData.question_id,
+                            createdAt: new Date(questionData.created_at)
+                          })),
+                          currentIndex: 0,  // Start with first question
+                          answers: {},  // No answers yet
+                          createdAt: new Date(questionData.created_at)
+                        })
+                      }
+                    }
+                    return prev
+                  case "mode_changed":
+                    // Handle mode_changed event
+                    if (currentConnectionId === connectionIdRef.current) {
+                      const modeData: ModeChangedData = data
+                      setModeState(modeData.mode)
+                      setPlanFileState(modeData.plan_file)
+                    }
+                    return prev
                 }
 
                 newMessages[newMessages.length - 1] = updatedMessage
@@ -411,6 +474,11 @@ export function ChatProvider({
             setModel(DEFAULT_MODEL)
           }
 
+          // Initialize Plan Mode state from chat metadata (agent_config)
+          // Default to 'plan' mode if not set
+          setModeState(session.agent_config.mode || 'plan')
+          setPlanFileState(session.agent_config.plan_file || null)
+
           // Connect to SSE only after history is loaded
           connectToSse(chatId)
         }
@@ -440,12 +508,12 @@ export function ChatProvider({
   }, [chatId, workspaceId, connectToSse, stopGeneration])
 
   const sendMessage = React.useCallback(
-    async (content: string, _attachments?: string[]) => {
+    async (content: string, _attachments?: string[], metadata?: Record<string, any>) => {
       const userMessage: ChatMessageItem = {
         id: generateId(),
         role: "user",
         parts: [{ type: "text", content }],
-        status: "completed",
+        status: "sending",
         created_at: new Date().toISOString(),
       }
 
@@ -463,37 +531,85 @@ export function ChatProvider({
       // Set streaming state when sending message
       setIsStreaming(true)
 
-      // Clear connection state to ensure we reconnect for new message
-      connectingRef.current = null
+      const maxRetries = 3
+      const retryDelay = 1000 // 1 second between retries
+      let lastError: Error | null = null
 
-      try {
-        if (!chatId) {
-          const response = await apiClientRef.current.post<CreateChatResponse>(
-            `/workspaces/${workspaceId}/chats`,
-            { goal: content, model } as CreateChatRequest
-          )
-          if (!response?.chat_id) throw new Error('Invalid server response')
-          setChatId(response.chat_id)
-          onChatCreatedRef.current?.(response.chat_id)
-        } else {
-          const response = await apiClientRef.current.post<PostChatMessageResponse>(
-            `/workspaces/${workspaceId}/chats/${chatId}`,
-            { content, model } as PostChatMessageRequest
-          )
-          if (response?.status !== "accepted") throw new Error('Message not accepted')
-          connectToSse(chatId)
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          if (!chatId) {
+            const response = await apiClientRef.current.post<CreateChatResponse>(
+              `/workspaces/${workspaceId}/chats`,
+              { goal: content, model } as CreateChatRequest
+            )
+            if (!response?.chat_id) throw new Error('Invalid server response')
+            setChatId(response.chat_id)
+            onChatCreatedRef.current?.(response.chat_id)
+
+            // Update message status to completed
+            setMessages((prev) => {
+              const newMessages = [...prev]
+              const last = newMessages[newMessages.length - 1]
+              if (last?.id === userMessage.id) last.status = "completed"
+              return newMessages
+            })
+          } else {
+            const response = await apiClientRef.current.post<PostChatMessageResponse>(
+              `/workspaces/${workspaceId}/chats/${chatId}`,
+              { content, model, metadata } as PostChatMessageRequest
+            )
+            if (response?.status !== "accepted") throw new Error('Message not accepted')
+
+            // Only reconnect if SSE is not currently connected to this chat
+            if (connectingRef.current !== chatId) {
+              connectToSse(chatId)
+            }
+
+            // Update message status to completed
+            setMessages((prev) => {
+              const newMessages = [...prev]
+              const last = newMessages[newMessages.length - 1]
+              if (last?.id === userMessage.id) last.status = "completed"
+              return newMessages
+            })
+          }
+
+          // Success! Exit retry loop
+          return
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+
+          // Check if error is retryable (network errors, timeouts, 5xx)
+          const apiError = error as { code?: string; status?: number }
+          const isRetryable = !apiError.status || apiError.status >= 500 || apiError.status === 408
+
+          if (!isRetryable || attempt === maxRetries) {
+            // Not retryable or max retries reached
+            console.error(`[Chat] Send error (attempt ${attempt}/${maxRetries})`, error)
+
+            // Update message status to error
+            setMessages((prev) => {
+              const newMessages = [...prev]
+              const last = newMessages[newMessages.length - 1]
+              if (last?.id === userMessage.id) last.status = "error"
+              return newMessages
+            })
+
+            setIsStreaming(false)
+            hasReceivedStreamingEventRef.current = false
+
+            // Re-throw for caller to handle
+            throw lastError
+          }
+
+          // Retry after delay
+          console.warn(`[Chat] Retrying message send (attempt ${attempt + 1}/${maxRetries})...`)
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
         }
-      } catch (error) {
-        console.error('[Chat] Send error', error)
-        setMessages((prev) => {
-          const newMessages = [...prev]
-          const last = newMessages[newMessages.length - 1]
-          if (last) last.status = "error"
-          return newMessages
-        })
-        setIsStreaming(false)
-        hasReceivedStreamingEventRef.current = false
       }
+
+      // Should not reach here, but TypeScript needs it
+      throw lastError || new Error('Failed to send message')
     },
     [workspaceId, chatId, connectToSse, model]
   )
@@ -503,12 +619,144 @@ export function ChatProvider({
     stopGeneration()
   }, [stopGeneration])
 
+  // Plan Mode: Submit answer to pending question
+  const submitAnswer = React.useCallback(
+    async (answer: any) => {
+      if (!pendingQuestionSession || !chatId) return
+
+      const currentQ = currentQuestion
+      if (!currentQ) return
+
+      // Save answer for this question
+      const newAnswers = {
+        ...pendingQuestionSession.answers,
+        [currentQ.name!]: answer
+      }
+
+      // Check if there are more questions
+      const nextIndex = pendingQuestionSession.currentIndex + 1
+      const hasMoreQuestions = nextIndex < pendingQuestionSession.allQuestions.length
+
+      if (hasMoreQuestions) {
+        // Move to next question without sending message yet
+        setPendingQuestionSession({
+          ...pendingQuestionSession,
+          currentIndex: nextIndex,
+          answers: newAnswers
+        })
+      } else {
+        // All questions answered - send with structured metadata
+        const answerCount = pendingQuestionSession.allQuestions.length
+
+        // Build summary with each answer on separate lines
+        const answerLines: string[] = []
+        answerLines.push(`[User answered ${answerCount} question${answerCount > 1 ? 's' : ''}]`)
+
+        // Add each answer with question text
+        for (const q of pendingQuestionSession.allQuestions) {
+          const ans = newAnswers[q.name!]
+          answerLines.push(`Q: ${q.question}`)
+          if (q.buttons && q.buttons.length > 0) {
+            const matchingButton = q.buttons.find((b: any) => b.value === ans)
+            if (matchingButton) {
+              answerLines.push(`[Answered: "${matchingButton.label}"]`)
+            }
+          } else {
+            // Non-button answers (text input, etc.)
+            answerLines.push(`[Answered: ${JSON.stringify(ans)}]`)
+          }
+        }
+
+        let summaryText = answerLines.join('\n')
+
+        try {
+          // Send message with structured metadata
+          await sendMessage(summaryText, undefined, {
+            question_answer: {
+              question_id: pendingQuestionSession.questionId,
+              answers: newAnswers
+            }
+          })
+          setPendingQuestionSession(null)
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          toast.error(`Failed to send answers after 3 attempts: ${errorMessage}`)
+          console.error('[Chat] Submit answers error', error)
+        }
+      }
+    },
+    [pendingQuestionSession, currentQuestion, chatId, sendMessage]
+  )
+
+  // Plan Mode: Dismiss pending question
+  const dismissQuestion = React.useCallback(() => {
+    setPendingQuestionSession(null)
+  }, [])
+
+  // Plan Mode: Update chat mode
+  const setMode = React.useCallback(
+    async (newMode: ChatMode, newPlanFile?: string) => {
+      try {
+        let targetChatId = chatId
+
+        // If no chat exists, create one first with a default message
+        if (!targetChatId) {
+          const response = await apiClientRef.current.post<CreateChatResponse>(
+            `/workspaces/${workspaceId}/chats`,
+            {
+              goal: `Starting in ${newMode} mode`,
+              model
+            } as CreateChatRequest
+          )
+
+          if (!response?.chat_id) {
+            throw new Error('Failed to create chat')
+          }
+
+          targetChatId = response.chat_id
+          // Update chatId state so we don't create again
+          setChatId(targetChatId)
+          onChatCreatedRef.current?.(targetChatId)
+        }
+
+        // Now update the mode
+        await apiClientRef.current.patch(
+          `/workspaces/${workspaceId}/chats/${targetChatId}`,
+          {
+            app_data: {
+              mode: newMode,
+              plan_file: newPlanFile || null
+            }
+          }
+        )
+
+        // Only update state on successful API call
+        setModeState(newMode)
+        if (newPlanFile !== undefined) {
+          setPlanFileState(newPlanFile)
+        }
+
+        const modeLabel = newMode === 'plan' ? 'Plan' : 'Build'
+        toast.success(`Switched to ${modeLabel} Mode`)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        toast.error(`Failed to change mode: ${errorMessage}`)
+        console.error('[Chat] Set mode error', error)
+      }
+    },
+    [workspaceId, chatId, model, setChatId, onChatCreatedRef]
+  )
+
   const value = React.useMemo(
     () => ({
       messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId,
-      model, setModel
+      model, setModel,
+      // Plan Mode
+      mode, planFile, pendingQuestionSession, currentQuestion,
+      submitAnswer, dismissQuestion, setMode
     }),
-    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel]
+    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel,
+     mode, planFile, pendingQuestionSession, currentQuestion, submitAnswer, dismissQuestion, setMode]
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

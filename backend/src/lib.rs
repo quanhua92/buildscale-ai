@@ -26,6 +26,7 @@ pub use handlers::{
     files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
     files::semantic_search,
     tools::execute_tool,
+    chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat,
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
@@ -374,6 +375,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
             "/{id}/chats/{chat_id}",
             post(chat_handlers::post_chat_message)
                 .get(chat_handlers::get_chat)
+                .patch(chat_handlers::update_chat)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

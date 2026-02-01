@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::files::{FileType, FileStatus, NewFile};
-use crate::models::requests::{CreateChatRequest, PostChatMessageRequest};
+use crate::models::requests::{CreateChatRequest, PostChatMessageRequest, UpdateChatRequest};
 use crate::models::sse::SseEvent;
 use crate::queries;
 use crate::services::chat::actor::ChatActor;
@@ -63,19 +63,22 @@ pub async fn create_chat(
     }).await?;
 
     // 3. Update the file with its actual ID in the path/slug
-    let correct_path = format!("/chats/chat-{}", chat_file.id);
-    let correct_slug = format!("chat-{}", chat_file.id);
+    let correct_path = format!("/chats/chat-{}.chat", chat_file.id);
+    let correct_slug = format!("chat-{}.chat", chat_file.id);
     let chat_file = queries::files::update_file_path_and_slug(&mut conn, chat_file.id, correct_path, correct_slug).await?;
 
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
 
     // 4. Create initial version with config in app_data
+    // New chats default to Plan Mode (user switches to Build Mode when ready)
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
         "model": req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
-        "persona": crate::agents::get_persona(req.role.as_deref()),
-        "temperature": 0.7
+        "persona": crate::agents::get_persona(req.role.as_deref(), Some("plan"), None),
+        "temperature": 0.7,
+        "mode": "plan",
+        "plan_file": null
     });
 
     let version = queries::files::create_version(&mut conn, crate::models::files::NewFileVersion {
@@ -120,7 +123,7 @@ pub async fn create_chat(
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
-        default_persona: crate::agents::get_persona(None),
+        default_persona: crate::agents::get_persona(None, None, None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
         inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -160,7 +163,7 @@ pub async fn get_chat_events(
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
-            default_persona: crate::agents::get_persona(None),
+            default_persona: crate::agents::get_persona(None, None, None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -231,6 +234,8 @@ pub async fn post_chat_message(
                 temperature: 0.7,
                 persona_override: None,
                 previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
             });
         agent_config.model
     };
@@ -242,6 +247,9 @@ pub async fn post_chat_message(
         content: req.content.clone(),
         metadata: sqlx::types::Json(ChatMessageMetadata {
             model: Some(model_for_metadata),
+            question_answer: req.metadata.as_ref()
+                .and_then(|m| m.get("question_answer"))
+                .and_then(|qa| serde_json::from_value(qa.clone()).ok()),
             ..Default::default()
         }),
     }).await?;
@@ -264,7 +272,7 @@ pub async fn post_chat_message(
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
-            default_persona: crate::agents::get_persona(None),
+            default_persona: crate::agents::get_persona(None, None, None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -299,6 +307,99 @@ pub async fn get_chat(
     ).await?;
 
     Ok(Json(session))
+}
+
+pub async fn update_chat(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthenticatedUser>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<UpdateChatRequest>,
+) -> Result<Json<serde_json::Value>> {
+    tracing::info!(
+        "[ChatHandler] Updating chat {} in workspace {} with app_data: {:?}",
+        chat_id,
+        workspace_id,
+        req.app_data
+    );
+    let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+
+    // Extract mode and plan_file from request
+    let mode = req.app_data
+        .get("mode")
+        .and_then(|m| m.as_str())
+        .unwrap_or("plan")
+        .to_string();
+
+    let plan_file = req.app_data
+        .get("plan_file")
+        .and_then(|p| {
+            if p.is_null() {
+                None
+            } else {
+                p.as_str()
+            }
+        })
+        .map(|s| s.to_string());
+
+    // Validate mode
+    if mode != "plan" && mode != "build" {
+        return Err(Error::Validation(crate::error::ValidationErrors::Single {
+            field: "mode".to_string(),
+            message: "mode must be either 'plan' or 'build'".to_string(),
+        }));
+    }
+
+    // Get current version to check for mode transition
+    let old_mode = if let Ok(version) = crate::queries::files::get_latest_version(&mut conn, chat_id).await {
+        let agent_config: crate::models::chat::AgentConfig = serde_json::from_value(version.app_data)
+            .unwrap_or_else(|_| crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
+            });
+        Some(agent_config.mode)
+    } else {
+        None
+    };
+
+    // Update chat metadata
+    use crate::services::chat::ChatService;
+    ChatService::update_chat_metadata(
+        &mut conn,
+        &state.storage,
+        workspace_id,
+        chat_id,
+        mode.clone(),
+        plan_file.clone(),
+    ).await?;
+
+    // Emit SSE event if mode changed
+    if old_mode.as_deref() != Some(mode.as_str()) {
+        let event_tx = state.agents.get_or_create_bus(chat_id).await;
+        let _ = event_tx.send(SseEvent::ModeChanged {
+            mode: mode.clone(),
+            plan_file: plan_file.clone(),
+        });
+
+        tracing::info!(
+            "[ChatHandler] Mode changed from {:?} to {} for chat {}",
+            old_mode,
+            mode,
+            chat_id
+        );
+
+        // Clear agent cache to force new agent creation with updated mode
+        state.agents.remove(&chat_id).await;
+    }
+
+    Ok(Json(serde_json::json!({
+        "mode": mode,
+        "plan_file": plan_file
+    })))
 }
 
 pub async fn stop_chat_generation(

@@ -30,7 +30,8 @@ async fn test_write_update_existing_file() {
     let updated_content = "updated";
     let response = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
-        "content": updated_content
+        "content": updated_content,
+        "overwrite": true
     })).await;
 
     assert_eq!(response.status(), 200);
@@ -74,7 +75,8 @@ async fn test_write_duplicate_content() {
 
     let second_write = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
-        "content": content
+        "content": content,
+        "overwrite": true
     })).await;
 
     assert_eq!(second_write.status(), 200);
