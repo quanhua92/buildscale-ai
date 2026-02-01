@@ -4,9 +4,64 @@ use crate::models::{
     workspace_members::WorkspaceMember,
     workspaces::Workspace,
 };
-use schemars::JsonSchema;
+use schemars::{JsonSchema, schema::{Schema, SchemaObject, InstanceType, SingleOrVec}};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+/// Wrapper for JSON values with OpenAI-compatible schema
+///
+/// Accepts any JSON value (string, number, boolean, array, object) but
+/// generates a simple string schema for OpenAI compatibility.
+/// The AI should pass JSON as a string, which gets parsed into the actual value.
+#[derive(Debug, Clone)]
+pub struct JsonValue(pub serde_json::Value);
+
+impl<'de> Deserialize<'de> for JsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Accept either a direct JSON value or a JSON string
+        Ok(JsonValue(serde_json::Value::deserialize(deserializer)?))
+    }
+}
+
+impl Serialize for JsonValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl From<JsonValue> for serde_json::Value {
+    fn from(val: JsonValue) -> Self {
+        val.0
+    }
+}
+
+impl From<serde_json::Value> for JsonValue {
+    fn from(val: serde_json::Value) -> Self {
+        JsonValue(val)
+    }
+}
+
+impl JsonSchema for JsonValue {
+    fn schema_name() -> String {
+        // Return a unique name to avoid conflicts
+        "JsonValue_String".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        // Return inline schema without relying on schema_name
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(schemars::schema::InstanceType::String))),
+            ..Default::default()
+        }
+        .into()
+    }
+}
 
 /// Request for creating a workspace with automatic setup
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,6 +275,9 @@ pub struct CreateChatRequest {
 pub struct PostChatMessageRequest {
     pub content: String,
     pub model: Option<String>,
+    /// Optional metadata for the message (e.g., question answers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -240,11 +298,54 @@ pub struct ReadArgs {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteArgs {
     pub path: String,
-    pub content: serde_json::Value,
+    pub content: JsonValue,
     pub file_type: Option<String>,
+}
+
+// Manual schema implementation to inline the JsonValue schema (avoid $ref)
+impl JsonSchema for WriteArgs {
+    fn schema_name() -> String {
+        "WriteArgs".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::{SchemaObject, InstanceType, SingleOrVec, ObjectValidation};
+        use std::collections::BTreeMap;
+
+        // Inline string schema for content (no $ref)
+        let content_schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+            ..Default::default()
+        }.into();
+
+        // Generate schemas for other fields
+        let path_schema = <String as JsonSchema>::json_schema(generator);
+        let file_type_schema = <Option<String> as JsonSchema>::json_schema(generator);
+
+        // Build the properties map
+        let mut properties = BTreeMap::new();
+        properties.insert("path".to_string(), path_schema);
+        properties.insert("content".to_string(), content_schema);
+        properties.insert("file_type".to_string(), file_type_schema);
+
+        // Build required array
+        let mut required = schemars::Set::new();
+        required.insert("path".to_string());
+        required.insert("content".to_string());
+
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
+            object: Some(Box::new(ObjectValidation {
+                properties,
+                required,
+                ..Default::default()
+            })),
+            ..Default::default()
+        }.into()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -289,26 +390,162 @@ pub struct AskUserArgs {
     pub questions: Vec<QuestionInput>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionInput {
     /// Question identifier (used in answer object)
     pub name: String,
     /// Question text (Markdown)
     pub question: String,
-    /// JSON Schema for answer validation and UI generation (JSON string)
-    pub schema: String,
+    /// JSON Schema for answer validation and UI generation
+    pub schema: JsonValue,
     /// Optional button definitions (overrides schema-based rendering)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buttons: Option<Vec<QuestionButtonInput>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+// Custom schema for QuestionInput to avoid anyOf from Option fields
+impl JsonSchema for QuestionInput {
+    fn schema_name() -> String {
+        "QuestionInput".to_string()
+    }
+
+    fn json_schema(_gen: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        // For buttons: instead of using Option<Vec<T>> which generates anyOf,
+        // we define it as always present but nullable
+        let button_item_schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
+            object: Some(Box::new(schemars::schema::ObjectValidation {
+                properties: {
+                    let mut props = schemars::Map::new();
+                    props.insert("label".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    props.insert("value".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    props.insert("variant".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Vec(vec![
+                            InstanceType::String,
+                            InstanceType::Null,
+                        ])),
+                        ..Default::default()
+                    }.into());
+                    props
+                },
+                required: {
+                    let mut set = schemars::Set::new();
+                    set.insert("label".to_string());
+                    set.insert("value".to_string());
+                    set.insert("variant".to_string());  // Include variant even though nullable via type
+                    set
+                },
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        let buttons_schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Vec(vec![
+                InstanceType::Array,
+                InstanceType::Null,
+            ])),
+            array: Some(Box::new(schemars::schema::ArrayValidation {
+                items: Some(SingleOrVec::Single(Box::new(Schema::from(button_item_schema)))),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
+            object: Some(Box::new(schemars::schema::ObjectValidation {
+                properties: {
+                    let mut map = schemars::Map::new();
+                    map.insert("name".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    map.insert("question".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    map.insert("schema".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    map.insert("buttons".to_string(), buttons_schema.into());
+                    map
+                },
+                required: {
+                    let mut set = schemars::Set::new();
+                    set.insert("name".to_string());
+                    set.insert("question".to_string());
+                    set.insert("schema".to_string());
+                    set.insert("buttons".to_string());  // Include buttons (nullable via type)
+                    set
+                },
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionButtonInput {
     pub label: String,
-    /// Button value (JSON string that will be parsed)
-    pub value: String,
+    /// Button value
+    pub value: JsonValue,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
+}
+
+// Custom schema for QuestionButtonInput to avoid anyOf from Option
+impl JsonSchema for QuestionButtonInput {
+    fn schema_name() -> String {
+        "QuestionButtonInput".to_string()
+    }
+
+    fn json_schema(_gen: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        // Build schema manually to avoid anyOf from Option<String>
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Object))),
+            object: Some(Box::new(schemars::schema::ObjectValidation {
+                properties: {
+                    let mut map = schemars::Map::new();
+                    map.insert("label".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    map.insert("value".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+                        ..Default::default()
+                    }.into());
+                    map.insert("variant".to_string(), SchemaObject {
+                        instance_type: Some(SingleOrVec::Vec(vec![
+                            InstanceType::String,
+                            InstanceType::Null,
+                        ])),
+                        ..Default::default()
+                    }.into());
+                    map
+                },
+                required: {
+                    let mut set = schemars::Set::new();
+                    set.insert("label".to_string());
+                    set.insert("value".to_string());
+                    set.insert("variant".to_string());  // Include variant in required (nullable via type)
+                    set
+                },
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

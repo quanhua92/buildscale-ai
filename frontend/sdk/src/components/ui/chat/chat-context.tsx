@@ -508,7 +508,7 @@ export function ChatProvider({
   }, [chatId, workspaceId, connectToSse, stopGeneration])
 
   const sendMessage = React.useCallback(
-    async (content: string) => {
+    async (content: string, _attachments?: string[], metadata?: Record<string, any>) => {
       const userMessage: ChatMessageItem = {
         id: generateId(),
         role: "user",
@@ -556,7 +556,7 @@ export function ChatProvider({
           } else {
             const response = await apiClientRef.current.post<PostChatMessageResponse>(
               `/workspaces/${workspaceId}/chats/${chatId}`,
-              { content, model } as PostChatMessageRequest
+              { content, model, metadata } as PostChatMessageRequest
             )
             if (response?.status !== "accepted") throw new Error('Message not accepted')
 
@@ -645,73 +645,35 @@ export function ChatProvider({
           answers: newAnswers
         })
       } else {
-        // All questions answered - format and send message
-        let messageText = `[User answered ${pendingQuestionSession.allQuestions.length} questions]\n\n`
+        // All questions answered - send with structured metadata
+        const answerCount = pendingQuestionSession.allQuestions.length
 
-        // Build message with all questions and answers
+        // Build a simple summary message for readability
+        let summaryText = `[User answered ${answerCount} question${answerCount > 1 ? 's' : ''}]`
+
+        // Add brief summary of button answers for clarity
+        const buttonAnswers: string[] = []
         for (const q of pendingQuestionSession.allQuestions) {
           const ans = newAnswers[q.name!]
-          messageText += `[AI asked: ${q.question}]`
-
-          // Show button choices if present
           if (q.buttons && q.buttons.length > 0) {
-            const choices = q.buttons.map((b: any) => b.label).join(", ")
-            messageText += `\n[Choices: ${choices}]`
-          }
-          // Show enum choices from schema (for checkbox questions)
-          else if (q.schema?.items?.enum) {
-            const enumChoices = q.schema.items.enum.join(", ")
-            messageText += `\n[Choices: ${enumChoices}]`
-          }
-          // Show single enum for radio questions
-          else if (q.schema?.enum) {
-            const enumChoices = q.schema.enum.join(", ")
-            messageText += `\n[Choices: ${enumChoices}]`
-          }
-
-          // Show number range constraints
-          if (q.schema?.type === 'number') {
-            const parts = []
-            if (q.schema.minimum !== undefined) parts.push(`min: ${q.schema.minimum}`)
-            if (q.schema.maximum !== undefined) parts.push(`max: ${q.schema.maximum}`)
-            if (parts.length > 0) messageText += `\n[Range: ${parts.join(', ')}]`
-          }
-
-          // Show string pattern/length constraints
-          if (q.schema?.type === 'string') {
-            const parts = []
-            if (q.schema.pattern) parts.push(`pattern: ${q.schema.pattern}`)
-            if (q.schema.minLength !== undefined) parts.push(`min length: ${q.schema.minLength}`)
-            if (q.schema.maxLength !== undefined) parts.push(`max length: ${q.schema.maxLength}`)
-            if (parts.length > 0) messageText += `\n[Constraints: ${parts.join(', ')}]`
-          }
-
-          // Show array constraints
-          if (q.schema?.type === 'array') {
-            const parts = []
-            if (q.schema.minItems !== undefined) parts.push(`min items: ${q.schema.minItems}`)
-            if (q.schema.maxItems !== undefined) parts.push(`max items: ${q.schema.maxItems}`)
-            if (parts.length > 0) messageText += `\n[Constraints: ${parts.join(', ')}]`
-          }
-
-          // If answer matches a button choice, show label + value
-          if (q.buttons) {
             const matchingButton = q.buttons.find((b: any) => b.value === ans)
             if (matchingButton) {
-              messageText += `\n[Answered: "${matchingButton.label}" (value: ${JSON.stringify(ans)})]\n\n`
-            } else {
-              messageText += `\n[Answered: ${JSON.stringify(ans)}]\n\n`
+              buttonAnswers.push(matchingButton.label)
             }
-          } else if (Array.isArray(ans) && q.schema?.items?.enum) {
-            // For array answers (checkboxes), show selected values
-            messageText += `\n[Answered: ${ans.join(', ')}]\n\n`
-          } else {
-            messageText += `\n[Answered: ${JSON.stringify(ans)}]\n\n`
           }
+        }
+        if (buttonAnswers.length > 0) {
+          summaryText += `: ${buttonAnswers.join(', ')}`
         }
 
         try {
-          await sendMessage(messageText.trim())
+          // Send message with structured metadata
+          await sendMessage(summaryText, undefined, {
+            question_answer: {
+              question_id: pendingQuestionSession.questionId,
+              answers: newAnswers
+            }
+          })
           setPendingQuestionSession(null)
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error'

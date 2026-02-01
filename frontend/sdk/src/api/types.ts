@@ -151,6 +151,12 @@ export interface CreateChatResponse {
 export interface PostChatMessageRequest {
   content: string
   model?: string
+  metadata?: {
+    question_answer?: {
+      question_id: string
+      answers: Record<string, any>
+    }
+  }
 }
 
 export interface PostChatMessageResponse {

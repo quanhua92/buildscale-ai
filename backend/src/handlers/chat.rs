@@ -247,6 +247,9 @@ pub async fn post_chat_message(
         content: req.content.clone(),
         metadata: sqlx::types::Json(ChatMessageMetadata {
             model: Some(model_for_metadata),
+            question_answer: req.metadata.as_ref()
+                .and_then(|m| m.get("question_answer"))
+                .and_then(|qa| serde_json::from_value(qa.clone()).ok()),
             ..Default::default()
         }),
     }).await?;

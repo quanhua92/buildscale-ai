@@ -37,11 +37,11 @@ impl Tool for AskUserTool {
 {
   "name": "choice",
   "question": "Which approach do you prefer?",
-  "schema": "{\"type\":\"string\",\"enum\":[\"Option A\",\"Option B\",\"Option C\"]}",
+  "schema": {"type":"string","enum":["Option A","Option B","Option C"]},
   "buttons": [
-    {"label": "Option A", "value": "\"A\""},
-    {"label": "Option B", "value": "\"B\""},
-    {"label": "Option C", "value": "\"C\""}
+    {"label": "Option A", "value": "A"},
+    {"label": "Option B", "value": "B"},
+    {"label": "Option C", "value": "C"}
   ]
 }
 ```
@@ -54,7 +54,7 @@ impl Tool for AskUserTool {
 {
   "name": "choices",
   "question": "Select all that apply:",
-  "schema": "{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"A\",\"B\",\"C\"]},\"minItems\":1}"
+  "schema": {"type":"array","items":{"type":"string","enum":["A","B","C"]},"minItems":1}
   // NO buttons field! Frontend handles this.
 }
 ```
@@ -82,7 +82,41 @@ Array/checkbox (multi-select):
     }
 
     fn definition(&self) -> Value {
-        super::strict_tool_schema::<AskUserArgs>()
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "description": "Array of questions (always array, single = 1-item array)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "question": {"type": "string"},
+                            "schema": {"type": "string"},
+                            "buttons": {
+                                "type": ["array", "null"],
+                                "description": "Optional button labels for single-select questions (string enum). Do NOT provide for array/checkbox questions.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {"type": "string"},
+                                        "value": {"type": "string"},
+                                        "variant": {"type": ["string", "null"]}
+                                    },
+                                    "required": ["label", "value"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": ["name", "question", "schema"],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "required": ["questions"],
+            "additionalProperties": false
+        })
     }
 
     async fn execute(
@@ -112,28 +146,14 @@ Array/checkbox (multi-select):
         let questions: Vec<crate::models::sse::Question> = ask_args.questions
             .into_iter()
             .map(|q| {
-                // Parse schema JSON string to Value
-                let schema_value: serde_json::Value = serde_json::from_str(&q.schema)
-                    .unwrap_or_else(|e| {
-                        tracing::warn!(error = %e, schema = %q.schema, "Failed to parse question schema, using empty object");
-                        serde_json::json!({})
-                    });
-
                 crate::models::sse::Question {
                     name: q.name,
                     question: q.question,
-                    schema: schema_value,
+                    schema: q.schema.0,
                     buttons: q.buttons.map(|btns| btns.into_iter().map(|b| {
-                        // Parse value JSON string to Value
-                        let value_value: serde_json::Value = serde_json::from_str(&b.value)
-                            .unwrap_or_else(|e| {
-                                tracing::warn!(error = %e, value = %b.value, "Failed to parse button value, using raw string");
-                                serde_json::json!(b.value)
-                            });
-
                         crate::models::sse::QuestionButton {
                             label: b.label,
-                            value: value_value,
+                            value: b.value.0,
                             variant: b.variant,
                         }
                     }).collect()),
