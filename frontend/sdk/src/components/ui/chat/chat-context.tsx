@@ -20,9 +20,91 @@ export type MessagePart =
   | { type: "call"; tool: string; args: any; id: string }
   | { type: "observation"; output: string; success: boolean; callId: string }
 
-export type ChatModel = "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-4o" | "gpt-4o-mini"
-export const CHAT_MODELS: ChatModel[] = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-4o", "gpt-4o-mini"]
-export const DEFAULT_MODEL: ChatModel = "gpt-5-mini"
+// ============================================================================
+// Multi-Provider Types
+// ============================================================================
+
+export type AiProvider = "openai" | "openrouter"
+
+export interface ChatModel {
+  id: string              // "openai:gpt-4o" or "openrouter:anthropic/claude-3.5-sonnet"
+  provider: AiProvider
+  name: string            // "GPT-4o" or "Claude 3.5 Sonnet"
+  model: string           // "gpt-4o" or "anthropic/claude-3.5-sonnet"
+  legacyId?: string       // For backward compatibility with old model strings
+  description?: string    // Optional model description
+  contextWindow?: number  // Optional context window size in tokens
+}
+
+// Legacy models for backward compatibility
+export const LEGACY_CHAT_MODELS: ChatModel[] = [
+  { id: "openai:gpt-5", provider: "openai", name: "GPT-5", model: "gpt-5", legacyId: "gpt-5" },
+  { id: "openai:gpt-5-mini", provider: "openai", name: "GPT-5 Mini", model: "gpt-5-mini", legacyId: "gpt-5-mini" },
+  { id: "openai:gpt-5-nano", provider: "openai", name: "GPT-5 Nano", model: "gpt-5-nano", legacyId: "gpt-5-nano" },
+  { id: "openai:gpt-5.1", provider: "openai", name: "GPT-5.1", model: "gpt-5.1", legacyId: "gpt-5.1" },
+  { id: "openai:gpt-4o", provider: "openai", name: "GPT-4o", model: "gpt-4o", legacyId: "gpt-4o" },
+  { id: "openai:gpt-4o-mini", provider: "openai", name: "GPT-4o Mini", model: "gpt-4o-mini", legacyId: "gpt-4o-mini" },
+]
+
+export const DEFAULT_MODEL: ChatModel = LEGACY_CHAT_MODELS[1] // "openai:gpt-5-mini"
+
+// Models fetched from backend (filtered by configured providers)
+let AVAILABLE_MODELS: ChatModel[] = [...LEGACY_CHAT_MODELS]
+
+// Parse model identifier from "provider:model" or legacy "model" format
+export function parseModelIdentifier(modelId: string, defaultProvider: AiProvider = "openai"): ChatModel | null {
+  // Check if it's already in the new format
+  if (modelId.includes(':')) {
+    const [provider, model] = modelId.split(':', 2)
+    const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId)
+    if (availableModel) return availableModel
+
+    // Create a model object if not in available list
+    return {
+      id: modelId,
+      provider: provider as AiProvider,
+      name: model,
+      model
+    }
+  }
+
+  // Legacy format - try to find by legacyId
+  const legacyModel = LEGACY_CHAT_MODELS.find(m => m.legacyId === modelId)
+  if (legacyModel) return legacyModel
+
+  // Not found - create with default provider
+  return {
+    id: `${defaultProvider}:${modelId}`,
+    provider: defaultProvider,
+    name: modelId,
+    model: modelId
+  }
+}
+
+// Update available models from backend API
+export function updateAvailableModels(models: ChatModel[]) {
+  AVAILABLE_MODELS = models
+}
+
+// Get current available models
+export function getAvailableModels(): ChatModel[] {
+  return AVAILABLE_MODELS
+}
+
+// Group models by provider
+export function groupModelsByProvider(): Record<AiProvider, ChatModel[]> {
+  const grouped: Record<string, ChatModel[]> = { openai: [], openrouter: [] }
+  for (const model of AVAILABLE_MODELS) {
+    if (!grouped[model.provider]) {
+      grouped[model.provider] = []
+    }
+    grouped[model.provider].push(model)
+  }
+  return grouped as Record<AiProvider, ChatModel[]>
+}
+
+// For backward compatibility with existing code
+export const CHAT_MODELS = LEGACY_CHAT_MODELS.map(m => m.id)
 
 export interface ChatMessageItem {
   id: string
@@ -51,6 +133,7 @@ interface ChatContextValue {
   chatId?: string
   model: ChatModel
   setModel: (model: ChatModel) => void
+  availableModels: ChatModel[]  // Available models from backend
   // Plan Mode State
   mode: ChatMode
   planFile: string | null
@@ -467,12 +550,9 @@ export function ChatProvider({
           setMessages(historyMessages)
 
           // Load model from existing chat session
-          const chatModel = session.agent_config.model as ChatModel
-          if (CHAT_MODELS.includes(chatModel)) {
-            setModel(chatModel)
-          } else {
-            setModel(DEFAULT_MODEL)
-          }
+          const modelId = session.agent_config.model // string
+          const parsedModel = parseModelIdentifier(modelId)
+          setModel(parsedModel || DEFAULT_MODEL)
 
           // Initialize Plan Mode state from chat metadata (agent_config)
           // Default to 'plan' mode if not set
@@ -540,7 +620,7 @@ export function ChatProvider({
           if (!chatId) {
             const response = await apiClientRef.current.post<CreateChatResponse>(
               `/workspaces/${workspaceId}/chats`,
-              { goal: content, model } as CreateChatRequest
+              { goal: content, model: model.id } as CreateChatRequest
             )
             if (!response?.chat_id) throw new Error('Invalid server response')
             setChatId(response.chat_id)
@@ -556,7 +636,7 @@ export function ChatProvider({
           } else {
             const response = await apiClientRef.current.post<PostChatMessageResponse>(
               `/workspaces/${workspaceId}/chats/${chatId}`,
-              { content, model, metadata } as PostChatMessageRequest
+              { content, model: model.id, metadata } as PostChatMessageRequest
             )
             if (response?.status !== "accepted") throw new Error('Message not accepted')
 
@@ -705,7 +785,7 @@ export function ChatProvider({
             `/workspaces/${workspaceId}/chats`,
             {
               goal: `Starting in ${newMode} mode`,
-              model
+              model: model.id
             } as CreateChatRequest
           )
 
@@ -750,7 +830,7 @@ export function ChatProvider({
   const value = React.useMemo(
     () => ({
       messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId,
-      model, setModel,
+      model, setModel, availableModels: getAvailableModels(),
       // Plan Mode
       mode, planFile, pendingQuestionSession, currentQuestion,
       submitAnswer, dismissQuestion, setMode

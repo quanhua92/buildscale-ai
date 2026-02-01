@@ -135,6 +135,29 @@ export interface UpdateWorkspaceResponse {
 // Chat Types
 // ============================================================================
 
+export type AiProvider = "openai" | "openrouter"
+
+export interface ChatModelInfo {
+  id: string              // "openai:gpt-4o"
+  provider: AiProvider
+  model: string           // "gpt-4o"
+  display_name: string    // "GPT-4o"
+  description?: string
+  context_window?: number
+}
+
+export interface ProviderInfo {
+  provider: AiProvider
+  display_name: string    // "OpenAI" or "OpenRouter"
+  configured: boolean
+  models: ChatModelInfo[]
+}
+
+export interface ProvidersResponse {
+  providers: ProviderInfo[]
+  default_provider: AiProvider
+}
+
 export interface CreateChatRequest {
   goal: string
   files?: string[]
