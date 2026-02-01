@@ -28,6 +28,7 @@ pub use handlers::{
     files::semantic_search,
     tools::execute_tool,
     chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat,
+    providers::get_providers, providers::get_workspace_providers,
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
@@ -170,6 +171,7 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
             Router::new()
                 .route("/health/cache", get(health_cache))
                 .route("/auth/me", get(me))
+                .route("/providers", get(get_providers))
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     jwt_auth_middleware,
@@ -350,6 +352,15 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/tools",
             post(tool_handlers::execute_tool)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        // Provider routes
+        .route(
+            "/{id}/providers",
+            get(crate::handlers::get_workspace_providers)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
