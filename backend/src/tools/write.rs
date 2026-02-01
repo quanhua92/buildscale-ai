@@ -33,14 +33,8 @@ impl Tool for WriteTool {
             "properties": {
                 "path": {"type": "string"},
                 "content": {
-                    "description": "File content - can be a string, object, array, number, boolean, or null",
-                    "anyOf": [
-                        {"type": "string"},
-                        {"type": "object"},
-                        {"type": "array"},
-                        {"type": "number"},
-                        {"type": "boolean"}
-                    ]
+                    "type": "string",
+                    "description": "File content as a string (for JSON content, pass as serialized JSON string)"
                 },
                 "file_type": {"type": ["string", "null"]}
             },
