@@ -34,7 +34,6 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
     }, [])
 
     // For backward compatibility, if model is a string (legacy), convert it
-    const modelId = typeof model === 'string' ? model : model?.id
     const currentModel = typeof model === 'string'
       ? LEGACY_CHAT_MODELS.find(m => m.legacyId === model) || DEFAULT_MODEL
       : model
