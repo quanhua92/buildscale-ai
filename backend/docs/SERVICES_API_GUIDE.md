@@ -418,7 +418,7 @@ pub struct ProviderConfig {
 // OpenAI-specific configuration
 pub struct OpenAIConfig {
     pub api_key: SecretString,
-    pub base_url: Option<String>,
+    pub base_url: Option<String>,  // Optional: for Azure OpenAI or proxy
     pub enable_reasoning_summaries: bool,
     pub reasoning_effort: String,  // "low", "medium", "high"
 }
@@ -426,9 +426,13 @@ pub struct OpenAIConfig {
 // OpenRouter configuration
 pub struct OpenRouterConfig {
     pub api_key: SecretString,
-    pub base_url: Option<String>,
+    pub base_url: Option<String>,  // Optional: defaults to https://openrouter.ai/api
 }
 ```
+
+**Note**: The `base_url` field is optional:
+- **OpenAI**: Leave empty for default OpenAI API, or specify for Azure OpenAI/custom proxy
+- **OpenRouter**: Leave empty for default `https://openrouter.ai/api`, or specify for custom endpoint
 
 **Model Identifier Format**:
 
@@ -489,9 +493,13 @@ let response = agent.prompt(&user_message).await?;
 BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-...
 BUILDSCALE__AI__PROVIDERS__OPENAI__ENABLE_REASONING_SUMMARIES=true
 BUILDSCALE__AI__PROVIDERS__OPENAI__REASONING_EFFORT=medium
+# Optional: for Azure OpenAI or custom proxy (omit for default)
+# BUILDSCALE__AI__PROVIDERS__OPENAI__BASE_URL=https://your-resource.openai.azure.com
 
 # OpenRouter Provider
 BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-...
+# Optional: for custom endpoint (omit for default https://openrouter.ai/api)
+# BUILDSCALE__AI__PROVIDERS__OPENROUTER__BASE_URL=https://your-proxy.com
 
 # Default Provider
 BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
@@ -499,6 +507,8 @@ BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
 # Legacy (deprecated, auto-migrates to providers.openai.api_key)
 BUILDSCALE__AI__OPENAI_API_KEY=sk-...
 ```
+
+**Note**: The `BASE_URL` environment variables are optional and only needed for custom endpoints (Azure OpenAI, proxy servers, or self-hosted instances).
 
 **Workspace Provider Override**:
 

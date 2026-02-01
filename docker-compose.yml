@@ -61,10 +61,14 @@ services:
       # AI Providers Configuration
       # OpenAI Provider
       - BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-placeholder-replace-with-your-key
+      # Optional: for Azure OpenAI or custom proxy (omit for default OpenAI API)
+      # - BUILDSCALE__AI__PROVIDERS__OPENAI__BASE_URL=https://your-resource.openai.azure.com
       - BUILDSCALE__AI__PROVIDERS__OPENAI__ENABLE_REASONING_SUMMARIES=true
       - BUILDSCALE__AI__PROVIDERS__OPENAI__REASONING_EFFORT=medium
       # OpenRouter Provider (optional - remove if not using)
       # - BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-placeholder-replace-with-your-key
+      # Optional: for custom endpoint (omit for default https://openrouter.ai/api)
+      # - BUILDSCALE__AI__PROVIDERS__OPENROUTER__BASE_URL=https://your-proxy.com
       # Default Provider (openai or openrouter)
       - BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
       # Legacy format (deprecated - auto-migrates to providers.openai.api_key)

@@ -52,16 +52,20 @@ pub struct ProviderConfig {
 
 pub struct OpenAIConfig {
     pub api_key: SecretString,
-    pub base_url: Option<String>,
+    pub base_url: Option<String>,  // Optional: for Azure OpenAI or proxy
     pub enable_reasoning_summaries: bool,
     pub reasoning_effort: String,
 }
 
 pub struct OpenRouterConfig {
     pub api_key: SecretString,
-    pub base_url: Option<String>,
+    pub base_url: Option<String>,  // Optional: defaults to https://openrouter.ai/api
 }
 ```
+
+**Note**: The `base_url` field is optional in both configurations:
+- **OpenAI**: Leave empty for default OpenAI API, or specify for Azure OpenAI/custom proxy
+- **OpenRouter**: Leave empty for default `https://openrouter.ai/api`, or specify for custom endpoint
 
 ## Model Identifier Format
 
@@ -528,6 +532,21 @@ BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-dev-...
 BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-dev-...
 BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
 ```
+
+### Custom Endpoint (Azure OpenAI, Proxy, or Self-Hosted)
+
+```bash
+# .env
+# Azure OpenAI example
+BUILDSCALE__AI__PROVIDERS__OPENAI__API_KEY=sk-azure-...
+BUILDSCALE__AI__PROVIDERS__OPENAI__BASE_URL=https://your-resource.openai.azure.com
+
+# OpenRouter with custom endpoint
+BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-...
+BUILDSCALE__AI__PROVIDERS__OPENROUTER__BASE_URL=https://your-proxy.com
+```
+
+**Note**: Only specify `BASE_URL` if using a custom endpoint. Leave it empty for default provider APIs.
 
 ### Production Environment
 
