@@ -34,19 +34,31 @@ If ANY of the above is FALSE, DO NOT CALL THIS TOOL.
 
 === WHAT IS A VALID PLAN FILE ===
 A valid plan file MUST have:
-1. File extension: .plan (e.g., /plans/implementation.plan)
-2. File type: "plan" (set via file_type parameter when creating)
-3. Content: Implementation plan with tasks and execution strategy
+1. File extension: .plan (e.g., /plans/mighty-willow-symphony.plan)
+2. File name: 3 random words joined by hyphens (NOT "implementation.plan")
+3. File type: "plan" (set via file_type parameter when creating)
+4. Content: Implementation plan with tasks and execution strategy
 
 === HOW TO CREATE A PLAN FILE ===
 Use the 'write' tool with BOTH the .plan extension AND file_type parameter.
 
 Plan files work exactly like Document files - just pass raw string content.
 
+CRITICAL: Generate a RANDOM 3-word hyphenated name (NOT "implementation.plan")
+
 Example:
-  path: "/plans/implementation.plan"
+  path: "/plans/fearless-ember-invention.plan"
   content: Raw string with your plan (markdown format recommended)
   file_type: "plan"
+
+Good plan file names (3 random words):
+- /plans/gleeful-tangerine-expedition.plan
+- /plans/jubilant-river-transformation.plan
+- /plans/bold-meadow-revelation.plan
+
+Bad plan file names:
+- /plans/implementation.plan (too generic)
+- /plans/my-plan.plan (not unique enough)
 
 CRITICAL: If you don't specify file_type="plan", the file will be created as type "document" and exit_plan_mode will fail with "File is not a plan file".
 

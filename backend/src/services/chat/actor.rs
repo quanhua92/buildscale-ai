@@ -13,6 +13,73 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+/// Consolidated state for ChatActor to reduce lock contention
+/// All state that was previously in separate Arc<Mutex<>> fields is now grouped logically
+struct ChatActorState {
+    /// Agent State Management (accessed together in get_or_create_agent)
+    agent_state: AgentState,
+    /// Tool Tracking (always accessed in pairs)
+    tool_tracking: ToolTracking,
+    /// Interaction Lifecycle (independent access)
+    interaction: InteractionState,
+    /// Accumulated State (independent access)
+    tool_actions_log: Vec<String>,
+}
+
+/// Agent cache and validation state
+/// These fields are accessed together when checking/creating agents
+struct AgentState {
+    /// Cached Rig agent with preserved chat_history
+    /// Contains reasoning items for GPT-5 multi-turn conversations
+    cached_agent: Option<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>>,
+    /// Track model name to detect when to recreate agent
+    current_model_name: Option<String>,
+    /// Track user_id to detect when to recreate agent
+    current_user_id: Option<Uuid>,
+    /// Track mode to detect when to recreate agent (mode changes require new ToolConfig)
+    current_mode: Option<String>,
+}
+
+/// Current tool execution tracking
+/// These fields are always read/written together
+struct ToolTracking {
+    /// Track current tool name for logging when ToolResult arrives
+    current_tool_name: Option<String>,
+    /// Track current tool arguments for logging when ToolResult arrives
+    current_tool_args: Option<serde_json::Value>,
+}
+
+/// Interaction lifecycle management
+/// These fields manage the current interaction's lifecycle
+struct InteractionState {
+    /// Cancellation token for the current interaction
+    current_cancellation_token: Option<CancellationToken>,
+    /// Track current model for cancellation metadata
+    current_model: Option<String>,
+}
+
+impl Default for ChatActorState {
+    fn default() -> Self {
+        Self {
+            agent_state: AgentState {
+                cached_agent: None,
+                current_model_name: None,
+                current_user_id: None,
+                current_mode: None,
+            },
+            tool_tracking: ToolTracking {
+                current_tool_name: None,
+                current_tool_args: None,
+            },
+            interaction: InteractionState {
+                current_cancellation_token: None,
+                current_model: None,
+            },
+            tool_actions_log: Vec::new(),
+        }
+    }
+}
+
 pub struct ChatActor {
     chat_id: Uuid,
     workspace_id: Uuid,
@@ -24,23 +91,9 @@ pub struct ChatActor {
     default_persona: String,
     default_context_token_limit: usize,
     inactivity_timeout: std::time::Duration,
-    current_cancellation_token: Arc<Mutex<Option<CancellationToken>>>,
-    current_model: Arc<Mutex<Option<String>>>, // Track current model for cancellation metadata
-    /// Cached Rig agent with preserved chat_history
-    /// Contains reasoning items for GPT-5 multi-turn conversations
-    cached_agent: Arc<Mutex<Option<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>>>>,
-    /// Track model name to detect when to recreate agent
-    current_model_name: Arc<Mutex<Option<String>>>,
-    /// Track user_id to detect when to recreate agent
-    current_user_id: Arc<Mutex<Option<Uuid>>>,
-    /// Track mode to detect when to recreate agent (mode changes require new ToolConfig)
-    current_mode: Arc<Mutex<Option<String>>>,
-    /// Accumulate file modification tool actions during streaming for logging
-    tool_actions_log: Arc<Mutex<Vec<String>>>,
-    /// Track current tool name for logging when ToolResult arrives
-    current_tool_name: Arc<Mutex<Option<String>>>,
-    /// Track current tool arguments for logging when ToolResult arrives
-    current_tool_args: Arc<Mutex<Option<serde_json::Value>>>,
+    /// Consolidated state - single lock for all actor state
+    /// Reduces lock contention and eliminates deadlock risk
+    state: Arc<Mutex<ChatActorState>>,
 }
 
 pub struct ChatActorArgs {
@@ -77,15 +130,7 @@ impl ChatActor {
             default_persona: args.default_persona,
             default_context_token_limit: args.default_context_token_limit,
             inactivity_timeout: args.inactivity_timeout,
-            current_cancellation_token: Arc::new(Mutex::new(None)),
-            current_model: Arc::new(Mutex::new(None)),
-            cached_agent: Arc::new(Mutex::new(None)),
-            current_model_name: Arc::new(Mutex::new(None)),
-            current_user_id: Arc::new(Mutex::new(None)),
-            current_mode: Arc::new(Mutex::new(None)),
-            tool_actions_log: Arc::new(Mutex::new(Vec::new())),
-            current_tool_name: Arc::new(Mutex::new(None)),
-            current_tool_args: Arc::new(Mutex::new(None)),
+            state: Arc::new(Mutex::new(ChatActorState::default())),
         };
 
         tokio::spawn(async move {
@@ -152,7 +197,7 @@ impl ChatActor {
                                 );
 
                                 // Trigger cancellation of current interaction's token
-                                let token = self.current_cancellation_token.lock().await.clone();
+                                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
                                 if let Some(token) = token {
                                     token.cancel();
                                 }
@@ -182,7 +227,7 @@ impl ChatActor {
 
         // Create a new cancellation token for this interaction
         let cancellation_token = CancellationToken::new();
-        *self.current_cancellation_token.lock().await = Some(cancellation_token.clone());
+        self.state.lock().await.interaction.current_cancellation_token = Some(cancellation_token.clone());
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
@@ -257,7 +302,7 @@ impl ChatActor {
         };
 
         // Store current model for potential cancellation
-        *self.current_model.lock().await = Some(session.agent_config.model.clone());
+        self.state.lock().await.interaction.current_model = Some(session.agent_config.model.clone());
 
         // 7. Load AI config for reasoning settings
         let ai_config = crate::config::Config::load()?.ai;
@@ -378,8 +423,11 @@ impl ChatActor {
                         rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
                             tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
                             // Track tool name and arguments for logging when ToolResult arrives
-                            *self.current_tool_name.lock().await = Some(tool_call.function.name.clone());
-                            *self.current_tool_args.lock().await = Some(serde_json::to_value(&tool_call.function.arguments).unwrap_or_default());
+                            {
+                                let mut state = self.state.lock().await;
+                                state.tool_tracking.current_tool_name = Some(tool_call.function.name.clone());
+                                state.tool_tracking.current_tool_args = Some(serde_json::to_value(&tool_call.function.arguments).unwrap_or_default());
+                            }
                             let path = tool_call.function.arguments.get("path")
                                 .or_else(|| tool_call.function.arguments.get("source"))
                                 .and_then(|v| v.as_str())
@@ -484,7 +532,7 @@ impl ChatActor {
                                              });
 
                                              // Clear agent cache to force new agent with build mode
-                                             *self.cached_agent.lock().await = None;
+                                             self.state.lock().await.agent_state.cached_agent = None;
                                          }
                                      }
                                  }
@@ -509,9 +557,9 @@ impl ChatActor {
                              // Log successful file modification tools
                              if success {
                                  let (name_opt, args_opt) = {
-                                     let name_guard = self.current_tool_name.lock().await;
-                                     let args_guard = self.current_tool_args.lock().await;
-                                     (name_guard.clone(), args_guard.clone())
+                                     let state = self.state.lock().await;
+                                     (state.tool_tracking.current_tool_name.clone(),
+                                      state.tool_tracking.current_tool_args.clone())
                                  };
 
                                  if let Some(tname) = name_opt {
@@ -526,15 +574,18 @@ impl ChatActor {
                                                  "[ChatActor] Adding tool action to log: {}",
                                                  log_msg
                                              );
-                                             self.tool_actions_log.lock().await.push(log_msg);
+                                             self.state.lock().await.tool_actions_log.push(log_msg);
                                          }
                                      }
                                  }
                              }
 
                              // Clear current tool name and arguments
-                             *self.current_tool_name.lock().await = None;
-                             *self.current_tool_args.lock().await = None;
+                             {
+                                 let mut state = self.state.lock().await;
+                                 state.tool_tracking.current_tool_name = None;
+                                 state.tool_tracking.current_tool_args = None;
+                             }
                         }
                     }
                 }
@@ -581,7 +632,7 @@ impl ChatActor {
         }
 
         // Save tool actions log before AI response
-        let log = self.tool_actions_log.lock().await.clone();
+        let log = self.state.lock().await.tool_actions_log.clone();
         if !log.is_empty() {
             tracing::info!(
                 "[ChatActor] Saving {} tool actions log before AI response for chat {}",
@@ -641,10 +692,10 @@ impl ChatActor {
         tracing::info!("[ChatActor] Interaction turn complete for chat {}", self.chat_id);
 
         // Clear the cancellation token for this interaction
-        *self.current_cancellation_token.lock().await = None;
+        self.state.lock().await.interaction.current_cancellation_token = None;
 
         // Clear tool actions log for next interaction
-        self.tool_actions_log.lock().await.clear();
+        self.state.lock().await.tool_actions_log.clear();
 
         Ok(())
     }
@@ -662,7 +713,8 @@ impl ChatActor {
         );
 
         // Get current model for metadata
-        let model = self.current_model.lock().await.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
+        let model = self.state.lock().await.interaction.current_model.clone()
+            .unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
 
         // 1. Send Stopped event to all SSE clients
         let _ = self.event_tx.send(SseEvent::Stopped {
@@ -689,10 +741,10 @@ impl ChatActor {
         self.add_cancellation_marker(conn, reason).await?;
 
         // 4. Clear the cancellation token for this interaction
-        *self.current_cancellation_token.lock().await = None;
+        self.state.lock().await.interaction.current_cancellation_token = None;
 
         // 5. Clear agent cache to ensure fresh state after cancellation
-        *self.cached_agent.lock().await = None;
+        self.state.lock().await.agent_state.cached_agent = None;
 
         Ok(())
     }
@@ -754,20 +806,17 @@ impl ChatActor {
         session: &crate::models::chat::ChatSession,
         ai_config: &crate::config::AiConfig,
     ) -> crate::error::Result<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>> {
-        let mut cached = self.cached_agent.lock().await;
-        let current_model_name = self.current_model_name.lock().await;
-        let current_user = self.current_user_id.lock().await;
-        let current_mode = self.current_mode.lock().await;
+        let mut state = self.state.lock().await;
 
         // Check if we can reuse the cached agent
         // Must match: model, user, AND mode (mode changes require new agent)
-        let can_reuse = cached.is_some()
-            && current_model_name.as_ref() == Some(&session.agent_config.model)
-            && current_user.as_ref() == Some(&user_id)
-            && current_mode.as_ref() == Some(&session.agent_config.mode);
+        let can_reuse = state.agent_state.cached_agent.is_some()
+            && state.agent_state.current_model_name.as_ref() == Some(&session.agent_config.model)
+            && state.agent_state.current_user_id.as_ref() == Some(&user_id)
+            && state.agent_state.current_mode.as_ref() == Some(&session.agent_config.mode);
 
         if can_reuse {
-            Ok(cached.as_ref().unwrap().clone())
+            Ok(state.agent_state.cached_agent.as_ref().unwrap().clone())
         } else {
             tracing::info!(
                 "[ChatActor] Creating new agent for chat {} (model: {})",
@@ -785,13 +834,11 @@ impl ChatActor {
                 ai_config,
             ).await?;
 
-            // Update cache
-            *cached = Some(agent.clone());
-            drop(current_model_name);
-            *self.current_model_name.lock().await = Some(session.agent_config.model.clone());
-            drop(current_user);
-            *self.current_user_id.lock().await = Some(user_id);
-            *self.current_mode.lock().await = Some(session.agent_config.mode.clone());
+            // Update cache - single atomic update
+            state.agent_state.cached_agent = Some(agent.clone());
+            state.agent_state.current_model_name = Some(session.agent_config.model.clone());
+            state.agent_state.current_user_id = Some(user_id);
+            state.agent_state.current_mode = Some(session.agent_config.mode.clone());
 
             Ok(agent)
         }

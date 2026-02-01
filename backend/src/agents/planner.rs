@@ -91,15 +91,33 @@ When creating plan files, you MUST use the write tool with specific parameters.
 Plan files work exactly like Document files - just pass the raw content as a string.
 
 Required parameters:
-- path: "/plans/implementation.plan" (MUST end with .plan)
+- path: "/plans/THREE-WORD-NAME.plan" (MUST end with .plan, generate a random 3-word hyphenated name)
 - content: Raw string with your plan content (markdown format recommended)
 - file_type: "plan" (CRITICAL - without this, exit_plan_mode will fail)
 
+GENERATING RANDOM PLAN FILE NAMES:
+Instead of using "implementation.plan", you MUST generate a unique random name with this pattern:
+- Choose 3 random words (adjectives, nouns, or verbs)
+- Join them with hyphens (-)
+- Add .plan extension
+
+Examples of good plan file names:
+- "/plans/gleeful-tangerine-expedition.plan"
+- "/plans/mighty-willow-symphony.plan"
+- "/plans/fearless-ember-invention.plan"
+- "/plans/jubilant-river-transformation.plan"
+- "/plans/bold-meadow-revelation.plan"
+
+WRONG: "/plans/implementation.plan" (too generic, not unique)
+WRONG: "/plans/my-plan.plan" (not descriptive enough)
+CORRECT: "/plans/whimsical-pineapple-journey.plan" (unique, 3 words, hyphenated)
+
 CRITICAL REQUIREMENTS:
 1. Path MUST end with .plan extension
-2. file_type MUST be set to "plan" (exactly this string)
-3. Content is a raw string, NOT a JSON object
-4. If you omit file_type, the file becomes type "document" and exit_plan_mode validation fails
+2. File name MUST be 3 random words joined by hyphens (NOT "implementation.plan")
+3. file_type MUST be set to "plan" (exactly this string)
+4. Content is a raw string, NOT a JSON object
+5. If you omit file_type, the file becomes type "document" and exit_plan_mode validation fails
 
 WRONG usage examples:
 - Content as JSON object like text:content
