@@ -208,18 +208,16 @@ impl RigService {
         // This prevents OpenAI from requiring reasoning items to be maintained across requests
         // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
         let mut params = serde_json::json!({
-            "store": false,
-            "reasoning": {
-                "effort": ai_config.reasoning_effort
-            }
+            "store": false
         });
 
-        // Enable reasoning summaries based on configuration
+        // Enable reasoning with effort and summaries based on configuration
         if ai_config.enable_reasoning_summaries {
-            if let Some(obj) = params.get_mut("reasoning") {
-                if let Some(reasoning_obj) = obj.as_object_mut() {
-                    reasoning_obj.insert("summary".to_string(), serde_json::json!("auto"));
-                }
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert("reasoning".to_string(), serde_json::json!({
+                    "effort": ai_config.reasoning_effort,
+                    "summary": "auto"
+                }));
             }
         }
 
