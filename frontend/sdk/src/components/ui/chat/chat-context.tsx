@@ -696,14 +696,32 @@ export function ChatProvider({
   // Plan Mode: Update chat mode
   const setMode = React.useCallback(
     async (newMode: ChatMode, newPlanFile?: string) => {
-      if (!chatId) {
-        toast.error('Cannot change mode: No active chat')
-        return
-      }
-
       try {
+        let targetChatId = chatId
+
+        // If no chat exists, create one first with a default message
+        if (!targetChatId) {
+          const response = await apiClientRef.current.post<CreateChatResponse>(
+            `/workspaces/${workspaceId}/chats`,
+            {
+              goal: `Starting in ${newMode} mode`,
+              model
+            } as CreateChatRequest
+          )
+
+          if (!response?.chat_id) {
+            throw new Error('Failed to create chat')
+          }
+
+          targetChatId = response.chat_id
+          // Update chatId state so we don't create again
+          setChatId(targetChatId)
+          onChatCreatedRef.current?.(targetChatId)
+        }
+
+        // Now update the mode
         await apiClientRef.current.patch(
-          `/workspaces/${workspaceId}/chats/${chatId}`,
+          `/workspaces/${workspaceId}/chats/${targetChatId}`,
           {
             app_data: {
               mode: newMode,
@@ -726,7 +744,7 @@ export function ChatProvider({
         console.error('[Chat] Set mode error', error)
       }
     },
-    [workspaceId, chatId]
+    [workspaceId, chatId, model, setChatId, onChatCreatedRef]
   )
 
   const value = React.useMemo(
