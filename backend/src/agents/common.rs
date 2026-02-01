@@ -49,9 +49,9 @@ When the user says "read this chat" or similar:
         "enum": ["Option A", "Option B", "Option C"]
       },
       "buttons": [
-        {"label": "Option A", "value": "\"A\""},
-        {"label": "Option B", "value": "\"B\""},
-        {"label": "Option C", "value": "\"C\""}
+        {"label": "Option A", "value": "A"},
+        {"label": "Option B", "value": "B"},
+        {"label": "Option C", "value": "C"}
       ]
     }]
   }
