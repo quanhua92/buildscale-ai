@@ -21,6 +21,7 @@ fn test_rig_service_from_config_openai_only() {
         }),
         openrouter: None,
         default_provider: "openai".to_string(),
+        default_model: "openai:gpt-5-mini".to_string(),
     };
 
     let rig_service = RigService::from_config(&config);
@@ -45,6 +46,7 @@ fn test_rig_service_from_config_openrouter_only() {
             base_url: None,
         }),
         default_provider: "openrouter".to_string(),
+        default_model: "openrouter:anthropic/claude-3.5-sonnet".to_string(),
     };
 
     let rig_service = RigService::from_config(&config);
@@ -75,6 +77,7 @@ fn test_rig_service_from_config_both_providers() {
             base_url: None,
         }),
         default_provider: "openai".to_string(),
+        default_model: "openai:gpt-5-mini".to_string(),
     };
 
     let rig_service = RigService::from_config(&config);
@@ -98,6 +101,7 @@ fn test_rig_service_from_config_no_providers() {
         openai: None,
         openrouter: None,
         default_provider: "openai".to_string(),
+        default_model: "openai:gpt-5-mini".to_string(),
     };
 
     let rig_service = RigService::from_config(&config);
@@ -123,6 +127,7 @@ fn test_rig_service_from_config_invalid_default_provider() {
         }),
         openrouter: None,
         default_provider: "invalid-provider".to_string(),
+        default_model: "openai:gpt-5-mini".to_string(),
     };
 
     let rig_service = RigService::from_config(&config);
@@ -146,6 +151,7 @@ fn test_rig_service_from_config_default_provider_not_configured() {
             base_url: None,
         }),
         default_provider: "openai".to_string(), // Default is OpenAI but only OpenRouter is configured
+        default_model: "openai:gpt-5-mini".to_string(),
     };
 
     let rig_service = RigService::from_config(&config);

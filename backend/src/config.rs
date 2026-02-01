@@ -269,10 +269,17 @@ pub struct ProviderConfig {
     /// Default provider to use when model doesn't specify one
     #[serde(default = "default_provider")]
     pub default_provider: String,
+    /// Default model to use for new chat sessions (e.g., "openai:gpt-4o" or "gpt-4o")
+    #[serde(default = "default_chat_model")]
+    pub default_model: String,
 }
 
 fn default_provider() -> String {
     "openai".to_string()
+}
+
+fn default_chat_model() -> String {
+    "openai:gpt-5-mini".to_string()
 }
 
 /// OpenAI provider configuration

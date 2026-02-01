@@ -36,6 +36,9 @@ BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-...
 # Default Provider
 BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
 
+# Default Model (e.g., "openai:gpt-5-mini" or "gpt-5-mini" for provider default)
+BUILDSCALE__AI__PROVIDERS__DEFAULT_MODEL=openai:gpt-5-mini
+
 # Legacy (deprecated, auto-migrates to providers.openai.api_key)
 BUILDSCALE__AI__OPENAI_API_KEY=sk-...
 ```
@@ -48,6 +51,7 @@ pub struct ProviderConfig {
     pub openai: Option<OpenAIConfig>,
     pub openrouter: Option<OpenRouterConfig>,
     pub default_provider: String, // "openai" or "openrouter"
+    pub default_model: String, // e.g., "openai:gpt-5-mini" or "gpt-5-mini"
 }
 
 pub struct OpenAIConfig {
@@ -247,7 +251,8 @@ Returns all configured providers and their available models.
       "models": []
     }
   ],
-  "default_provider": "openai"
+  "default_provider": "openai",
+  "default_model": "openai:gpt-5-mini"
 }
 ```
 
@@ -257,6 +262,7 @@ Returns all configured providers and their available models.
 - `configured` - Whether this provider has API credentials configured
 - `models` - Array of available models (empty if not configured)
 - `default_provider` - Default provider to use for legacy model strings
+- `default_model` - Default model for new chat sessions (e.g., "openai:gpt-5-mini")
 
 #### Get Workspace Providers
 
