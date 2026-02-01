@@ -61,7 +61,15 @@ impl Tool for MvTool {
                 message: super::PLAN_MODE_ERROR.to_string(),
             }));
         }
-            
+
+        // Plan Mode Guard: Ensure destination is within /plans/ directory
+        if config.plan_mode && !destination_path.starts_with("/plans/") {
+            return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                field: "destination".to_string(),
+                message: "In plan mode, files can only be moved within the /plans/ directory".to_string(),
+            }));
+        }
+
         // 2. Resolve destination logic
         let (target_parent_id, target_name) = if destination_path.ends_with('/') {
             // Case A: Explicit directory move "/folder/"

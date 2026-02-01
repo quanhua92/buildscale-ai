@@ -19,8 +19,15 @@ impl<'de> Deserialize<'de> for JsonValue {
     where
         D: serde::Deserializer<'de>,
     {
-        // Accept either a direct JSON value or a JSON string
-        Ok(JsonValue(serde_json::Value::deserialize(deserializer)?))
+        let value = serde_json::Value::deserialize(deserializer)?;
+        // If the value is a string, try to parse it as JSON
+        // This handles cases where the LLM provides a JSON object as a stringified JSON
+        if let serde_json::Value::String(s) = &value {
+            if let Ok(parsed_value) = serde_json::from_str(s) {
+                return Ok(JsonValue(parsed_value));
+            }
+        }
+        Ok(JsonValue(value))
     }
 }
 
