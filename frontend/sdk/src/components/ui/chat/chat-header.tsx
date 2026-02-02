@@ -91,7 +91,7 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
                     </div>
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-96">
                   {availableProviders.map((provider, providerIndex) => {
                     const providerModels = groupedModels[provider]
                     if (!providerModels || providerModels.length === 0) return null
