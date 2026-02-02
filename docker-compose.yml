@@ -71,8 +71,8 @@ services:
       # - BUILDSCALE__AI__PROVIDERS__OPENROUTER__BASE_URL=https://your-proxy.com
       # Default Provider (openai or openrouter)
       - BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openrouter
-      # Default Model (e.g., "openai:gpt-5-mini" or "openrouter:qwen/qwen3-235b-a22b-2507")
-      - BUILDSCALE__AI__PROVIDERS__DEFAULT_MODEL=openrouter:qwen/qwen3-235b-a22b-2507
+      # Default Model (e.g., "openai:gpt-5-mini" or "openrouter:openai/gpt-oss-120b")
+      - BUILDSCALE__AI__PROVIDERS__DEFAULT_MODEL=openrouter:openai/gpt-oss-120b
       # Legacy format (deprecated - auto-migrates to providers.openai.api_key)
       # - BUILDSCALE__AI__OPENAI_API_KEY=sk-placeholder-replace-with-your-key
     restart: unless-stopped
