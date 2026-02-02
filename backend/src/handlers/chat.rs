@@ -180,17 +180,31 @@ pub async fn get_chat_events(
     let init_stream = stream::once(async move { Ok(Event::default().data(init_data)) });
 
     // 4. Stream from persistent broadcast channel
+    tracing::info!(
+        chat_id = %chat_id,
+        "[SSE] Client subscribing to event stream"
+    );
     let broadcast_stream = BroadcastStream::new(event_tx.subscribe())
-        .filter_map(|msg| async move {
+        .filter_map(move |msg| async move {
             match msg {
-                Ok(event) => match serde_json::to_string(&event) {
-                    Ok(data) => Some(Ok(Event::default().data(data))),
-                    Err(e) => {
-                        tracing::error!("Failed to serialize SSE event: {:?}", e);
-                        None
+                Ok(event) => {
+                    tracing::debug!(
+                        chat_id = %chat_id,
+                        event_type = ?std::mem::discriminant(&event),
+                        "[SSE] Broadcasting event to client"
+                    );
+                    match serde_json::to_string(&event) {
+                        Ok(data) => Some(Ok(Event::default().data(data))),
+                        Err(e) => {
+                            tracing::error!("[SSE] Failed to serialize SSE event: {:?}", e);
+                            None
+                        }
                     }
                 },
-                Err(_) => None, // broadcast receiver lag is fine to ignore
+                Err(_) => {
+                    tracing::warn!("[SSE] broadcast receiver lag - client disconnected");
+                    None
+                }
             }
         });
 

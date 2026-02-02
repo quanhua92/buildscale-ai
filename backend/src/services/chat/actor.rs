@@ -699,17 +699,20 @@ impl ChatActor {
                             *has_started_responding = true;
                         }
                         full_response.push_str(&text.text);
-                        if let Err(e) = self.event_tx.send(SseEvent::Chunk { text: text.text.clone() }) {
+                        let send_result = self.event_tx.send(SseEvent::Chunk { text: text.text.clone() });
+                        if let Err(e) = send_result {
                             tracing::error!(
                                 chat_id = %self.chat_id,
                                 error = %e,
-                                "Failed to send Chunk event to frontend"
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] Failed to send Chunk event - no receivers or broadcast channel closed"
                             );
                         } else {
-                            tracing::trace!(
+                            tracing::debug!(
                                 chat_id = %self.chat_id,
                                 text_len = text.text.len(),
-                                "Successfully sent Chunk event to frontend"
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] Successfully sent Chunk event"
                             );
                         }
                     }
