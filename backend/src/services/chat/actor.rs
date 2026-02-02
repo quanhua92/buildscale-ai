@@ -699,7 +699,19 @@ impl ChatActor {
                             *has_started_responding = true;
                         }
                         full_response.push_str(&text.text);
-                        let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
+                        if let Err(e) = self.event_tx.send(SseEvent::Chunk { text: text.text.clone() }) {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                "Failed to send Chunk event to frontend"
+                            );
+                        } else {
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                text_len = text.text.len(),
+                                "Successfully sent Chunk event to frontend"
+                            );
+                        }
                     }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
                         tracing::info!(
