@@ -622,9 +622,19 @@ export function ChatProvider({
           setMessages(historyMessages)
 
           // Load model from existing chat session
+          // Prefer the chat's saved model if it exists in available providers, otherwise fallback to default
           const modelId = session.agent_config.model // string
           const parsedModel = parseModelIdentifier(modelId)
-          setModel(parsedModel || DEFAULT_MODEL)
+
+          // Check if the parsed model exists in our available models list
+          const modelInAvailableModels = availableModels.find(m => m.id === parsedModel?.id)
+          if (modelInAvailableModels) {
+            console.log('[Chat] Using saved model from chat session:', modelInAvailableModels)
+            setModel(modelInAvailableModels)
+          } else {
+            console.log('[Chat] Saved model not found in available providers, using default model. Saved model ID:', modelId)
+            setModel(DEFAULT_MODEL)
+          }
 
           // Initialize Plan Mode state from chat metadata (agent_config)
           // Default to 'plan' mode if not set
@@ -657,7 +667,7 @@ export function ChatProvider({
         streamingTimeoutRef.current = null
       }
     }
-  }, [chatId, workspaceId, connectToSse, stopGeneration])
+  }, [chatId, workspaceId, connectToSse, stopGeneration, availableModels])
 
   const sendMessage = React.useCallback(
     async (content: string, _attachments?: string[], metadata?: Record<string, any>) => {
