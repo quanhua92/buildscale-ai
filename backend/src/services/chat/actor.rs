@@ -716,13 +716,41 @@ impl ChatActor {
                             );
                         }
                     }
+                    rig::streaming::StreamedAssistantContent::ReasoningDelta { id, reasoning } => {
+                        tracing::debug!(
+                            chat_id = %self.chat_id,
+                            reasoning_len = reasoning.len(),
+                            id = ?id,
+                            "[ChatActor] [Rig] Received streaming ReasoningDelta chunk"
+                        );
+                        // Send streaming reasoning chunk to frontend via Thought event
+                        // This is for OpenRouter/DeepSeek thinking models that stream reasoning as deltas
+                        tracing::debug!(
+                            chat_id = %self.chat_id,
+                            reasoning_preview = %reasoning.chars().take(50).collect::<String>(),
+                            "[ChatActor] [SSE] Sending Thought event to frontend"
+                        );
+                        let send_result = self.event_tx.send(SseEvent::Thought {
+                            agent_id: None,
+                            text: reasoning.clone(),
+                        });
+                        match send_result {
+                            Ok(_) => tracing::debug!("[ChatActor] [SSE] Thought event sent successfully"),
+                            Err(e) => tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e),
+                        }
+                    }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
                         tracing::info!(
                             chat_id = %self.chat_id,
                             reasoning_parts = thought.reasoning.len(),
-                            "[ChatActor] [Rig] Received Reasoning tokens"
+                            "[ChatActor] [Rig] Received final Reasoning (accumulated)"
                         );
-                        // Only send non-empty reasoning parts to frontend
+                        // Send final accumulated reasoning parts to frontend via Thought events
+                        // This is for OpenAI o1/o3 models that provide accumulated reasoning at the end
+                        // NOTE: We do NOT append reasoning to full_response because:
+                        // 1. Thought events are already streamed separately to frontend
+                        // 2. OpenAI uses store: false + previous_response_id for continuity (not reasoning content)
+                        // 3. Mixing reasoning into response content corrupts the saved conversation history
                         for part in &thought.reasoning {
                             if !part.trim().is_empty() {
                                 tracing::debug!(
