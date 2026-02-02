@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "../select"
 import type { ChatModel, AiProvider } from "./chat-context"
-import { useChat, LEGACY_CHAT_MODELS, DEFAULT_MODEL } from "./chat-context"
+import { useChat } from "./chat-context"
 
 export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   modelName?: string
@@ -45,9 +45,9 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
       return grouped
     }, [availableModels])
 
-    // For backward compatibility, if model is a string (legacy), convert it
+    // Model should always be a ChatModel object now
     const currentModel = typeof model === 'string'
-      ? LEGACY_CHAT_MODELS.find(m => m.legacyId === model) || DEFAULT_MODEL
+      ? { id: model, provider: 'openrouter' as const, name: model, model }
       : model
 
     // Get all available provider names

@@ -38,22 +38,10 @@ export interface ChatModel {
   is_free?: boolean       // Whether this model is free to use
 }
 
-// Legacy models for backward compatibility
-export const LEGACY_CHAT_MODELS: ChatModel[] = [
-  { id: "openai:gpt-5", provider: "openai", name: "GPT-5", model: "gpt-5", legacyId: "gpt-5" },
-  { id: "openai:gpt-5-mini", provider: "openai", name: "GPT-5 Mini", model: "gpt-5-mini", legacyId: "gpt-5-mini" },
-  { id: "openai:gpt-5-nano", provider: "openai", name: "GPT-5 Nano", model: "gpt-5-nano", legacyId: "gpt-5-nano" },
-  { id: "openai:gpt-5.1", provider: "openai", name: "GPT-5.1", model: "gpt-5.1", legacyId: "gpt-5.1" },
-  { id: "openai:gpt-4o", provider: "openai", name: "GPT-4o", model: "gpt-4o", legacyId: "gpt-4o" },
-  { id: "openai:gpt-4o-mini", provider: "openai", name: "GPT-4o Mini", model: "gpt-4o-mini", legacyId: "gpt-4o-mini" },
-]
-
-export const DEFAULT_MODEL: ChatModel = LEGACY_CHAT_MODELS[1] // "openai:gpt-5-mini"
-
 // Models fetched from backend (filtered by configured providers)
-let AVAILABLE_MODELS: ChatModel[] = [...LEGACY_CHAT_MODELS]
+let AVAILABLE_MODELS: ChatModel[] = []
 
-// Parse model identifier from "provider:model" or legacy "model" format
+// Parse model identifier from "provider:model" format
 export function parseModelIdentifier(modelId: string, defaultProvider: AiProvider = "openai"): ChatModel | null {
   // Check if it's already in the new format
   if (modelId.includes(':')) {
@@ -69,10 +57,6 @@ export function parseModelIdentifier(modelId: string, defaultProvider: AiProvide
       model
     }
   }
-
-  // Legacy format - try to find by legacyId
-  const legacyModel = LEGACY_CHAT_MODELS.find(m => m.legacyId === modelId)
-  if (legacyModel) return legacyModel
 
   // Not found - create with default provider
   return {
@@ -104,9 +88,6 @@ export function groupModelsByProvider(): Record<AiProvider, ChatModel[]> {
   }
   return grouped as Record<AiProvider, ChatModel[]>
 }
-
-// For backward compatibility with existing code
-export const CHAT_MODELS = LEGACY_CHAT_MODELS.map(m => m.id)
 
 export interface ChatMessageItem {
   id: string
@@ -191,8 +172,14 @@ export function ChatProvider({
   const [isStreaming, setIsStreaming] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
-  const [model, setModel] = React.useState<ChatModel>(DEFAULT_MODEL)
-  const [availableModels, setAvailableModelsState] = React.useState<ChatModel[]>([...LEGACY_CHAT_MODELS])
+  // Placeholder model state, will be replaced by API response
+  const [model, setModel] = React.useState<ChatModel>({
+    id: 'openrouter:placeholder',
+    provider: 'openrouter',
+    name: 'Loading...',
+    model: 'placeholder'
+  })
+  const [availableModels, setAvailableModelsState] = React.useState<ChatModel[]>([])
 
   // Plan Mode State
   const [mode, setModeState] = React.useState<ChatMode>('plan')
@@ -274,10 +261,10 @@ export function ChatProvider({
           }
         }
       } catch (error) {
-        // If providers API fails, fall back to legacy models
-        console.error('[Chat] Failed to fetch providers, using legacy models:', error)
+        // If providers API fails, leave models empty
+        console.error('[Chat] Failed to fetch providers:', error)
         if (mounted) {
-          setAvailableModelsState(LEGACY_CHAT_MODELS)
+          setAvailableModelsState([])
         }
       }
     }
@@ -622,7 +609,7 @@ export function ChatProvider({
           setMessages(historyMessages)
 
           // Load model from existing chat session
-          // Prefer the chat's saved model if it exists in available providers, otherwise fallback to default
+          // Priority: 1) chat's saved model (if available), 2) API's default model
           const modelId = session.agent_config.model // string
           const parsedModel = parseModelIdentifier(modelId)
 
@@ -632,8 +619,15 @@ export function ChatProvider({
             console.log('[Chat] Using saved model from chat session:', modelInAvailableModels)
             setModel(modelInAvailableModels)
           } else {
-            console.log('[Chat] Saved model not found in available providers, using default model. Saved model ID:', modelId)
-            setModel(DEFAULT_MODEL)
+            // Fallback to the API's default model
+            const apiDefaultModel = availableModels.find(m => m.is_default)
+            if (apiDefaultModel) {
+              console.log('[Chat] Saved model not found, using API default model:', apiDefaultModel)
+              setModel(apiDefaultModel)
+            } else {
+              console.warn('[Chat] No saved model and no API default found, using first available model')
+              setModel(availableModels[0])
+            }
           }
 
           // Initialize Plan Mode state from chat metadata (agent_config)

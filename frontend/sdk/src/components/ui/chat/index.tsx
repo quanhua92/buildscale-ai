@@ -1,4 +1,4 @@
-import { ChatProvider, useChat, type ChatMessageItem, type ChatModel, CHAT_MODELS, DEFAULT_MODEL } from "./chat-context"
+import { ChatProvider, useChat, type ChatMessageItem, type ChatModel } from "./chat-context"
 import { ChatRoot } from "./chat-root"
 import { ChatHeader } from "./chat-header"
 import { ChatMessageList } from "./chat-message-list"
@@ -31,8 +31,6 @@ export {
   useChat,
   type ChatMessageItem,
   type ChatModel,
-  CHAT_MODELS,
-  DEFAULT_MODEL,
   ChatQuestionBar,
   ChatSchemaForm,
   ChatModeIndicator,

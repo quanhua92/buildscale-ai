@@ -26,7 +26,7 @@ export { useProtectedRoute, useAuthRedirects } from './hooks'
 export { default as Auth } from './components/auth'
 export { NavigationMenu } from './components/NavigationMenu'
 export { Chat, useChat } from './components/ui/chat'
-export type { ChatMessageItem, ChatModel, CHAT_MODELS, DEFAULT_MODEL } from './components/ui/chat'
+export type { ChatMessageItem, ChatModel } from './components/ui/chat'
 export {
   ChatQuestionBar,
   ChatSchemaForm,
