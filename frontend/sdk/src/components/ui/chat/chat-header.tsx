@@ -45,11 +45,6 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
       return grouped
     }, [availableModels])
 
-    // Model should always be a ChatModel object now
-    const currentModel = typeof model === 'string'
-      ? { id: model, provider: 'openrouter' as const, name: model, model }
-      : model
-
     // Get all available provider names
     const availableProviders = Object.keys(groupedModels).filter(
       provider => groupedModels[provider as AiProvider]?.length > 0
@@ -71,8 +66,8 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
 
           {/* Center: Model Selector */}
           <div className="flex-1 flex justify-center">
-            {currentModel && onModelChange ? (
-              <Select value={currentModel.id} onValueChange={(value) => {
+            {model && onModelChange ? (
+              <Select value={model.id} onValueChange={(value) => {
                 // Find the model object by id from availableModels
                 const selectedModel = availableModels.find(m => m.id === value)
                 if (selectedModel) {
@@ -82,8 +77,8 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
                 <SelectTrigger className="w-[220px] h-7 text-xs">
                   <SelectValue placeholder="Select model">
                     <div className="flex items-center gap-2">
-                      <span>{currentModel.name}</span>
-                      {currentModel.is_free && (
+                      <span>{model.name}</span>
+                      {model.is_free && (
                         <span className="text-[10px] bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
                           FREE
                         </span>
