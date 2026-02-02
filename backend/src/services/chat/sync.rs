@@ -4,7 +4,7 @@
 //! - Database storage (source of truth)
 //! - YAML frontmatter in .chat files (for display/debugging)
 //!
-//! Chat metadata (mode, plan_file) is serialized to YAML frontmatter
+//! Chat metadata (mode, plan_file, model) is serialized to YAML frontmatter
 //! when saving and parsed when loading to provide human-readable
 //! configuration in .chat files.
 
@@ -25,6 +25,9 @@ pub struct ChatFrontmatter {
     /// Path to associated plan file (if any)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_file: Option<String>,
+    /// AI model identifier (e.g., "openrouter:openai/gpt-oss-120b")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     /// Additional metadata (for future extensibility)
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
@@ -36,19 +39,19 @@ impl ChatFrontmatter {
         ChatFrontmatter {
             mode: config.mode.clone(),
             plan_file: config.plan_file.clone(),
+            model: if config.model.is_empty() { None } else { Some(config.model.clone()) },
             extra: std::collections::HashMap::new(),
         }
     }
 
     /// Convert to AgentConfig
     ///
-    /// Note: This only extracts mode and plan_file. Other AgentConfig
-    /// fields (model, temperature, etc.) should be preserved from the
-    /// existing config or set to defaults.
+    /// Note: This extracts mode, plan_file, and model from frontmatter.
+    /// Other AgentConfig fields (temperature, etc.) are set to defaults.
     pub fn to_agent_config(&self) -> AgentConfig {
         AgentConfig {
             agent_id: None,
-            model: String::new(), // Caller should set this
+            model: self.model.clone().unwrap_or_default(),
             temperature: 0.7,
             persona_override: None,
             previous_response_id: None,
@@ -59,10 +62,13 @@ impl ChatFrontmatter {
 
     /// Merge frontmatter into existing AgentConfig
     ///
-    /// Updates mode and plan_file while preserving other fields.
+    /// Updates mode, plan_file, and model while preserving other fields.
     pub fn merge_into_agent_config(&self, mut config: AgentConfig) -> AgentConfig {
         config.mode = self.mode.clone();
         config.plan_file = self.plan_file.clone();
+        if let Some(model) = &self.model {
+            config.model = model.clone();
+        }
         config
     }
 }
@@ -105,6 +111,7 @@ impl YamlFrontmatter {
                 frontmatter: ChatFrontmatter {
                     mode: "plan".to_string(), // Default mode
                     plan_file: None,
+                    model: None,
                     extra: std::collections::HashMap::new(),
                 },
                 content: content.to_string(),
@@ -168,6 +175,7 @@ mod tests {
         let frontmatter = ChatFrontmatter {
             mode: "plan".to_string(),
             plan_file: Some("/plans/my-plan.plan".to_string()),
+            model: Some("openrouter:deepseek/deepseek-r1:free".to_string()),
             extra: std::collections::HashMap::new(),
         };
 
@@ -198,6 +206,7 @@ Some chat content here"#;
         let parsed = YamlFrontmatter::parse(content).unwrap();
         assert_eq!(parsed.frontmatter.mode, "plan"); // Default
         assert_eq!(parsed.frontmatter.plan_file, None);
+        assert_eq!(parsed.frontmatter.model, None); // Default
         assert_eq!(parsed.content, content);
     }
 
@@ -206,6 +215,7 @@ Some chat content here"#;
         let frontmatter = ChatFrontmatter {
             mode: "build".to_string(),
             plan_file: Some("/plans/test.plan".to_string()),
+            model: Some("openrouter:deepseek/deepseek-r1:free".to_string()),
             extra: std::collections::HashMap::new(),
         };
 
