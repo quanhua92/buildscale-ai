@@ -16,7 +16,22 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Lists files and folders in a directory. Use 'path' to specify the directory (default: '/' for root). Set 'recursive' to true for deep listing including all subdirectories. Returns entries sorted with folders first."
+        "Lists files and folders in a workspace directory. All parameters are optional. Returns entries sorted with folders first.
+
+Parameters:
+- path (string, optional): workspace directory path. Default: '/' for workspace root.
+- recursive (boolean, optional): list all subdirectories recursively. Default: false.
+
+USAGE EXAMPLES:
+- Good (list root): {}
+- Good (list specific folder): {\"path\": \"/src\"}
+- Good (recursive listing): {\"path\": \"/src\", \"recursive\": true}
+- Good (explicit nulls): {\"path\": null, \"recursive\": null}
+
+BAD EXAMPLES (will fail):
+- Bad (string instead of object): \"/src\"
+- Bad (array instead of object): [\"/src\"]
+- Bad (extra properties): {\"path\": \"/src\", \"invalid\": true}"
     }
 
     fn definition(&self) -> Value {
