@@ -470,7 +470,7 @@ impl ChatService {
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
         // 3. Get existing config from latest version (or default)
-        let agent_config = if let Some(_version_id) = file.latest_version_id {
+        let mut agent_config = if let Some(_version_id) = file.latest_version_id {
             if let Ok(version) = queries::files::get_latest_version(conn, chat_file_id).await {
                 serde_json::from_value(version.app_data).unwrap_or_else(|_| crate::models::chat::AgentConfig {
                     agent_id: None,
@@ -503,6 +503,17 @@ impl ChatService {
                 plan_file: None,
             }
         };
+
+        // Runtime migration: Convert legacy model strings to new format
+        // Detects legacy format (no colon) and adds "openai:" prefix
+        if !agent_config.model.contains(':') {
+            tracing::warn!(
+                chat_file_id = %chat_file_id,
+                legacy_model = %agent_config.model,
+                "Migrating legacy model format to new provider:model format"
+            );
+            agent_config.model = format!("openai:{}", agent_config.model);
+        }
 
         Ok(crate::models::chat::ChatSession {
             file_id: chat_file_id,

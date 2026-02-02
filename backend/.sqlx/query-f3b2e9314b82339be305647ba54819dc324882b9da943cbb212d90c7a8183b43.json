@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT DISTINCT \n            w.id, \n            w.name, \n            w.owner_id, \n            CASE WHEN r.id IS NOT NULL THEN r.name ELSE NULL END as \"role_name?\",\n            w.created_at, \n            w.updated_at\n        FROM workspaces w\n        LEFT JOIN workspace_members wm ON w.id = wm.workspace_id AND wm.user_id = $1\n        LEFT JOIN roles r ON wm.role_id = r.id\n        WHERE w.owner_id = $1 OR wm.user_id = $1\n        ORDER BY w.created_at DESC\n        ",
+  "query": "\n        INSERT INTO workspaces (name, owner_id, ai_provider_override)\n        VALUES ($1, $2, $3)\n        RETURNING id, name, owner_id, NULL as \"role_name?\", ai_provider_override, created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -25,18 +25,25 @@
       },
       {
         "ordinal": 4,
+        "name": "ai_provider_override",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text",
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -44,9 +51,10 @@
       false,
       false,
       null,
+      true,
       false,
       false
     ]
   },
-  "hash": "3d0441fb8b042761490676064234fe32ee330833003d54e76e01b756676e74c5"
+  "hash": "f3b2e9314b82339be305647ba54819dc324882b9da943cbb212d90c7a8183b43"
 }

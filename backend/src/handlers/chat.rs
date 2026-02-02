@@ -123,6 +123,7 @@ pub async fn create_chat(
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
+        registry: state.agents.clone(),
         default_persona: crate::agents::get_persona(None, None, None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
@@ -163,6 +164,7 @@ pub async fn get_chat_events(
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
+            registry: state.agents.clone(),
             default_persona: crate::agents::get_persona(None, None, None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
@@ -180,17 +182,31 @@ pub async fn get_chat_events(
     let init_stream = stream::once(async move { Ok(Event::default().data(init_data)) });
 
     // 4. Stream from persistent broadcast channel
+    tracing::info!(
+        chat_id = %chat_id,
+        "[SSE] Client subscribing to event stream"
+    );
     let broadcast_stream = BroadcastStream::new(event_tx.subscribe())
-        .filter_map(|msg| async move {
+        .filter_map(move |msg| async move {
             match msg {
-                Ok(event) => match serde_json::to_string(&event) {
-                    Ok(data) => Some(Ok(Event::default().data(data))),
-                    Err(e) => {
-                        tracing::error!("Failed to serialize SSE event: {:?}", e);
-                        None
+                Ok(event) => {
+                    tracing::debug!(
+                        chat_id = %chat_id,
+                        event_type = ?std::mem::discriminant(&event),
+                        "[SSE] Broadcasting event to client"
+                    );
+                    match serde_json::to_string(&event) {
+                        Ok(data) => Some(Ok(Event::default().data(data))),
+                        Err(e) => {
+                            tracing::error!("[SSE] Failed to serialize SSE event: {:?}", e);
+                            None
+                        }
                     }
                 },
-                Err(_) => None, // broadcast receiver lag is fine to ignore
+                Err(_) => {
+                    tracing::warn!("[SSE] broadcast receiver lag - client disconnected");
+                    None
+                }
             }
         });
 
@@ -272,6 +288,7 @@ pub async fn post_chat_message(
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
+            registry: state.agents.clone(),
             default_persona: crate::agents::get_persona(None, None, None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
@@ -413,12 +430,33 @@ pub async fn stop_chat_generation(
         workspace_id
     );
 
+    // First, try to cancel via the active_cancellations HashMap
+    // This works even if the actor has exited
+    let cancelled_via_hashmap = state.agents.cancel_stream(&chat_id).await;
+
+    if cancelled_via_hashmap {
+        tracing::info!(
+            "[ChatHandler] Successfully cancelled stream via HashMap for chat {}",
+            chat_id
+        );
+        return Ok(Json(serde_json::json!({
+            "status": "cancelled",
+            "chat_id": chat_id
+        })));
+    }
+
+    // If not in HashMap, try to cancel via actor command
+    tracing::debug!(
+        "[ChatHandler] No active stream in HashMap for chat {}, trying actor command",
+        chat_id
+    );
+
     // Get the actor handle
     let handle = state
         .agents
         .get_handle(&chat_id)
         .await
-        .ok_or_else(|| Error::NotFound(format!("Chat actor not found for chat {}", chat_id)))?;
+        .ok_or_else(|| Error::NotFound(format!("Chat actor not found and no active stream for chat {}", chat_id)))?;
 
     // Create a one-shot channel for response
     let (responder, response) = oneshot::channel();

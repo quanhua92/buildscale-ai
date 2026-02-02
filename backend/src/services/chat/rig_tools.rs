@@ -63,7 +63,7 @@ macro_rules! define_rig_tool {
 
         impl RigTool for $rig_tool_name {
             type Error = Error;
-            type Args = $args_type;
+            type Args = Option<$args_type>;
             type Output = serde_json::Value;
 
             const NAME: &'static str = $name;
@@ -99,6 +99,18 @@ macro_rules! define_rig_tool {
                 let initial_tool_config = self.tool_config.clone();
 
                 async move {
+                    // Validate that arguments were provided
+                    let args = args.ok_or_else(|| {
+                        Error::Validation(crate::error::ValidationErrors::Single {
+                            field: "arguments".to_string(),
+                            message: format!(
+                                "Tool '{}' requires arguments. You must provide all required fields as a JSON object. \
+                                For example, {{\"pattern\": \"your_search_term\"}}. \
+                                Refer to the tool's JSON schema definition for the required fields.",
+                                $name
+                            ),
+                        })
+                    })?;
                     let args_val = serde_json::to_value(args).map_err(Error::Json)?;
                     let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
                     let tool = $core_tool;

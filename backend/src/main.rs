@@ -52,10 +52,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_cache_cleanup(cache_clone).await;
     });
 
-    // Initialize Rig AI service
-    let rig_service = std::sync::Arc::new(buildscale::services::chat::rig_engine::RigService::new(
-        config.ai.openai_api_key.expose_secret(),
-    ));
+    // Initialize Rig AI service using the multi-provider configuration
+    let rig_service = std::sync::Arc::new(
+        buildscale::services::chat::rig_engine::RigService::from_config(&config.ai)
+            .expect("Failed to initialize AI service from configuration")
+    );
 
     // Start API server (this will block)
     run_api_server(&config, cache, rig_service).await?;

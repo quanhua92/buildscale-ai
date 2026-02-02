@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT m.id, m.provider, m.model_name, m.display_name,\n                   m.description, m.context_window, m.is_enabled, m.is_free,\n                   m.created_at, m.updated_at\n            FROM ai_models m\n            WHERE m.provider = $1\n              AND m.is_enabled = true\n            ORDER BY m.display_name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "model_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "context_window",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_free",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3d1f078ad8e5505699f4db4578c23602a0118f055ea986c65d492a544c3b1e3a"
+}

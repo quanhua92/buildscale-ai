@@ -20,9 +20,74 @@ export type MessagePart =
   | { type: "call"; tool: string; args: any; id: string }
   | { type: "observation"; output: string; success: boolean; callId: string }
 
-export type ChatModel = "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-4o" | "gpt-4o-mini"
-export const CHAT_MODELS: ChatModel[] = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-4o", "gpt-4o-mini"]
-export const DEFAULT_MODEL: ChatModel = "gpt-5-mini"
+// ============================================================================
+// Multi-Provider Types
+// ============================================================================
+
+export type AiProvider = "openai" | "openrouter"
+
+export interface ChatModel {
+  id: string              // "openai:gpt-4o" or "openrouter:anthropic/claude-3.5-sonnet"
+  provider: AiProvider
+  name: string            // "GPT-4o" or "Claude 3.5 Sonnet"
+  model: string           // "gpt-4o" or "anthropic/claude-3.5-sonnet"
+  legacyId?: string       // For backward compatibility with old model strings
+  description?: string    // Optional model description
+  contextWindow?: number  // Optional context window size in tokens
+  is_default?: boolean    // Whether this is the default model from the API
+  is_free?: boolean       // Whether this model is free to use
+}
+
+// Models fetched from backend (filtered by configured providers)
+let AVAILABLE_MODELS: ChatModel[] = []
+
+// Parse model identifier from "provider:model" format
+export function parseModelIdentifier(modelId: string, defaultProvider: AiProvider = "openai"): ChatModel | null {
+  // Check if it's already in the new format
+  if (modelId.includes(':')) {
+    const [provider, model] = modelId.split(':', 2)
+    const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId)
+    if (availableModel) return availableModel
+
+    // Create a model object if not in available list
+    return {
+      id: modelId,
+      provider: provider as AiProvider,
+      name: model,
+      model
+    }
+  }
+
+  // Not found - create with default provider
+  return {
+    id: `${defaultProvider}:${modelId}`,
+    provider: defaultProvider,
+    name: modelId,
+    model: modelId
+  }
+}
+
+// Update available models from backend API
+export function updateAvailableModels(models: ChatModel[]) {
+  AVAILABLE_MODELS = models
+}
+
+// Get current available models
+export function getAvailableModels(): ChatModel[] {
+  return AVAILABLE_MODELS
+}
+
+// Group models by provider
+export function groupModelsByProvider(): Record<AiProvider, ChatModel[]> {
+  const grouped: Record<string, ChatModel[]> = { openai: [], openrouter: [] }
+  for (const model of AVAILABLE_MODELS) {
+    if (!grouped[model.provider]) {
+      grouped[model.provider] = []
+    }
+    grouped[model.provider].push(model)
+  }
+  return grouped as Record<AiProvider, ChatModel[]>
+}
 
 export interface ChatMessageItem {
   id: string
@@ -51,6 +116,7 @@ interface ChatContextValue {
   chatId?: string
   model: ChatModel
   setModel: (model: ChatModel) => void
+  availableModels: ChatModel[]  // Available models from backend
   // Plan Mode State
   mode: ChatMode
   planFile: string | null
@@ -106,7 +172,14 @@ export function ChatProvider({
   const [isStreaming, setIsStreaming] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
-  const [model, setModel] = React.useState<ChatModel>(DEFAULT_MODEL)
+  // Placeholder model state, will be replaced by API response
+  const [model, setModel] = React.useState<ChatModel>({
+    id: 'openrouter:placeholder',
+    provider: 'openrouter',
+    name: 'Loading...',
+    model: 'placeholder'
+  })
+  const [availableModels, setAvailableModelsState] = React.useState<ChatModel[]>([])
 
   // Plan Mode State
   const [mode, setModeState] = React.useState<ChatMode>('plan')
@@ -133,6 +206,75 @@ export function ChatProvider({
   React.useEffect(() => {
     setChatId(initialChatId)
   }, [initialChatId])
+
+  // Fetch available models from backend providers API
+  React.useEffect(() => {
+    let mounted = true
+
+    const fetchProviders = async () => {
+      try {
+        console.log('[Chat] Fetching providers from workspace:', workspaceId)
+        const response = await apiClientRef.current.get<{ providers: any[], default_provider: string }>(
+          `/workspaces/${workspaceId}/providers`
+        )
+
+        console.log('[Chat] Providers API response:', response)
+
+        if (mounted && response?.providers) {
+          // Convert backend provider response to ChatModel array
+          const models: ChatModel[] = []
+
+          for (const provider of response.providers) {
+            console.log('[Chat] Processing provider:', provider.provider, 'configured:', provider.configured, 'models:', provider.models?.length || 0)
+            if (!provider.configured || !provider.models) continue
+
+            for (const model of provider.models) {
+              models.push({
+                id: model.id,
+                provider: provider.provider,
+                name: model.display_name,
+                model: model.model,
+                description: model.description,
+                contextWindow: model.context_window,
+                is_default: model.is_default,
+                is_free: model.is_free
+              })
+            }
+          }
+
+          console.log('[Chat] Total models fetched:', models.length, models)
+          // Update available models if we got any
+          if (models.length > 0) {
+            if (mounted) {
+              setAvailableModelsState(models)
+
+              // Set default model based on is_default flag
+              const defaultModel = models.find(m => m.is_default)
+              if (defaultModel) {
+                console.log('[Chat] Setting default model from API:', defaultModel)
+                setModel(defaultModel)
+              }
+            }
+            console.log('[Chat] Updated available models')
+          } else {
+            console.warn('[Chat] No models found in provider response')
+          }
+        }
+      } catch (error) {
+        // If providers API fails, leave models empty
+        console.error('[Chat] Failed to fetch providers:', error)
+        if (mounted) {
+          setAvailableModelsState([])
+        }
+      }
+    }
+
+    fetchProviders()
+
+    return () => {
+      mounted = false
+    }
+  }, [workspaceId])
 
   const stopGeneration = React.useCallback(async () => {
     if (!chatId) return
@@ -467,11 +609,25 @@ export function ChatProvider({
           setMessages(historyMessages)
 
           // Load model from existing chat session
-          const chatModel = session.agent_config.model as ChatModel
-          if (CHAT_MODELS.includes(chatModel)) {
-            setModel(chatModel)
+          // Priority: 1) chat's saved model (if available), 2) API's default model
+          const modelId = session.agent_config.model // string
+          const parsedModel = parseModelIdentifier(modelId)
+
+          // Check if the parsed model exists in our available models list
+          const modelInAvailableModels = availableModels.find(m => m.id === parsedModel?.id)
+          if (modelInAvailableModels) {
+            console.log('[Chat] Using saved model from chat session:', modelInAvailableModels)
+            setModel(modelInAvailableModels)
           } else {
-            setModel(DEFAULT_MODEL)
+            // Fallback to the API's default model
+            const apiDefaultModel = availableModels.find(m => m.is_default)
+            if (apiDefaultModel) {
+              console.log('[Chat] Saved model not found, using API default model:', apiDefaultModel)
+              setModel(apiDefaultModel)
+            } else {
+              console.warn('[Chat] No saved model and no API default found, using first available model')
+              setModel(availableModels[0])
+            }
           }
 
           // Initialize Plan Mode state from chat metadata (agent_config)
@@ -505,7 +661,7 @@ export function ChatProvider({
         streamingTimeoutRef.current = null
       }
     }
-  }, [chatId, workspaceId, connectToSse, stopGeneration])
+  }, [chatId, workspaceId, connectToSse, stopGeneration, availableModels])
 
   const sendMessage = React.useCallback(
     async (content: string, _attachments?: string[], metadata?: Record<string, any>) => {
@@ -540,7 +696,7 @@ export function ChatProvider({
           if (!chatId) {
             const response = await apiClientRef.current.post<CreateChatResponse>(
               `/workspaces/${workspaceId}/chats`,
-              { goal: content, model } as CreateChatRequest
+              { goal: content, model: model.id } as CreateChatRequest
             )
             if (!response?.chat_id) throw new Error('Invalid server response')
             setChatId(response.chat_id)
@@ -556,7 +712,7 @@ export function ChatProvider({
           } else {
             const response = await apiClientRef.current.post<PostChatMessageResponse>(
               `/workspaces/${workspaceId}/chats/${chatId}`,
-              { content, model, metadata } as PostChatMessageRequest
+              { content, model: model.id, metadata } as PostChatMessageRequest
             )
             if (response?.status !== "accepted") throw new Error('Message not accepted')
 
@@ -705,7 +861,7 @@ export function ChatProvider({
             `/workspaces/${workspaceId}/chats`,
             {
               goal: `Starting in ${newMode} mode`,
-              model
+              model: model.id
             } as CreateChatRequest
           )
 
@@ -750,12 +906,12 @@ export function ChatProvider({
   const value = React.useMemo(
     () => ({
       messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId,
-      model, setModel,
+      model, setModel, availableModels,
       // Plan Mode
       mode, planFile, pendingQuestionSession, currentQuestion,
       submitAnswer, dismissQuestion, setMode
     }),
-    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel,
+    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel, availableModels,
      mode, planFile, pendingQuestionSession, currentQuestion, submitAnswer, dismissQuestion, setMode]
   )
 

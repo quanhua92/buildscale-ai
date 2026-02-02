@@ -14,6 +14,60 @@ use super::{Tool, ToolConfig};
 ///
 /// Uses ripgrep (rg) if available, falls back to grep.
 /// Searches for a regex pattern across all document files in a workspace.
+///
+/// # GOOD Examples
+///
+/// ```text
+/// // Simple pattern search (case-insensitive by default)
+/// {"pattern": "function_name"}
+///
+/// // Search only in specific file types
+/// {"pattern": "TODO", "path_pattern": "*.rs"}
+///
+/// // Case-sensitive search for exact match
+/// {"pattern": "Config", "case_sensitive": true}
+///
+/// // Search in multiple file types with wildcard
+/// {"pattern": "import.*React", "path_pattern": "*.{ts,tsx}"}
+///
+/// // Regex pattern search
+/// {"pattern": "const\\s+[A-Z][a-zA-Z]*\\s*="}
+///
+/// // Search for error handling patterns
+/// {"pattern": "\\?\\..*\\.unwrap\\(\\)", "path_pattern": "*.rs"}
+/// ```
+///
+/// # BAD Examples
+///
+/// ```text
+/// // ❌ Missing 'pattern' field (required)
+/// {"path_pattern": "*.rs"}
+///
+/// // ❌ Passing null instead of a JSON object
+/// null
+///
+/// // ❌ Missing quotes around pattern (invalid JSON)
+/// {pattern: function_name}
+///
+/// // ❌ Empty pattern (will not match anything meaningful)
+/// {"pattern": ""}
+///
+/// // ❌ Using read tool instead of grep for searching
+/// // BAD: Read multiple files one by one
+/// read("/src/file1.rs")
+/// read("/src/file2.rs")
+/// read("/src/file3.rs")
+/// // GOOD: Use grep to search all files at once
+/// {"pattern": "search_term", "path_pattern": "*.rs"}
+/// ```
+///
+/// # Performance Notes
+///
+/// - **ALWAYS use grep instead of read** when searching for patterns across multiple files
+/// - Grep is 10-100x faster than reading files individually
+/// - Use `path_pattern` to limit search to relevant file types
+/// - Maximum 1000 matches returned to prevent large responses
+/// - Case-insensitive by default (set `case_sensitive: true` for exact matches)
 pub struct GrepTool;
 
 #[async_trait]

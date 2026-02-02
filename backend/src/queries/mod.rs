@@ -1,8 +1,9 @@
-pub mod users;
-pub mod roles;
-pub mod workspaces;
-pub mod workspace_members;
-pub mod sessions;
+pub mod ai_models;
 pub mod chat;
 pub mod files;
 pub mod invitations;
+pub mod roles;
+pub mod sessions;
+pub mod users;
+pub mod workspaces;
+pub mod workspace_members;

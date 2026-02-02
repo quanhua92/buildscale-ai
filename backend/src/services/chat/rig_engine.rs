@@ -5,43 +5,270 @@ use crate::services::chat::rig_tools::{
     RigAskUserTool, RigExitPlanModeTool,
 };
 use crate::services::storage::FileStorageService;
+use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
+use crate::config::AiConfig;
 use crate::DbPool;
-use crate::error::Result;
-use rig::providers::openai::{self, responses_api::ResponsesCompletionModel};
+use crate::error::{Error, Result};
+use rig::client::CompletionClient;
 use rig::completion::Message;
 use std::sync::Arc;
+use std::str::FromStr;
 use uuid::Uuid;
 
 /// Maximum number of tool-calling iterations allowed per user message.
 /// This prevents infinite loops while allowing complex multi-step workflows.
 const DEFAULT_MAX_TOOL_ITERATIONS: usize = 100;
 
+/// Add all Rig tools to an agent builder
+fn add_tools_to_agent<M>(
+    builder: rig::agent::AgentBuilder<M>,
+    pool: &DbPool,
+    storage: &Arc<FileStorageService>,
+    workspace_id: Uuid,
+    chat_id: Uuid,
+    user_id: Uuid,
+    tool_config: &crate::tools::ToolConfig,
+) -> rig::agent::AgentBuilderSimple<M>
+where
+    M: rig::completion::CompletionModel + 'static,
+{
+    builder
+        .tool(RigLsTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigReadTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigWriteTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigRmTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigMvTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigTouchTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigEditTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigGrepTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigMkdirTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigAskUserTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigExitPlanModeTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS)
+}
+
+/// Multi-provider AI service supporting OpenAI and OpenRouter
+#[derive(Debug)]
 pub struct RigService {
-    client: openai::Client,
+    openai: Option<Arc<OpenAiProvider>>,
+    openrouter: Option<Arc<OpenRouterProvider>>,
+    default_provider: AiProvider,
 }
 
 impl RigService {
+    /// Create RigService from AiConfig (recommended method)
+    pub fn from_config(ai_config: &AiConfig) -> Result<Self> {
+        let default_provider = AiProvider::from_str(&ai_config.providers.default_provider)
+            .map_err(|e| crate::error::Error::Internal(format!("Invalid default provider: {}", e)))?;
+
+        // Initialize OpenAI provider if configured
+        let openai = if let Some(openai_config) = &ai_config.providers.openai {
+            let mut provider = OpenAiProvider::new(&openai_config.api_key, openai_config.base_url.as_deref());
+            provider = provider.with_reasoning(
+                openai_config.enable_reasoning_summaries,
+                openai_config.reasoning_effort.clone()
+            );
+            Some(Arc::new(provider))
+        } else {
+            None
+        };
+
+        // Initialize OpenRouter provider if configured
+        let openrouter = if let Some(openrouter_config) = &ai_config.providers.openrouter {
+            let provider = OpenRouterProvider::new(&openrouter_config.api_key, openrouter_config.base_url.as_deref());
+            Some(Arc::new(provider))
+        } else {
+            None
+        };
+
+        // Validate at least one provider is configured
+        if openai.is_none() && openrouter.is_none() {
+            return Err(crate::error::Error::Internal(
+                "No AI providers configured".to_string()
+            ));
+        }
+
+        // Validate default provider exists
+        match default_provider {
+            AiProvider::OpenAi if openai.is_none() => {
+                return Err(crate::error::Error::Internal(
+                    "Default provider is OpenAI, but OpenAI is not configured".to_string()
+                ));
+            }
+            AiProvider::OpenRouter if openrouter.is_none() => {
+                return Err(crate::error::Error::Internal(
+                    "Default provider is OpenRouter, but OpenRouter is not configured".to_string()
+                ));
+            }
+            _ => {}
+        }
+
+        Ok(RigService {
+            openai,
+            openrouter,
+            default_provider,
+        })
+    }
+
+    /// Create from legacy API key string (for backward compatibility)
+    #[deprecated(note = "Use RigService::from_config() instead")]
     pub fn new(api_key: &str) -> Self {
-        Self {
-            client: openai::Client::new(api_key).expect("Failed to create OpenAI client"),
+        use secrecy::SecretString;
+
+        // Create a simple provider config with just OpenAI
+        let openai = Some(Arc::new(OpenAiProvider::new(
+            &SecretString::new(api_key.to_string().into()),
+            None,
+        )));
+
+        RigService {
+            openai,
+            openrouter: None,
+            default_provider: AiProvider::OpenAi,
         }
     }
 
+    /// Create from environment variables (for backward compatibility)
+    #[deprecated(note = "Use RigService::from_config() instead")]
     pub fn from_env() -> Self {
         use rig::client::ProviderClient;
-        Self {
-            client: openai::Client::from_env(),
+        let _client = rig::providers::openai::Client::from_env();
+
+        // Since we can't extract the API key from the client, we create a dummy one
+        // The client itself is already initialized from env
+        // This is a compatibility shim - prefer from_config()
+        use secrecy::SecretString;
+        let openai = Some(Arc::new(OpenAiProvider::new(
+            &SecretString::new("from_env".to_string().into()),
+            None,
+        )));
+
+        RigService {
+            openai,
+            openrouter: None,
+            default_provider: AiProvider::OpenAi,
         }
     }
 
     /// Creates a dummy RigService for testing purposes.
     pub fn dummy() -> Self {
-        Self {
-            client: openai::Client::new("sk-dummy").expect("Failed to create OpenAI client"),
+        use secrecy::SecretString;
+        let openai = Some(Arc::new(OpenAiProvider::new(
+            &SecretString::new("sk-dummy".to_string().into()),
+            None,
+        )));
+
+        RigService {
+            openai,
+            openrouter: None,
+            default_provider: AiProvider::OpenAi,
         }
     }
 
+    /// Get the default provider
+    pub fn default_provider(&self) -> AiProvider {
+        self.default_provider
+    }
+
+    /// Check if a provider is configured
+    pub fn is_provider_configured(&self, provider: AiProvider) -> bool {
+        match provider {
+            AiProvider::OpenAi => self.openai.is_some(),
+            AiProvider::OpenRouter => self.openrouter.is_some(),
+        }
+    }
+
+    /// Get all configured providers
+    pub fn configured_providers(&self) -> Vec<AiProvider> {
+        let mut providers = Vec::new();
+        if self.openai.is_some() {
+            providers.push(AiProvider::OpenAi);
+        }
+        if self.openrouter.is_some() {
+            providers.push(AiProvider::OpenRouter);
+        }
+        providers
+    }
+
     /// Creates a Rig agent configured for the given chat session.
+    /// Returns our unified Agent enum that wraps both OpenAI and OpenRouter agents.
     pub async fn create_agent(
         &self,
         pool: DbPool,
@@ -50,19 +277,26 @@ impl RigService {
         chat_id: Uuid,
         user_id: Uuid,
         session: &ChatSession,
-        ai_config: &crate::config::AiConfig,
-    ) -> Result<rig::agent::Agent<ResponsesCompletionModel>> {
-        use rig::client::CompletionClient;
+        _ai_config: &AiConfig,
+    ) -> Result<Agent> {
+        // 1. Parse model identifier (supports both "provider:model" and legacy "model" formats)
+        let model_id = ModelIdentifier::parse(
+            &session.agent_config.model,
+            self.default_provider
+        ).map_err(|e| Error::Internal(format!("Invalid model format: {}", e)))?;
 
-        // 1. Resolve the model
-        let model_name = if session.agent_config.model.is_empty() {
-            openai::GPT_5_MINI  // Default to gpt-5-mini
+        // 2. Resolve model name (use default if empty)
+        let model_name = if model_id.model.is_empty() {
+            // Use provider-specific default
+            match model_id.provider {
+                AiProvider::OpenAi => "gpt-5-mini",
+                AiProvider::OpenRouter => "anthropic/claude-3.5-sonnet",
+            }
         } else {
-            &session.agent_config.model
+            model_id.model.as_str()
         };
 
-        // 2. Build the Rig Agent with Tools
-        // Select persona based on mode (plan vs build)
+        // 3. Build persona (same for both providers)
         let persona = if let Some(ref override_persona) = session.agent_config.persona_override {
             override_persona.clone()
         } else {
@@ -73,7 +307,7 @@ impl RigService {
             if mode == "build" {
                 if let Some(ref plan_file_path) = session.agent_config.plan_file {
                     // Read plan file content
-                    let mut conn = pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+                    let mut conn = pool.acquire().await.map_err(|e| Error::Internal(format!("Database error: {}", e)))?;
 
                     // Get plan file
                     if let Ok(Some(plan_file)) = crate::queries::files::get_file_by_path(
@@ -103,143 +337,99 @@ impl RigService {
             }
         };
 
-        // TODO: Phase 3 - Extract ToolConfig from chat metadata
-        // For now, derive ToolConfig from agent_config.mode and agent_config.plan_file
+        // 4. Create ToolConfig (same for both providers)
         let tool_config = crate::tools::ToolConfig {
             plan_mode: session.agent_config.mode == "plan",
             active_plan_path: session.agent_config.plan_file.clone(),
         };
 
-        // 3. Build agent with optional reasoning parameters
-        let agent_builder = self.client.agent(model_name)
-            .preamble(&persona)
-            .tool(RigLsTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigReadTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigWriteTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigRmTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigMvTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigTouchTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigEditTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigGrepTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigMkdirTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigAskUserTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigExitPlanModeTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
+        // 5. Build agent based on provider type
+        match model_id.provider {
+            AiProvider::OpenAi => {
+                // Validate OpenAI provider is configured
+                let openai_provider = self.openai.as_ref()
+                    .ok_or_else(|| Error::Internal("OpenAI provider not configured".to_string()))?;
 
-        // Build additional parameters for OpenAI Responses API
-        // CRITICAL: Set store: false to use stateless mode
-        // This prevents OpenAI from requiring reasoning items to be maintained across requests
-        // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
-        let mut params = serde_json::json!({
-            "store": false
-        });
+                // Build agent with OpenAI client
+                let agent_builder = openai_provider.client().agent(model_name)
+                    .preamble(&persona);
+                let agent_builder = add_tools_to_agent(
+                    agent_builder,
+                    &pool,
+                    &storage,
+                    workspace_id,
+                    chat_id,
+                    user_id,
+                    &tool_config,
+                );
 
-        // Enable reasoning with effort and summaries based on configuration
-        if ai_config.enable_reasoning_summaries {
-            if let Some(obj) = params.as_object_mut() {
-                obj.insert("reasoning".to_string(), serde_json::json!({
-                    "effort": ai_config.reasoning_effort,
-                    "summary": "auto"
-                }));
+                // Build additional parameters for OpenAI Responses API
+                // CRITICAL: Set store: false to use stateless mode
+                // This prevents OpenAI from requiring reasoning items to be maintained across requests
+                // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
+                let mut params = serde_json::json!({
+                    "store": false
+                });
+
+                // Enable reasoning with effort and summaries based on configuration
+                // Check if OpenAI provider has reasoning enabled
+                let reasoning_enabled = openai_provider.is_reasoning_enabled();
+
+                if reasoning_enabled {
+                    if let Some(obj) = params.as_object_mut() {
+                        obj.insert("reasoning".to_string(), serde_json::json!({
+                            "effort": openai_provider.reasoning_effort(),
+                            "summary": "auto"
+                        }));
+                    }
+                }
+
+                tracing::info!(
+                    "Agent additional_params: {}",
+                    serde_json::to_string(&params).unwrap_or_else(|_| "INVALID".to_string())
+                );
+
+                let agent_builder = agent_builder.additional_params(params);
+
+                // Add previous_response_id if available (for conversation continuity with GPT-5)
+                let agent_builder = if let Some(ref response_id) = session.agent_config.previous_response_id {
+                    agent_builder.additional_params(serde_json::json!({
+                        "previous_response_id": response_id
+                    }))
+                } else {
+                    agent_builder
+                };
+
+                let agent = agent_builder.build();
+                Ok(crate::providers::Agent::OpenAI(agent))
+            }
+            AiProvider::OpenRouter => {
+                // Validate OpenRouter provider is configured
+                let openrouter_provider = self.openrouter.as_ref()
+                    .ok_or_else(|| Error::Internal("OpenRouter provider not configured".to_string()))?;
+
+                // Build agent with OpenRouter client
+                let agent_builder = openrouter_provider.client().agent(model_name)
+                    .preamble(&persona);
+                let agent_builder = add_tools_to_agent(
+                    agent_builder,
+                    &pool,
+                    &storage,
+                    workspace_id,
+                    chat_id,
+                    user_id,
+                    &tool_config,
+                );
+
+                tracing::info!(
+                    "Built OpenRouter agent with model: {}",
+                    model_name
+                );
+
+                let agent = agent_builder.build();
+                Ok(crate::providers::Agent::OpenRouter(agent))
             }
         }
-
-        tracing::info!(
-            "Agent additional_params: {}",
-            serde_json::to_string(&params).unwrap_or_else(|_| "INVALID".to_string())
-        );
-
-        let agent_builder = agent_builder.additional_params(params);
-
-        // Add previous_response_id if available (for conversation continuity with GPT-5)
-        let agent_builder = if let Some(ref response_id) = session.agent_config.previous_response_id {
-            agent_builder.additional_params(serde_json::json!({
-                "previous_response_id": response_id
-            }))
-        } else {
-            agent_builder
-        };
-
-        let agent = agent_builder.build();
-
-        Ok(agent)
     }
 
     /// Converts BuildScale chat history to Rig messages.

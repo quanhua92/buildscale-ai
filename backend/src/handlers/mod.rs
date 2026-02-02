@@ -5,6 +5,7 @@ pub mod workspaces;
 pub mod members;
 pub mod files;
 pub mod tools;
+pub mod providers;
 
 pub use auth::*;
 pub use chat::*;
@@ -13,3 +14,4 @@ pub use workspaces::*;
 pub use members::*;
 pub use files::*;
 pub use tools::*;
+pub use providers::*;

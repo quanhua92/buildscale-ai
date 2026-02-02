@@ -9,8 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../select"
-import type { ChatModel } from "./chat-context"
-import { CHAT_MODELS } from "./chat-context"
+import type { ChatModel, AiProvider } from "./chat-context"
+import { useChat } from "./chat-context"
 
 export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   modelName?: string
@@ -20,8 +20,36 @@ export interface ChatHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   children?: React.ReactNode
 }
 
+// Provider display names
+const PROVIDER_NAMES: Record<AiProvider, string> = {
+  openai: "OpenAI",
+  openrouter: "OpenRouter"
+}
+
 const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
   ({ className, modelName, onNewChat, model, onModelChange, children, ...props }, ref) => {
+    // Get available models from chat context
+    const { availableModels } = useChat()
+
+    // Group models by provider
+    const groupedModels = React.useMemo(() => {
+      const grouped: Record<string, ChatModel[]> = { openai: [], openrouter: [] }
+      console.log('[ChatHeader] availableModels:', availableModels)
+      for (const m of availableModels) {
+        if (!grouped[m.provider]) {
+          grouped[m.provider] = []
+        }
+        grouped[m.provider].push(m)
+      }
+      console.log('[ChatHeader] groupedModels:', grouped)
+      return grouped
+    }, [availableModels])
+
+    // Get all available provider names
+    const availableProviders = Object.keys(groupedModels).filter(
+      provider => groupedModels[provider as AiProvider]?.length > 0
+    ) as AiProvider[]
+
     return (
       <div
         ref={ref}
@@ -39,16 +67,60 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
           {/* Center: Model Selector */}
           <div className="flex-1 flex justify-center">
             {model && onModelChange ? (
-              <Select value={model} onValueChange={onModelChange}>
-                <SelectTrigger className="w-[180px] h-7 text-xs">
-                  <SelectValue placeholder="Select model" />
+              <Select value={model.id} onValueChange={(value) => {
+                // Find the model object by id from availableModels
+                const selectedModel = availableModels.find(m => m.id === value)
+                if (selectedModel) {
+                  onModelChange(selectedModel)
+                }
+              }}>
+                <SelectTrigger className="w-[220px] h-7 text-xs">
+                  <SelectValue placeholder="Select model">
+                    <div className="flex items-center gap-2">
+                      <span>{model.name}</span>
+                      {model.is_free && (
+                        <span className="text-[10px] bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
+                          FREE
+                        </span>
+                      )}
+                    </div>
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
-                  {CHAT_MODELS.map((modelOption) => (
-                    <SelectItem key={modelOption} value={modelOption} className="text-xs">
-                      {modelOption}
-                    </SelectItem>
-                  ))}
+                <SelectContent className="max-h-96">
+                  {availableProviders.map((provider, providerIndex) => {
+                    const providerModels = groupedModels[provider]
+                    if (!providerModels || providerModels.length === 0) return null
+
+                    return (
+                      <React.Fragment key={provider}>
+                        {/* Provider Label */}
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                          {PROVIDER_NAMES[provider]}
+                        </div>
+                        {/* Models for this provider */}
+                        {providerModels.map((modelOption) => (
+                          <SelectItem
+                            key={modelOption.id}
+                            value={modelOption.id}
+                            className="text-xs pl-6"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>{modelOption.name}</span>
+                              {modelOption.is_free && (
+                                <span className="text-[10px] bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
+                                  FREE
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                        {/* Separator between providers (except last) */}
+                        {providerIndex < availableProviders.length - 1 && (
+                          <div className="my-1 border-t border-border/50" />
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             ) : modelName ? (

@@ -276,6 +276,7 @@ name = "buildscale"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "async-stream",
  "async-trait",
  "axum",
  "axum-extra",

@@ -248,14 +248,70 @@ pub struct AiConfig {
     pub default_context_token_limit: usize,
     /// Inactivity timeout for chat actors in seconds (default: 600)
     pub actor_inactivity_timeout_seconds: u64,
-    /// OpenAI API key
+    /// Multi-provider configuration
+    #[serde(default)]
+    pub providers: ProviderConfig,
+    /// Deprecated: OpenAI API key (use providers.openai.api_key instead)
     #[serde(skip_serializing)]
+    #[serde(default)]
     pub openai_api_key: SecretString,
-    /// Enable reasoning summaries for GPT-5 models (default: false)
-    /// Note: Requires organization verification at https://platform.openai.com/settings/organization/general
+}
+
+/// Multi-provider AI configuration
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ProviderConfig {
+    /// OpenAI configuration
+    #[serde(default)]
+    pub openai: Option<OpenAIConfig>,
+    /// OpenRouter configuration
+    #[serde(default)]
+    pub openrouter: Option<OpenRouterConfig>,
+    /// Default provider to use when model doesn't specify one
+    #[serde(default = "default_provider")]
+    pub default_provider: String,
+    /// Default model to use for new chat sessions (e.g., "openai:gpt-4o" or "gpt-4o")
+    #[serde(default = "default_chat_model")]
+    pub default_model: String,
+}
+
+fn default_provider() -> String {
+    "openai".to_string()
+}
+
+fn default_chat_model() -> String {
+    "openai:gpt-5-mini".to_string()
+}
+
+/// OpenAI provider configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OpenAIConfig {
+    /// API key for OpenAI
+    #[serde(skip_serializing)]
+    pub api_key: SecretString,
+    /// Optional base URL (for Azure OpenAI or proxy)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Enable reasoning summaries for GPT-5 models
+    #[serde(default)]
     pub enable_reasoning_summaries: bool,
-    /// Reasoning effort level: "low", "medium" (default), or "high"
+    /// Reasoning effort level: "low", "medium", or "high"
+    #[serde(default = "default_reasoning_effort")]
     pub reasoning_effort: String,
+}
+
+fn default_reasoning_effort() -> String {
+    "low".to_string()
+}
+
+/// OpenRouter provider configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OpenRouterConfig {
+    /// API key for OpenRouter
+    #[serde(skip_serializing)]
+    pub api_key: SecretString,
+    /// Optional base URL (default: https://openrouter.ai/api)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 impl Default for AiConfig {
@@ -268,9 +324,8 @@ impl Default for AiConfig {
                 "You are BuildScale AI, a highly capable Personal Assistant and Coworker living inside a stateful Distributed Operating System.".to_string(),
             default_context_token_limit: 4000,
             actor_inactivity_timeout_seconds: 600,
+            providers: ProviderConfig::default(),
             openai_api_key: SecretString::from(String::new()),
-            enable_reasoning_summaries: false,
-            reasoning_effort: "low".to_string(),
         }
     }
 }

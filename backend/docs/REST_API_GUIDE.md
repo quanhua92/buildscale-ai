@@ -38,6 +38,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/auth/refresh` | POST | Refresh access token | No (uses refresh token) |
 | `/api/v1/auth/logout` | POST | Logout and invalidate session | No (uses refresh token) |
 | `/api/v1/auth/me` | GET | Get current user profile | Yes (JWT) |
+| `/api/v1/providers` | GET | Get all configured AI providers and models | Yes (JWT) |
 | `/api/v1/workspaces` | POST | Create new workspace | Yes (JWT) |
 | `/api/v1/workspaces` | GET | List my workspaces | Yes (JWT) |
 | `/api/v1/workspaces/:id` | GET | Get workspace details | Yes (JWT + Member) |
@@ -48,6 +49,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/members/me` | GET | Get my membership details | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/members/:uid` | PATCH | Update member role | Yes (JWT + Admin) |
 | `/api/v1/workspaces/:id/members/:uid` | DELETE | Remove member / Leave | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/providers` | GET | Get workspace AI providers and models | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files` | POST | Create file/folder | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid` | GET | Get file & latest version | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid` | PATCH | Move or rename file | Yes (JWT + Member) |
@@ -1836,6 +1838,167 @@ const logout = async () => {
 
 
 ---
+
+## AI Providers API
+
+Get information about available AI providers and their supported models.
+
+### Get All Providers
+
+Get all configured AI providers and their available models globally.
+
+**Endpoint**: `GET /api/v1/providers`
+
+**Authentication**: Required (JWT access token)
+
+**Token Sources**:
+- **Authorization header** (API/Mobile clients): `Authorization: Bearer <access_token>`
+- **Cookie** (Browser clients): `access_token=<token>` (automatically sent)
+
+#### Request
+
+**With Authorization header** (API clients):
+```bash
+curl http://localhost:3000/api/v1/providers \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**With Cookie** (browser clients):
+```bash
+curl http://localhost:3000/api/v1/providers \
+  -H "Cookie: access_token=<token>"
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "providers": [
+    {
+      "provider": "openai",
+      "display_name": "OpenAI",
+      "configured": true,
+      "models": [
+        {
+          "id": "openai:gpt-4o",
+          "provider": "openai",
+          "model": "gpt-4o",
+          "display_name": "GPT-4o",
+          "description": "Latest GPT-4 model",
+          "context_window": 128000,
+          "is_default": false
+        },
+        {
+          "id": "openai:gpt-5-mini",
+          "provider": "openai",
+          "model": "gpt-5-mini",
+          "display_name": "GPT-5 Mini",
+          "description": "Efficient GPT-5 model",
+          "context_window": 128000,
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "provider": "openrouter",
+      "display_name": "OpenRouter",
+      "configured": true,
+      "models": [
+        {
+          "id": "openrouter:moonshotai/kimi-k2.5",
+          "provider": "openrouter",
+          "model": "moonshotai/kimi-k2.5",
+          "display_name": "Kimi K2.5",
+          "description": "Moonshot AI's latest model",
+          "context_window": 128000,
+          "is_default": false
+        }
+      ]
+    }
+  ],
+  "default_provider": "openai",
+  "default_model": "openai:gpt-5-mini"
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `providers` | array | List of all available providers |
+| `providers[].provider` | string | Provider identifier ("openai", "openrouter") |
+| `providers[].display_name` | string | Human-readable provider name |
+| `providers[].configured` | boolean | Whether provider has API credentials configured |
+| `providers[].models` | array | List of available models (empty if not configured) |
+| `providers[].models[].id` | string | Full model identifier ("openai:gpt-4o") |
+| `providers[].models[].provider` | string | Provider name |
+| `providers[].models[].model` | string | Model name without provider prefix |
+| `providers[].models[].display_name` | string | Human-readable model name |
+| `providers[].models[].description` | string | Optional model description |
+| `providers[].models[].context_window` | number | Context window size in tokens |
+| `providers[].models[].is_default` | boolean | **Whether this is the default model** (only one model should be `true`) |
+| `default_provider` | string | Default provider identifier |
+| `default_model` | string | Default model for new chat sessions (e.g., "openai:gpt-5-mini") |
+
+#### Use Cases
+
+- **Model selection UI**: Populate model selector dropdown
+- **Provider discovery**: Check which providers are configured
+- **Model metadata**: Display model descriptions and context windows
+- **Feature detection**: Show/hide features based on provider capabilities
+
+---
+
+### Get Workspace Providers
+
+Get AI providers and models available to a specific workspace. Filters models based on:
+- Which providers are configured (have API keys)
+- Which models are enabled in the ai_models table
+- TODO: workspace_ai_models access control (currently returns all enabled models)
+
+**Endpoint**: `GET /api/v1/workspaces/:workspace_id/providers`
+
+**Authentication**: Required (JWT access token + Workspace Member)
+
+**Permission**: User must be a member of the workspace.
+
+#### Request
+
+**Path Parameters**:
+- `workspace_id`: Workspace UUID
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+```bash
+curl http://localhost:3000/api/v1/workspaces/{workspace_id}/providers \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Response (200 OK)
+
+Response format is identical to `GET /api/v1/providers` (see above).
+
+#### Error Responses
+
+**403 Forbidden** - Not a Workspace Member
+```json
+{
+  "error": "Access forbidden: User is not a member of this workspace",
+  "code": "FORBIDDEN"
+}
+```
+
+#### Use Cases
+
+- **Workspace-specific model selection**: Show models available to workspace
+- **Tier-based access**: Different workspaces have different model access
+- **Cost control**: Restrict expensive models to certain workspaces
+
+---
+
 
 ## Workspaces API
 

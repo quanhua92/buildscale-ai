@@ -103,6 +103,30 @@ pub enum Error {
     /// An LLM error.
     #[error("LLM error: {0}")]
     Llm(String),
+
+    /// AI provider error.
+    #[error("AI provider error: {0}")]
+    AiProvider(String),
+
+    /// Provider not configured.
+    #[error("Provider '{0}' not configured")]
+    ProviderNotConfigured(String),
+
+    /// Invalid model format.
+    #[error("Invalid model format: {0}")]
+    InvalidModelFormat(String),
+
+    /// Model not supported by provider.
+    #[error("Model '{0}' not supported by provider '{1}'")]
+    ModelNotSupported(String, String),
+
+    /// API key missing for provider.
+    #[error("API key not configured for provider '{0}'")]
+    ApiKeyMissing(String),
+
+    /// Model disabled.
+    #[error("Model '{0}' is disabled")]
+    ModelDisabled(String),
 }
 
 /// A type alias for `Result<T, Error>` to simplify function signatures.
@@ -214,6 +238,30 @@ impl IntoResponse for Error {
                 create_error_body(msg, "LLM_ERROR"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
+            Error::AiProvider(msg) => (
+                create_error_body(msg, "AI_PROVIDER_ERROR"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::ProviderNotConfigured(provider) => (
+                create_error_body(format!("Provider '{}' not configured", provider), "PROVIDER_NOT_CONFIGURED"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::InvalidModelFormat(msg) => (
+                create_error_body(msg, "INVALID_MODEL_FORMAT"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Error::ModelNotSupported(model, provider) => (
+                create_error_body(format!("Model '{}' not supported by provider '{}'", model, provider), "MODEL_NOT_SUPPORTED"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Error::ApiKeyMissing(provider) => (
+                create_error_body(format!("API key not configured for provider '{}'", provider), "API_KEY_MISSING"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Error::ModelDisabled(model) => (
+                create_error_body(format!("Model '{}' is disabled", model), "MODEL_DISABLED"),
+                StatusCode::FORBIDDEN,
+            ),
         };
 
         (status, Json(body)).into_response()
@@ -231,6 +279,9 @@ impl Error {
             Error::Authentication(_) | Error::InvalidToken(_) | Error::SessionExpired(_) => 401,
             Error::TokenTheftDetected(_) => 403,
             Error::Json(_) => 400,
+            Error::InvalidModelFormat(_) => 400,
+            Error::ModelNotSupported(_, _) => 400,
+            Error::ModelDisabled(_) => 403,
             _ => 500,
         }
     }
@@ -254,6 +305,12 @@ impl Error {
             Error::Io(_) => "INTERNAL_ERROR",
             Error::Json(_) => "JSON_ERROR",
             Error::Llm(_) => "LLM_ERROR",
+            Error::AiProvider(_) => "AI_PROVIDER_ERROR",
+            Error::ProviderNotConfigured(_) => "PROVIDER_NOT_CONFIGURED",
+            Error::InvalidModelFormat(_) => "INVALID_MODEL_FORMAT",
+            Error::ModelNotSupported(_, _) => "MODEL_NOT_SUPPORTED",
+            Error::ApiKeyMissing(_) => "API_KEY_MISSING",
+            Error::ModelDisabled(_) => "MODEL_DISABLED",
         }
     }
 }
