@@ -5,7 +5,7 @@ use crate::services::chat::rig_tools::{
     RigAskUserTool, RigExitPlanModeTool,
 };
 use crate::services::storage::FileStorageService;
-use crate::providers::{AiProvider, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
+use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
 use crate::config::AiConfig;
 use crate::DbPool;
 use crate::error::{Error, Result};
@@ -164,6 +164,7 @@ impl RigService {
     }
 
     /// Creates a Rig agent configured for the given chat session.
+    /// Returns our unified Agent enum that wraps both OpenAI and OpenRouter agents.
     pub async fn create_agent(
         &self,
         pool: DbPool,
@@ -173,35 +174,25 @@ impl RigService {
         user_id: Uuid,
         session: &ChatSession,
         ai_config: &AiConfig,
-    ) -> Result<rig::agent::Agent<ResponsesCompletionModel>> {
+    ) -> Result<Agent> {
         // 1. Parse model identifier (supports both "provider:model" and legacy "model" formats)
         let model_id = ModelIdentifier::parse(
             &session.agent_config.model,
             self.default_provider
         ).map_err(|e| Error::Internal(format!("Invalid model format: {}", e)))?;
 
-        // 2. Validate provider and get client
-        let provider = match model_id.provider {
-            AiProvider::OpenAi => self.openai.as_ref()
-                .ok_or_else(|| Error::Internal("OpenAI provider not configured".to_string()))?,
-            AiProvider::OpenRouter => {
-                // TODO: Implement OpenRouter agent creation
-                // For now, return an error
-                return Err(Error::Internal(
-                    "OpenRouter support is not yet implemented in create_agent. Please use OpenAI provider for now.".to_string()
-                ));
-            }
-        };
-
-        // 3. Resolve model name (use default if empty)
+        // 2. Resolve model name (use default if empty)
         let model_name = if model_id.model.is_empty() {
-            "gpt-5-mini"
+            // Use provider-specific default
+            match model_id.provider {
+                AiProvider::OpenAi => "gpt-5-mini",
+                AiProvider::OpenRouter => "anthropic/claude-3.5-sonnet",
+            }
         } else {
             model_id.model.as_str()
         };
 
-        // 4. Build the Rig Agent with Tools
-        // Select persona based on mode (plan vs build)
+        // 3. Build persona (same for both providers)
         let persona = if let Some(ref override_persona) = session.agent_config.persona_override {
             override_persona.clone()
         } else {
@@ -242,154 +233,259 @@ impl RigService {
             }
         };
 
-        // TODO: Phase 3 - Extract ToolConfig from chat metadata
-        // For now, derive ToolConfig from agent_config.mode and agent_config.plan_file
+        // 4. Create ToolConfig (same for both providers)
         let tool_config = crate::tools::ToolConfig {
             plan_mode: session.agent_config.mode == "plan",
             active_plan_path: session.agent_config.plan_file.clone(),
         };
 
-        // 5. Build agent with OpenAI client
-        let agent_builder = provider.client().agent(model_name)
-            .preamble(&persona)
-            .tool(RigLsTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigReadTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigWriteTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigRmTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigMvTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigTouchTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigEditTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigGrepTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigMkdirTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigAskUserTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .tool(RigExitPlanModeTool {
-                pool: pool.clone(),
-                storage: storage.clone(),
-                workspace_id,
-                chat_id,
-                user_id,
-                tool_config: tool_config.clone(),
-            })
-            .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
+        // 5. Build agent based on provider type
+        match model_id.provider {
+            AiProvider::OpenAi => {
+                // Validate OpenAI provider is configured
+                let openai_provider = self.openai.as_ref()
+                    .ok_or_else(|| Error::Internal("OpenAI provider not configured".to_string()))?;
 
-        // Build additional parameters for OpenAI Responses API
-        // CRITICAL: Set store: false to use stateless mode
-        // This prevents OpenAI from requiring reasoning items to be maintained across requests
-        // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
-        let mut params = serde_json::json!({
-            "store": false
-        });
+                // Build agent with OpenAI client
+                let agent_builder = openai_provider.client().agent(model_name)
+                    .preamble(&persona)
+                    .tool(RigLsTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigReadTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigWriteTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigRmTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigMvTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigTouchTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigEditTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigGrepTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigMkdirTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigAskUserTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigExitPlanModeTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
 
-        // Enable reasoning with effort and summaries based on configuration
-        // Check if OpenAI provider has reasoning enabled
-        let reasoning_enabled = ai_config.providers.openai
-            .as_ref()
-            .map(|config| config.enable_reasoning_summaries)
-            .unwrap_or(false);
+                // Build additional parameters for OpenAI Responses API
+                // CRITICAL: Set store: false to use stateless mode
+                // This prevents OpenAI from requiring reasoning items to be maintained across requests
+                // Without this, Rig loses reasoning items when managing chat_history, causing 400 errors
+                let mut params = serde_json::json!({
+                    "store": false
+                });
 
-        let reasoning_effort = ai_config.providers.openai
-            .as_ref()
-            .map(|config| config.reasoning_effort.clone())
-            .unwrap_or_else(|| "low".to_string());
+                // Enable reasoning with effort and summaries based on configuration
+                // Check if OpenAI provider has reasoning enabled
+                let reasoning_enabled = openai_provider.is_reasoning_enabled();
 
-        if reasoning_enabled {
-            if let Some(obj) = params.as_object_mut() {
-                obj.insert("reasoning".to_string(), serde_json::json!({
-                    "effort": reasoning_effort,
-                    "summary": "auto"
-                }));
+                if reasoning_enabled {
+                    if let Some(obj) = params.as_object_mut() {
+                        obj.insert("reasoning".to_string(), serde_json::json!({
+                            "effort": openai_provider.reasoning_effort(),
+                            "summary": "auto"
+                        }));
+                    }
+                }
+
+                tracing::info!(
+                    "Agent additional_params: {}",
+                    serde_json::to_string(&params).unwrap_or_else(|_| "INVALID".to_string())
+                );
+
+                let agent_builder = agent_builder.additional_params(params);
+
+                // Add previous_response_id if available (for conversation continuity with GPT-5)
+                let agent_builder = if let Some(ref response_id) = session.agent_config.previous_response_id {
+                    agent_builder.additional_params(serde_json::json!({
+                        "previous_response_id": response_id
+                    }))
+                } else {
+                    agent_builder
+                };
+
+                let agent = agent_builder.build();
+                Ok(crate::providers::Agent::OpenAI(agent))
+            }
+            AiProvider::OpenRouter => {
+                // Validate OpenRouter provider is configured
+                let openrouter_provider = self.openrouter.as_ref()
+                    .ok_or_else(|| Error::Internal("OpenRouter provider not configured".to_string()))?;
+
+                // Build agent with OpenRouter client
+                let agent_builder = openrouter_provider.client().agent(model_name)
+                    .preamble(&persona)
+                    .tool(RigLsTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigReadTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigWriteTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigRmTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigMvTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigTouchTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigEditTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigGrepTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigMkdirTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigAskUserTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .tool(RigExitPlanModeTool {
+                        pool: pool.clone(),
+                        storage: storage.clone(),
+                        workspace_id,
+                        chat_id,
+                        user_id,
+                        tool_config: tool_config.clone(),
+                    })
+                    .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
+
+                tracing::info!(
+                    "Built OpenRouter agent with model: {}",
+                    model_name
+                );
+
+                let agent = agent_builder.build();
+                Ok(crate::providers::Agent::OpenRouter(agent))
             }
         }
-
-        tracing::info!(
-            "Agent additional_params: {}",
-            serde_json::to_string(&params).unwrap_or_else(|_| "INVALID".to_string())
-        );
-
-        let agent_builder = agent_builder.additional_params(params);
-
-        // Add previous_response_id if available (for conversation continuity with GPT-5)
-        let agent_builder = if let Some(ref response_id) = session.agent_config.previous_response_id {
-            agent_builder.additional_params(serde_json::json!({
-                "previous_response_id": response_id
-            }))
-        } else {
-            agent_builder
-        };
-
-        let agent = agent_builder.build();
-
-        Ok(agent)
     }
 
     /// Converts BuildScale chat history to Rig messages.
