@@ -1,7 +1,9 @@
 use crate::error::Result;
 use crate::models::sse::SseEvent;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const EVENT_BUS_CAPACITY: usize = 1024;
@@ -26,6 +28,9 @@ pub struct AgentHandle {
 pub struct AgentRegistry {
     pub active_agents: scc::HashMap<Uuid, AgentHandle>,
     pub event_buses: scc::HashMap<Uuid, broadcast::Sender<SseEvent>>,
+    /// Track active cancellation tokens for streams
+    /// This allows STOP to cancel streams even after actor exits
+    pub active_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
 }
 
 impl AgentRegistry {
@@ -33,6 +38,7 @@ impl AgentRegistry {
         Self {
             active_agents: scc::HashMap::new(),
             event_buses: scc::HashMap::new(),
+            active_cancellations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -72,6 +78,34 @@ impl AgentRegistry {
     pub async fn remove(&self, chat_id: &Uuid) {
         tracing::info!("Removing actor for chat {}", chat_id);
         let _ = self.active_agents.remove_async(chat_id).await;
+    }
+
+    /// Register a cancellation token for an active stream
+    pub async fn register_cancellation(&self, chat_id: Uuid, token: CancellationToken) {
+        tracing::info!("Registering cancellation token for stream {}", chat_id);
+        let mut cancellations = self.active_cancellations.lock().await;
+        cancellations.insert(chat_id, token);
+    }
+
+    /// Remove a cancellation token when stream completes
+    pub async fn remove_cancellation(&self, chat_id: &Uuid) {
+        tracing::debug!("Removing cancellation token for stream {}", chat_id);
+        let mut cancellations = self.active_cancellations.lock().await;
+        cancellations.remove(chat_id);
+    }
+
+    /// Cancel an active stream by chat ID
+    /// Returns true if a token was found and cancelled, false otherwise
+    pub async fn cancel_stream(&self, chat_id: &Uuid) -> bool {
+        let mut cancellations = self.active_cancellations.lock().await;
+        if let Some(token) = cancellations.remove(chat_id) {
+            tracing::info!("Cancelling active stream for chat {}", chat_id);
+            token.cancel();
+            true
+        } else {
+            tracing::debug!("No active cancellation token found for chat {}", chat_id);
+            false
+        }
     }
 }
 

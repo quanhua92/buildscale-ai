@@ -123,6 +123,7 @@ pub async fn create_chat(
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
+        registry: state.agents.clone(),
         default_persona: crate::agents::get_persona(None, None, None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
@@ -163,6 +164,7 @@ pub async fn get_chat_events(
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
+            registry: state.agents.clone(),
             default_persona: crate::agents::get_persona(None, None, None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
@@ -286,6 +288,7 @@ pub async fn post_chat_message(
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
+            registry: state.agents.clone(),
             default_persona: crate::agents::get_persona(None, None, None),
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
@@ -427,12 +430,32 @@ pub async fn stop_chat_generation(
         workspace_id
     );
 
+    // First, try to cancel via the active_cancellations HashMap
+    // This works even if the actor has exited
+    let cancelled_via_hashmap = state.agents.cancel_stream(&chat_id).await;
+
+    if cancelled_via_hashmap {
+        tracing::info!(
+            "[ChatHandler] Successfully cancelled stream via HashMap for chat {}",
+            chat_id
+        );
+        return Ok(Json(serde_json::json!({
+            "message": "Stream cancelled successfully"
+        })));
+    }
+
+    // If not in HashMap, try to cancel via actor command
+    tracing::debug!(
+        "[ChatHandler] No active stream in HashMap for chat {}, trying actor command",
+        chat_id
+    );
+
     // Get the actor handle
     let handle = state
         .agents
         .get_handle(&chat_id)
         .await
-        .ok_or_else(|| Error::NotFound(format!("Chat actor not found for chat {}", chat_id)))?;
+        .ok_or_else(|| Error::NotFound(format!("Chat actor not found and no active stream for chat {}", chat_id)))?;
 
     // Create a one-shot channel for response
     let (responder, response) = oneshot::channel();

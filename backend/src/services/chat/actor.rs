@@ -1,7 +1,7 @@
 use crate::models::chat::{ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::queries;
-use crate::services::chat::registry::{AgentCommand, AgentHandle};
+use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
 use crate::services::storage::FileStorageService;
@@ -99,6 +99,7 @@ pub struct ChatActor {
     pool: DbPool,
     rig_service: Arc<RigService>,
     storage: Arc<FileStorageService>,
+    registry: Arc<AgentRegistry>,
     command_rx: mpsc::Receiver<AgentCommand>,
     event_tx: broadcast::Sender<SseEvent>,
     default_persona: String,
@@ -115,6 +116,7 @@ pub struct ChatActorArgs {
     pub pool: DbPool,
     pub rig_service: Arc<RigService>,
     pub storage: Arc<FileStorageService>,
+    pub registry: Arc<AgentRegistry>,
     pub default_persona: String,
     pub default_context_token_limit: usize,
     pub event_tx: broadcast::Sender<SseEvent>,
@@ -138,6 +140,7 @@ impl ChatActor {
             pool: args.pool,
             rig_service: args.rig_service,
             storage: args.storage,
+            registry: args.registry,
             command_rx,
             event_tx: args.event_tx,
             default_persona: args.default_persona,
@@ -342,6 +345,9 @@ impl ChatActor {
             "Starting agent.stream_chat"
         );
 
+        // Register cancellation token so STOP can cancel even if actor exits
+        self.registry.register_cancellation(self.chat_id, cancellation_token.clone()).await;
+
         let mut full_response = String::new();
         let mut has_started_responding = false;
         let mut item_count = 0usize;
@@ -500,6 +506,9 @@ impl ChatActor {
             );
         }
 
+        // Remove cancellation token - stream is complete
+        self.registry.remove_cancellation(&self.chat_id).await;
+
         // Save tool actions log before AI response
         let log = self.state.lock().await.tool_actions_log.clone();
         if !log.is_empty() {
@@ -580,6 +589,9 @@ impl ChatActor {
             self.chat_id,
             reason
         );
+
+        // Remove cancellation token - stream is being cancelled
+        self.registry.remove_cancellation(&self.chat_id).await;
 
         // Get current model for metadata
         let model = self.state.lock().await.interaction.current_model.clone()
