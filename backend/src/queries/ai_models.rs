@@ -88,12 +88,16 @@ pub async fn get_model_by_provider_and_name(
 }
 
 /// Get enabled models for a workspace by provider
+///
+/// If the workspace has no configured models (empty result), falls back to
+/// returning all enabled models for the provider.
 pub async fn get_workspace_models_by_provider(
     pool: &PgPool,
     workspace_id: Uuid,
     provider: &str,
 ) -> Result<Vec<AiModel>> {
-    let models = sqlx::query_as!(
+    // Try to get workspace-specific models first
+    let workspace_models = sqlx::query_as!(
         AiModel,
         r#"
         SELECT m.id, m.provider, m.model_name, m.display_name,
@@ -113,7 +117,28 @@ pub async fn get_workspace_models_by_provider(
     .fetch_all(pool)
     .await?;
 
-    Ok(models)
+    // If workspace has no configured models, fall back to all enabled models
+    if workspace_models.is_empty() {
+        let all_models = sqlx::query_as!(
+            AiModel,
+            r#"
+            SELECT m.id, m.provider, m.model_name, m.display_name,
+                   m.description, m.context_window, m.is_enabled,
+                   m.created_at, m.updated_at
+            FROM ai_models m
+            WHERE m.provider = $1
+              AND m.is_enabled = true
+            ORDER BY m.display_name
+            "#,
+            provider
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(all_models)
+    } else {
+        Ok(workspace_models)
+    }
 }
 
 /// Get a model by ID
