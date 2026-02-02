@@ -688,7 +688,7 @@ impl ChatActor {
             rig::agent::MultiTurnStreamItem::StreamAssistantItem(content) => {
                 match content {
                     rig::streaming::StreamedAssistantContent::Text(text) => {
-                        tracing::info!(
+                        tracing::debug!(
                             chat_id = %self.chat_id,
                             text_len = text.text.len(),
                             text_preview = %format!("{}...", &text.text[..text.text.len().min(50)]),
@@ -706,7 +706,7 @@ impl ChatActor {
                                 "Failed to send Chunk event to frontend"
                             );
                         } else {
-                            tracing::debug!(
+                            tracing::trace!(
                                 chat_id = %self.chat_id,
                                 text_len = text.text.len(),
                                 "Successfully sent Chunk event to frontend"
