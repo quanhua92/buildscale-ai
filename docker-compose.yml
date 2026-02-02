@@ -66,13 +66,13 @@ services:
       - BUILDSCALE__AI__PROVIDERS__OPENAI__ENABLE_REASONING_SUMMARIES=true
       - BUILDSCALE__AI__PROVIDERS__OPENAI__REASONING_EFFORT=medium
       # OpenRouter Provider (optional - remove if not using)
-      # - BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-placeholder-replace-with-your-key
+      - BUILDSCALE__AI__PROVIDERS__OPENROUTER__API_KEY=sk-or-placeholder-replace-with-your-key
       # Optional: for custom endpoint (omit for default https://openrouter.ai/api)
       # - BUILDSCALE__AI__PROVIDERS__OPENROUTER__BASE_URL=https://your-proxy.com
       # Default Provider (openai or openrouter)
-      - BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openai
-      # Default Model (e.g., "openai:gpt-5-mini" or "gpt-5-mini" for provider default)
-      - BUILDSCALE__AI__PROVIDERS__DEFAULT_MODEL=openai:gpt-5-mini
+      - BUILDSCALE__AI__PROVIDERS__DEFAULT_PROVIDER=openrouter
+      # Default Model (e.g., "openai:gpt-5-mini" or "openrouter:qwen/qwen3-235b-a22b-2507")
+      - BUILDSCALE__AI__PROVIDERS__DEFAULT_MODEL=openrouter:qwen/qwen3-235b-a22b-2507
       # Legacy format (deprecated - auto-migrates to providers.openai.api_key)
       # - BUILDSCALE__AI__OPENAI_API_KEY=sk-placeholder-replace-with-your-key
     restart: unless-stopped

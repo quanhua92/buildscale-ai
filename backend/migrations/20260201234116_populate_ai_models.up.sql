@@ -1,53 +1,32 @@
 -- Populate ai_models table with popular OpenAI and OpenRouter models
--- This migration seeds the database with commonly used models from both providers
+-- This migration seeds the database with top-ranked affordable models from OpenRouter rankings
 
--- Insert OpenAI models
+-- Insert OpenAI models (for direct OpenAI provider)
 INSERT INTO ai_models (provider, model_name, display_name, description, context_window, is_enabled) VALUES
-    ('openai', 'gpt-4o', 'GPT-4o', 'OpenAI''s most capable multimodal model', 128000, true),
-    ('openai', 'gpt-4o-mini', 'GPT-4o Mini', 'Fast and affordable small model', 128000, true),
-    ('openai', 'gpt-5-mini', 'GPT-5 Mini', 'Latest compact model with improved performance', 128000, true),
-    ('openai', 'o1-preview', 'O1 Preview', 'Advanced reasoning model', 128000, false),
-    ('openai', 'o1-mini', 'O1 Mini', 'Fast reasoning model', 128000, false)
+    ('openai', 'gpt-4o', 'GPT-4o', 'OpenAI''s most capable multimodal model ($2.50/M input, $10.00/M output)', 128000, true),
+    ('openai', 'gpt-4o-mini', 'GPT-4o Mini', 'Fast and affordable small model ($0.15/M input, $0.60/M output)', 128000, true),
+    ('openai', 'gpt-5-mini', 'GPT-5 Mini', 'Latest compact model with improved performance ($0.25/M input, $2.00/M output)', 128000, true),
+    ('openai', 'o1-preview', 'O1 Preview', 'Advanced reasoning model ($15.00/M input, $60.00/M output)', 128000, false),
+    ('openai', 'o1-mini', 'O1 Mini', 'Fast reasoning model ($3.00/M input, $12.00/M output)', 128000, false)
 ON CONFLICT (provider, model_name) DO NOTHING;
 
--- Insert OpenRouter models (popular and high-quality models)
+-- Insert OpenRouter Top Ranking Models (with pricing)
 INSERT INTO ai_models (provider, model_name, display_name, description, context_window, is_enabled) VALUES
-    -- Anthropic Claude models
-    ('openrouter', 'anthropic/claude-3.5-sonnet', 'Claude 3.5 Sonnet', 'Most capable model for complex tasks', 200000, true),
-    ('openrouter', 'anthropic/claude-3.5-haiku', 'Claude 3.5 Haiku', 'Fast and compact model', 200000, true),
-
-    -- Google Gemini models
-    ('openrouter', 'google/gemini-pro-1.5', 'Gemini Pro 1.5', 'Google''s flagship model with 1M context', 1000000, true),
-    ('openrouter', 'google/gemini-flash-1.5', 'Gemini Flash 1.5', 'Fast model with 1M context', 1000000, true),
-
-    -- Moonshot AI Kimi models (user requested)
-    ('openrouter', 'moonshotai/kimi-k2.5', 'Kimi K2.5', 'Moonshot AI''s latest model', 128000, true),
-
-    -- DeepSeek models (cost-effective)
-    ('openrouter', 'deepseek/deepseek-chat', 'DeepSeek Chat', 'High-performance Chinese model', 128000, false),
-    ('openrouter', 'deepseek/deepseek-coder', 'DeepSeek Coder', 'Specialized for coding tasks', 128000, false),
-
-    -- Meta Llama models
-    ('openrouter', 'meta-llama/llama-3.1-405b-instruct', 'Llama 3.1 405B', 'Meta''s largest open model', 128000, false),
-    ('openrouter', 'meta-llama/llama-3.1-70b-instruct', 'Llama 3.1 70B', 'Balanced performance and speed', 128000, false),
-    ('openrouter', 'meta-llama/llama-3.1-8b-instruct', 'Llama 3.1 8B', 'Fast small model', 128000, false),
-
-    -- Mistral models
-    ('openrouter', 'mistralai/mistral-large', 'Mistral Large', 'Mistral''s flagship model', 128000, false),
-    ('openrouter', 'mistralai/mistral-medium', 'Mistral Medium', 'Balanced model', 128000, false),
-    ('openrouter', 'mistralai/mistral-small', 'Mistral Small', 'Fast compact model', 128000, false),
-
-    -- Microsoft Phi models
-    ('openrouter', 'microsoft/phi-3-medium-128k-instruct', 'Phi-3 Medium 128K', 'Medium model with long context', 128000, false),
-    ('openrouter', 'microsoft/phi-3-mini-128k-instruct', 'Phi-3 Mini 128K', 'Compact model with long context', 128000, false),
-
-    -- Qwen models
-    ('openrouter', 'qwen/qwen-2.5-72b-instruct', 'Qwen 2.5 72B', 'Alibaba''s powerful model', 128000, false),
-    ('openrouter', 'qwen/qwen-2.5-7b-instruct', 'Qwen 2.5 7B', 'Fast small model', 128000, false),
-
-    -- X.AI Grok models
-    ('openrouter', 'x-ai/grok-beta', 'Grok Beta', 'X.AI''s Grok model', 128000, false)
+    ('openrouter', 'openai/gpt-oss-120b', 'GPT OSS 120B', 'Open source 120B model ($0.039/M input, $0.19/M output)', 131072, true),
+    ('openrouter', 'google/gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite', 'Ultra-low latency and cost efficiency ($0.10/M input, $0.40/M output)', 1048576, true),
+    ('openrouter', 'qwen/qwen3-235b-a22b-2507', 'Qwen3 235B Instruct', 'Large-scale open model ($0.071/M input, $0.463/M output)', 262144, true),
+    ('openrouter', 'qwen/qwen3-235b-a22b-thinking-2507', 'Qwen3 235B A22B Thinking 2507', 'Advanced reasoning with thinking mode ($0.11/M input, $0.60/M output)', 262144, true),
+    ('openrouter', 'qwen/qwen3-next-80b-a3b-instruct', 'Qwen3 Next 80B', 'Fast stable responses ($0.09/M input, $1.10/M output)', 262144, true),
+    ('openrouter', 'deepseek/deepseek-v3.2', 'DeepSeek V3.2', 'Latest model with GPT-5 class reasoning ($0.25/M input, $0.38/M output)', 163840, true),
+    ('openrouter', 'x-ai/grok-code-fast-1', 'Grok Code Fast 1', 'Fast coding model ($0.20/M input, $1.50/M output)', 256000, true),
+    ('openrouter', 'x-ai/grok-4-fast', 'Grok 4 Fast', 'SOTA cost-efficiency with 2M context ($0.20/M input, $0.50/M output)', 2000000, true),
+    ('openrouter', 'x-ai/grok-4.1-fast', 'Grok 4.1 Fast', 'Latest multimodal with 2M context (≤128K: $0.20/$0.50 | >128K: $0.40/$1.00)', 2000000, true),
+    ('openrouter', 'minimax/minimax-m2.1', 'MiniMax M2.1', 'Lightweight coding model with 10B activated params ($0.27/M input, $1.10/M output)', 196608, true),
+    ('openrouter', 'z-ai/glm-4.7', 'GLM 4.7', 'Latest flagship with enhanced programming ($0.40/M input, $1.50/M output)', 202752, true),
+    ('openrouter', 'google/gemini-2.5-flash', 'Gemini 2.5 Flash', 'State-of-the-art workhorse model ($0.30/M input, $2.50/M output)', 1048576, true),
+    ('openrouter', 'moonshotai/kimi-k2.5', 'Kimi K2.5', 'Native multimodal model with 262K context ($0.50/M input, $2.80/M output)', 262144, true),
+    ('openrouter', 'google/gemini-3-flash-preview', 'Gemini 3 Flash Preview', 'High-speed thinking model ($0.50/M input, $3/M output)', 1048576, true)
 ON CONFLICT (provider, model_name) DO NOTHING;
 
 -- Add comment for documentation
-COMMENT ON TABLE ai_models IS 'Stores all available AI models from all providers with global enable/disable control. Populated with popular models from OpenAI and OpenRouter.';
+COMMENT ON TABLE ai_models IS 'Stores all available AI models from all providers with global enable/disable control. Populated with top-ranked affordable models from OpenRouter (Feb 2026).';
