@@ -349,8 +349,11 @@ impl ChatActor {
         // Process stream based on provider type
         match &agent {
             Agent::OpenAI(openai_agent) => {
-                let stream_req = openai_agent.stream_chat(&prompt, history);
-                let mut stream = stream_req.await;
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "Calling OpenAI agent.stream_chat"
+                );
+                let mut stream = openai_agent.stream_chat(&prompt, history).await;
 
                 tracing::info!(
                     chat_id = %self.chat_id,
@@ -417,8 +420,11 @@ impl ChatActor {
                 }
             }
             Agent::OpenRouter(openrouter_agent) => {
-                let stream_req = openrouter_agent.stream_chat(&prompt, history);
-                let mut stream = stream_req.await;
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "Calling OpenRouter agent.stream_chat"
+                );
+                let mut stream = openrouter_agent.stream_chat(&prompt, history).await;
 
                 tracing::info!(
                     chat_id = %self.chat_id,
