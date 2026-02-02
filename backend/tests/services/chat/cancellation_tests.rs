@@ -5,7 +5,7 @@ use buildscale::models::files::FileType;
 use buildscale::models::requests::CreateFileRequest;
 use buildscale::queries::chat;
 use buildscale::services::chat::actor::{ChatActor, ChatActorArgs};
-use buildscale::services::chat::registry::AgentCommand;
+use buildscale::services::chat::registry::{AgentCommand, AgentRegistry};
 use buildscale::services::chat::rig_engine::RigService;
 use buildscale::services::files::create_file_with_content;
 use buildscale::services::storage::FileStorageService;
@@ -59,6 +59,7 @@ async fn test_cancellation_during_streaming() {
     .expect("Failed to insert user message");
 
     let rig_service = Arc::new(RigService::dummy());
+    let registry = Arc::new(AgentRegistry::new());
     let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -68,6 +69,7 @@ async fn test_cancellation_during_streaming() {
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
+        registry,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -173,6 +175,7 @@ async fn test_cancellation_sends_stopped_event() {
     .expect("Failed to insert user message");
 
     let rig_service = Arc::new(RigService::dummy());
+    let registry = Arc::new(AgentRegistry::new());
     let (event_tx, event_rx) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -182,6 +185,7 @@ async fn test_cancellation_sends_stopped_event() {
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
+        registry,
         default_persona: "test".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -279,6 +283,7 @@ async fn test_multiple_cancel_requests() {
     .expect("Failed to insert");
 
     let rig_service = Arc::new(RigService::dummy());
+    let registry = Arc::new(AgentRegistry::new());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -288,6 +293,7 @@ async fn test_multiple_cancel_requests() {
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
+        registry,
         default_persona: "test".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -372,6 +378,7 @@ async fn test_cancellation_token_propagation() {
     .expect("Failed to insert");
 
     let rig_service = Arc::new(RigService::dummy());
+    let registry = Arc::new(AgentRegistry::new());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -381,6 +388,7 @@ async fn test_cancellation_token_propagation() {
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
+        registry,
         default_persona: "test".to_string(),
         default_context_token_limit: 1000,
         event_tx,

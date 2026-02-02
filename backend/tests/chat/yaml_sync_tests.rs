@@ -68,6 +68,7 @@ fn test_yaml_frontmatter_serialize_and_parse() {
     let frontmatter = ChatFrontmatter {
         mode: "build".to_string(),
         plan_file: Some("/plans/test.plan".to_string()),
+        model: None,
         extra: std::collections::HashMap::new(),
     };
 
@@ -88,6 +89,7 @@ fn test_chat_frontmatter_merge_into_agent_config() {
     let frontmatter = ChatFrontmatter {
         mode: "build".to_string(),
         plan_file: Some("/plans/merge-test.plan".to_string()),
+        model: None,
         extra: std::collections::HashMap::new(),
     };
 

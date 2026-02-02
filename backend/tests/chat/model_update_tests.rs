@@ -18,9 +18,9 @@ async fn test_chat_created_with_default_model() {
     // Create chat without specifying model
     let chat_id = create_chat(&app, &workspace_id, &token, "Hello").await;
 
-    // Verify default model is gpt-5-mini
+    // Verify default model is openai:gpt-5-mini (multi-provider format includes provider prefix)
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-5-mini");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-5-mini");
 }
 
 #[tokio::test]
@@ -51,7 +51,7 @@ async fn test_chat_created_with_explicit_model() {
 
     // Verify model is gpt-4o
     let chat = get_chat(&app, &workspace_id, chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-4o");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-4o");
 }
 
 #[tokio::test]
@@ -64,7 +64,7 @@ async fn test_model_updated_on_message() {
     let chat_id = create_chat(&app, &workspace_id, &token, "Start with mini").await;
 
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-5-mini");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-5-mini");
 
     // Send message with model change to gpt-4o
     let response = post_message(
@@ -80,7 +80,7 @@ async fn test_model_updated_on_message() {
 
     // Verify model updated
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-4o");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-4o");
 }
 
 #[tokio::test]
@@ -119,7 +119,7 @@ async fn test_model_persists_across_messages() {
 
     // Verify model persisted as gpt-4o-mini
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-4o-mini");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-4o-mini");
 }
 
 #[tokio::test]
@@ -133,7 +133,7 @@ async fn test_model_can_be_switched_multiple_times() {
     // Mini -> 4o
     post_message(&app, &workspace_id, &chat_id, &token, "Switch 1", Some("gpt-4o")).await;
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-4o");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-4o");
 
     // 4o -> Mini
     post_message(
@@ -146,10 +146,10 @@ async fn test_model_can_be_switched_multiple_times() {
     )
     .await;
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-4o-mini");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-4o-mini");
 
     // Mini -> 4o again
     post_message(&app, &workspace_id, &chat_id, &token, "Switch 3", Some("gpt-4o")).await;
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "gpt-4o");
+    assert_eq!(chat["agent_config"]["model"], "openai:gpt-4o");
 }

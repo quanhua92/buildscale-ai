@@ -440,7 +440,8 @@ pub async fn stop_chat_generation(
             chat_id
         );
         return Ok(Json(serde_json::json!({
-            "message": "Stream cancelled successfully"
+            "status": "cancelled",
+            "chat_id": chat_id
         })));
     }
 

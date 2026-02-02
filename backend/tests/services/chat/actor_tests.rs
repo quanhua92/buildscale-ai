@@ -14,6 +14,7 @@ async fn test_chat_actor_inactivity_timeout() {
     let chat_id = Uuid::new_v4();
     let workspace_id = Uuid::new_v4();
     let rig_service = Arc::new(RigService::dummy());
+    let registry = Arc::new(AgentRegistry::new());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -25,6 +26,7 @@ async fn test_chat_actor_inactivity_timeout() {
         pool: app.pool.clone(),
         rig_service,
         storage,
+        registry,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -47,7 +49,7 @@ async fn test_agent_registry_cleanup() {
     let chat_id = Uuid::new_v4();
     let workspace_id = Uuid::new_v4();
     let rig_service = Arc::new(RigService::dummy());
-    let registry = AgentRegistry::new();
+    let registry = Arc::new(AgentRegistry::new());
     let event_tx = registry.get_or_create_bus(chat_id).await;
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -59,6 +61,7 @@ async fn test_agent_registry_cleanup() {
         pool: app.pool.clone(),
         rig_service,
         storage,
+        registry: registry.clone(),
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
@@ -83,6 +86,7 @@ async fn test_chat_actor_timeout_reset() {
     let chat_id = Uuid::new_v4();
     let workspace_id = Uuid::new_v4();
     let rig_service = Arc::new(RigService::dummy());
+    let registry = Arc::new(AgentRegistry::new());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
@@ -94,6 +98,7 @@ async fn test_chat_actor_timeout_reset() {
         pool: app.pool.clone(),
         rig_service,
         storage,
+        registry,
         default_persona: "test persona".to_string(),
         default_context_token_limit: 1000,
         event_tx,
