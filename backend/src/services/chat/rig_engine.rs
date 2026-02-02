@@ -19,6 +19,111 @@ use uuid::Uuid;
 /// This prevents infinite loops while allowing complex multi-step workflows.
 const DEFAULT_MAX_TOOL_ITERATIONS: usize = 100;
 
+/// Add all Rig tools to an agent builder
+fn add_tools_to_agent<M>(
+    builder: rig::agent::AgentBuilder<M>,
+    pool: &DbPool,
+    storage: &Arc<FileStorageService>,
+    workspace_id: Uuid,
+    chat_id: Uuid,
+    user_id: Uuid,
+    tool_config: &crate::tools::ToolConfig,
+) -> rig::agent::AgentBuilderSimple<M>
+where
+    M: rig::completion::CompletionModel + 'static,
+{
+    builder
+        .tool(RigLsTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigReadTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigWriteTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigRmTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigMvTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigTouchTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigEditTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigGrepTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigMkdirTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigAskUserTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigExitPlanModeTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS)
+}
+
 /// Multi-provider AI service supporting OpenAI and OpenRouter
 #[derive(Debug)]
 pub struct RigService {
@@ -247,96 +352,16 @@ impl RigService {
 
                 // Build agent with OpenAI client
                 let agent_builder = openai_provider.client().agent(model_name)
-                    .preamble(&persona)
-                    .tool(RigLsTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigReadTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigWriteTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigRmTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigMvTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigTouchTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigEditTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigGrepTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigMkdirTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigAskUserTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigExitPlanModeTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
+                    .preamble(&persona);
+                let agent_builder = add_tools_to_agent(
+                    agent_builder,
+                    &pool,
+                    &storage,
+                    workspace_id,
+                    chat_id,
+                    user_id,
+                    &tool_config,
+                );
 
                 // Build additional parameters for OpenAI Responses API
                 // CRITICAL: Set store: false to use stateless mode
@@ -385,96 +410,16 @@ impl RigService {
 
                 // Build agent with OpenRouter client
                 let agent_builder = openrouter_provider.client().agent(model_name)
-                    .preamble(&persona)
-                    .tool(RigLsTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigReadTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigWriteTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigRmTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigMvTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigTouchTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigEditTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigGrepTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigMkdirTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigAskUserTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .tool(RigExitPlanModeTool {
-                        pool: pool.clone(),
-                        storage: storage.clone(),
-                        workspace_id,
-                        chat_id,
-                        user_id,
-                        tool_config: tool_config.clone(),
-                    })
-                    .default_max_depth(DEFAULT_MAX_TOOL_ITERATIONS);
+                    .preamble(&persona);
+                let agent_builder = add_tools_to_agent(
+                    agent_builder,
+                    &pool,
+                    &storage,
+                    workspace_id,
+                    chat_id,
+                    user_id,
+                    &tool_config,
+                );
 
                 tracing::info!(
                     "Built OpenRouter agent with model: {}",

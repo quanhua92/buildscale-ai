@@ -348,155 +348,35 @@ impl ChatActor {
         // Register cancellation token so STOP can cancel even if actor exits
         self.registry.register_cancellation(self.chat_id, cancellation_token.clone()).await;
 
-        let mut full_response = String::new();
-        let mut has_started_responding = false;
         let mut item_count = 0usize;
 
         // Process stream based on provider type
-        match &agent {
+        let full_response = match &agent {
             Agent::OpenAI(openai_agent) => {
                 tracing::info!(
                     chat_id = %self.chat_id,
                     "Calling OpenAI agent.stream_chat"
                 );
-                let mut stream = openai_agent.stream_chat(&prompt, history).await;
-
+                let stream = openai_agent.stream_chat(&prompt, history).await;
                 tracing::info!(
                     chat_id = %self.chat_id,
                     "Stream created (OpenAI), entering response loop"
                 );
-
-                loop {
-                    // Check for cancellation before each stream iteration
-                    if cancellation_token.is_cancelled() {
-                        tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
-                        return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
-                    }
-
-                    // Use tokio::select! to allow cancellation during stream.next()
-                    let item = tokio::select! {
-                        _ = cancellation_token.cancelled() => {
-                            tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
-                            return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
-                        },
-                        item = stream.next() => {
-                            match &item {
-                                Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = item_count, "Received stream item"),
-                                Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
-                                None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
-                            }
-                            item
-                        }
-                    };
-
-                    let item = match item {
-                        Some(i) => i,
-                        None => {
-                            tracing::info!(chat_id = %self.chat_id, items_received = item_count, "Stream finished naturally");
-                            break;
-                        }
-                    };
-
-                    item_count += 1;
-
-                    match item {
-                        Err(e) => {
-                            tracing::error!(
-                                chat_id = %self.chat_id,
-                                error = %e,
-                                item_num = item_count,
-                                "Stream item error"
-                            );
-                            return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
-                        }
-                        Ok(stream_item) => {
-                            if let Err(e) = self.process_stream_item(
-                                stream_item,
-                                &mut full_response,
-                                &mut has_started_responding,
-                                item_count,
-                                &mut conn,
-                                &session,
-                                &cancellation_token,
-                            ).await {
-                                return Err(e);
-                            }
-                        }
-                    }
-                }
+                self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await?
             }
             Agent::OpenRouter(openrouter_agent) => {
                 tracing::info!(
                     chat_id = %self.chat_id,
                     "Calling OpenRouter agent.stream_chat"
                 );
-                let mut stream = openrouter_agent.stream_chat(&prompt, history).await;
-
+                let stream = openrouter_agent.stream_chat(&prompt, history).await;
                 tracing::info!(
                     chat_id = %self.chat_id,
                     "Stream created (OpenRouter), entering response loop"
                 );
-
-                loop {
-                    // Check for cancellation before each stream iteration
-                    if cancellation_token.is_cancelled() {
-                        tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
-                        return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
-                    }
-
-                    // Use tokio::select! to allow cancellation during stream.next()
-                    let item = tokio::select! {
-                        _ = cancellation_token.cancelled() => {
-                            tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
-                            return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
-                        },
-                        item = stream.next() => {
-                            match &item {
-                                Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = item_count, "Received stream item"),
-                                Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
-                                None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
-                            }
-                            item
-                        }
-                    };
-
-                    let item = match item {
-                        Some(i) => i,
-                        None => {
-                            tracing::info!(chat_id = %self.chat_id, items_received = item_count, "Stream finished naturally");
-                            break;
-                        }
-                    };
-
-                    item_count += 1;
-
-                    match item {
-                        Err(e) => {
-                            tracing::error!(
-                                chat_id = %self.chat_id,
-                                error = %e,
-                                item_num = item_count,
-                                "Stream item error"
-                            );
-                            return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
-                        }
-                        Ok(stream_item) => {
-                            if let Err(e) = self.process_stream_item(
-                                stream_item,
-                                &mut full_response,
-                                &mut has_started_responding,
-                                item_count,
-                                &mut conn,
-                                &session,
-                                &cancellation_token,
-                            ).await {
-                                return Err(e);
-                            }
-                        }
-                    }
-                }
+                self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await?
             }
-        }
+        };
         // Check if stream completed without any items (possible API access issue)
         if item_count == 0 {
             tracing::warn!(
@@ -980,6 +860,87 @@ impl ChatActor {
         }
 
         Ok(())
+    }
+
+    /// Process a generic agent stream, handling cancellation and stream items
+    async fn process_agent_stream<S, M, E>(
+        &self,
+        mut stream: S,
+        cancellation_token: &CancellationToken,
+        conn: &mut sqlx::PgConnection,
+        session: &crate::models::chat::ChatSession,
+        item_count: &mut usize,
+    ) -> crate::error::Result<String>
+    where
+        S: futures::Stream<Item = Result<rig::agent::MultiTurnStreamItem<M>, E>> + Unpin,
+        M: std::fmt::Debug + 'static,
+        E: std::fmt::Display,
+    {
+        let mut full_response = String::new();
+        let mut has_started_responding = false;
+
+        loop {
+            // Check for cancellation before each stream iteration
+            if cancellation_token.is_cancelled() {
+                tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                self.handle_cancellation(conn, full_response.clone(), "user_cancelled").await?;
+                return Err(crate::error::Error::Internal("Chat cancelled by user".to_string()));
+            }
+
+            // Use tokio::select! to allow cancellation during stream.next()
+            let item = tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                    self.handle_cancellation(conn, full_response.clone(), "user_cancelled").await?;
+                    return Err(crate::error::Error::Internal("Chat cancelled by user".to_string()));
+                },
+                item = stream.next() => {
+                    match &item {
+                        Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = *item_count, "Received stream item"),
+                        Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
+                        None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                    }
+                    item
+                }
+            };
+
+            let item = match item {
+                Some(i) => i,
+                None => {
+                    tracing::info!(chat_id = %self.chat_id, items_received = *item_count, "Stream finished naturally");
+                    break;
+                }
+            };
+
+            *item_count += 1;
+
+            match item {
+                Err(e) => {
+                    tracing::error!(
+                        chat_id = %self.chat_id,
+                        error = %e,
+                        item_num = *item_count,
+                        "Stream item error"
+                    );
+                    return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
+                }
+                Ok(stream_item) => {
+                    if let Err(e) = self.process_stream_item(
+                        stream_item,
+                        &mut full_response,
+                        &mut has_started_responding,
+                        *item_count,
+                        conn,
+                        session,
+                        cancellation_token,
+                    ).await {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Ok(full_response)
     }
 
     async fn get_or_create_agent(
