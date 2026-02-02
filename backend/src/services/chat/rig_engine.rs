@@ -11,7 +11,6 @@ use crate::DbPool;
 use crate::error::{Error, Result};
 use rig::client::CompletionClient;
 use rig::completion::Message;
-use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use std::sync::Arc;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -173,7 +172,7 @@ impl RigService {
         chat_id: Uuid,
         user_id: Uuid,
         session: &ChatSession,
-        ai_config: &AiConfig,
+        _ai_config: &AiConfig,
     ) -> Result<Agent> {
         // 1. Parse model identifier (supports both "provider:model" and legacy "model" formats)
         let model_id = ModelIdentifier::parse(

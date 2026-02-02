@@ -5,6 +5,7 @@ use crate::services::chat::registry::{AgentCommand, AgentHandle};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
 use crate::services::storage::FileStorageService;
+use crate::providers::Agent;
 use crate::DbPool;
 use futures::StreamExt;
 use rig::streaming::StreamingChat;
@@ -29,9 +30,10 @@ struct ChatActorState {
 /// Agent cache and validation state
 /// These fields are accessed together when checking/creating agents
 struct AgentState {
-    /// Cached Rig agent with preserved chat_history
-    /// Contains reasoning items for GPT-5 multi-turn conversations
-    cached_agent: Option<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>>,
+    /// Cached agent with preserved chat_history
+    /// Contains reasoning items for GPT-5 multi-turn conversations (for OpenAI)
+    /// Wraps both OpenAI and OpenRouter agents in our unified Agent enum
+    cached_agent: Option<Agent>,
     /// Track model name to detect when to recreate agent
     current_model_name: Option<String>,
     /// Track user_id to detect when to recreate agent
@@ -339,302 +341,150 @@ impl ChatActor {
             history_len = history.len(),
             "Starting agent.stream_chat"
         );
-        let mut stream = agent
-            .stream_chat(&prompt, history)
-            .await;
-
-        tracing::info!(
-            chat_id = %self.chat_id,
-            "Stream created, entering response loop"
-        );
 
         let mut full_response = String::new();
         let mut has_started_responding = false;
         let mut item_count = 0usize;
 
-        tracing::debug!(
-            chat_id = %self.chat_id,
-            "Starting stream loop"
-        );
+        // Process stream based on provider type
+        match &agent {
+            Agent::OpenAI(openai_agent) => {
+                let stream_req = openai_agent.stream_chat(&prompt, history);
+                let mut stream = stream_req.await;
 
-        loop {
-            // Check for cancellation before each stream iteration
-            if cancellation_token.is_cancelled() {
-                tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
-                return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "Stream created (OpenAI), entering response loop"
+                );
+
+                loop {
+                    // Check for cancellation before each stream iteration
+                    if cancellation_token.is_cancelled() {
+                        tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                        return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
+                    }
+
+                    // Use tokio::select! to allow cancellation during stream.next()
+                    let item = tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                            return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
+                        },
+                        item = stream.next() => {
+                            match &item {
+                                Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = item_count, "Received stream item"),
+                                Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
+                                None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                            }
+                            item
+                        }
+                    };
+
+                    let item = match item {
+                        Some(i) => i,
+                        None => {
+                            tracing::info!(chat_id = %self.chat_id, items_received = item_count, "Stream finished naturally");
+                            break;
+                        }
+                    };
+
+                    item_count += 1;
+
+                    match item {
+                        Err(e) => {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                item_num = item_count,
+                                "Stream item error"
+                            );
+                            return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
+                        }
+                        Ok(stream_item) => {
+                            if let Err(e) = self.process_stream_item(
+                                stream_item,
+                                &mut full_response,
+                                &mut has_started_responding,
+                                item_count,
+                                &mut conn,
+                                &session,
+                                &cancellation_token,
+                            ).await {
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
             }
+            Agent::OpenRouter(openrouter_agent) => {
+                let stream_req = openrouter_agent.stream_chat(&prompt, history);
+                let mut stream = stream_req.await;
 
-            // Use tokio::select! to allow cancellation during stream.next()
-            let item = tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
-                    return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
-                },
-                item = stream.next() => {
-                    match &item {
-                        Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = item_count, "Received stream item"),
-                        Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
-                        None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "Stream created (OpenRouter), entering response loop"
+                );
+
+                loop {
+                    // Check for cancellation before each stream iteration
+                    if cancellation_token.is_cancelled() {
+                        tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                        return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
                     }
-                    item
-                }
-            };
 
-            let item = match item {
-                Some(i) => i,
-                None => {
-                    tracing::info!(chat_id = %self.chat_id, items_received = item_count, "Stream finished naturally");
-                    break; // Stream finished naturally
-                }
-            };
-
-            // Track stream items for debugging
-            item_count += 1;
-
-            // Debug: Log the item type before matching
-            tracing::debug!(
-                chat_id = %self.chat_id,
-                item_num = item_count,
-                is_err = item.is_err(),
-                is_ok = item.is_ok(),
-                "Processing stream item"
-            );
-
-            match item {
-                Err(e) => {
-                    tracing::error!(
-                        chat_id = %self.chat_id,
-                        error = %e,
-                        item_num = item_count,
-                        "Stream item error, wrapping as Internal error"
-                    );
-                    return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
-                }
-                Ok(rig::agent::MultiTurnStreamItem::StreamAssistantItem(content)) => {
-                    match content {
-                        rig::streaming::StreamedAssistantContent::Text(text) => {
-                            if !has_started_responding {
-                                tracing::info!("[ChatActor] [Rig] AI started streaming text response for chat {}", self.chat_id);
-                                has_started_responding = true;
+                    // Use tokio::select! to allow cancellation during stream.next()
+                    let item = tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
+                            return self.handle_cancellation(&mut conn, full_response, "user_cancelled").await;
+                        },
+                        item = stream.next() => {
+                            match &item {
+                                Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = item_count, "Received stream item"),
+                                Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
+                                None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
                             }
-                            full_response.push_str(&text.text);
-                            let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
+                            item
                         }
-                        rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
-                            // Only send non-empty reasoning parts to frontend
-                            for part in &thought.reasoning {
-                                if !part.trim().is_empty() {
-                                    let _ = self.event_tx.send(SseEvent::Thought {
-                                        agent_id: None,
-                                        text: part.clone(),
-                                    });
-                                }
+                    };
+
+                    let item = match item {
+                        Some(i) => i,
+                        None => {
+                            tracing::info!(chat_id = %self.chat_id, items_received = item_count, "Stream finished naturally");
+                            break;
+                        }
+                    };
+
+                    item_count += 1;
+
+                    match item {
+                        Err(e) => {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                item_num = item_count,
+                                "Stream item error"
+                            );
+                            return Err(crate::error::Error::Internal(format!("Streaming error: {}", e)));
+                        }
+                        Ok(stream_item) => {
+                            if let Err(e) = self.process_stream_item(
+                                stream_item,
+                                &mut full_response,
+                                &mut has_started_responding,
+                                item_count,
+                                &mut conn,
+                                &session,
+                                &cancellation_token,
+                            ).await {
+                                return Err(e);
                             }
                         }
-                        rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
-                            tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
-                            // Track tool name and arguments for logging when ToolResult arrives
-                            {
-                                let mut state = self.state.lock().await;
-                                state.tool_tracking.current_tool_name = Some(tool_call.function.name.clone());
-                                state.tool_tracking.current_tool_args = Some(serde_json::to_value(&tool_call.function.arguments).unwrap_or_default());
-                            }
-                            let path = tool_call.function.arguments.get("path")
-                                .or_else(|| tool_call.function.arguments.get("source"))
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-
-                            let _ = self.event_tx.send(SseEvent::Call {
-                                tool: tool_call.function.name,
-                                path,
-                                args: tool_call.function.arguments,
-                            });
-                        }
-                        _ => {}
                     }
-                }
-                Ok(rig::agent::MultiTurnStreamItem::StreamUserItem(content)) => {
-                    match content {
-                        rig::streaming::StreamedUserContent::ToolResult(result) => {
-                            let output = if let Some(rig::completion::message::ToolResultContent::Text(text)) = result.content.iter().next() {
-                                text.text.clone()
-                            } else {
-                                "Tool execution completed".to_string()
-                            };
-
-                             // Heuristic: if the output contains "Error:" it's likely a failure
-                             let success = !output.to_lowercase().contains("error:");
-
-                             // Check if this is an ask_user tool result with question_pending
-                             // Only ask_user returns question_pending status
-                             if success {
-                                 if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
-                                     // Handle question_pending (ask_user tool)
-                                     if let Some(status) = result_json.get("status").and_then(|s| s.as_str()) {
-                                         if status == "question_pending" {
-                                             // Extract question data
-                                             if let Some(questions) = result_json.get("questions").and_then(|q| q.as_array()) {
-                                                 let parsed_questions: Vec<crate::models::sse::Question> = questions
-                                                     .iter()
-                                                     .filter_map(|q| serde_json::from_value(q.clone()).ok())
-                                                     .collect();
-
-                                                 if let Some(question_id) = result_json.get("question_id").and_then(|id| id.as_str()) {
-                                                     if let Ok(qid) = uuid::Uuid::parse_str(question_id) {
-                                                         tracing::info!(
-                                                             "[ChatActor] Emitting QuestionPending event with {} questions for chat {}",
-                                                             parsed_questions.len(),
-                                                             self.chat_id
-                                                         );
-                                                         let _ = self.event_tx.send(SseEvent::QuestionPending {
-                                                             question_id: qid,
-                                                             questions: parsed_questions,
-                                                             created_at: chrono::Utc::now(),
-                                                         });
-                                                     }
-                                                 }
-                                             }
-                                         }
-                                     }
-
-                                     // Handle mode transition (exit_plan_mode tool)
-                                     // Check if result has mode field = "build"
-                                     if let Some(mode) = result_json.get("mode").and_then(|m| m.as_str()) {
-                                         if mode == "build" {
-                                             let plan_file = result_json.get("plan_file")
-                                                 .and_then(|p| p.as_str())
-                                                 .unwrap_or("");
-
-                                             tracing::info!(
-                                                 "[ChatActor] exit_plan_mode succeeded, transitioning chat {} to Build Mode with plan file {}",
-                                                 self.chat_id,
-                                                 plan_file
-                                             );
-
-                                             // Update chat metadata in database using ChatService
-                                             // This properly creates a new FileVersion and commits the transaction
-                                             // CRITICAL: If this fails, we must propagate the error to prevent state mismatch
-                                             let mut conn = self.pool.acquire().await
-                                                 .map_err(|e| {
-                                                     tracing::error!("[ChatActor] Failed to acquire DB connection for metadata update: {:?}", e);
-                                                     crate::error::Error::Sqlx(e)
-                                                 })?;
-                                             ChatService::update_chat_metadata(
-                                                 &mut conn,
-                                                 &self.storage,
-                                                 self.workspace_id,
-                                                 self.chat_id,
-                                                 mode.to_string(),
-                                                 if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
-                                             ).await.map_err(|e| {
-                                                 tracing::error!("[ChatActor] Failed to update chat metadata: {:?}", e);
-                                                 e
-                                             })?;
-
-                                             tracing::info!(
-                                                 "[ChatActor] Successfully updated chat {} metadata: mode={}, plan_file={}",
-                                                 self.chat_id,
-                                                 mode,
-                                                 plan_file
-                                             );
-
-                                             // Emit mode_changed event to frontend
-                                             let _ = self.event_tx.send(SseEvent::ModeChanged {
-                                                 mode: "build".to_string(),
-                                                 plan_file: if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
-                                             });
-
-                                             // Clear agent cache to force new agent with build mode
-                                             self.state.lock().await.agent_state.cached_agent = None;
-                                         }
-                                     }
-                                 }
-                             }
-
-                             tracing::info!(
-                                 "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}",
-                                 self.chat_id,
-                                 success,
-                                 if output.len() > 100 {
-                                     let mut end = 100;
-                                     while end > 0 && !output.is_char_boundary(end) {
-                                         end -= 1;
-                                     }
-                                     format!("{}...", &output[..end])
-                                 } else {
-                                     output.clone()
-                                 }
-                             );
-                             let _ = self.event_tx.send(SseEvent::Observation { output: output.clone(), success });
-
-                             // Log successful file modification tools
-                             if success {
-                                 let (name_opt, args_opt) = {
-                                     let state = self.state.lock().await;
-                                     (state.tool_tracking.current_tool_name.clone(),
-                                      state.tool_tracking.current_tool_args.clone())
-                                 };
-
-                                 if let Some(tname) = name_opt {
-                                     if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
-                                         let args_ref = args_opt.as_ref();
-                                         if let Some(log_msg) = ChatService::format_tool_action(
-                                             &tname,
-                                             &result_json,
-                                             args_ref,
-                                         ) {
-                                             tracing::info!(
-                                                 "[ChatActor] Adding tool action to log: {}",
-                                                 log_msg
-                                             );
-                                             self.state.lock().await.tool_actions_log.push(log_msg);
-                                         }
-                                     }
-                                 }
-                             }
-
-                             // Clear current tool name and arguments
-                             {
-                                 let mut state = self.state.lock().await;
-                                 state.tool_tracking.current_tool_name = None;
-                                 state.tool_tracking.current_tool_args = None;
-                             }
-                        }
-                    }
-                }
-                Ok(rig::agent::MultiTurnStreamItem::FinalResponse(final_response)) => {
-                    tracing::info!(
-                        chat_id = %self.chat_id,
-                        response_len = final_response.response().len(),
-                        response_text = %final_response.response(),
-                        usage = ?final_response.usage(),
-                        "Received FinalResponse from stream"
-                    );
-
-                    // Store final response for database save, but DON'T send as SSE chunk
-                    // The response has already been streamed via Text chunks above
-                    let response_text = final_response.response();
-                    if !response_text.is_empty() {
-                        if !has_started_responding {
-                            tracing::info!("[ChatActor] AI started responding (via FinalResponse) for chat {}", self.chat_id);
-                            has_started_responding = true;
-                        }
-                        // Only store for database, don't send as SSE chunk (already streamed)
-                        full_response.push_str(response_text);
-                    }
-                }
-                // Catch-all for future Rig variants (MultiTurnStreamItem is non-exhaustive)
-                Ok(other) => {
-                    tracing::warn!(
-                        chat_id = %self.chat_id,
-                        item_num = item_count,
-                        "Unhandled stream item variant: {:?}",
-                        std::mem::discriminant(&other)
-                    );
                 }
             }
         }
-
         // Check if stream completed without any items (possible API access issue)
         if item_count == 0 {
             tracing::warn!(
@@ -813,12 +663,254 @@ impl ChatActor {
         Ok(())
     }
 
+    /// Process a single stream item from either provider
+    /// This method is generic over the stream response type to work with both OpenAI and OpenRouter
+    async fn process_stream_item<M>(
+        &self,
+        stream_item: rig::agent::MultiTurnStreamItem<M>,
+        full_response: &mut String,
+        has_started_responding: &mut bool,
+        item_count: usize,
+        _conn: &mut sqlx::PgConnection,
+        _session: &crate::models::chat::ChatSession,
+        _cancellation_token: &CancellationToken,
+    ) -> crate::error::Result<()>
+    where
+        M: std::fmt::Debug + 'static,
+    {
+        match stream_item {
+            rig::agent::MultiTurnStreamItem::StreamAssistantItem(content) => {
+                match content {
+                    rig::streaming::StreamedAssistantContent::Text(text) => {
+                        if !*has_started_responding {
+                            tracing::info!("[ChatActor] [Rig] AI started streaming text response for chat {}", self.chat_id);
+                            *has_started_responding = true;
+                        }
+                        full_response.push_str(&text.text);
+                        let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
+                    }
+                    rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
+                        // Only send non-empty reasoning parts to frontend
+                        for part in &thought.reasoning {
+                            if !part.trim().is_empty() {
+                                let _ = self.event_tx.send(SseEvent::Thought {
+                                    agent_id: None,
+                                    text: part.clone(),
+                                });
+                            }
+                        }
+                    }
+                    rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
+                        tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
+                        // Track tool name and arguments for logging when ToolResult arrives
+                        {
+                            let mut state = self.state.lock().await;
+                            state.tool_tracking.current_tool_name = Some(tool_call.function.name.clone());
+                            state.tool_tracking.current_tool_args = Some(serde_json::to_value(&tool_call.function.arguments).unwrap_or_default());
+                        }
+                        let path = tool_call.function.arguments.get("path")
+                            .or_else(|| tool_call.function.arguments.get("source"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        let _ = self.event_tx.send(SseEvent::Call {
+                            tool: tool_call.function.name,
+                            path,
+                            args: tool_call.function.arguments,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            rig::agent::MultiTurnStreamItem::StreamUserItem(content) => {
+                match content {
+                    rig::streaming::StreamedUserContent::ToolResult(result) => {
+                        let output = if let Some(rig::completion::message::ToolResultContent::Text(text)) = result.content.iter().next() {
+                            text.text.clone()
+                        } else {
+                            "Tool execution completed".to_string()
+                        };
+
+                         // Heuristic: if the output contains "Error:" it's likely a failure
+                         let success = !output.to_lowercase().contains("error:");
+
+                         // Check if this is an ask_user tool result with question_pending
+                         // Only ask_user returns question_pending status
+                         if success {
+                             if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
+                                 // Handle question_pending (ask_user tool)
+                                 if let Some(status) = result_json.get("status").and_then(|s| s.as_str()) {
+                                     if status == "question_pending" {
+                                         // Extract question data
+                                         if let Some(questions) = result_json.get("questions").and_then(|q| q.as_array()) {
+                                             let parsed_questions: Vec<crate::models::sse::Question> = questions
+                                                 .iter()
+                                                 .filter_map(|q| serde_json::from_value(q.clone()).ok())
+                                                 .collect();
+
+                                             if let Some(question_id) = result_json.get("question_id").and_then(|id| id.as_str()) {
+                                                 if let Ok(qid) = uuid::Uuid::parse_str(question_id) {
+                                                     tracing::info!(
+                                                         "[ChatActor] Emitting QuestionPending event with {} questions for chat {}",
+                                                         parsed_questions.len(),
+                                                         self.chat_id
+                                                     );
+                                                     let _ = self.event_tx.send(SseEvent::QuestionPending {
+                                                         question_id: qid,
+                                                         questions: parsed_questions,
+                                                         created_at: chrono::Utc::now(),
+                                                     });
+                                                 }
+                                             }
+                                         }
+                                     }
+                                 }
+
+                                 // Handle mode transition (exit_plan_mode tool)
+                                 // Check if result has mode field = "build"
+                                 if let Some(mode) = result_json.get("mode").and_then(|m| m.as_str()) {
+                                     if mode == "build" {
+                                         let plan_file = result_json.get("plan_file")
+                                             .and_then(|p| p.as_str())
+                                             .unwrap_or("");
+
+                                         tracing::info!(
+                                             "[ChatActor] exit_plan_mode succeeded, transitioning chat {} to Build Mode with plan file {}",
+                                             self.chat_id,
+                                             plan_file
+                                         );
+
+                                         // Update chat metadata in database using ChatService
+                                         // This properly creates a new FileVersion and commits the transaction
+                                         // CRITICAL: If this fails, we must propagate the error to prevent state mismatch
+                                         let mut update_conn = self.pool.acquire().await
+                                             .map_err(|e| {
+                                                 tracing::error!("[ChatActor] Failed to acquire DB connection for metadata update: {:?}", e);
+                                                 crate::error::Error::Sqlx(e)
+                                             })?;
+                                         ChatService::update_chat_metadata(
+                                             &mut update_conn,
+                                             &self.storage,
+                                             self.workspace_id,
+                                             self.chat_id,
+                                             mode.to_string(),
+                                             if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
+                                         ).await.map_err(|e| {
+                                             tracing::error!("[ChatActor] Failed to update chat metadata: {:?}", e);
+                                             e
+                                         })?;
+
+                                         tracing::info!(
+                                             "[ChatActor] Successfully updated chat {} metadata: mode={}, plan_file={}",
+                                             self.chat_id,
+                                             mode,
+                                             plan_file
+                                         );
+
+                                         // Emit mode_changed event to frontend
+                                         let _ = self.event_tx.send(SseEvent::ModeChanged {
+                                             mode: "build".to_string(),
+                                             plan_file: if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
+                                         });
+
+                                         // Clear agent cache to force new agent with build mode
+                                         self.state.lock().await.agent_state.cached_agent = None;
+                                     }
+                                 }
+                             }
+                         }
+
+                         tracing::info!(
+                             "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}",
+                             self.chat_id,
+                             success,
+                             if output.len() > 100 {
+                                 let mut end = 100;
+                                 while end > 0 && !output.is_char_boundary(end) {
+                                     end -= 1;
+                                 }
+                                 format!("{}...", &output[..end])
+                             } else {
+                                 output.clone()
+                             }
+                         );
+                         let _ = self.event_tx.send(SseEvent::Observation { output: output.clone(), success });
+
+                         // Log successful file modification tools
+                         if success {
+                             let (name_opt, args_opt) = {
+                                 let state = self.state.lock().await;
+                                 (state.tool_tracking.current_tool_name.clone(),
+                                  state.tool_tracking.current_tool_args.clone())
+                             };
+
+                             if let Some(tname) = name_opt {
+                                 if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
+                                     let args_ref = args_opt.as_ref();
+                                     if let Some(log_msg) = ChatService::format_tool_action(
+                                         &tname,
+                                         &result_json,
+                                         args_ref,
+                                     ) {
+                                         tracing::info!(
+                                             "[ChatActor] Adding tool action to log: {}",
+                                             log_msg
+                                         );
+                                         self.state.lock().await.tool_actions_log.push(log_msg);
+                                     }
+                                 }
+                             }
+                         }
+
+                         // Clear current tool name and arguments
+                         {
+                             let mut state = self.state.lock().await;
+                             state.tool_tracking.current_tool_name = None;
+                             state.tool_tracking.current_tool_args = None;
+                         }
+                    }
+                }
+            }
+            rig::agent::MultiTurnStreamItem::FinalResponse(final_response) => {
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    response_len = final_response.response().len(),
+                    response_text = %final_response.response(),
+                    usage = ?final_response.usage(),
+                    "Received FinalResponse from stream"
+                );
+
+                // Store final response for database save, but DON'T send as SSE chunk
+                // The response has already been streamed via Text chunks above
+                let response_text = final_response.response();
+                if !response_text.is_empty() {
+                    if !*has_started_responding {
+                        tracing::info!("[ChatActor] AI started responding (via FinalResponse) for chat {}", self.chat_id);
+                        *has_started_responding = true;
+                    }
+                    // Only store for database, don't send as SSE chunk (already streamed)
+                    full_response.push_str(response_text);
+                }
+            }
+            // Catch-all for future Rig variants (MultiTurnStreamItem is non-exhaustive)
+            _ => {
+                tracing::warn!(
+                    chat_id = %self.chat_id,
+                    item_num = item_count,
+                    "Unhandled stream item variant"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     async fn get_or_create_agent(
         &self,
         user_id: Uuid,
         session: &crate::models::chat::ChatSession,
         ai_config: &crate::config::AiConfig,
-    ) -> crate::error::Result<rig::agent::Agent<rig::providers::openai::responses_api::ResponsesCompletionModel>> {
+    ) -> crate::error::Result<Agent> {
         let mut state = self.state.lock().await;
 
         // Check if we can reuse the cached agent
