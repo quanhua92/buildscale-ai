@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT m.id, m.provider, m.model_name, m.display_name,\n                   m.description, m.context_window, m.is_enabled,\n                   m.created_at, m.updated_at\n            FROM ai_models m\n            WHERE m.provider = $1\n              AND m.is_enabled = true\n            ORDER BY m.display_name\n            ",
+  "query": "\n        SELECT m.id, m.provider, m.model_name, m.display_name,\n               m.description, m.context_window, m.is_enabled, m.is_free,\n               m.created_at, m.updated_at\n        FROM ai_models m\n        INNER JOIN workspace_ai_models wm ON m.id = wm.model_id\n        WHERE wm.workspace_id = $1\n          AND m.provider = $2\n          AND m.is_enabled = true\n          AND wm.status = 'active'\n        ORDER BY m.display_name\n        ",
   "describe": {
     "columns": [
       {
@@ -40,17 +40,23 @@
       },
       {
         "ordinal": 7,
+        "name": "is_free",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Text"
       ]
     },
@@ -63,8 +69,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "438429b06a16bc8b64877cf93e524b35b7a1153027963e667c1de751bd063da5"
+  "hash": "bd822e6bab85218c6461415a311949cf4b5070da550690e3f3644fcf7f714cb6"
 }

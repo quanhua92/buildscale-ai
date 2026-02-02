@@ -47,6 +47,9 @@ pub struct ModelInfo {
     pub context_window: Option<i32>,
     /// Whether this is the default model for this workspace
     pub is_default: bool,
+    /// Whether this model is free to use
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_free: Option<bool>,
 }
 
 /// Provider configuration response
@@ -151,6 +154,7 @@ pub async fn get_providers(
                     description: m.description,
                     context_window: m.context_window,
                     is_default,
+                    is_free: Some(m.is_free),
                 }
             })
             .collect();
@@ -182,6 +186,7 @@ pub async fn get_providers(
                     description: m.description,
                     context_window: m.context_window,
                     is_default,
+                    is_free: Some(m.is_free),
                 }
             })
             .collect();
@@ -268,6 +273,7 @@ pub async fn get_workspace_providers(
                     description: m.description,
                     context_window: m.context_window,
                     is_default,
+                    is_free: Some(m.is_free),
                 }
             })
             .collect();
@@ -298,6 +304,7 @@ pub async fn get_workspace_providers(
                     description: m.description,
                     context_window: m.context_window,
                     is_default,
+                    is_free: Some(m.is_free),
                 }
             })
             .collect();

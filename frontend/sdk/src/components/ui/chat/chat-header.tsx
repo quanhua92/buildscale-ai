@@ -81,7 +81,14 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
               }}>
                 <SelectTrigger className="w-[220px] h-7 text-xs">
                   <SelectValue placeholder="Select model">
-                    {currentModel.name}
+                    <div className="flex items-center gap-2">
+                      <span>{currentModel.name}</span>
+                      {currentModel.is_free && (
+                        <span className="text-[10px] bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
+                          FREE
+                        </span>
+                      )}
+                    </div>
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -102,7 +109,14 @@ const ChatHeader = React.forwardRef<HTMLDivElement, ChatHeaderProps>(
                             value={modelOption.id}
                             className="text-xs pl-6"
                           >
-                            {modelOption.name}
+                            <div className="flex items-center gap-2">
+                              <span>{modelOption.name}</span>
+                              {modelOption.is_free && (
+                                <span className="text-[10px] bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
+                                  FREE
+                                </span>
+                              )}
+                            </div>
                           </SelectItem>
                         ))}
                         {/* Separator between providers (except last) */}

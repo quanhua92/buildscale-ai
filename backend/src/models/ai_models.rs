@@ -14,6 +14,7 @@ pub struct AiModel {
     pub description: Option<String>,
     pub context_window: Option<i32>,
     pub is_enabled: bool,           // Global enable/disable flag
+    pub is_free: bool,              // Whether model is available for free
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -27,6 +28,7 @@ pub struct NewAiModel {
     pub description: Option<String>,
     pub context_window: Option<i32>,
     pub is_enabled: bool,
+    pub is_free: bool,
 }
 
 /// Update an existing AI model
@@ -36,6 +38,7 @@ pub struct UpdateAiModel {
     pub description: Option<String>,
     pub context_window: Option<i32>,
     pub is_enabled: Option<bool>,
+    pub is_free: Option<bool>,
 }
 
 /// Workspace-model mapping with access control

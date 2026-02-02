@@ -19,8 +19,8 @@ pub async fn create_model(
 ) -> Result<AiModel> {
     let model = sqlx::query_as::<Postgres, AiModel>(
         r#"
-        INSERT INTO ai_models (provider, model_name, display_name, description, context_window, is_enabled)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO ai_models (provider, model_name, display_name, description, context_window, is_enabled, is_free)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         "#
     )
@@ -30,6 +30,7 @@ pub async fn create_model(
     .bind(&new_model.description)
     .bind(new_model.context_window)
     .bind(new_model.is_enabled)
+    .bind(new_model.is_free)
     .fetch_one(pool)
     .await?;
 
@@ -101,7 +102,7 @@ pub async fn get_workspace_models_by_provider(
         AiModel,
         r#"
         SELECT m.id, m.provider, m.model_name, m.display_name,
-               m.description, m.context_window, m.is_enabled,
+               m.description, m.context_window, m.is_enabled, m.is_free,
                m.created_at, m.updated_at
         FROM ai_models m
         INNER JOIN workspace_ai_models wm ON m.id = wm.model_id
@@ -123,7 +124,7 @@ pub async fn get_workspace_models_by_provider(
             AiModel,
             r#"
             SELECT m.id, m.provider, m.model_name, m.display_name,
-                   m.description, m.context_window, m.is_enabled,
+                   m.description, m.context_window, m.is_enabled, m.is_free,
                    m.created_at, m.updated_at
             FROM ai_models m
             WHERE m.provider = $1
@@ -167,8 +168,9 @@ pub async fn update_model(
             description = COALESCE($2, description),
             context_window = COALESCE($3, context_window),
             is_enabled = COALESCE($4, is_enabled),
+            is_free = COALESCE($5, is_free),
             updated_at = NOW()
-        WHERE id = $5
+        WHERE id = $6
         RETURNING *
         "#
     )
@@ -176,6 +178,7 @@ pub async fn update_model(
     .bind(updates.description.as_ref())
     .bind(updates.context_window)
     .bind(updates.is_enabled)
+    .bind(updates.is_free)
     .bind(model_id)
     .fetch_one(pool)
     .await?;
@@ -264,7 +267,7 @@ pub async fn get_workspace_model_details(
         r#"
         SELECT
             m.id as model_id, m.provider, m.model_name, m.display_name,
-            m.description, m.context_window, m.is_enabled,
+            m.description, m.context_window, m.is_enabled, m.is_free,
             m.created_at as model_created_at, m.updated_at as model_updated_at,
             wm.id as wm_id, wm.workspace_id, wm.model_id as wm_model_id,
             wm.status, wm.created_at as wm_created_at, wm.updated_at as wm_updated_at
@@ -288,6 +291,7 @@ pub async fn get_workspace_model_details(
             description: row.get("description"),
             context_window: row.get("context_window"),
             is_enabled: row.get("is_enabled"),
+            is_free: row.get("is_free"),
             created_at: row.get("model_created_at"),
             updated_at: row.get("model_updated_at"),
         };

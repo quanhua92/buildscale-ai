@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS ai_models (
     description TEXT,
     context_window INTEGER DEFAULT 128000,
     is_enabled BOOLEAN NOT NULL DEFAULT false, -- Disable unwanted models by default
+    is_free BOOLEAN NOT NULL DEFAULT false, -- Indicates if model is available for free
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(provider, model_name)
@@ -34,5 +35,6 @@ CREATE INDEX idx_workspace_ai_models_status ON workspace_ai_models(status);
 -- Add comment for documentation
 COMMENT ON TABLE ai_models IS 'Stores all available AI models from all providers with global enable/disable control';
 COMMENT ON COLUMN ai_models.is_enabled IS 'Global flag to disable unwanted models (e.g., expensive models)';
+COMMENT ON COLUMN ai_models.is_free IS 'Indicates whether this model is available for free use (no API costs)';
 COMMENT ON TABLE workspace_ai_models IS 'Maps workspaces to models with access control status';
 COMMENT ON COLUMN workspace_ai_models.status IS 'Access control status: active, disabled, restricted';

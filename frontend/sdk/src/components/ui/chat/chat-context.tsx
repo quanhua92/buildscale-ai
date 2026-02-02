@@ -35,6 +35,7 @@ export interface ChatModel {
   description?: string    // Optional model description
   contextWindow?: number  // Optional context window size in tokens
   is_default?: boolean    // Whether this is the default model from the API
+  is_free?: boolean       // Whether this model is free to use
 }
 
 // Legacy models for backward compatibility
@@ -248,7 +249,8 @@ export function ChatProvider({
                 model: model.model,
                 description: model.description,
                 contextWindow: model.context_window,
-                is_default: model.is_default
+                is_default: model.is_default,
+                is_free: model.is_free
               })
             }
           }
