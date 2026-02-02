@@ -688,6 +688,12 @@ impl ChatActor {
             rig::agent::MultiTurnStreamItem::StreamAssistantItem(content) => {
                 match content {
                     rig::streaming::StreamedAssistantContent::Text(text) => {
+                        tracing::info!(
+                            chat_id = %self.chat_id,
+                            text_len = text.text.len(),
+                            text_preview = %format!("{}...", &text.text[..text.text.len().min(50)]),
+                            "[ChatActor] [Rig] Received Text chunk"
+                        );
                         if !*has_started_responding {
                             tracing::info!("[ChatActor] [Rig] AI started streaming text response for chat {}", self.chat_id);
                             *has_started_responding = true;
@@ -696,9 +702,19 @@ impl ChatActor {
                         let _ = self.event_tx.send(SseEvent::Chunk { text: text.text });
                     }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
+                        tracing::info!(
+                            chat_id = %self.chat_id,
+                            reasoning_parts = thought.reasoning.len(),
+                            "[ChatActor] [Rig] Received Reasoning tokens"
+                        );
                         // Only send non-empty reasoning parts to frontend
                         for part in &thought.reasoning {
                             if !part.trim().is_empty() {
+                                tracing::debug!(
+                                    chat_id = %self.chat_id,
+                                    reasoning_len = part.len(),
+                                    "[ChatActor] [Rig] Sending reasoning part to frontend"
+                                );
                                 let _ = self.event_tx.send(SseEvent::Thought {
                                     agent_id: None,
                                     text: part.clone(),
