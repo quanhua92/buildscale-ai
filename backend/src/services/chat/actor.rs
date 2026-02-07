@@ -1,4 +1,4 @@
-use crate::models::chat::{ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
+use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::queries;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
@@ -25,6 +25,10 @@ struct ChatActorState {
     interaction: InteractionState,
     /// Accumulated State (independent access)
     tool_actions_log: Vec<String>,
+    /// Current reasoning session tracking (for audit trail)
+    current_reasoning_id: Option<String>,
+    /// Buffer for reasoning chunks (aggregated before DB persistence)
+    reasoning_buffer: Vec<String>,
 }
 
 /// Agent cache and validation state
@@ -89,6 +93,8 @@ impl Default for ChatActorState {
                 current_model: None,
             },
             tool_actions_log: Vec::new(),
+            current_reasoning_id: None,
+            reasoning_buffer: Vec::new(),
         }
     }
 }
@@ -425,6 +431,18 @@ impl ChatActor {
         if !full_response.is_empty() {
             tracing::info!("[ChatActor] Saving AI response to database for chat {} (model: {})", self.chat_id, session.agent_config.model);
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+            // Flush any remaining reasoning buffer before saving final response
+            if let Err(e) = self.flush_reasoning_buffer(&mut final_conn).await {
+                tracing::error!(
+                    chat_id = %self.chat_id,
+                    error = %e,
+                    "[ChatActor] Failed to flush reasoning buffer before final response"
+                );
+            }
+
+            let reasoning_id = self.state.lock().await.current_reasoning_id.clone();
+
             ChatService::save_message(
                 &mut final_conn,
                 &self.storage,
@@ -436,6 +454,7 @@ impl ChatActor {
                     content: full_response,
                     metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
                         model: Some(session.agent_config.model.clone()),
+                        reasoning_id,
                         ..Default::default()
                     }),
                 },
@@ -455,6 +474,9 @@ impl ChatActor {
         // Clear tool actions log for next interaction
         self.state.lock().await.tool_actions_log.clear();
 
+        // Clear reasoning ID for next interaction
+        self.state.lock().await.current_reasoning_id = None;
+
         Ok(())
     }
 
@@ -469,6 +491,15 @@ impl ChatActor {
             self.chat_id,
             reason
         );
+
+        // Flush any pending reasoning buffer before cancellation persistence
+        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+            tracing::error!(
+                chat_id = %self.chat_id,
+                error = %e,
+                "[ChatActor] Failed to flush reasoning buffer during cancellation"
+            );
+        }
 
         // Remove cancellation token - stream is being cancelled
         self.registry.remove_cancellation(&self.chat_id).await;
@@ -506,6 +537,9 @@ impl ChatActor {
 
         // 5. Clear agent cache to ensure fresh state after cancellation
         self.state.lock().await.agent_state.cached_agent = None;
+
+        // 6. Clear reasoning ID for next interaction
+        self.state.lock().await.current_reasoning_id = None;
 
         Ok(())
     }
@@ -569,7 +603,7 @@ impl ChatActor {
         full_response: &mut String,
         has_started_responding: &mut bool,
         item_count: usize,
-        _conn: &mut sqlx::PgConnection,
+        conn: &mut sqlx::PgConnection,
         _session: &crate::models::chat::ChatSession,
         _cancellation_token: &CancellationToken,
     ) -> crate::error::Result<()>
@@ -580,6 +614,15 @@ impl ChatActor {
             rig::agent::MultiTurnStreamItem::StreamAssistantItem(content) => {
                 match content {
                     rig::streaming::StreamedAssistantContent::Text(text) => {
+                        // Flush pending reasoning buffer before text chunk
+                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                "[ChatActor] Failed to flush reasoning buffer before text"
+                            );
+                        }
+
                         tracing::debug!(
                             chat_id = %self.chat_id,
                             text_len = text.text.len(),
@@ -615,21 +658,27 @@ impl ChatActor {
                             id = ?id,
                             "[ChatActor] [Rig] Received streaming ReasoningDelta chunk"
                         );
+
+                        // Generate reasoning_id on first chunk to link all chunks from this turn
+                        {
+                            let mut state = self.state.lock().await;
+                            if state.current_reasoning_id.is_none() {
+                                state.current_reasoning_id = Some(Uuid::now_v7().to_string());
+                            }
+                            // Buffer reasoning chunk (will be saved aggregated later)
+                            state.reasoning_buffer.push(reasoning.clone());
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                buffer_size = state.reasoning_buffer.len(),
+                                "[ChatActor] Buffered ReasoningDelta chunk"
+                            );
+                        }
+
                         // Send streaming reasoning chunk to frontend via Thought event
-                        // This is for OpenRouter/DeepSeek thinking models that stream reasoning as deltas
-                        tracing::debug!(
-                            chat_id = %self.chat_id,
-                            reasoning_preview = %reasoning.chars().take(50).collect::<String>(),
-                            "[ChatActor] [SSE] Sending Thought event to frontend"
-                        );
-                        let send_result = self.event_tx.send(SseEvent::Thought {
+                        let _ = self.event_tx.send(SseEvent::Thought {
                             agent_id: None,
                             text: reasoning.clone(),
                         });
-                        match send_result {
-                            Ok(_) => tracing::debug!("[ChatActor] [SSE] Thought event sent successfully"),
-                            Err(e) => tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e),
-                        }
                     }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
                         tracing::info!(
@@ -637,34 +686,104 @@ impl ChatActor {
                             reasoning_parts = thought.reasoning.len(),
                             "[ChatActor] [Rig] Received final Reasoning (accumulated)"
                         );
-                        // Send final accumulated reasoning parts to frontend via Thought events
-                        // This is for OpenAI o1/o3 models that provide accumulated reasoning at the end
-                        // NOTE: We do NOT append reasoning to full_response because:
-                        // 1. Thought events are already streamed separately to frontend
-                        // 2. OpenAI uses store: false + previous_response_id for continuity (not reasoning content)
-                        // 3. Mixing reasoning into response content corrupts the saved conversation history
+
+                        // Buffer all reasoning parts
+                        {
+                            let mut state = self.state.lock().await;
+                            if state.current_reasoning_id.is_none() {
+                                state.current_reasoning_id = Some(Uuid::now_v7().to_string());
+                            }
+                            for part in &thought.reasoning {
+                                if !part.trim().is_empty() {
+                                    state.reasoning_buffer.push(part.clone());
+                                }
+                            }
+                        }
+
+                        // Send to frontend
                         for part in &thought.reasoning {
                             if !part.trim().is_empty() {
-                                tracing::debug!(
-                                    chat_id = %self.chat_id,
-                                    reasoning_len = part.len(),
-                                    "[ChatActor] [Rig] Sending reasoning part to frontend"
-                                );
                                 let _ = self.event_tx.send(SseEvent::Thought {
                                     agent_id: None,
                                     text: part.clone(),
                                 });
                             }
                         }
+
+                        // Flush aggregated reasoning to database
+                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                "[ChatActor] Failed to flush reasoning buffer"
+                            );
+                        }
                     }
                     rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
+                        // Flush pending reasoning buffer before tool call
+                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                "[ChatActor] Failed to flush reasoning buffer before tool call"
+                            );
+                        }
+
                         tracing::info!("[ChatActor] [Rig] AI calling tool {} for chat {}", tool_call.function.name, self.chat_id);
+
+                        // Extract arguments as JSON for persistence
+                        let arguments_json = match serde_json::to_value(&tool_call.function.arguments) {
+                            Ok(val) => val,
+                            Err(e) => {
+                                tracing::warn!(
+                                    chat_id = %self.chat_id,
+                                    tool = %tool_call.function.name,
+                                    error = %e,
+                                    "Failed to serialize tool arguments for persistence"
+                                );
+                                serde_json::json!({ "error": "Failed to serialize arguments" })
+                            }
+                        };
+
+                        // Persist tool call for audit trail
+                        let reasoning_id = {
+                            let mut state = self.state.lock().await;
+                            if state.current_reasoning_id.is_none() {
+                                state.current_reasoning_id = Some(Uuid::now_v7().to_string());
+                            }
+                            state.current_reasoning_id.clone()
+                        };
+                        let metadata = ChatMessageMetadata {
+                            message_type: Some("tool_call".to_string()),
+                            reasoning_id,
+                            tool_name: Some(tool_call.function.name.clone()),
+                            tool_arguments: Some(arguments_json.clone()),
+                            ..Default::default()
+                        };
+                        if let Err(e) = ChatService::save_stream_event(
+                            conn,
+                            &self.storage,
+                            self.workspace_id,
+                            self.chat_id,
+                            ChatMessageRole::Tool,
+                            format!("AI called tool: {}", tool_call.function.name),
+                            metadata,
+                        ).await {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                tool = %tool_call.function.name,
+                                error = %e,
+                                "[ChatActor] Failed to persist tool call"
+                            );
+                        }
+
                         // Track tool name and arguments for logging when ToolResult arrives
                         {
                             let mut state = self.state.lock().await;
                             state.tool_tracking.current_tool_name = Some(tool_call.function.name.clone());
-                            state.tool_tracking.current_tool_args = Some(serde_json::to_value(&tool_call.function.arguments).unwrap_or_default());
+                            state.tool_tracking.current_tool_args = Some(arguments_json);
                         }
+
                         let path = tool_call.function.arguments.get("path")
                             .or_else(|| tool_call.function.arguments.get("source"))
                             .and_then(|v| v.as_str())
@@ -682,6 +801,15 @@ impl ChatActor {
             rig::agent::MultiTurnStreamItem::StreamUserItem(content) => {
                 match content {
                     rig::streaming::StreamedUserContent::ToolResult(result) => {
+                        // Flush reasoning buffer before tool result persistence
+                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                error = %e,
+                                "[ChatActor] Failed to flush reasoning buffer before tool result"
+                            );
+                        }
+
                         let output = if let Some(rig::completion::message::ToolResultContent::Text(text)) = result.content.iter().next() {
                             text.text.clone()
                         } else {
@@ -791,9 +919,48 @@ impl ChatActor {
                                  output.clone()
                              }
                          );
-                         let _ = self.event_tx.send(SseEvent::Observation { output: output.clone(), success });
+                          let _ = self.event_tx.send(SseEvent::Observation { output: output.clone(), success });
 
-                         // Log successful file modification tools
+                          // Persist tool result for audit trail (BEFORE any state modifications)
+                          {
+                              let (tool_name_opt, reasoning_id) = {
+                                  let state = self.state.lock().await;
+                                  (state.tool_tracking.current_tool_name.clone(), state.current_reasoning_id.clone())
+                              };
+                              if let Some(tool_name) = tool_name_opt {
+                                  let metadata = ChatMessageMetadata {
+                                      message_type: Some("tool_result".to_string()),
+                                      reasoning_id,
+                                      tool_name: Some(tool_name.clone()),
+                                      tool_output: Some(output.clone()),
+                                      tool_success: Some(success),
+                                      ..Default::default()
+                                  };
+                                  if let Err(e) = ChatService::save_stream_event(
+                                      conn,
+                                      &self.storage,
+                                      self.workspace_id,
+                                      self.chat_id,
+                                      ChatMessageRole::Tool,
+                                      format!("Tool {}: {}", tool_name, if success { "succeeded" } else { "failed" }),
+                                      metadata,
+                                  ).await {
+                                      tracing::error!(
+                                          chat_id = %self.chat_id,
+                                          tool = %tool_name,
+                                          error = %e,
+                                          "[ChatActor] Failed to persist tool result"
+                                      );
+                                  }
+                              } else {
+                                  tracing::warn!(
+                                      chat_id = %self.chat_id,
+                                      "[ChatActor] Tool result without tracked tool name; skipping persistence"
+                                  );
+                              }
+                          }
+
+                          // Log successful file modification tools
                          if success {
                              let (name_opt, args_opt) = {
                                  let state = self.state.lock().await;
@@ -829,6 +996,15 @@ impl ChatActor {
                 }
             }
             rig::agent::MultiTurnStreamItem::FinalResponse(final_response) => {
+                // Flush reasoning buffer before final response
+                if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                    tracing::error!(
+                        chat_id = %self.chat_id,
+                        error = %e,
+                        "[ChatActor] Failed to flush reasoning buffer before final response"
+                    );
+                }
+
                 tracing::info!(
                     chat_id = %self.chat_id,
                     response_len = final_response.response().len(),
@@ -941,6 +1117,53 @@ impl ChatActor {
         }
 
         Ok(full_response)
+    }
+
+    async fn flush_reasoning_buffer(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> crate::error::Result<()> {
+        let (buffer, reasoning_id) = {
+            let mut state = self.state.lock().await;
+            if state.reasoning_buffer.is_empty() {
+                return Ok(());
+            }
+            // Atomically take the buffer, leaving an empty one in its place to prevent a race condition.
+            let buffer = std::mem::take(&mut state.reasoning_buffer);
+            let reasoning_id = state.current_reasoning_id.clone().unwrap_or_else(|| Uuid::now_v7().to_string());
+            (buffer, reasoning_id)
+        };
+
+        let aggregated_reasoning = buffer.join("");
+        if aggregated_reasoning.is_empty() {
+            return Ok(());
+        }
+
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            reasoning_len = aggregated_reasoning.len(),
+            reasoning_id = %reasoning_id,
+            "[ChatActor] Flushing aggregated reasoning buffer to DB"
+        );
+
+        let metadata = ChatMessageMetadata {
+            message_type: Some("reasoning_complete".to_string()),
+            reasoning_id: Some(reasoning_id),
+            ..Default::default()
+        };
+
+        ChatService::save_stream_event(
+            conn,
+            &self.storage,
+            self.workspace_id,
+            self.chat_id,
+            ChatMessageRole::Assistant,
+            aggregated_reasoning,
+            metadata,
+        )
+        .await?;
+
+        Ok(())
     }
 
     async fn get_or_create_agent(

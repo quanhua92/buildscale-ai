@@ -132,12 +132,28 @@ When user presses STOP, the frontend sends a cancellation command:
 - **Multiple Stops**: Idempotent - second stop request is harmless
 - **No Partial Text**: Only saves assistant message if text was generated
 
-## 7. Infrastructure: The Sandbox Hydration
+## 7. Message Persistence & Audit Trail
+
+All streaming events are now persistently stored in the `chat_messages` table, providing a complete audit trail:
+
+| Event Type | Persisted As | Metadata |
+|------------|--------------|----------|
+| `thought` (reasoning chunks) | `ChatMessage` with `role=Assistant`, `message_type="reasoning_complete"` (Aggregated) | `reasoning_id` (UUID groups chunks) |
+| `call` (tool invocation) | `ChatMessage` with `role=Tool`, `message_type="tool_call"` | `tool_name`, `tool_arguments` |
+| `observation` (tool result) | `ChatMessage` with `role=Tool`, `message_type="tool_result"` | `tool_name`, `tool_output`, `tool_success` |
+
+This ensures that when a chat is reopened, the full interaction history—including AI reasoning, tool calls, and results—is available for audit, debugging, and compliance.
+
+Reasoning chunks are buffered and saved as a single aggregated message per turn to optimize storage, linked by `reasoning_id`. Frontends may collapse these by default.
+
+See `docs/CHAT_PERSISTENCE_AUDIT.md` for the full specification.
+
+## 8. Infrastructure: The Sandbox Hydration
 To maintain security while allowing high-performance execution (e.g., npm, cargo, python), BuildScale uses a hydration pattern:
 
 *   **Spin Up:** A Docker sandbox starts on the same host as the NVMe mirror.
 *   **Hydrate:** The workspace (or a specific "slice") is mounted to the container as read-only.
 *   **Agentic Engine Write:** The AI runs scripts at native hardware speeds. Any permanent file changes must be sent back through the **Agentic Engine's** write tool, ensuring every global state change is versioned and audited.
 
-## 8. Conclusion
+## 9. Conclusion
 By treating Identity as a File and Memory as a Mirror, BuildScale.ai creates a future-proof environment. Whether for a developer refactoring an **Agentic Engine** or a blogger orchestrating a marketing team, the system provides a single, **Agentic Engine** source of truth for all human-AI collaboration.

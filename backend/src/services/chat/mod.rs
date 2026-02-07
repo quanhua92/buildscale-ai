@@ -112,7 +112,7 @@ mod tests;
 
 use crate::{
     error::{Error, Result},
-    models::chat::{AgentConfig, ChatAttachment, ChatMessage, NewChatMessage, DEFAULT_CHAT_MODEL},
+    models::chat::{AgentConfig, ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL},
     queries, DbConn,
 };
 use uuid::Uuid;
@@ -175,6 +175,44 @@ impl ChatService {
         queries::files::touch_file(conn, file_id).await?;
         
         Ok(msg)
+    }
+
+    /// Saves a streaming event as a ChatMessage (for audit trail persistence).
+    ///
+    /// This method is used to persist individual streaming events like reasoning chunks,
+    /// tool calls, and tool results. It accepts a ChatMessageRole and metadata directly
+    /// and delegates to `save_message` for hybrid persistence (DB + disk).
+    ///
+    /// # Arguments
+    /// * `conn` - Database connection
+    /// * `storage` - File storage service
+    /// * `workspace_id` - Workspace owning the chat
+    /// * `file_id` - Chat file ID
+    /// * `role` - Message role (typically Tool or Assistant for streaming events)
+    /// * `content` - Text content of the event
+    /// * `metadata` - Structured metadata (message_type, reasoning_id, tool_* fields)
+    pub async fn save_stream_event(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        file_id: Uuid,
+        role: ChatMessageRole,
+        content: String,
+        metadata: ChatMessageMetadata,
+    ) -> Result<ChatMessage> {
+        Self::save_message(
+            conn,
+            storage,
+            workspace_id,
+            NewChatMessage {
+                file_id,
+                workspace_id,
+                role,
+                content,
+                metadata: sqlx::types::Json(metadata),
+            },
+        )
+        .await
     }
 
     /// Formats a file modification tool action as a chat message.
