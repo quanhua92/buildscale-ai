@@ -602,10 +602,10 @@ export function ChatProvider({
            // Group messages by reasoning_id to merge reasoning, tools, and response parts into a single bubble per turn
            const messageGroups = new Map<string, ChatMessageItem>();
 
-           for (const msg of session.messages) {
-             const role = msg.role as MessageRole;
-             const meta = msg.metadata as any | undefined;
-             const reasoningId = meta?.reasoning_id;
+            for (const msg of session.messages) {
+              const role = msg.role as MessageRole;
+              const meta = msg.metadata;
+              const reasoningId = meta?.reasoning_id;
              // If reasoning_id exists, group by it. Otherwise use msg.id for unique messages (user, system, etc)
              const groupKey = reasoningId || msg.id;
 
@@ -629,21 +629,21 @@ export function ChatProvider({
                } else {
                  group.parts.push({ type: "thought", content: msg.content });
                }
-             } else if (messageType === "tool_call") {
-               group.parts.push({
-                 type: "call",
-                 tool: meta?.tool_name,
-                 args: meta?.tool_arguments,
-                 id: msg.id,
-               });
-             } else if (messageType === "tool_result") {
-               group.parts.push({
-                 type: "observation",
-                 output: meta?.tool_output,
-                 success: meta?.tool_success ?? true,
-                 callId: msg.id,
-               });
-             } else {
+              } else if (messageType === "tool_call") {
+                group.parts.push({
+                  type: "call",
+                  tool: meta?.tool_name || "unknown",
+                  args: meta?.tool_arguments,
+                  id: msg.id,
+                });
+              } else if (messageType === "tool_result") {
+                group.parts.push({
+                  type: "observation",
+                  output: meta?.tool_output || "",
+                  success: meta?.tool_success ?? true,
+                  callId: msg.id,
+                });
+              } else {
                // Normal text message
                group.parts.push({ type: "text", content: msg.content });
              }

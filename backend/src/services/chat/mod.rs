@@ -294,12 +294,10 @@ impl ChatService {
         // Clone args to modify
         let mut summary = args.clone();
 
-        // If args is not an object, return as is (rare)
-        if !summary.is_object() {
+        let Some(obj) = summary.as_object_mut() else {
+            // If args is not an object, return as is (rare)
             return summary;
-        }
-
-        let obj = summary.as_object_mut().unwrap();
+        };
 
         // Truncate specific fields based on tool
         match tool_name {
