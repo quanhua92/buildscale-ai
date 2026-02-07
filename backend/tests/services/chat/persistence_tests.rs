@@ -46,15 +46,15 @@ async fn setup_chat(test_app: &TestApp) -> (Uuid, Uuid) {
 }
 
 #[tokio::test]
-async fn test_save_reasoning_chunk_persists_metadata() {
-    let test_app = TestApp::new("test_save_reasoning_chunk_persists_metadata").await;
+async fn test_save_reasoning_complete_persists_metadata() {
+    let test_app = TestApp::new("test_save_reasoning_complete_persists_metadata").await;
     let (workspace_id, chat_id) = setup_chat(&test_app).await;
     let mut conn = test_app.get_connection().await;
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
-    // Save a reasoning chunk
+    // Save a reasoning complete message (aggregated)
     let metadata = ChatMessageMetadata {
-        message_type: Some("reasoning_chunk".to_string()),
+        message_type: Some("reasoning_complete".to_string()),
         reasoning_id: Some(Uuid::new_v4().to_string()),
         ..Default::default()
     };
@@ -74,7 +74,7 @@ async fn test_save_reasoning_chunk_persists_metadata() {
 
     // Verify the message was saved with correct role and metadata
     assert_eq!(msg.role, ChatMessageRole::Assistant);
-    assert_eq!(msg.metadata.message_type, Some("reasoning_chunk".to_string()));
+    assert_eq!(msg.metadata.message_type, Some("reasoning_complete".to_string()));
     assert!(msg.metadata.reasoning_id.is_some());
     assert_eq!(msg.content, "The user wants to build a todo app.");
 }
@@ -158,32 +158,48 @@ async fn test_save_tool_result_persists_output_and_success() {
 }
 
 #[tokio::test]
-async fn test_reasoning_chunks_share_same_reasoning_id() {
-    let test_app = TestApp::new("test_reasoning_chunks_share_same_reasoning_id").await;
+async fn test_tool_call_and_result_share_reasoning_id() {
+    let test_app = TestApp::new("test_tool_call_and_result_share_reasoning_id").await;
     let (workspace_id, chat_id) = setup_chat(&test_app).await;
     let mut conn = test_app.get_connection().await;
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
     let reasoning_id = Uuid::new_v4().to_string();
 
-    // Save two reasoning chunks with same reasoning_id
-    for chunk in ["First part", "Second part"].iter() {
-        let metadata = ChatMessageMetadata {
-            message_type: Some("reasoning_chunk".to_string()),
-            reasoning_id: Some(reasoning_id.clone()),
-            ..Default::default()
-        };
+    // 1. Save tool call linked to reasoning_id
+    let call_meta = ChatMessageMetadata {
+        message_type: Some("tool_call".to_string()),
+        reasoning_id: Some(reasoning_id.clone()),
+        tool_name: Some("ls".to_string()),
+        ..Default::default()
+    };
+    ChatService::save_stream_event(
+        &mut conn,
+        &storage,
+        workspace_id,
+        chat_id,
+        ChatMessageRole::Tool,
+        "AI called tool: ls".to_string(),
+        call_meta,
+    ).await.unwrap();
 
-        let _ = ChatService::save_stream_event(
-            &mut conn,
-            &storage,
-            workspace_id,
-            chat_id,
-            ChatMessageRole::Assistant,
-            chunk.to_string(),
-            metadata,
-        ).await;
-    }
+    // 2. Save tool result linked to same reasoning_id
+    let result_meta = ChatMessageMetadata {
+        message_type: Some("tool_result".to_string()),
+        reasoning_id: Some(reasoning_id.clone()),
+        tool_name: Some("ls".to_string()),
+        tool_success: Some(true),
+        ..Default::default()
+    };
+    ChatService::save_stream_event(
+        &mut conn,
+        &storage,
+        workspace_id,
+        chat_id,
+        ChatMessageRole::Tool,
+        "Tool ls: succeeded".to_string(),
+        result_meta,
+    ).await.unwrap();
 
     // Query messages back
     let messages = buildscale::queries::chat::get_messages_by_file_id(&mut conn, workspace_id, chat_id)
@@ -193,6 +209,5 @@ async fn test_reasoning_chunks_share_same_reasoning_id() {
     assert_eq!(messages.len(), 2);
     for msg in messages {
         assert_eq!(msg.metadata.reasoning_id, Some(reasoning_id.clone()));
-        assert_eq!(msg.metadata.message_type, Some("reasoning_chunk".to_string()));
     }
 }

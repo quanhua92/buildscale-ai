@@ -82,8 +82,7 @@ The schema is ready—we just need to use it.
 
 | Stream Item | ChatMessageRole | `message_type` | Key Metadata Fields |
 |-------------|----------------|----------------|---------------------|
-| `ReasoningDelta` | `Assistant` | `reasoning_chunk` | `reasoning_id` (UUID) |
-| `Reasoning` (final) | `Assistant` | `reasoning_complete` | `reasoning_id` |
+| Buffered Reasoning | `Assistant` | `reasoning_complete` | `reasoning_id` (UUID) |
 
 **Note**: Reasoning chunks are buffered in memory and saved as a single aggregated `ChatMessage` with `message_type="reasoning_complete"` whenever the agent transitions to a new content type (tool call, final response) or finishes the turn. This avoids database flooding and simplifies frontend rendering. Individual `ReasoningDelta` chunks are still streamed via SSE for real-time responsiveness.
 
