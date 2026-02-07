@@ -185,6 +185,20 @@ After final response is saved, clear `current_reasoning_id` to prepare for next 
 
 Optionally remove the `tool_actions_log` accumulation and its save block (lines 393-422) since individual tool results are now persisted. **Keep it temporarily** for backward compatibility, but can remove after frontend transition.
 
+### 3.4 Data Minimization
+
+To prevent database bloat, tool inputs and outputs are summarized before persistence:
+
+- **Tool Outputs (`tool_output`)**:
+  - `read`: Truncated with stats (bytes, lines) and preview.
+  - `ls`, `grep`: Limit number of items/matches shown.
+  - `default`: Generic size cap (e.g. 2KB).
+- **Tool Inputs (`tool_arguments`)**:
+  - `write`: Content field truncated if > 1KB.
+  - `edit`: Diff fields truncated if > 500 chars.
+
+This ensures essential audit info is preserved without storing megabytes of raw data.
+
 ---
 
 ## 4. History Reconstruction & Context

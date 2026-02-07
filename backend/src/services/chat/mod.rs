@@ -272,6 +272,105 @@ impl ChatService {
         result
     }
 
+    /// Summarizes tool inputs (arguments) to prevent database bloat.
+    /// Truncates long string fields like 'content', 'old_string', 'new_string'.
+    pub fn summarize_tool_inputs(
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> serde_json::Value {
+        // Clone args to modify
+        let mut summary = args.clone();
+
+        // If args is not an object, return as is (rare)
+        if !summary.is_object() {
+            return summary;
+        }
+
+        let obj = summary.as_object_mut().unwrap();
+
+        // Truncate specific fields based on tool
+        match tool_name {
+            "write" => {
+                if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
+                    if content.len() > 1000 {
+                        let preview = Self::extract_string_preview(content, 20);
+                        obj.insert(
+                            "content".to_string(),
+                            serde_json::json!(format!("{}... [truncated, size={}]", preview, content.len())),
+                        );
+                    }
+                }
+            }
+            "edit" => {
+                for field in ["old_string", "new_string"] {
+                    if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
+                        if val.len() > 500 {
+                            let preview = Self::extract_string_preview(val, 10);
+                            obj.insert(
+                                field.to_string(),
+                                serde_json::json!(format!("{}... [truncated]", preview)),
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        summary
+    }
+
+    /// Summarizes tool outputs (results) to prevent database bloat.
+    /// Handles 'read', 'ls', 'grep' specifically, and generic truncation for others.
+    pub fn summarize_tool_outputs(tool_name: &str, output: &str) -> String {
+        // If output is small, keep it all
+        if output.len() < 2048 {
+            return output.to_string();
+        }
+
+        match tool_name {
+            "read" => {
+                let line_count = output.lines().count();
+                let byte_count = output.len();
+                let preview = output.lines().take(5).collect::<Vec<_>>().join("\n");
+                format!(
+                    "[Read {} bytes, {} lines. Preview:]\n{}\n... [truncated]",
+                    byte_count, line_count, preview
+                )
+            }
+            "ls" => {
+                let lines: Vec<&str> = output.lines().collect();
+                if lines.len() > 50 {
+                    let preview = lines.iter().take(50).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more items)", preview, lines.len() - 50)
+                } else {
+                    output.to_string()
+                }
+            }
+            "grep" => {
+                let lines: Vec<&str> = output.lines().collect();
+                if lines.len() > 20 {
+                    let preview = lines.iter().take(20).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more matches)", preview, lines.len() - 20)
+                } else {
+                    output.to_string()
+                }
+            }
+            _ => {
+                // Generic truncation: Head + Tail
+                let start = &output[..1000];
+                let end_start = output.len().saturating_sub(500);
+                let end = &output[end_start..];
+                format!(
+                    "{}\n... [{} bytes truncated] ...\n{}",
+                    start,
+                    output.len() - 1500,
+                    end
+                )
+            }
+        }
+    }
+
     /// Extracts a preview of content as a string (first N words).
     ///
     /// This helper extracts the first N words from content for logging.

@@ -754,6 +754,12 @@ impl ChatActor {
                             }
                         };
 
+                        // Summarize arguments for persistence to avoid DB bloat
+                        let summarized_args = ChatService::summarize_tool_inputs(
+                            &tool_call.function.name,
+                            &arguments_json,
+                        );
+
                         // Persist tool call for audit trail
                         let reasoning_id = {
                             let mut state = self.state.lock().await;
@@ -764,7 +770,7 @@ impl ChatActor {
                             message_type: Some("tool_call".to_string()),
                             reasoning_id,
                             tool_name: Some(tool_call.function.name.clone()),
-                            tool_arguments: Some(arguments_json.clone()),
+                            tool_arguments: Some(summarized_args),
                             ..Default::default()
                         };
                         if let Err(e) = ChatService::save_stream_event(
@@ -939,11 +945,14 @@ impl ChatActor {
                                   (state.tool_tracking.current_tool_name.clone(), state.current_reasoning_id.clone())
                               };
                               if let Some(tool_name) = tool_name_opt {
+                                  // Summarize output for persistence to avoid DB bloat
+                                  let summarized_output = ChatService::summarize_tool_outputs(&tool_name, &output);
+
                                   let metadata = ChatMessageMetadata {
                                       message_type: Some("tool_result".to_string()),
                                       reasoning_id,
                                       tool_name: Some(tool_name.clone()),
-                                      tool_output: Some(output.clone()),
+                                      tool_output: Some(summarized_output),
                                       tool_success: Some(success),
                                       ..Default::default()
                                   };
