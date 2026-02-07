@@ -83,6 +83,8 @@ The schema is ready—we just need to use it.
 | Stream Item | ChatMessageRole | `message_type` | Key Metadata Fields |
 |-------------|----------------|----------------|---------------------|
 | Buffered Reasoning | `Assistant` | `reasoning_complete` | `reasoning_id` (UUID) |
+| Tool Call | `Tool` | `tool_call` | `tool_name`, `tool_arguments`, `reasoning_id` |
+| Tool Result | `Tool` | `tool_result` | `tool_name`, `tool_output`, `tool_success`, `reasoning_id` |
 
 **Note**: Reasoning chunks are buffered in memory and saved as a single aggregated `ChatMessage` with `message_type="reasoning_complete"` whenever the agent transitions to a new content type (tool call, final response) or finishes the turn. This avoids database flooding and simplifies frontend rendering. Individual `ReasoningDelta` chunks are still streamed via SSE for real-time responsiveness.
 
@@ -224,8 +226,8 @@ ORDER BY created_at ASC;
 
 Frontend can choose to:
 - Show all messages (debug/audit mode)
-- Hide `Tool` and `reasoning_chunk` messages (default user mode)
-- Collapse consecutive `reasoning_chunk` messages into expandable "AI thinking..." block
+- Hide `Tool` and `reasoning_complete` messages (default user mode)
+- Collapse consecutive `reasoning_complete` messages into expandable "AI thinking..." block
 
 ---
 
@@ -237,10 +239,10 @@ Frontend can choose to:
 
 ```rust
 #[tokio::test]
-async fn test_save_reasoning_chunk_creates_message_with_message_type() { ... }
+async fn test_save_reasoning_complete_persists_metadata() { ... }
 
 #[tokio::test]
-async fn test_reasoning_chunks_share_same_reasoning_id() { ... }
+async fn test_tool_call_and_result_share_reasoning_id() { ... }
 
 #[tokio::test]
 async fn test_save_tool_call_saves_tool_role_with_metadata() { ... }
@@ -286,7 +288,7 @@ interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  message_type?: 'reasoning_chunk' | 'reasoning_complete' | 'tool_call' | 'tool_result';
+  message_type?: 'reasoning_complete' | 'tool_call' | 'tool_result';
   metadata: {
     reasoning_id?: string;
     tool_name?: string;
@@ -303,12 +305,12 @@ interface ChatMessage {
 
 **Message Component**:
 
-- `reasoning_chunk`: Render inside collapsible `<details>` with `reasoning_id` grouping
+- `reasoning_complete`: Render inside collapsible `<details>` with `reasoning_id` grouping
 - `tool_call`: Show with tool icon, expandable to show JSON arguments
 - `tool_result`: Indented, color-coded border (green=success, red=failure)
 - `tool` + `reasoning_complete`: Minimal marker
 
-**Toggle Option** (future): "Show Technical Details" checkbox to filter/hide Tool and reasoning_chunk messages.
+**Toggle Option** (future): "Show Technical Details" checkbox to filter/hide Tool and reasoning_complete messages.
 
 ### 6.3 No API Changes
 
@@ -425,7 +427,7 @@ If load times degrade:
 
 ### Phase 2: Frontend Integration (Week 2)
 - [ ] Update TypeScript message types
-- [ ] Render `reasoning_chunk` as collapsible block
+- [ ] Render `reasoning_complete` as collapsible block
 - [ ] Render `tool` messages with appropriate styling/icons
 - [ ] Implement "Show Technical Details" toggle (optional)
 - [ ] Test with real interactions in staging
