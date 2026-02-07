@@ -165,18 +165,6 @@ Update `Default` to include empty buffer.
 
 Concatenates `reasoning_buffer` into a single string and saves it as a `ChatMessage` with `role=Assistant` and `message_type="reasoning_complete"`. Clears the buffer after saving.
 
-**C. Inject `ChatService` dependency**:
-
-Add field to `ChatActor`:
-```rust
-struct ChatActor {
-    // ... existing fields ...
-    chat_service: Arc<ChatService>,  // NEW
-}
-```
-
-Update `ChatActorArgs` and `spawn` accordingly.
-
 **D. Cleanup**:
 
 After final response is saved, clear `current_reasoning_id` to prepare for next turn.

@@ -370,14 +370,28 @@ impl ChatService {
                 }
             }
             _ => {
-                // Generic truncation: Head + Tail
-                let start = &output[..1000];
-                let end_start = output.len().saturating_sub(500);
-                let end = &output[end_start..];
+                // Generic truncation: Head + Tail, ensuring UTF-8 boundaries.
+                let head_byte_len = 1000;
+                let tail_byte_len = 500;
+
+                let mut head_end = head_byte_len.min(output.len());
+                while !output.is_char_boundary(head_end) && head_end > 0 {
+                    head_end -= 1;
+                }
+                let start = &output[..head_end];
+
+                let mut tail_start = output.len().saturating_sub(tail_byte_len);
+                while !output.is_char_boundary(tail_start) && tail_start < output.len() {
+                    tail_start += 1;
+                }
+                let end = &output[tail_start..];
+
+                let truncated_len = output.len().saturating_sub(start.len() + end.len());
+
                 format!(
                     "{}\n... [{} bytes truncated] ...\n{}",
                     start,
-                    output.len() - 1500,
+                    truncated_len,
                     end
                 )
             }
