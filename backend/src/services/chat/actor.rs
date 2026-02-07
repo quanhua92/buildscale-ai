@@ -77,10 +77,9 @@ struct InteractionState {
 
 impl ChatActorState {
     fn ensure_reasoning_id(&mut self) -> String {
-        if self.current_reasoning_id.is_none() {
-            self.current_reasoning_id = Some(Uuid::now_v7().to_string());
-        }
-        self.current_reasoning_id.as_ref().unwrap().clone()
+        self.current_reasoning_id
+            .get_or_insert_with(|| Uuid::now_v7().to_string())
+            .clone()
     }
 }
 

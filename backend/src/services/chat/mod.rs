@@ -120,6 +120,19 @@ use uuid::Uuid;
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
 
+/// Max length for tool output before truncation (2KB)
+const MAX_TOOL_OUTPUT_LENGTH: usize = 2048;
+/// Max length for 'write' tool content arg (1KB)
+const MAX_WRITE_CONTENT_LENGTH: usize = 1000;
+/// Max length for 'edit' tool diff args (500 chars)
+const MAX_EDIT_DIFF_LENGTH: usize = 500;
+/// Number of items to preview for 'ls' tool
+const LS_PREVIEW_ITEMS: usize = 50;
+/// Number of matches to preview for 'grep' tool
+const GREP_PREVIEW_MATCHES: usize = 20;
+/// Number of lines to preview for 'read' tool
+const READ_PREVIEW_LINES: usize = 5;
+
 /// Structured context for AI chat sessions.
 ///
 /// Contains persona, conversation history, and file attachments separately,
@@ -292,7 +305,7 @@ impl ChatService {
         match tool_name {
             "write" => {
                 if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
-                    if content.len() > 1000 {
+                    if content.len() > MAX_WRITE_CONTENT_LENGTH {
                         let preview = Self::extract_string_preview(content, 20);
                         obj.insert(
                             "content".to_string(),
@@ -304,7 +317,7 @@ impl ChatService {
             "edit" => {
                 for field in ["old_string", "new_string"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
-                        if val.len() > 500 {
+                        if val.len() > MAX_EDIT_DIFF_LENGTH {
                             let preview = Self::extract_string_preview(val, 10);
                             obj.insert(
                                 field.to_string(),
@@ -324,7 +337,7 @@ impl ChatService {
     /// Handles 'read', 'ls', 'grep' specifically, and generic truncation for others.
     pub fn summarize_tool_outputs(tool_name: &str, output: &str) -> String {
         // If output is small, keep it all
-        if output.len() < 2048 {
+        if output.len() < MAX_TOOL_OUTPUT_LENGTH {
             return output.to_string();
         }
 
@@ -332,7 +345,7 @@ impl ChatService {
             "read" => {
                 let line_count = output.lines().count();
                 let byte_count = output.len();
-                let preview = output.lines().take(5).collect::<Vec<_>>().join("\n");
+                let preview = output.lines().take(READ_PREVIEW_LINES).collect::<Vec<_>>().join("\n");
                 format!(
                     "[Read {} bytes, {} lines. Preview:]\n{}\n... [truncated]",
                     byte_count, line_count, preview
@@ -340,18 +353,18 @@ impl ChatService {
             }
             "ls" => {
                 let lines: Vec<&str> = output.lines().collect();
-                if lines.len() > 50 {
-                    let preview = lines.iter().take(50).cloned().collect::<Vec<_>>().join("\n");
-                    format!("{}\n... ({} more items)", preview, lines.len() - 50)
+                if lines.len() > LS_PREVIEW_ITEMS {
+                    let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more items)", preview, lines.len() - LS_PREVIEW_ITEMS)
                 } else {
                     output.to_string()
                 }
             }
             "grep" => {
                 let lines: Vec<&str> = output.lines().collect();
-                if lines.len() > 20 {
-                    let preview = lines.iter().take(20).cloned().collect::<Vec<_>>().join("\n");
-                    format!("{}\n... ({} more matches)", preview, lines.len() - 20)
+                if lines.len() > GREP_PREVIEW_MATCHES {
+                    let preview = lines.iter().take(GREP_PREVIEW_MATCHES).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more matches)", preview, lines.len() - GREP_PREVIEW_MATCHES)
                 } else {
                     output.to_string()
                 }
