@@ -51,7 +51,70 @@ The `RigService` maps our `ChatSession` and `BuiltContext` to a Rig agent:
 3. **Tools**: Dynamically registered using `builder.tool()`.
 4. **Agent Construction**: Returns an `Agent<ResponsesCompletionModel>`.
 
-## 5. SSE Event Mapping
+## 5. Chat History Management
+
+### 5.1 How Rig Handles Chat History
+
+Rig's `stream_chat` takes a `chat_history: Vec<Message>` parameter and **automatically maintains** tool calls and results during streaming:
+
+```rust
+// During streaming, Rig automatically pushes to history:
+chat_history.write().await.push(Message::Assistant {
+    id: None,
+    content: OneOrMany::many(tool_calls),
+});
+
+chat_history.write().await.push(Message::User {
+    content: OneOrMany::one(UserContent::tool_result_with_call_id(...)),
+});
+```
+
+**Critical**: This history is **local to the stream** and is lost when the stream completes!
+
+### 5.2 Multi-Turn Conversation Pattern
+
+To maintain context across multiple user interactions:
+
+1. **Interaction 1**: `stream_chat(prompt1, history1)`
+   - Rig adds tool calls/results to its local `history1`
+   - Stream completes, local history is dropped
+   - Tool calls/results are persisted to database as `role: Tool` messages
+
+2. **Interaction 2**: `stream_chat(prompt2, history2)`
+   - BuildScale must reconstruct `history2` from database
+   - **MUST include previous tool calls/results** from database
+   - Current bug: `convert_history` filters out `role: Tool` messages
+   - Fix: Reconstruct `Message` with `ToolCall` and `ToolResult` from persisted data
+
+### 5.3 Implementation Requirement
+
+**`convert_history` function** (rig_engine.rs) must reconstruct Rig messages from persisted Tool messages:
+
+```rust
+// Reconstruct tool calls from persisted data
+Message::assistant(vec![AssistantContent::ToolCall(ToolCall {
+    id: tool_id,
+    call_id: None,
+    function: ToolCallFunction {
+        name: tool_name,
+        arguments: tool_args,
+    },
+    signature: None,
+})])
+
+// Reconstruct tool results from persisted data
+Message::user(vec![UserContent::ToolResult(ToolResult {
+    id: tool_id,
+    call_id: None,
+    content: vec![ToolResultContent::Text(Text {
+        text: summarized_output + "\n[Note: Summarized result]"
+    })].into(),
+})])
+```
+
+**Important**: Tool results are stored as **summaries** in the database (e.g., first 5 lines of a 1000-line file) to avoid storage bloat. The summaries are transparently marked so the model knows they're truncated.
+
+## 6. SSE Event Mapping
 
 Rig's streaming output is translated into our standardized SSE protocol:
 - **Thought**: Internal reasoning/chain-of-thought.
