@@ -75,6 +75,15 @@ struct InteractionState {
     current_model: Option<String>,
 }
 
+impl ChatActorState {
+    fn ensure_reasoning_id(&mut self) -> String {
+        if self.current_reasoning_id.is_none() {
+            self.current_reasoning_id = Some(Uuid::now_v7().to_string());
+        }
+        self.current_reasoning_id.as_ref().unwrap().clone()
+    }
+}
+
 impl Default for ChatActorState {
     fn default() -> Self {
         Self {
@@ -662,9 +671,7 @@ impl ChatActor {
                         // Generate reasoning_id on first chunk to link all chunks from this turn
                         {
                             let mut state = self.state.lock().await;
-                            if state.current_reasoning_id.is_none() {
-                                state.current_reasoning_id = Some(Uuid::now_v7().to_string());
-                            }
+                            state.ensure_reasoning_id();
                             // Buffer reasoning chunk (will be saved aggregated later)
                             state.reasoning_buffer.push(reasoning.clone());
                             tracing::debug!(
@@ -675,10 +682,12 @@ impl ChatActor {
                         }
 
                         // Send streaming reasoning chunk to frontend via Thought event
-                        let _ = self.event_tx.send(SseEvent::Thought {
+                        if let Err(e) = self.event_tx.send(SseEvent::Thought {
                             agent_id: None,
                             text: reasoning.clone(),
-                        });
+                        }) {
+                            tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e);
+                        }
                     }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
                         tracing::info!(
@@ -690,9 +699,7 @@ impl ChatActor {
                         // Buffer all reasoning parts
                         {
                             let mut state = self.state.lock().await;
-                            if state.current_reasoning_id.is_none() {
-                                state.current_reasoning_id = Some(Uuid::now_v7().to_string());
-                            }
+                            state.ensure_reasoning_id();
                             for part in &thought.reasoning {
                                 if !part.trim().is_empty() {
                                     state.reasoning_buffer.push(part.clone());
@@ -703,10 +710,12 @@ impl ChatActor {
                         // Send to frontend
                         for part in &thought.reasoning {
                             if !part.trim().is_empty() {
-                                let _ = self.event_tx.send(SseEvent::Thought {
+                                if let Err(e) = self.event_tx.send(SseEvent::Thought {
                                     agent_id: None,
                                     text: part.clone(),
-                                });
+                                }) {
+                                    tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e);
+                                }
                             }
                         }
 
@@ -748,9 +757,7 @@ impl ChatActor {
                         // Persist tool call for audit trail
                         let reasoning_id = {
                             let mut state = self.state.lock().await;
-                            if state.current_reasoning_id.is_none() {
-                                state.current_reasoning_id = Some(Uuid::now_v7().to_string());
-                            }
+                            state.ensure_reasoning_id();
                             state.current_reasoning_id.clone()
                         };
                         let metadata = ChatMessageMetadata {
@@ -789,11 +796,13 @@ impl ChatActor {
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
 
-                        let _ = self.event_tx.send(SseEvent::Call {
+                        if let Err(e) = self.event_tx.send(SseEvent::Call {
                             tool: tool_call.function.name,
                             path,
                             args: tool_call.function.arguments,
-                        });
+                        }) {
+                            tracing::error!("[ChatActor] [SSE] Failed to send Call event: {:?}", e);
+                        }
                     }
                     _ => {}
                 }
@@ -919,7 +928,9 @@ impl ChatActor {
                                  output.clone()
                              }
                          );
-                          let _ = self.event_tx.send(SseEvent::Observation { output: output.clone(), success });
+                          if let Err(e) = self.event_tx.send(SseEvent::Observation { output: output.clone(), success }) {
+                              tracing::error!("[ChatActor] [SSE] Failed to send Observation event: {:?}", e);
+                          }
 
                           // Persist tool result for audit trail (BEFORE any state modifications)
                           {
@@ -1130,7 +1141,7 @@ impl ChatActor {
             }
             // Atomically take the buffer, leaving an empty one in its place to prevent a race condition.
             let buffer = std::mem::take(&mut state.reasoning_buffer);
-            let reasoning_id = state.current_reasoning_id.clone().unwrap_or_else(|| Uuid::now_v7().to_string());
+            let reasoning_id = state.ensure_reasoning_id();
             (buffer, reasoning_id)
         };
 
