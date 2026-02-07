@@ -23,8 +23,6 @@ struct ChatActorState {
     tool_tracking: ToolTracking,
     /// Interaction Lifecycle (independent access)
     interaction: InteractionState,
-    /// Accumulated State (independent access)
-    tool_actions_log: Vec<String>,
     /// Current reasoning session tracking (for audit trail)
     current_reasoning_id: Option<String>,
     /// Buffer for reasoning chunks (aggregated before DB persistence)
@@ -100,7 +98,6 @@ impl Default for ChatActorState {
                 current_cancellation_token: None,
                 current_model: None,
             },
-            tool_actions_log: Vec::new(),
             current_reasoning_id: None,
             reasoning_buffer: Vec::new(),
         }
@@ -403,37 +400,7 @@ impl ChatActor {
         // Remove cancellation token - stream is complete
         self.registry.remove_cancellation(&self.chat_id).await;
 
-        // Save tool actions log before AI response
-        let log = self.state.lock().await.tool_actions_log.clone();
-        if !log.is_empty() {
-            tracing::info!(
-                "[ChatActor] Saving {} tool actions log before AI response for chat {}",
-                log.len(),
-                self.chat_id
-            );
-            let combined_log = log.join("\n");
-
-            // Send tool action log via SSE for real-time display
-            let _ = self.event_tx.send(SseEvent::Chunk { text: combined_log.clone() });
-
-            let mut log_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-            ChatService::save_message(
-                &mut log_conn,
-                &self.storage,
-                self.workspace_id,
-                NewChatMessage {
-                    file_id: self.chat_id,
-                    workspace_id: self.workspace_id,
-                    role: ChatMessageRole::Assistant,
-                    content: combined_log,
-                    metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
-                        model: Some(session.agent_config.model.clone()),
-                        ..Default::default()
-                    }),
-                },
-            )
-            .await?;
-        }
+        // Tool action log display removed - audit trail captures all interactions
 
         // 7. Save Assistant Response
         if !full_response.is_empty() {
@@ -478,9 +445,6 @@ impl ChatActor {
 
         // Clear the cancellation token for this interaction
         self.state.lock().await.interaction.current_cancellation_token = None;
-
-        // Clear tool actions log for next interaction
-        self.state.lock().await.tool_actions_log.clear();
 
         // Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
@@ -979,31 +943,7 @@ impl ChatActor {
                               }
                           }
 
-                          // Log successful file modification tools
-                         if success {
-                             let (name_opt, args_opt) = {
-                                 let state = self.state.lock().await;
-                                 (state.tool_tracking.current_tool_name.clone(),
-                                  state.tool_tracking.current_tool_args.clone())
-                             };
-
-                             if let Some(tname) = name_opt {
-                                 if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
-                                     let args_ref = args_opt.as_ref();
-                                     if let Some(log_msg) = ChatService::format_tool_action(
-                                         &tname,
-                                         &result_json,
-                                         args_ref,
-                                     ) {
-                                         tracing::info!(
-                                             "[ChatActor] Adding tool action to log: {}",
-                                             log_msg
-                                         );
-                                         self.state.lock().await.tool_actions_log.push(log_msg);
-                                     }
-                                 }
-                             }
-                         }
+                          // Tool action logs removed - audit trail captures all interactions
 
                          // Clear current tool name and arguments
                          {

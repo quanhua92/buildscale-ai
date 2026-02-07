@@ -228,63 +228,6 @@ impl ChatService {
         .await
     }
 
-    /// Formats a file modification tool action as a chat message.
-    ///
-    /// This helper method formats tool actions into concise log messages
-    /// that can be saved to chat history. Only file modification tools
-    /// (write, edit, rm, mv, mkdir, touch) are logged.
-    ///
-    /// # Arguments
-    /// * `tool_name` - Name of the tool that was executed
-    /// * `result_json` - Tool result as JSON value
-    /// * `args_json` - Tool arguments as JSON value (for write/edit tools)
-    ///
-    /// # Returns
-    /// * `Some(String)` - Formatted log message if tool should be logged
-    /// * `None` - If tool failed or is not a file modification tool
-    pub fn format_tool_action(
-        tool_name: &str,
-        result_json: &serde_json::Value,
-        args_json: Option<&serde_json::Value>,
-    ) -> Option<String> {
-        let result = match tool_name {
-            "write" => {
-                // Extract path from result
-                let path = result_json.get("path")?.as_str()?;
-                // Extract content preview from args
-                let content = args_json?.get("content")?;
-                let content_preview = Self::extract_content_preview(&crate::models::requests::JsonValue(content.clone()), 10);
-                Some(format!("[AI wrote: {} ({})]", path, content_preview))
-            }
-            "edit" => {
-                let path = result_json.get("path")?.as_str()?;
-                let old_string = args_json?.get("old_string")?.as_str()?;
-                let preview = Self::extract_string_preview(old_string, 5);
-                Some(format!("[AI edited: {} (changed: \"{}\")]", path, preview))
-            }
-            "rm" => {
-                let path = result_json.get("path")?.as_str()?;
-                Some(format!("[AI deleted: {}]", path))
-            }
-            "mv" => {
-                let from_path = result_json.get("from_path")?.as_str()?;
-                let to_path = result_json.get("to_path")?.as_str()?;
-                Some(format!("[AI moved: {} → {}]", from_path, to_path))
-            }
-            "mkdir" => {
-                let path = result_json.get("path")?.as_str()?;
-                Some(format!("[AI created directory: {}]", path))
-            }
-            "touch" => {
-                let path = result_json.get("path")?.as_str()?;
-                Some(format!("[AI created empty file: {}]", path))
-            }
-            _ => None, // Ignore ls, grep, read, ask_user, exit_plan_mode
-        };
-
-        result
-    }
-
     /// Summarizes tool inputs (arguments) to prevent database bloat.
     /// Truncates long string fields like 'content', 'old_string', 'new_string'.
     pub fn summarize_tool_inputs(
@@ -393,27 +336,6 @@ impl ChatService {
                     end
                 )
             }
-        }
-    }
-
-    /// Extracts a preview of content as a string (first N words).
-    ///
-    /// This helper extracts the first N words from content for logging.
-    /// Used by the write tool to show file content preview.
-    ///
-    /// # Arguments
-    /// * `content` - JSON value containing string content
-    /// * `word_count` - Number of words to extract
-    ///
-    /// # Returns
-    /// String preview with "..." appended if truncated
-    fn extract_content_preview(
-        content: &crate::models::requests::JsonValue,
-        word_count: usize,
-    ) -> String {
-        match &content.0 {
-            serde_json::Value::String(s) => Self::extract_string_preview(s, word_count),
-            _ => "<content>".to_string(),
         }
     }
 
