@@ -205,6 +205,106 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
+/// Custom deserializer for flexible boolean parsing
+/// Accepts:
+/// - JSON booleans: true, false
+/// - Strings (case-insensitive): "true", "True", "TRUE", "false", "False", "FALSE"
+/// - Numbers: 1 (true), 0 (false)
+pub fn deserialize_flexible_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    match serde_json::Value::deserialize(deserializer)? {
+        // Accept JSON boolean directly
+        serde_json::Value::Bool(b) => Ok(b),
+
+        // Accept string representations (case-insensitive)
+        serde_json::Value::String(s) => {
+            match s.to_lowercase().as_str() {
+                "true" | "1" => Ok(true),
+                "false" | "0" => Ok(false),
+                _ => Err(D::Error::custom(format!(
+                    "Invalid boolean string: '{}'. Expected: true, false, 1, or 0",
+                    s
+                ))),
+            }
+        },
+
+        // Accept integers (1 = true, 0 = false)
+        serde_json::Value::Number(n) => {
+            if let Some(b) = n.as_u64() {
+                match b {
+                    1 => Ok(true),
+                    0 => Ok(false),
+                    _ => Err(D::Error::custom(format!(
+                        "Invalid boolean number: '{}'. Expected: 0 or 1",
+                        b
+                    ))),
+                }
+            } else {
+                Err(D::Error::custom("Invalid boolean number".to_string()))
+            }
+        },
+
+        other => Err(D::Error::custom(format!(
+            "Invalid boolean type: {:?}. Expected: boolean, string, or number",
+            other
+        ))),
+    }
+}
+
+/// Custom deserializer for flexible optional boolean parsing
+/// Same as deserialize_flexible_bool but handles Option<bool>
+pub fn deserialize_flexible_bool_option<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    match serde_json::Value::deserialize(deserializer)? {
+        // Accept null directly
+        serde_json::Value::Null => Ok(None),
+
+        // Accept JSON boolean directly
+        serde_json::Value::Bool(b) => Ok(Some(b)),
+
+        // Accept string representations (case-insensitive)
+        serde_json::Value::String(s) => {
+            match s.to_lowercase().as_str() {
+                "true" | "1" => Ok(Some(true)),
+                "false" | "0" => Ok(Some(false)),
+                _ => Err(D::Error::custom(format!(
+                    "Invalid boolean string: '{}'. Expected: true, false, 1, 0, or null",
+                    s
+                ))),
+            }
+        },
+
+        // Accept integers (1 = true, 0 = false)
+        serde_json::Value::Number(n) => {
+            if let Some(b) = n.as_u64() {
+                match b {
+                    1 => Ok(Some(true)),
+                    0 => Ok(Some(false)),
+                    _ => Err(D::Error::custom(format!(
+                        "Invalid boolean number: '{}'. Expected: 0, 1, or null",
+                        b
+                    ))),
+                }
+            } else {
+                Err(D::Error::custom("Invalid boolean number".to_string()))
+            }
+        },
+
+        other => Err(D::Error::custom(format!(
+            "Invalid boolean type: {:?}. Expected: boolean, string, number, or null",
+            other
+        ))),
+    }
+}
+
 /// HTTP API request for adding a tag to a file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddTagHttp {
@@ -252,7 +352,7 @@ pub struct ToolRequest {
     /// Optional mode override (default: false = build mode)
     /// - false: Build mode - full tool access (write, edit, rm, mv, etc.)
     /// - true: Plan mode - restricted to plan files only
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_flexible_bool")]
     pub plan_mode: bool,
 }
 
@@ -284,6 +384,7 @@ pub struct UpdateChatRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsArgs {
     pub path: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub recursive: Option<bool>,
 }
 
@@ -300,7 +401,7 @@ pub struct WriteArgs {
     /// If false (default), returns error when file exists to prevent accidental overwrites.
     /// Set to true to explicitly overwrite existing files.
     /// Recommendation: Use 'edit' tool for modifying existing files instead of overwriting.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_flexible_bool")]
     pub overwrite: bool,
 }
 
@@ -332,6 +433,7 @@ pub struct EditArgs {
 pub struct GrepArgs {
     pub pattern: String,
     pub path_pattern: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub case_sensitive: Option<bool>,
 }
 

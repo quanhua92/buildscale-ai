@@ -87,8 +87,8 @@ impl Tool for GrepTool {
                 "pattern": {"type": "string"},
                 "path_pattern": {"type": ["string", "null"]},
                 "case_sensitive": {
-                    "type": ["boolean", "null"],
-                    "description": "Must be JSON boolean (true/false), not string ('true'/'false')"
+                    "type": ["boolean", "string", "null"],
+                    "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). Defaults to false (case-insensitive) if not provided."
                 }
             },
             "required": ["pattern"],
