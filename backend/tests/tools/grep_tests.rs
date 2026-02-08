@@ -181,3 +181,72 @@ async fn test_grep_invalid_regex() {
     assert!(body["error"].as_str().unwrap().contains("parse error") ||
             body["error"].as_str().unwrap().contains("regex error"));
 }
+
+#[tokio::test]
+async fn test_grep_leading_slash_in_path_pattern() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Leading Slash Test").await;
+
+    write_file(&app, &workspace_id, &token, "/scripts/main.rs", serde_json::json!("findme")).await;
+    write_file(&app, &workspace_id, &token, "/docs/readme.md", serde_json::json!("findme")).await;
+
+    // Test that leading slash works the same as without it
+    let scenarios = vec![
+        ("/scripts/*.rs", 1, "/scripts/main.rs"),   // Leading slash
+        ("scripts/*.rs", 1, "/scripts/main.rs"),     // No leading slash
+        ("/docs/*.md", 1, "/docs/readme.md"),       // Leading slash
+        ("docs/*.md", 1, "/docs/readme.md"),        // No leading slash
+    ];
+
+    for (pattern, expected_count, expected_path) in scenarios {
+        let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+            "pattern": "findme",
+            "path_pattern": pattern
+        })).await;
+
+        assert_eq!(response.status(), 200);
+        let body: serde_json::Value = response.json().await.unwrap();
+        let matches = body["result"]["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), expected_count,
+                   "Failed for path_pattern: '{}'. Expected {} matches, got {}",
+                   pattern, expected_count, matches.len());
+        if expected_count > 0 {
+            assert_eq!(matches[0]["path"], expected_path,
+                       "Failed for path_pattern: '{}'", pattern);
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_grep_path_pattern_parent_directory_rejected() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Security Test").await;
+
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!("content")).await;
+
+    // Test that parent directory traversal is rejected
+    let escape_patterns = vec![
+        "../**/*",
+        "/../**/*",
+        "../*.txt",
+        "scripts/../../*.txt",
+    ];
+
+    for pattern in escape_patterns {
+        let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+            "pattern": "content",
+            "path_pattern": pattern
+        })).await;
+
+        assert_eq!(response.status(), 200);
+        let body: serde_json::Value = response.json().await.unwrap();
+
+        // Should return error, not success
+        assert_eq!(body["success"].as_bool().unwrap(), false,
+                   "path_pattern with '..' should be rejected: '{}'", pattern);
+        assert!(body["error"].as_str().unwrap().contains("path_pattern cannot contain '..'"),
+                "Expected specific error message for pattern: '{}'", pattern);
+    }
+}

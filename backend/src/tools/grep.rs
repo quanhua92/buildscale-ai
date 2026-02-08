@@ -10,10 +10,63 @@ use std::path::Path;
 use std::collections::HashMap;
 use super::{Tool, ToolConfig};
 
+/// Checks if a file path matches a glob pattern
+/// Supports basic wildcards: * and **
+fn path_matches_glob(file_path: &str, pattern: &str) -> bool {
+    let file_path = file_path.strip_prefix('/').unwrap_or(file_path);
+    let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
+
+    // Handle common glob patterns
+    if pattern.contains("**") {
+        // ** matches anything including slashes
+        let base = pattern.split("**").next().unwrap_or("");
+        if base.is_empty() {
+            return true;
+        }
+        return file_path.starts_with(base.trim_end_matches('/'));
+    }
+
+    if pattern.contains('*') {
+        // Split by * and check if path matches
+        let parts: Vec<&str> = pattern.split('*').collect();
+        if parts.len() == 2 {
+            // Pattern like "scripts/*.rs"
+            let (prefix, suffix) = (parts[0], parts[1]);
+            if !suffix.is_empty() {
+                // Check suffix match (e.g., .rs extension)
+                file_path.starts_with(prefix.trim_end_matches('/'))
+                    && file_path.ends_with(suffix)
+            } else {
+                // Pattern like "scripts/*"
+                file_path.starts_with(prefix.trim_end_matches('/'))
+            }
+        } else {
+            // Multiple wildcards, do substring match
+            file_path.contains(&pattern.replace('*', ""))
+        }
+    } else {
+        // No wildcards - exact directory match or prefix match
+        file_path == pattern
+            || file_path.starts_with(&format!("{}/", pattern))
+            || file_path.starts_with(&format!("{}", pattern.trim_end_matches('/')))
+    }
+}
+
 /// Grep tool for searching file contents using external binaries
 ///
 /// Uses ripgrep (rg) if available, falls back to grep.
 /// Searches for a regex pattern across all document files in a workspace.
+///
+/// # path_pattern Behavior
+///
+/// The `path_pattern` parameter is **relative to the workspace root**.
+/// Leading slashes are automatically stripped for convenience.
+///
+/// Examples:
+/// - `"scripts/*"` - matches all files in the scripts folder
+/// - `"/scripts/*"` - same as above (leading slash is stripped)
+/// - `"*.rs"` - matches all .rs files anywhere in workspace
+/// - `"/src/**/*.rs"` - same as "src/**/*.rs"
 ///
 /// # GOOD Examples
 ///
@@ -23,6 +76,9 @@ use super::{Tool, ToolConfig};
 ///
 /// // Search only in specific file types
 /// {"pattern": "TODO", "path_pattern": "*.rs"}
+///
+/// // Search in scripts folder (leading slash is optional)
+/// {"pattern": "main", "path_pattern": "/scripts/*"}
 ///
 /// // Case-sensitive search for exact match
 /// {"pattern": "Config", "case_sensitive": true}
@@ -107,6 +163,18 @@ impl Tool for GrepTool {
     ) -> Result<ToolResponse> {
         let grep_args: GrepArgs = serde_json::from_value(args)?;
 
+        // Security: Validate path_pattern doesn't attempt to escape workspace
+        if let Some(ref path_pattern) = grep_args.path_pattern {
+            let normalized = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
+            if normalized.contains("..") {
+                return Ok(ToolResponse {
+                    success: false,
+                    result: Value::Null,
+                    error: Some("path_pattern cannot contain '..' (parent directory reference)".to_string()),
+                });
+            }
+        }
+
         // Search only in the 'latest' directory (working tree)
         let search_path = storage.get_workspace_path(workspace_id);
 
@@ -169,6 +237,9 @@ impl Tool for GrepTool {
         let mut matches = Vec::new();
         const MAX_MATCHES: usize = 1000;
 
+        // Get normalized path_pattern for filtering (needed for grep fallback)
+        let path_pattern_filter = grep_args.path_pattern.as_deref();
+
         if is_ripgrep {
             // Use JSON parser for ripgrep
             tracing::debug!("Parsing ripgrep JSON output");
@@ -191,7 +262,14 @@ impl Tool for GrepTool {
                 }
 
                 if let Some(grep_match) = parse_grep_output(line, &search_path) {
-                    matches.push(grep_match);
+                    // Filter by path_pattern if provided (needed for grep fallback)
+                    if let Some(pattern) = path_pattern_filter {
+                        if path_matches_glob(&grep_match.path, pattern) {
+                            matches.push(grep_match);
+                        }
+                    } else {
+                        matches.push(grep_match);
+                    }
                 }
             }
         }
@@ -257,12 +335,18 @@ fn build_ripgrep_command(
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     let mut cmd = TokioCommand::new("rg");
-    cmd.arg(pattern)
-       .arg(workspace_path);
+
+    // Set current directory to workspace_path so glob patterns work correctly
+    cmd.current_dir(workspace_path);
+
+    // Search in current directory (.)
+    cmd.arg(pattern).arg(".");
 
     // Add glob pattern if provided
+    // Strip leading slashes to make pattern relative to workspace root
     if let Some(path_pattern) = path_pattern {
-        cmd.arg("--glob").arg(path_pattern);
+        let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
+        cmd.arg("--glob").arg(normalized_pattern);
     }
 
     // Case sensitivity
@@ -295,12 +379,20 @@ fn build_standard_grep_command(
         cmd.arg("-i");  // Case insensitive
     }
 
-    // Add path filter if provided
+    // Note: grep's --include only supports filename patterns, not path patterns
+    // For path-based filtering (e.g., "scripts/*.rs"), we filter during parsing
+    // For simple filename patterns (e.g., "*.rs"), we can use --include
     if let Some(path_pattern) = path_pattern {
-        cmd.arg("--include").arg(path_pattern);
+        let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
+        // Only use --include if it's a simple filename pattern (no directory path)
+        if !normalized_pattern.contains('/') {
+            cmd.arg("--include").arg(normalized_pattern);
+        }
     }
 
-    cmd.arg(workspace_path);
+    // Set current directory to workspace_path
+    cmd.current_dir(workspace_path);
+    cmd.arg(".");
 
     Ok(cmd)
 }
@@ -318,11 +410,17 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
     let line_number: i32 = parts[1].parse().ok()?;
     let line_text = parts[2].to_string();
 
-    // Convert absolute path to relative path from workspace
-    let relative_path = Path::new(full_path)
-        .strip_prefix(workspace_path)
-        .map(|p| p.to_str().unwrap_or(full_path))
-        .unwrap_or(full_path);
+    // Convert to relative path from workspace
+    // First try stripping workspace_path (for absolute paths)
+    let relative_path = if Path::new(full_path).is_absolute() {
+        Path::new(full_path)
+            .strip_prefix(workspace_path)
+            .map(|p| p.to_str().unwrap_or(full_path))
+            .unwrap_or(full_path)
+    } else {
+        // For relative paths (from current_dir), just strip leading ./
+        full_path.strip_prefix("./").unwrap_or(full_path)
+    };
 
     // Add leading "/" to match workspace path convention
     let path_with_slash = format!("/{}", relative_path);
@@ -412,10 +510,16 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
         RipgrepEvent::Begin { data } => {
             // Cache the file path for subsequent matches
             let full_path = data.path.text;
-            let relative_path = Path::new(&full_path)
-                .strip_prefix(workspace_path)
-                .map(|p| p.to_str().unwrap_or(&full_path))
-                .unwrap_or(&full_path);
+            // Convert to relative path
+            let relative_path = if Path::new(&full_path).is_absolute() {
+                Path::new(&full_path)
+                    .strip_prefix(workspace_path)
+                    .map(|p| p.to_str().unwrap_or(&full_path))
+                    .unwrap_or(&full_path)
+            } else {
+                // For relative paths (from current_dir), strip leading ./
+                full_path.strip_prefix("./").unwrap_or(&full_path)
+            };
             let path_with_slash = format!("/{}", relative_path);
             tracing::trace!("JSON begin event: {} -> {}", full_path, path_with_slash);
             file_path_cache.insert(full_path.clone(), path_with_slash);
@@ -427,10 +531,16 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
             let relative_path = file_path_cache.get(&full_path)
                 .cloned()
                 .or_else(|| {
-                    Path::new(&full_path)
-                        .strip_prefix(workspace_path)
-                        .map(|p| format!("/{}", p.to_str().unwrap_or(&full_path)))
-                        .ok()
+                    // Convert to relative path
+                    let rel_path = if Path::new(&full_path).is_absolute() {
+                        Path::new(&full_path)
+                            .strip_prefix(workspace_path)
+                            .map(|p| p.to_str().unwrap_or(&full_path))
+                            .unwrap_or(&full_path)
+                    } else {
+                        full_path.strip_prefix("./").unwrap_or(&full_path)
+                    };
+                    Some(format!("/{}", rel_path))
                 })?;
 
             // Ripgrep includes newlines in the output, strip them to match grep behavior
