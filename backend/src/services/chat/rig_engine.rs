@@ -57,6 +57,14 @@ where
             user_id,
             tool_config: tool_config.clone(),
         })
+        .tool(RigEditTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
         .tool(RigRmTool {
             pool: pool.clone(),
             storage: storage.clone(),
@@ -81,7 +89,7 @@ where
             user_id,
             tool_config: tool_config.clone(),
         })
-        .tool(RigEditTool {
+        .tool(RigMkdirTool {
             pool: pool.clone(),
             storage: storage.clone(),
             workspace_id,
@@ -90,14 +98,6 @@ where
             tool_config: tool_config.clone(),
         })
         .tool(RigGrepTool {
-            pool: pool.clone(),
-            storage: storage.clone(),
-            workspace_id,
-            chat_id,
-            user_id,
-            tool_config: tool_config.clone(),
-        })
-        .tool(RigMkdirTool {
             pool: pool.clone(),
             storage: storage.clone(),
             workspace_id,
@@ -558,12 +558,19 @@ impl RigService {
                     ChatMessageRole::User => {
                         // Check if this is a tool result (message_type: "tool_result")
                         if let Some(ref message_type) = msg.metadata.message_type {
-                            if message_type == "tool_result" {
-                                // Reconstruct ToolResult for User message
-                                self.reconstruct_tool_result(msg, true)
-                            } else {
-                                // Regular user text message
-                                Some(Message::user(msg.content.clone()))
+                            match message_type.as_str() {
+                                "tool_result" => {
+                                    // Reconstruct ToolResult for User message
+                                    self.reconstruct_tool_result(msg, true)
+                                }
+                                "reasoning_complete" => {
+                                    // Filter out reasoning/thinking messages - they're for audit only
+                                    None
+                                }
+                                _ => {
+                                    // Regular user text message
+                                    Some(Message::user(msg.content.clone()))
+                                }
                             }
                         } else {
                             // Regular user text message (no metadata)
@@ -573,13 +580,20 @@ impl RigService {
                     ChatMessageRole::Assistant => {
                         // Check if this is a tool call (message_type: "tool_call")
                         if let Some(ref message_type) = msg.metadata.message_type {
-                            if message_type == "tool_call" {
-                                // Reconstruct ToolCall for Assistant message
-                                self.reconstruct_tool_call(msg)
-                                    .or_else(|| Some(Message::assistant(msg.content.clone())))
-                            } else {
-                                // Regular assistant text message
-                                Some(Message::assistant(msg.content.clone()))
+                            match message_type.as_str() {
+                                "tool_call" => {
+                                    // Reconstruct ToolCall for Assistant message
+                                    self.reconstruct_tool_call(msg)
+                                        .or_else(|| Some(Message::assistant(msg.content.clone())))
+                                }
+                                "reasoning_complete" => {
+                                    // Filter out reasoning/thinking messages - they're for audit only
+                                    None
+                                }
+                                _ => {
+                                    // Regular assistant text message
+                                    Some(Message::assistant(msg.content.clone()))
+                                }
                             }
                         } else {
                             // Regular assistant text message (no metadata)
@@ -865,6 +879,75 @@ mod tests {
                 }
             }
             _ => panic!("Expected User message for tool result"),
+        }
+    }
+
+    #[test]
+    fn test_convert_history_filters_reasoning_messages() {
+        let service = RigService::dummy();
+
+        // Create a reasoning message (Assistant role with reasoning_complete metadata)
+        let reasoning_msg = ChatMessage {
+            id: Uuid::new_v4(),
+            file_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            role: ChatMessageRole::Assistant,
+            content: "I need to think about this...".to_string(),
+            metadata: ChatMessageMetadata {
+                message_type: Some("reasoning_complete".to_string()),
+                ..Default::default()
+            }.into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        // Create a reasoning message (User role with reasoning_complete metadata)
+        let reasoning_user_msg = ChatMessage {
+            id: Uuid::new_v4(),
+            file_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            role: ChatMessageRole::User,
+            content: "User reasoning...".to_string(),
+            metadata: ChatMessageMetadata {
+                message_type: Some("reasoning_complete".to_string()),
+                ..Default::default()
+            }.into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        // Create a regular user message
+        let user_msg = ChatMessage {
+            id: Uuid::new_v4(),
+            file_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            role: ChatMessageRole::User,
+            content: "Hello".to_string(),
+            metadata: ChatMessageMetadata::default().into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        let messages = vec![reasoning_msg, reasoning_user_msg, user_msg];
+        let converted = service.convert_history(&messages);
+
+        // Should have only 1 message (the regular user message), reasoning messages filtered
+        assert_eq!(converted.len(), 1, "Reasoning messages should be filtered from AI context");
+
+        // First message: regular user text
+        match &converted[0] {
+            rig::completion::Message::User { content } => {
+                match content.iter().next() {
+                    Some(UserContent::Text(text)) => {
+                        assert_eq!(text.text, "Hello");
+                    }
+                    _ => panic!("Expected text content for user message"),
+                }
+            }
+            _ => panic!("Expected User message"),
         }
     }
 }
