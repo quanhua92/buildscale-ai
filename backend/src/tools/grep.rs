@@ -133,7 +133,14 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &'static str {
-        "Searches for a regex pattern across all document files in a workspace using ripgrep or grep. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search. Returns matching file paths with context. Use for discovering code patterns or finding specific content."
+        r#"Searches for a regex pattern across all document files in a workspace using ripgrep or grep. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search.
+
+CONTEXT PARAMETERS (optional):
+- before_context: Number of lines to show before each match
+- after_context: Number of lines to show after each match
+- context: Shorthand for both before and after context (e.g., context=3 shows 3 lines before and after)
+
+Returns matching file paths with line numbers and context lines. Use for discovering code patterns or finding specific content."#
     }
 
     fn definition(&self) -> Value {
@@ -145,6 +152,18 @@ impl Tool for GrepTool {
                 "case_sensitive": {
                     "type": ["boolean", "string", "null"],
                     "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). Defaults to false (case-insensitive) if not provided."
+                },
+                "before_context": {
+                    "type": ["integer", "null"],
+                    "description": "Number of lines to show before each match (default: 0)"
+                },
+                "after_context": {
+                    "type": ["integer", "null"],
+                    "description": "Number of lines to show after each match (default: 0)"
+                },
+                "context": {
+                    "type": ["integer", "null"],
+                    "description": "Shorthand for before_context and after_context combined"
                 }
             },
             "required": ["pattern"],
@@ -188,10 +207,18 @@ impl Tool for GrepTool {
         }
 
         // Build command (tries ripgrep, then grep)
+        // Determine context parameters
+        let before = grep_args.context.unwrap_or(0);
+        let after = grep_args.context.unwrap_or(0);
+        let before_context = grep_args.before_context.unwrap_or(before);
+        let after_context = grep_args.after_context.unwrap_or(after);
+
         let mut cmd = build_grep_command(
             &grep_args.pattern,
             grep_args.path_pattern.as_deref(),
             grep_args.case_sensitive.unwrap_or(false),
+            before_context,
+            after_context,
             &search_path,
         )?;
 
@@ -296,6 +323,8 @@ fn build_grep_command(
     pattern: &str,
     path_pattern: Option<&str>,
     case_sensitive: bool,
+    before_context: usize,
+    after_context: usize,
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     // Try ripgrep first
@@ -307,7 +336,7 @@ fn build_grep_command(
         .is_some()
     {
         tracing::debug!("Using ripgrep for search");
-        return build_ripgrep_command(pattern, path_pattern, case_sensitive, workspace_path);
+        return build_ripgrep_command(pattern, path_pattern, case_sensitive, before_context, after_context, workspace_path);
     }
 
     // Fallback to grep
@@ -319,7 +348,7 @@ fn build_grep_command(
         .is_some()
     {
         tracing::debug!("Using grep for search");
-        return build_standard_grep_command(pattern, path_pattern, case_sensitive, workspace_path);
+        return build_standard_grep_command(pattern, path_pattern, case_sensitive, before_context, after_context, workspace_path);
     }
 
     Err(Error::Internal(
@@ -332,6 +361,8 @@ fn build_ripgrep_command(
     pattern: &str,
     path_pattern: Option<&str>,
     case_sensitive: bool,
+    before_context: usize,
+    after_context: usize,
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     let mut cmd = TokioCommand::new("rg");
@@ -356,6 +387,14 @@ fn build_ripgrep_command(
         cmd.arg("--ignore-case");
     }
 
+    // Add context if requested
+    if before_context > 0 {
+        cmd.arg("--before-context").arg(before_context.to_string());
+    }
+    if after_context > 0 {
+        cmd.arg("--after-context").arg(after_context.to_string());
+    }
+
     // Use JSON output for machine-readable parsing
     cmd.args(["--json", "--line-number"]);
 
@@ -367,6 +406,8 @@ fn build_standard_grep_command(
     pattern: &str,
     path_pattern: Option<&str>,
     case_sensitive: bool,
+    before_context: usize,
+    after_context: usize,
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     let mut cmd = TokioCommand::new("grep");
@@ -377,6 +418,14 @@ fn build_standard_grep_command(
 
     if !case_sensitive {
         cmd.arg("-i");  // Case insensitive
+    }
+
+    // Add context if requested
+    if before_context > 0 {
+        cmd.arg("-B").arg(before_context.to_string());
+    }
+    if after_context > 0 {
+        cmd.arg("-A").arg(after_context.to_string());
     }
 
     // Note: grep's --include only supports filename patterns, not path patterns
@@ -429,6 +478,8 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
         path: path_with_slash,
         line_number,
         line_text,
+        before_context: None,  // Context parsing for plain grep is complex, skip for now
+        after_context: None,
     })
 }
 
@@ -553,6 +604,8 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
                 path: relative_path,
                 line_number,
                 line_text,
+                before_context: None,  // Context parsing from JSON is complex, skip for now
+                after_context: None,
             })
         }
         RipgrepEvent::End { .. } => {

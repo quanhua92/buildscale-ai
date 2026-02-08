@@ -15,6 +15,11 @@ pub mod grep;
 pub mod mkdir;
 pub mod ask_user;
 pub mod exit_plan_mode;
+pub mod glob;
+pub mod file_info;
+pub mod read_multiple_files;
+pub mod find;
+pub mod cat;
 
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, services::storage::FileStorageService};
 use uuid::Uuid;
@@ -138,6 +143,11 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "mkdir" => Ok(ToolExecutor::Mkdir),
         "ask_user" => Ok(ToolExecutor::AskUser),
         "exit_plan_mode" => Ok(ToolExecutor::ExitPlanMode),
+        "glob" => Ok(ToolExecutor::Glob),
+        "file_info" => Ok(ToolExecutor::FileInfo),
+        "read_multiple_files" => Ok(ToolExecutor::ReadMultipleFiles),
+        "find" => Ok(ToolExecutor::Find),
+        "cat" => Ok(ToolExecutor::Cat),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -182,6 +192,11 @@ pub enum ToolExecutor {
     Mkdir,
     AskUser,
     ExitPlanMode,
+    Glob,
+    FileInfo,
+    ReadMultipleFiles,
+    Find,
+    Cat,
 }
 
 impl ToolExecutor {
@@ -206,6 +221,11 @@ impl ToolExecutor {
             ToolExecutor::Mkdir => "mkdir",
             ToolExecutor::AskUser => "ask_user",
             ToolExecutor::ExitPlanMode => "exit_plan_mode",
+            ToolExecutor::Glob => "glob",
+            ToolExecutor::FileInfo => "file_info",
+            ToolExecutor::ReadMultipleFiles => "read_multiple_files",
+            ToolExecutor::Find => "find",
+            ToolExecutor::Cat => "cat",
         };
 
         let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
@@ -225,6 +245,11 @@ impl ToolExecutor {
             ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::AskUser => ask_user::AskUserTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::ExitPlanMode => exit_plan_mode::ExitPlanModeTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Glob => glob::GlobTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::FileInfo => file_info::FileInfoTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::ReadMultipleFiles => read_multiple_files::ReadMultipleFilesTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Find => find::FindTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Cat => cat::CatTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {

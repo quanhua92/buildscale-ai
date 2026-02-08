@@ -1,7 +1,7 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
 use crate::services::chat::rig_tools::{
-    RigEditTool, RigGrepTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
-    RigRmTool, RigTouchTool, RigWriteTool,
+    RigEditTool, RigGrepTool, RigGlobTool, RigFileInfoTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
+    RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
     RigAskUserTool, RigExitPlanModeTool,
 };
 use crate::services::storage::FileStorageService;
@@ -114,6 +114,46 @@ where
             tool_config: tool_config.clone(),
         })
         .tool(RigExitPlanModeTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigGlobTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigFileInfoTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigReadMultipleFilesTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigFindTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigCatTool {
             pool: pool.clone(),
             storage: storage.clone(),
             workspace_id,

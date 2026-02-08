@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::models::requests::{
-    EditArgs, GrepArgs, LsArgs, MkdirArgs, MvArgs, ReadArgs, RmArgs, TouchArgs, WriteArgs,
+    EditArgs, GrepArgs, GlobArgs, LsArgs, FileInfoArgs, MkdirArgs, MvArgs, ReadArgs, ReadMultipleFilesArgs, RmArgs, TouchArgs, WriteArgs,
+    FindArgs, CatArgs,
     AskUserArgs, ExitPlanModeArgs,
 };
 use crate::services::storage::FileStorageService;
@@ -281,4 +282,41 @@ define_rig_tool!(
     ExitPlanModeArgs,
     "exit_plan_mode"
 );
+
+// Phase 1: glob, file_info
+define_rig_tool!(
+    RigGlobTool,
+    tools::glob::GlobTool,
+    GlobArgs,
+    "glob"
+);
+
+define_rig_tool!(
+    RigFileInfoTool,
+    tools::file_info::FileInfoTool,
+    FileInfoArgs,
+    "file_info"
+);
+
+define_rig_tool!(
+    RigReadMultipleFilesTool,
+    tools::read_multiple_files::ReadMultipleFilesTool,
+    ReadMultipleFilesArgs,
+    "read_multiple_files"
+);
+
+define_rig_tool!(
+    RigFindTool,
+    tools::find::FindTool,
+    FindArgs,
+    "find"
+);
+
+define_rig_tool!(
+    RigCatTool,
+    tools::cat::CatTool,
+    CatArgs,
+    "cat"
+);
+
 

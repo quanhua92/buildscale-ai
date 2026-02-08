@@ -271,8 +271,8 @@ impl ChatService {
                 }
             }
             "edit" => {
-                // Truncate 'old_string' and 'new_string' fields
-                for field in ["old_string", "new_string"] {
+                // Truncate 'old_string', 'new_string', and 'insert_content' fields
+                for field in ["old_string", "new_string", "insert_content"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
                         if val.len() > MAX_EDIT_DIFF_LENGTH {
                             let preview = Self::extract_string_preview(val, EDIT_ARG_PREVIEW_WORDS);
@@ -289,7 +289,7 @@ impl ChatService {
                 // No truncation needed - arguments are small (path, recursive flag)
             }
             "read" => {
-                // No truncation needed - only path argument
+                // No truncation needed - only path argument (plus optional offset/limit)
             }
             "rm" => {
                 // No truncation needed - only path argument
@@ -301,7 +301,7 @@ impl ChatService {
                 // No truncation needed - only path argument
             }
             "grep" => {
-                // No truncation needed - pattern and path are small
+                // No truncation needed - pattern, path, and context params are small
             }
             "mkdir" => {
                 // No truncation needed - only path argument
@@ -311,7 +311,23 @@ impl ChatService {
                 // TODO: Consider truncation if questions become very long
             }
             "exit_plan_mode" => {
-                // No truncation needed - no arguments
+                // No truncation needed - only path argument
+            }
+            "glob" => {
+                // No truncation needed - pattern and path arguments are small
+            }
+            "file_info" => {
+                // No truncation needed - only path argument
+            }
+            "read_multiple_files" => {
+                // No truncation needed for paths array (small strings)
+                // Limit parameter is a small integer
+            }
+            "find" => {
+                // No truncation needed - all arguments are small strings/ints
+            }
+            "cat" => {
+                // No truncation needed for paths array and boolean flags
             }
             unknown_tool => {
                 // ERROR-level: Unknown tool can cause database bloat
@@ -369,6 +385,27 @@ impl ChatService {
                     output.to_string()
                 }
             }
+            "glob" => {
+                // Special handling: Item count preview (similar to ls)
+                let lines: Vec<&str> = output.lines().collect();
+                if lines.len() > LS_PREVIEW_ITEMS {
+                    let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more matches)", preview, lines.len() - LS_PREVIEW_ITEMS)
+                } else {
+                    output.to_string()
+                }
+            }
+            "file_info" => {
+                // No special handling needed - output is small (metadata)
+                // If output exceeds MAX_TOOL_OUTPUT_LENGTH, use generic truncation
+                if output.len() < MAX_TOOL_OUTPUT_LENGTH {
+                    output.to_string()
+                } else {
+                    // Fallback to generic truncation (shouldn't happen for file_info)
+                    let preview_len = 500.min(output.len());
+                    format!("{}... [truncated]", &output[..preview_len])
+                }
+            }
             other_tool => {
                 // WARN-level: Generic truncation works but might be suboptimal
                 // Most tool outputs are short (error messages, confirmation text)
@@ -377,7 +414,7 @@ impl ChatService {
                 tracing::warn!(
                     tool = %other_tool,
                     "Tool '{}' using generic output truncation. If this tool needs \
-                     special handling (like read/ls/grep), add explicit case.",
+                     special handling (like read/ls/grep/glob), add explicit case.",
                     other_tool
                 );
                 // Generic truncation: Head + Tail, ensuring UTF-8 boundaries.

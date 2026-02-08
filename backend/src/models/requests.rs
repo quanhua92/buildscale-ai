@@ -403,6 +403,13 @@ pub struct ReadArgs {
     /// Default: 500 (matches DEFAULT_READ_LIMIT)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+
+    /// Optional cursor position for scroll mode (0-indexed line number)
+    /// When set, enables scroll mode where offset is relative to cursor
+    /// Example: cursor=100, offset=-50 reads lines 50-100 (scroll up 50 from cursor)
+    /// Default: null (disabled, uses absolute offset mode)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,8 +443,22 @@ pub struct MkdirArgs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditArgs {
     pub path: String,
-    pub old_string: String,
-    pub new_string: String,
+
+    // For Replace operation: old_string and new_string
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_string: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_string: Option<String>,
+
+    // For Insert operation: insert_line and content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insert_line: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insert_content: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_read_hash: Option<String>,
 }
 
@@ -447,6 +468,15 @@ pub struct GrepArgs {
     pub path_pattern: Option<String>,
     #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub case_sensitive: Option<bool>,
+    /// Number of lines to show before each match
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_context: Option<usize>,
+    /// Number of lines to show after each match
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_context: Option<usize>,
+    /// Number of lines to show before and after each match (shorthand for before_context + after_context)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -487,6 +517,127 @@ pub struct ExitPlanModeArgs {
     pub plan_file_path: String,
 }
 
+// ============================================================================
+// NEW TOOL ARGS AND RESULTS (Phase 1: glob, file_info, grep context)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobArgs {
+    pub pattern: String,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobResult {
+    pub pattern: String,
+    pub base_path: String,
+    pub matches: Vec<GlobMatch>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobMatch {
+    pub path: String,
+    pub name: String,
+    pub file_type: FileType,
+    pub is_virtual: bool,
+    pub size: Option<usize>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileInfoArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileInfoResult {
+    pub path: String,
+    pub file_type: FileType,
+    pub size: Option<usize>,
+    pub line_count: Option<usize>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub hash: String,
+}
+
+// ============================================================================
+// PHASE 2: read_multiple_files, edit insert, read scroll
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadMultipleFilesArgs {
+    pub paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReadMultipleFilesResult {
+    pub files: Vec<ReadFileResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReadFileResult {
+    pub path: String,
+    pub success: bool,
+    pub content: Option<serde_json::Value>,
+    pub hash: Option<String>,
+    pub error: Option<String>,
+    pub total_lines: Option<usize>,
+    pub truncated: Option<bool>,
+}
+
+// ============================================================================
+// PHASE 3: find, cat
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindArgs {
+    pub name: Option<String>,
+    pub path: Option<String>,
+    pub file_type: Option<FileType>,
+    pub min_size: Option<usize>,
+    pub max_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recursive: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FindResult {
+    pub matches: Vec<FindMatch>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FindMatch {
+    pub path: String,
+    pub name: String,
+    pub file_type: FileType,
+    pub size: Option<usize>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatArgs {
+    pub paths: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub show_headers: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub number_lines: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CatResult {
+    pub content: String,
+    pub files: Vec<CatFileEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CatFileEntry {
+    pub path: String,
+    pub content: String,
+    pub line_count: usize,
+}
+
 /// Unified tool response structure
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolResponse {
@@ -523,6 +674,12 @@ pub struct GrepMatch {
     pub path: String,
     pub line_number: i32,
     pub line_text: String,
+    /// Context lines before the match (if requested)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_context: Option<Vec<String>>,
+    /// Context lines after the match (if requested)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_context: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -546,6 +703,11 @@ pub struct ReadResult {
     /// The limit used for this read
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+
+    /// Current cursor position (line number at end of read)
+    /// Used for scroll mode to track position in large files
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
