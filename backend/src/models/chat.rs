@@ -53,6 +53,18 @@ pub struct ChatMessageMetadata {
     /// Question answer metadata (from ask_user tool responses)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question_answer: Option<QuestionAnswerMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_arguments: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_success: Option<bool>,
 }
 
 /// Question answer metadata stored with user messages

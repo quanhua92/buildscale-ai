@@ -134,4 +134,82 @@ mod tests {
             "Version 2"
         );
     }
+
+    #[test]
+    fn test_tool_output_summarization_read() {
+        use crate::services::chat::ChatService;
+
+        // Generate 1000 real lines
+        let mut long_content = String::new();
+        for i in 1..=1000 {
+            long_content.push_str(&format!("This is line number {}\n", i));
+        }
+
+        // Ensure it exceeds the 2048 byte limit for summarization to trigger
+        assert!(long_content.len() > 2048);
+
+        let summarized = ChatService::summarize_tool_outputs("read", &long_content);
+
+        // Verify it contains the total stats
+        assert!(summarized.contains("[Read"));
+        assert!(summarized.contains("1000 lines"));
+
+        // Verify it contains exactly the first 5 lines in the preview
+        assert!(summarized.contains("This is line number 1"));
+        assert!(summarized.contains("This is line number 5"));
+
+        // Verify it does NOT contain the 6th line in the preview
+        assert!(!summarized.contains("This is line number 6\n"));
+
+        // Verify the truncation marker
+        assert!(summarized.contains("... [truncated]"));
+    }
+
+    #[test]
+    fn test_tool_input_summarization_write() {
+        use crate::services::chat::ChatService;
+
+        // Use content with many words (lines) to ensure word-based truncation triggers
+        let mut long_content = String::new();
+        for i in 1..=1000 {
+            long_content.push_str(&format!("This is line number {}\n", i));
+        }
+
+        let args = serde_json::json!({
+            "path": "/test.txt",
+            "content": long_content
+        });
+
+        let summarized = ChatService::summarize_tool_inputs("write", &args);
+        let content = summarized.get("content").unwrap().as_str().unwrap();
+
+        // Should contain a preview and the truncation stats
+        assert!(content.contains("... [truncated, size="));
+        // The original is roughly 25,000 chars, summarized should be much smaller
+        assert!(content.len() < 1000);
+    }
+
+    #[test]
+    fn test_tool_input_summarization_edit() {
+        use crate::services::chat::ChatService;
+
+        // Use content with many words
+        let mut long_string = String::new();
+        for i in 1..=100 {
+            long_string.push_str(&format!("word{} ", i));
+        }
+
+        let args = serde_json::json!({
+            "path": "/test.txt",
+            "old_string": long_string.clone(),
+            "new_string": "short"
+        });
+
+        let summarized = ChatService::summarize_tool_inputs("edit", &args);
+        let old_string = summarized.get("old_string").unwrap().as_str().unwrap();
+        let new_string = summarized.get("new_string").unwrap().as_str().unwrap();
+
+        assert!(old_string.contains("... [truncated]"));
+        assert_eq!(new_string, "short");
+    }
 }

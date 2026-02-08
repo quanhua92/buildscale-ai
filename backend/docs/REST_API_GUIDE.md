@@ -473,6 +473,8 @@ Connect to the real-time event stream for an agentic session.
 - `done`: Finalization of the execution turn.
 - `stopped`: Graceful cancellation signal (includes `reason` and optional `partial_response`).
 
+**Persistence**: All events are automatically persisted to `chat_messages` with structured metadata (`message_type`, `reasoning_id`, `tool_name`, etc.). This creates a complete audit trail and allows reconstructing the full interaction history when reopening chats. See `docs/CHAT_PERSISTENCE_AUDIT.md` for the full specification.
+
 ---
 
 ### Stop Chat Generation

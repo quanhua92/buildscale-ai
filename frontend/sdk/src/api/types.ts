@@ -188,13 +188,26 @@ export interface PostChatMessageResponse {
 
 export type ChatMessageRole = "system" | "user" | "assistant" | "tool"
 
+export interface ChatMessageMetadata {
+  message_type?: "reasoning_chunk" | "reasoning_complete" | "tool_call" | "tool_result"
+  reasoning_id?: string
+  tool_name?: string
+  tool_arguments?: any
+  tool_output?: string
+  tool_success?: boolean
+  question_answer?: {
+    question_id: string
+    answers: Record<string, any>
+  }
+}
+
 export interface ChatMessage {
   id: string
   file_id: string
   workspace_id: string
   role: ChatMessageRole
   content: string
-  metadata: any
+  metadata: ChatMessageMetadata
   created_at: string
   updated_at: string
 }

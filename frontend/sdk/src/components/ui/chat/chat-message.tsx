@@ -9,6 +9,7 @@ const messageVariants = cva("flex w-full gap-4 px-1 py-2 transition-all", {
       user: "flex-row-reverse",
       assistant: "flex-row",
       system: "justify-center",
+      tool: "flex-row",
     },
   },
   defaultVariants: {
@@ -49,9 +50,11 @@ const ChatMessage = React.forwardRef<HTMLDivElement, ChatMessageProps>(
           {/* Avatar Placeholder */}
           <div className={cn(
             "h-8 w-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0",
-            role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground border"
+            role === "user" ? "bg-primary text-primary-foreground" :
+            role === "tool" ? "bg-secondary text-secondary-foreground" :
+            "bg-muted text-muted-foreground border"
           )}>
-            {role === "user" ? "U" : "AI"}
+            {role === "user" ? "U" : role === "tool" ? "T" : "AI"}
           </div>
           
           <div className={cn(
