@@ -165,6 +165,9 @@ impl ChatService {
     /// Saves a message and appends it to the disk file (Hybrid Persistence).
     /// - DB: Structured storage for O(1) query and context construction.
     /// - Disk: Markdown log for human readability and file system tools.
+    ///
+    /// Note: Reasoning messages (message_type="reasoning_complete") are saved to DB
+    /// for audit purposes but NOT written to .chat files to avoid cluttering them.
     pub async fn save_message(
         conn: &mut DbConn,
         storage: &crate::services::storage::FileStorageService,
@@ -172,21 +175,28 @@ impl ChatService {
         new_msg: NewChatMessage,
     ) -> Result<ChatMessage> {
         let file_id = new_msg.file_id;
-        
+
         // 1. Insert message into Source of Truth (chat_messages)
         let msg = queries::chat::insert_chat_message(conn, new_msg).await?;
-        
+
         // 2. Append to Disk (File View)
-        // Retrieve file path first
-        let file = queries::files::get_file_by_id(conn, file_id).await?;
+        // Skip writing reasoning messages to .chat file - they're only for audit/debug in DB
+        let is_reasoning = msg.metadata.message_type.as_ref()
+            .map(|t| t == "reasoning_complete")
+            .unwrap_or(false);
 
-        let markdown_entry = format_message_as_markdown(&msg);
-        // Use full hierarchical path for consistency with file storage
-        storage.append_to_file(workspace_id, &file.path, &markdown_entry).await?;
+        if !is_reasoning {
+            // Retrieve file path first
+            let file = queries::files::get_file_by_id(conn, file_id).await?;
 
-        // 3. Touch file to update timestamp
-        queries::files::touch_file(conn, file_id).await?;
-        
+            let markdown_entry = format_message_as_markdown(&msg);
+            // Use full hierarchical path for consistency with file storage
+            storage.append_to_file(workspace_id, &file.path, &markdown_entry).await?;
+
+            // 3. Touch file to update timestamp
+            queries::files::touch_file(conn, file_id).await?;
+        }
+
         Ok(msg)
     }
 
