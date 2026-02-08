@@ -239,3 +239,108 @@ async fn test_read_hash_unchanged_by_truncation() {
     // Hashes should be identical (computed from full content)
     assert_eq!(full_hash, trunc_hash);
 }
+
+#[tokio::test]
+async fn test_read_with_negative_offset() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Negative Offset Test").await;
+
+    // Create a file with 100 lines
+    let content: String = (0..100).map(|i| format!("Line {}", i)).collect::<Vec<_>>().join("\n");
+    write_file(&app, &workspace_id, &token, "/file.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md",
+        "offset": -10
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should return last 10 lines (lines 90-99)
+    let returned_content = body["result"]["content"].as_str().unwrap();
+    assert!(returned_content.starts_with("Line 90"));
+    assert_eq!(body["result"]["total_lines"], 100);
+    assert_eq!(body["result"]["truncated"], false);
+    assert_eq!(body["result"]["offset"], 90); // Actual position, not -10
+}
+
+#[tokio::test]
+async fn test_read_negative_offset_exceeds_file() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Neg Offset Exceeds Test").await;
+
+    let content = "Line 0\nLine 1\nLine 2";
+    write_file(&app, &workspace_id, &token, "/small.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/small.md",
+        "offset": -100
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should return all lines (offset -100 on 3-line file = start at 0)
+    assert_eq!(body["result"]["content"].as_str().unwrap(), content);
+    assert_eq!(body["result"]["total_lines"], 3);
+    assert_eq!(body["result"]["truncated"], false);
+    assert_eq!(body["result"]["offset"], 0);
+}
+
+#[tokio::test]
+async fn test_read_negative_offset_with_limit() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Neg Offset Limit Test").await;
+
+    // Create a file with 100 lines
+    let content: String = (0..100).map(|i| format!("Line {}", i)).collect::<Vec<_>>().join("\n");
+    write_file(&app, &workspace_id, &token, "/file.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md",
+        "offset": -50,
+        "limit": 10
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should read last 50 lines, but return only first 10 (lines 50-59)
+    let returned_content = body["result"]["content"].as_str().unwrap();
+    assert!(returned_content.starts_with("Line 50"));
+    let line_count = returned_content.lines().count();
+    assert_eq!(line_count, 10);
+    assert_eq!(body["result"]["offset"], 50);
+}
+
+#[tokio::test]
+async fn test_read_backward_compatibility_positive_offset() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Backward Compat Test").await;
+
+    let content: String = (0..100).map(|i| format!("Line {}", i)).collect::<Vec<_>>().join("\n");
+    write_file(&app, &workspace_id, &token, "/file.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md",
+        "offset": 10,
+        "limit": 5
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Positive offset should still work: lines 10-14
+    let returned_content = body["result"]["content"].as_str().unwrap();
+    assert!(returned_content.starts_with("Line 10"));
+    assert_eq!(body["result"]["offset"], 10);
+}

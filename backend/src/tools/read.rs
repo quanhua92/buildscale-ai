@@ -31,6 +31,34 @@ fn slice_content_by_lines(
     (sliced_lines, total_lines, was_truncated)
 }
 
+/// Slices content string starting from the end
+/// Returns (sliced_content, total_lines, was_truncated)
+fn slice_content_from_end(
+    content: &str,
+    lines_from_end: usize,
+    limit: usize,
+) -> (String, usize, bool) {
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
+
+    // Calculate start position: last 100 of 1000 = start at 900
+    let start = if lines_from_end >= total_lines {
+        0
+    } else {
+        total_lines - lines_from_end
+    };
+
+    // Apply limit
+    let end = (start + limit).min(total_lines);
+    let was_truncated = end < total_lines;
+
+    let sliced_lines = lines.get(start..end)
+        .unwrap_or(&[])
+        .join("\n");
+
+    (sliced_lines, total_lines, was_truncated)
+}
+
 /// Read file contents tool
 ///
 /// Reads the latest version of a file within a workspace.
@@ -43,7 +71,7 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &'static str {
-        "Reads up to 500 lines of a file by default. Use offset (0-indexed) and limit parameters to read specific portions. Returns content, hash for change detection, and metadata (total_lines, truncated flag). For text files, content is returned with line numbering preserved. Cannot read folders. Always read before editing to get the latest hash."
+        "Reads up to 500 lines by default. Use offset to control position (positive=from start, negative=from end). Example: offset=-100 reads last 100 lines. Use limit to control max lines. Returns content, hash for change detection, and metadata (total_lines, truncated flag). Cannot read folders. Always read before editing to get the latest hash."
     }
 
     fn definition(&self) -> Value {
@@ -53,7 +81,7 @@ impl Tool for ReadTool {
                 "path": {"type": "string"},
                 "offset": {
                     "type": "integer",
-                    "description": "Starting line offset (0-indexed). Default: 0"
+                    "description": "Starting line position (default: 0). Positive values read from beginning (e.g., 100 = line 100+). Negative values read from end (e.g., -100 = last 100 lines)."
                 },
                 "limit": {
                     "type": "integer",
@@ -97,11 +125,26 @@ impl Tool for ReadTool {
         // Apply offset/limit for string content
         let (content, total_lines, truncated) = match &file_with_content.content {
             serde_json::Value::String(s) => {
-                let (sliced, total, was_truncated) =
-                    slice_content_by_lines(s, offset, limit);
+                let (sliced, total, was_truncated) = if offset < 0 {
+                    // Negative offset: read from end
+                    let lines_from_end = offset.abs() as usize;
+                    slice_content_from_end(s, lines_from_end, limit)
+                } else {
+                    // Positive/zero offset: read from beginning
+                    slice_content_by_lines(s, offset as usize, limit)
+                };
                 (serde_json::Value::String(sliced), Some(total), Some(was_truncated))
             }
             other => (other.clone(), None, None), // Non-string content returned as-is
+        };
+
+        // Calculate actual offset for result (convert negative to actual position)
+        let actual_offset = if offset < 0 {
+            let total = total_lines.unwrap_or(0);
+            let abs_offset = offset.abs() as usize;
+            if abs_offset >= total { 0 } else { total - abs_offset }
+        } else {
+            offset as usize
         };
 
         let result = ReadResult {
@@ -110,7 +153,7 @@ impl Tool for ReadTool {
             hash: file_with_content.latest_version.hash,
             total_lines,
             truncated,
-            offset: Some(offset),
+            offset: Some(actual_offset),
             limit: Some(limit),
         };
 

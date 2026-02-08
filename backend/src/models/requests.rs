@@ -393,12 +393,14 @@ pub struct ReadArgs {
     pub path: String,
 
     /// Optional starting line offset (0-indexed)
+    /// Positive: from beginning (e.g., 100 = start at line 100)
+    /// Negative: from end (e.g., -100 = last 100 lines)
     /// Default: 0 (read from beginning)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<usize>,
+    pub offset: Option<isize>,
 
     /// Optional maximum number of lines to read
-    /// Default: 2000 (matches Claude Code's behavior)
+    /// Default: 500 (matches DEFAULT_READ_LIMIT)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
@@ -537,7 +539,7 @@ pub struct ReadResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
 
-    /// The offset used for this read
+    /// The offset used for this read (actual start position, never negative)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<usize>,
 

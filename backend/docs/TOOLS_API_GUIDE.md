@@ -264,7 +264,7 @@ Reads the latest version of a file within a workspace. Supports line range contr
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `path` | string | Yes | - | Full path to the file |
-| `offset` | integer | No | 0 | Starting line offset (0-indexed). Lines before this are skipped. |
+| `offset` | integer | No | 0 | Starting line position. Positive: from beginning (e.g., 100 = line 100+). Negative: from end (e.g., -100 = last 100 lines). |
 | `limit` | integer | No | 500 | Maximum number of lines to read. Content is truncated at this limit. |
 
 #### Request Examples
@@ -292,6 +292,35 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "args": {
       "path": "/src/main.rs",
       "offset": 100,
+      "limit": 50
+    }
+  }'
+```
+
+**Read last 100 lines (like `tail -n 100`):**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read",
+    "args": {
+      "path": "/logs/error.log",
+      "offset": -100
+    }
+  }'
+```
+
+**Read last 1000 lines, return only first 50:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read",
+    "args": {
+      "path": "/large.log",
+      "offset": -1000,
       "limit": 50
     }
   }'
@@ -331,6 +360,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Latest version**: Always returns the most recent file version
 - **Line-based truncation**: Only applies to text content (strings). JSON objects returned as-is.
+- **Positive offset**: Reads from beginning (e.g., offset=100 starts at line 100)
+- **Negative offset**: Reads from end (e.g., offset=-100 reads last 100 lines)
 - **Default limit**: Without `limit`, reads first 500 lines (configurable via `DEFAULT_READ_LIMIT` constant)
 - **Hash integrity**: The `hash` field represents the FULL file content, not the truncated portion
 - **0-indexed offset**: Line 0 is the first line in the file
