@@ -404,7 +404,12 @@ impl ChatActor {
 
         // 7. Save Assistant Response
         if !full_response.is_empty() {
-            tracing::info!("[ChatActor] Saving AI response to database for chat {} (model: {})", self.chat_id, session.agent_config.model);
+            tracing::info!(
+                "[ChatActor] Saving AI response to database for chat {} (model: {}, length={})",
+                self.chat_id,
+                session.agent_config.model,
+                full_response.len()
+            );
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
             // Flush any remaining reasoning buffer before saving final response
@@ -978,6 +983,17 @@ impl ChatActor {
                 //
                 // FinalResponse is only used here for logging and usage statistics.
                 let response_text = final_response.response();
+
+                // Debug logging to diagnose duplication issues
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    full_response_len = full_response.len(),
+                    final_response_len = response_text.len(),
+                    "[ChatActor] FinalResponse received - accumulated={} vs final={}",
+                    full_response.len(),
+                    response_text.len()
+                );
+
                 if !response_text.is_empty() && !*has_started_responding {
                     tracing::info!("[ChatActor] AI started responding (via FinalResponse) for chat {}", self.chat_id);
                     *has_started_responding = true;
