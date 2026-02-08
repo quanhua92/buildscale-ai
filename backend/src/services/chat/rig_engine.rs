@@ -432,15 +432,83 @@ impl RigService {
         }
     }
 
+    /// Reconstruct a ToolCall message from metadata.
+    ///
+    /// This helper extracts tool call information from a ChatMessage's metadata
+    /// and reconstructs it as a Rig ToolCall message. Used by convert_history
+    /// to avoid duplicating this logic across multiple match arms.
+    fn reconstruct_tool_call(&self, msg: &ChatMessage) -> Option<Message> {
+        use rig::completion::AssistantContent;
+        use rig::message::{ToolCall, ToolFunction};
+
+        let tool_id = msg.metadata.reasoning_id.clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        if let (Some(tool_name), Some(tool_args)) =
+            (&msg.metadata.tool_name, &msg.metadata.tool_arguments)
+        {
+            Some(Message::Assistant {
+                id: None,
+                content: rig::OneOrMany::one(
+                    AssistantContent::ToolCall(ToolCall {
+                        id: tool_id,
+                        call_id: None,
+                        function: ToolFunction {
+                            name: tool_name.clone(),
+                            arguments: tool_args.clone(),
+                        },
+                        signature: None,
+                        additional_params: None,
+                    })
+                )
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Reconstruct a ToolResult message from metadata.
+    ///
+    /// This helper extracts tool result information from a ChatMessage's metadata
+    /// and reconstructs it as a Rig ToolResult message. Used by convert_history
+    /// to avoid duplicating this logic across multiple match arms.
+    fn reconstruct_tool_result(&self, msg: &ChatMessage, include_note: bool) -> Option<Message> {
+        use rig::message::{UserContent, ToolResult, ToolResultContent};
+        use rig::message::Text;
+
+        let tool_id = msg.metadata.reasoning_id.clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let tool_output = if let Some(ref output) = msg.metadata.tool_output {
+            if include_note {
+                format!("{}\n[Note: This is a summarized tool result, not the full output]",
+                    output)
+            } else {
+                output.clone()
+            }
+        } else if include_note {
+            "[Note: Tool result was not available]".to_string()
+        } else {
+            "[No output]".to_string()
+        };
+
+        Some(Message::User {
+            content: rig::OneOrMany::one(
+                UserContent::ToolResult(ToolResult {
+                    id: tool_id,
+                    call_id: None,
+                    content: rig::OneOrMany::one(ToolResultContent::Text(Text { text: tool_output })),
+                })
+            )
+        })
+    }
+
     /// Converts BuildScale chat history to Rig messages.
     /// This includes tool calls and tool results which are critical for multi-turn conversations.
     ///
     /// IMPORTANT: Tool results are summarized in the database (not full outputs).
     /// We include these summaries with a note that they are truncated.
     pub fn convert_history(&self, messages: &[ChatMessage]) -> Vec<Message> {
-        use rig::completion::AssistantContent;
-        use rig::message::{UserContent, Text, ToolCall, ToolFunction, ToolResult, ToolResultContent};
-
         messages
             .iter()
             .filter_map(|msg| {
@@ -450,27 +518,7 @@ impl RigService {
                         if let Some(ref message_type) = msg.metadata.message_type {
                             if message_type == "tool_result" {
                                 // Reconstruct ToolResult for User message
-                                let tool_id = msg.metadata.reasoning_id.clone()
-                                    .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-                                // Get the summarized tool output from metadata
-                                let tool_output = if let Some(ref output) = msg.metadata.tool_output {
-                                    // Add a note that this is a summary
-                                    format!("{}\n[Note: This is a summarized tool result, not the full output]",
-                                        output)
-                                } else {
-                                    "[Note: Tool result was not available]".to_string()
-                                };
-
-                                Some(Message::User {
-                                    content: rig::OneOrMany::one(
-                                        UserContent::ToolResult(ToolResult {
-                                            id: tool_id,
-                                            call_id: None,
-                                            content: rig::OneOrMany::one(ToolResultContent::Text(Text { text: tool_output })),
-                                        })
-                                    )
-                                })
+                                self.reconstruct_tool_result(msg, true)
                             } else {
                                 // Regular user text message
                                 Some(Message::user(msg.content.clone()))
@@ -485,32 +533,8 @@ impl RigService {
                         if let Some(ref message_type) = msg.metadata.message_type {
                             if message_type == "tool_call" {
                                 // Reconstruct ToolCall for Assistant message
-                                let tool_id = msg.metadata.reasoning_id.clone()
-                                    .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-                                // Get tool name and arguments from metadata
-                                if let (Some(tool_name), Some(tool_args)) =
-                                    (&msg.metadata.tool_name, &msg.metadata.tool_arguments)
-                                {
-                                    Some(Message::Assistant {
-                                        id: None,
-                                        content: rig::OneOrMany::one(
-                                            AssistantContent::ToolCall(ToolCall {
-                                                id: tool_id,
-                                                call_id: None,
-                                                function: ToolFunction {
-                                                    name: tool_name.clone(),
-                                                    arguments: tool_args.clone(),
-                                                },
-                                                signature: None,
-                                                additional_params: None,
-                                            })
-                                        )
-                                    })
-                                } else {
-                                    // Fallback: treat as text if metadata incomplete
-                                    Some(Message::assistant(msg.content.clone()))
-                                }
+                                self.reconstruct_tool_call(msg)
+                                    .or_else(|| Some(Message::assistant(msg.content.clone())))
                             } else {
                                 // Regular assistant text message
                                 Some(Message::assistant(msg.content.clone()))
@@ -531,45 +555,11 @@ impl RigService {
                             match message_type.as_str() {
                                 "tool_call" => {
                                     // Reconstruct ToolCall from metadata
-                                    let tool_id = msg.metadata.reasoning_id.clone()
-                                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-                                    if let (Some(tool_name), Some(tool_args)) =
-                                        (&msg.metadata.tool_name, &msg.metadata.tool_arguments)
-                                    {
-                                        Some(Message::Assistant {
-                                            id: None,
-                                            content: rig::OneOrMany::one(
-                                                AssistantContent::ToolCall(ToolCall {
-                                                    id: tool_id,
-                                                    call_id: None,
-                                                    function: ToolFunction {
-                                                        name: tool_name.clone(),
-                                                        arguments: tool_args.clone(),
-                                                    },
-                                                    signature: None,
-                                                    additional_params: None,
-                                                })
-                                            )
-                                        })
-                                    } else {
-                                        None  // Metadata incomplete, skip
-                                    }
+                                    self.reconstruct_tool_call(msg)
                                 }
                                 "tool_result" => {
                                     // Reconstruct ToolResult from metadata
-                                    let tool_id = msg.metadata.reasoning_id.clone()
-                                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-                                    let tool_output = msg.metadata.tool_output.clone()
-                                        .unwrap_or_else(|| "[No output]".to_string());
-                                    Some(Message::User {
-                                        content: rig::OneOrMany::one(
-                                            UserContent::ToolResult(ToolResult {
-                                                id: tool_id,
-                                                call_id: None,
-                                                content: rig::OneOrMany::one(ToolResultContent::Text(Text { text: tool_output })),
-                                            })
-                                        )
-                                    })
+                                    self.reconstruct_tool_result(msg, false)
                                 }
                                 _ => None  // Unknown message_type
                             }

@@ -132,6 +132,10 @@ const LS_PREVIEW_ITEMS: usize = 50;
 const GREP_PREVIEW_MATCHES: usize = 20;
 /// Number of lines to preview for 'read' tool
 const READ_PREVIEW_LINES: usize = 5;
+/// Number of words to preview for 'write' tool content argument
+const WRITE_ARG_PREVIEW_WORDS: usize = 20;
+/// Number of words to preview for 'edit' tool diff arguments
+const EDIT_ARG_PREVIEW_WORDS: usize = 10;
 
 /// Structured context for AI chat sessions.
 ///
@@ -257,7 +261,7 @@ impl ChatService {
             "write" => {
                 if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
                     if content.len() > MAX_WRITE_CONTENT_LENGTH {
-                        let preview = Self::extract_string_preview(content, 20);
+                        let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
                         obj.insert(
                             "content".to_string(),
                             serde_json::json!(format!("{}... [truncated, size={}]", preview, content.len())),
@@ -269,7 +273,7 @@ impl ChatService {
                 for field in ["old_string", "new_string"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
                         if val.len() > MAX_EDIT_DIFF_LENGTH {
-                            let preview = Self::extract_string_preview(val, 10);
+                            let preview = Self::extract_string_preview(val, EDIT_ARG_PREVIEW_WORDS);
                             obj.insert(
                                 field.to_string(),
                                 serde_json::json!(format!("{}... [truncated]", preview)),
