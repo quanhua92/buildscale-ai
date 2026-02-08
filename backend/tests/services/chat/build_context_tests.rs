@@ -170,7 +170,7 @@ async fn test_build_context_with_file_attachments() {
             file_id: chat.file.id,
             workspace_id: workspace.id,
             role: ChatMessageRole::User,
-            content: "Please read this file".to_string(),
+            content: "Read this".to_string(),
             metadata: sqlx::types::Json(ChatMessageMetadata {
                 attachments: vec![ChatAttachment::File {
                     file_id: file.file.id,
@@ -181,6 +181,7 @@ async fn test_build_context_with_file_attachments() {
                 model: None,
                 response_id: None,
                 question_answer: None,
+                ..Default::default()
             }),
         },
     )
@@ -268,6 +269,7 @@ async fn test_build_context_workspace_isolation() {
                 model: None,
                 response_id: None,
                 question_answer: None,
+                ..Default::default()
             }),
         },
     )
@@ -392,17 +394,18 @@ async fn test_build_context_token_limit_optimization() {
                 workspace_id: workspace.id,
                 role: ChatMessageRole::User,
                 content: format!("Please read file {}", i),
-                metadata: sqlx::types::Json(ChatMessageMetadata {
-                    attachments: vec![ChatAttachment::File {
-                        file_id: file.file.id,
-                        version_id: None,
-                    }],
-                    tool_calls: None,
-                    usage: None,
-                    model: None,
-                    response_id: None,
-                    question_answer: None,
-                }),
+             metadata: sqlx::types::Json(ChatMessageMetadata {
+                 attachments: vec![ChatAttachment::File {
+                     file_id: file.file.id,
+                     version_id: None,
+                 }],
+                 tool_calls: None,
+                 usage: None,
+                 model: None,
+                 response_id: None,
+                 question_answer: None,
+                 ..Default::default()
+             }),
             },
         )
         .await
@@ -510,6 +513,7 @@ async fn test_build_context_fragment_ordering() {
                 model: None,
                 response_id: None,
                 question_answer: None,
+                ..Default::default()
             }),
         },
     )

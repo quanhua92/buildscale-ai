@@ -74,14 +74,14 @@ macro_rules! define_rig_tool {
             ) -> impl Future<Output = ToolDefinition> + Send + Sync {
                 let name = Self::NAME.to_string();
                 async move {
-                    // Use the core tool's hardcoded definition (no schemars)
+                    // Use the core tool's hardcoded definition and description
                     use crate::tools::Tool;
                     let core_tool = $core_tool;
                     let schema = core_tool.definition();
 
                     ToolDefinition {
                         name,
-                        description: $description.to_string(),
+                        description: core_tool.description().to_string(),
                         parameters: schema,
                     }
                 }

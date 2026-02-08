@@ -1,6 +1,6 @@
 //! Tests for RigService multi-provider functionality
 
-use buildscale::config::{AiConfig, ProviderConfig, OpenAIConfig, OpenRouterConfig};
+use buildscale::config::{AiConfig, OpenAIConfig, OpenRouterConfig, ProviderConfig};
 use buildscale::providers::{AiProvider, ModelIdentifier};
 use buildscale::services::chat::rig_engine::RigService;
 use secrecy::SecretString;
@@ -25,7 +25,10 @@ fn test_rig_service_from_config_openai_only() {
     };
 
     let rig_service = RigService::from_config(&config);
-    assert!(rig_service.is_ok(), "Should create RigService with OpenAI only");
+    assert!(
+        rig_service.is_ok(),
+        "Should create RigService with OpenAI only"
+    );
 
     let rig_service = rig_service.unwrap();
     assert!(rig_service.is_provider_configured(AiProvider::OpenAi));
@@ -50,7 +53,10 @@ fn test_rig_service_from_config_openrouter_only() {
     };
 
     let rig_service = RigService::from_config(&config);
-    assert!(rig_service.is_ok(), "Should create RigService with OpenRouter only");
+    assert!(
+        rig_service.is_ok(),
+        "Should create RigService with OpenRouter only"
+    );
 
     let rig_service = rig_service.unwrap();
     assert!(!rig_service.is_provider_configured(AiProvider::OpenAi));
@@ -81,7 +87,10 @@ fn test_rig_service_from_config_both_providers() {
     };
 
     let rig_service = RigService::from_config(&config);
-    assert!(rig_service.is_ok(), "Should create RigService with both providers");
+    assert!(
+        rig_service.is_ok(),
+        "Should create RigService with both providers"
+    );
 
     let rig_service = rig_service.unwrap();
     assert!(rig_service.is_provider_configured(AiProvider::OpenAi));
@@ -105,11 +114,17 @@ fn test_rig_service_from_config_no_providers() {
     };
 
     let rig_service = RigService::from_config(&config);
-    assert!(rig_service.is_err(), "Should fail when no providers configured");
+    assert!(
+        rig_service.is_err(),
+        "Should fail when no providers configured"
+    );
 
     let err = rig_service.unwrap_err();
     let err_msg = err.to_string();
-    assert!(err_msg.contains("No AI providers configured"), "Error should mention no providers configured");
+    assert!(
+        err_msg.contains("No AI providers configured"),
+        "Error should mention no providers configured"
+    );
 }
 
 #[test]
@@ -131,11 +146,17 @@ fn test_rig_service_from_config_invalid_default_provider() {
     };
 
     let rig_service = RigService::from_config(&config);
-    assert!(rig_service.is_err(), "Should fail with invalid default provider");
+    assert!(
+        rig_service.is_err(),
+        "Should fail with invalid default provider"
+    );
 
     let err = rig_service.unwrap_err();
     let err_msg = err.to_string();
-    assert!(err_msg.contains("Invalid default provider"), "Error should mention invalid default provider");
+    assert!(
+        err_msg.contains("Invalid default provider"),
+        "Error should mention invalid default provider"
+    );
 }
 
 #[test]
@@ -155,14 +176,21 @@ fn test_rig_service_from_config_default_provider_not_configured() {
     };
 
     let rig_service = RigService::from_config(&config);
-    assert!(rig_service.is_err(), "Should fail when default provider is not configured");
+    assert!(
+        rig_service.is_err(),
+        "Should fail when default provider is not configured"
+    );
 
     let err = rig_service.unwrap_err();
     let err_msg = err.to_string();
-    assert!(err_msg.contains("OpenAI is not configured"), "Error should mention OpenAI is not configured");
+    assert!(
+        err_msg.contains("OpenAI is not configured"),
+        "Error should mention OpenAI is not configured"
+    );
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_rig_service_new_backward_compatibility() {
     // Test that the deprecated new() method still works
     let rig_service = RigService::new("test-api-key");
@@ -191,7 +219,9 @@ fn test_model_identifier_parse_openai() {
 #[test]
 fn test_model_identifier_parse_openrouter() {
     // Test parsing OpenRouter model identifier
-    let model = ModelIdentifier::parse("openrouter:anthropic/claude-3.5-sonnet", AiProvider::OpenAi).unwrap();
+    let model =
+        ModelIdentifier::parse("openrouter:anthropic/claude-3.5-sonnet", AiProvider::OpenAi)
+            .unwrap();
     assert_eq!(model.provider, AiProvider::OpenRouter);
     assert_eq!(model.model, "anthropic/claude-3.5-sonnet");
 }
@@ -266,8 +296,14 @@ fn test_ai_provider_from_str() {
     assert_eq!(AiProvider::from_str("openai").unwrap(), AiProvider::OpenAi);
     assert_eq!(AiProvider::from_str("OpenAI").unwrap(), AiProvider::OpenAi);
     assert_eq!(AiProvider::from_str("OPENAI").unwrap(), AiProvider::OpenAi);
-    assert_eq!(AiProvider::from_str("openrouter").unwrap(), AiProvider::OpenRouter);
-    assert_eq!(AiProvider::from_str("OpenRouter").unwrap(), AiProvider::OpenRouter);
+    assert_eq!(
+        AiProvider::from_str("openrouter").unwrap(),
+        AiProvider::OpenRouter
+    );
+    assert_eq!(
+        AiProvider::from_str("OpenRouter").unwrap(),
+        AiProvider::OpenRouter
+    );
 
     let result = AiProvider::from_str("unknown");
     assert!(result.is_err(), "Should fail with unknown provider");
@@ -299,11 +335,17 @@ fn test_rig_service_configured_providers_empty() {
 #[test]
 fn test_model_identifier_with_complex_model_names() {
     // Test parsing complex model names (with slashes, dots, etc.)
-    let model = ModelIdentifier::parse("openrouter:anthropic/claude-3.5-sonnet", AiProvider::OpenAi).unwrap();
+    let model =
+        ModelIdentifier::parse("openrouter:anthropic/claude-3.5-sonnet", AiProvider::OpenAi)
+            .unwrap();
     assert_eq!(model.provider, AiProvider::OpenRouter);
     assert_eq!(model.model, "anthropic/claude-3.5-sonnet");
 
-    let model = ModelIdentifier::parse("openrouter:microsoft/phi-3-medium-128k-instruct", AiProvider::OpenAi).unwrap();
+    let model = ModelIdentifier::parse(
+        "openrouter:microsoft/phi-3-medium-128k-instruct",
+        AiProvider::OpenAi,
+    )
+    .unwrap();
     assert_eq!(model.provider, AiProvider::OpenRouter);
     assert_eq!(model.model, "microsoft/phi-3-medium-128k-instruct");
 }

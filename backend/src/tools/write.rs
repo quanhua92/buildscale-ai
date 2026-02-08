@@ -38,8 +38,8 @@ impl Tool for WriteTool {
                 },
                 "file_type": {"type": ["string", "null"]},
                 "overwrite": {
-                    "type": "boolean",
-                    "description": "If false (default), returns error when file exists to prevent accidental overwrites. Set to true to explicitly overwrite existing files. Recommendation: Use 'edit' tool for modifying existing files instead of overwriting."
+                    "type": ["boolean", "string"],
+                    "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). If false (default), returns error when file exists to prevent accidental overwrites. Set to true to explicitly overwrite existing files. Recommendation: Use 'edit' tool for modifying existing files instead of overwriting."
                 }
             },
             "required": ["path", "content"],

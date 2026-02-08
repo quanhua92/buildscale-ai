@@ -112,13 +112,30 @@ mod tests;
 
 use crate::{
     error::{Error, Result},
-    models::chat::{AgentConfig, ChatAttachment, ChatMessage, NewChatMessage, DEFAULT_CHAT_MODEL},
+    models::chat::{AgentConfig, ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL},
     queries, DbConn,
 };
 use uuid::Uuid;
 
 /// Default token limit for the context window in the MVP.
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
+
+/// Max length for tool output before truncation (2KB)
+const MAX_TOOL_OUTPUT_LENGTH: usize = 2048;
+/// Max length for 'write' tool content arg (1KB)
+const MAX_WRITE_CONTENT_LENGTH: usize = 1000;
+/// Max length for 'edit' tool diff args (500 chars)
+const MAX_EDIT_DIFF_LENGTH: usize = 500;
+/// Number of items to preview for 'ls' tool
+const LS_PREVIEW_ITEMS: usize = 50;
+/// Number of matches to preview for 'grep' tool
+const GREP_PREVIEW_MATCHES: usize = 20;
+/// Number of lines to preview for 'read' tool
+const READ_PREVIEW_LINES: usize = 5;
+/// Number of words to preview for 'write' tool content argument
+const WRITE_ARG_PREVIEW_WORDS: usize = 20;
+/// Number of words to preview for 'edit' tool diff arguments
+const EDIT_ARG_PREVIEW_WORDS: usize = 10;
 
 /// Structured context for AI chat sessions.
 ///
@@ -152,6 +169,9 @@ impl ChatService {
     /// Saves a message and appends it to the disk file (Hybrid Persistence).
     /// - DB: Structured storage for O(1) query and context construction.
     /// - Disk: Markdown log for human readability and file system tools.
+    ///
+    /// Note: Reasoning messages (message_type="reasoning_complete") are saved to DB
+    /// for audit purposes but NOT written to .chat files to avoid cluttering them.
     pub async fn save_message(
         conn: &mut DbConn,
         storage: &crate::services::storage::FileStorageService,
@@ -159,99 +179,232 @@ impl ChatService {
         new_msg: NewChatMessage,
     ) -> Result<ChatMessage> {
         let file_id = new_msg.file_id;
-        
+
         // 1. Insert message into Source of Truth (chat_messages)
         let msg = queries::chat::insert_chat_message(conn, new_msg).await?;
-        
+
         // 2. Append to Disk (File View)
-        // Retrieve file path first
-        let file = queries::files::get_file_by_id(conn, file_id).await?;
+        // Skip writing reasoning messages to .chat file - they're only for audit/debug in DB
+        let is_reasoning = msg.metadata.message_type.as_ref()
+            .map(|t| t == "reasoning_complete")
+            .unwrap_or(false);
 
-        let markdown_entry = format_message_as_markdown(&msg);
-        // Use full hierarchical path for consistency with file storage
-        storage.append_to_file(workspace_id, &file.path, &markdown_entry).await?;
+        if !is_reasoning {
+            // Retrieve file path first
+            let file = queries::files::get_file_by_id(conn, file_id).await?;
 
-        // 3. Touch file to update timestamp
-        queries::files::touch_file(conn, file_id).await?;
-        
+            let markdown_entry = format_message_as_markdown(&msg);
+            // Use full hierarchical path for consistency with file storage
+            storage.append_to_file(workspace_id, &file.path, &markdown_entry).await?;
+
+            // 3. Touch file to update timestamp
+            queries::files::touch_file(conn, file_id).await?;
+        }
+
         Ok(msg)
     }
 
-    /// Formats a file modification tool action as a chat message.
+    /// Saves a streaming event as a ChatMessage (for audit trail persistence).
     ///
-    /// This helper method formats tool actions into concise log messages
-    /// that can be saved to chat history. Only file modification tools
-    /// (write, edit, rm, mv, mkdir, touch) are logged.
+    /// This method is used to persist individual streaming events like reasoning chunks,
+    /// tool calls, and tool results. It accepts a ChatMessageRole and metadata directly
+    /// and delegates to `save_message` for hybrid persistence (DB + disk).
     ///
     /// # Arguments
-    /// * `tool_name` - Name of the tool that was executed
-    /// * `result_json` - Tool result as JSON value
-    /// * `args_json` - Tool arguments as JSON value (for write/edit tools)
-    ///
-    /// # Returns
-    /// * `Some(String)` - Formatted log message if tool should be logged
-    /// * `None` - If tool failed or is not a file modification tool
-    pub fn format_tool_action(
-        tool_name: &str,
-        result_json: &serde_json::Value,
-        args_json: Option<&serde_json::Value>,
-    ) -> Option<String> {
-        let result = match tool_name {
-            "write" => {
-                // Extract path from result
-                let path = result_json.get("path")?.as_str()?;
-                // Extract content preview from args
-                let content = args_json?.get("content")?;
-                let content_preview = Self::extract_content_preview(&crate::models::requests::JsonValue(content.clone()), 10);
-                Some(format!("[AI wrote: {} ({})]", path, content_preview))
-            }
-            "edit" => {
-                let path = result_json.get("path")?.as_str()?;
-                let old_string = args_json?.get("old_string")?.as_str()?;
-                let preview = Self::extract_string_preview(old_string, 5);
-                Some(format!("[AI edited: {} (changed: \"{}\")]", path, preview))
-            }
-            "rm" => {
-                let path = result_json.get("path")?.as_str()?;
-                Some(format!("[AI deleted: {}]", path))
-            }
-            "mv" => {
-                let from_path = result_json.get("from_path")?.as_str()?;
-                let to_path = result_json.get("to_path")?.as_str()?;
-                Some(format!("[AI moved: {} → {}]", from_path, to_path))
-            }
-            "mkdir" => {
-                let path = result_json.get("path")?.as_str()?;
-                Some(format!("[AI created directory: {}]", path))
-            }
-            "touch" => {
-                let path = result_json.get("path")?.as_str()?;
-                Some(format!("[AI created empty file: {}]", path))
-            }
-            _ => None, // Ignore ls, grep, read, ask_user, exit_plan_mode
-        };
-
-        result
+    /// * `conn` - Database connection
+    /// * `storage` - File storage service
+    /// * `workspace_id` - Workspace owning the chat
+    /// * `file_id` - Chat file ID
+    /// * `role` - Message role (typically Tool or Assistant for streaming events)
+    /// * `content` - Text content of the event
+    /// * `metadata` - Structured metadata (message_type, reasoning_id, tool_* fields)
+    pub async fn save_stream_event(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        file_id: Uuid,
+        role: ChatMessageRole,
+        content: String,
+        metadata: ChatMessageMetadata,
+    ) -> Result<ChatMessage> {
+        Self::save_message(
+            conn,
+            storage,
+            workspace_id,
+            NewChatMessage {
+                file_id,
+                workspace_id,
+                role,
+                content,
+                metadata: sqlx::types::Json(metadata),
+            },
+        )
+        .await
     }
 
-    /// Extracts a preview of content as a string (first N words).
-    ///
-    /// This helper extracts the first N words from content for logging.
-    /// Used by the write tool to show file content preview.
-    ///
-    /// # Arguments
-    /// * `content` - JSON value containing string content
-    /// * `word_count` - Number of words to extract
-    ///
-    /// # Returns
-    /// String preview with "..." appended if truncated
-    fn extract_content_preview(
-        content: &crate::models::requests::JsonValue,
-        word_count: usize,
-    ) -> String {
-        match &content.0 {
-            serde_json::Value::String(s) => Self::extract_string_preview(s, word_count),
-            _ => "<content>".to_string(),
+    /// Summarizes tool inputs (arguments) to prevent database bloat.
+    /// Truncates long string fields like 'content', 'old_string', 'new_string'.
+    pub fn summarize_tool_inputs(
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> serde_json::Value {
+        // Clone args to modify
+        let mut summary = args.clone();
+
+        let Some(obj) = summary.as_object_mut() else {
+            // If args is not an object, return as is (rare)
+            return summary;
+        };
+
+        // Truncate specific fields based on tool
+        match tool_name {
+            "write" => {
+                // Truncate 'content' field (can be very large)
+                if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
+                    if content.len() > MAX_WRITE_CONTENT_LENGTH {
+                        let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
+                        obj.insert(
+                            "content".to_string(),
+                            serde_json::json!(format!("{}... [truncated, size={}]", preview, content.len())),
+                        );
+                    }
+                }
+            }
+            "edit" => {
+                // Truncate 'old_string' and 'new_string' fields
+                for field in ["old_string", "new_string"] {
+                    if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
+                        if val.len() > MAX_EDIT_DIFF_LENGTH {
+                            let preview = Self::extract_string_preview(val, EDIT_ARG_PREVIEW_WORDS);
+                            obj.insert(
+                                field.to_string(),
+                                serde_json::json!(format!("{}... [truncated]", preview)),
+                            );
+                        }
+                    }
+                }
+            }
+            // Tools that don't need input truncation (arguments are small):
+            "ls" => {
+                // No truncation needed - arguments are small (path, recursive flag)
+            }
+            "read" => {
+                // No truncation needed - only path argument
+            }
+            "rm" => {
+                // No truncation needed - only path argument
+            }
+            "mv" => {
+                // No truncation needed - two path arguments (small)
+            }
+            "touch" => {
+                // No truncation needed - only path argument
+            }
+            "grep" => {
+                // No truncation needed - pattern and path are small
+            }
+            "mkdir" => {
+                // No truncation needed - only path argument
+            }
+            "ask_user" => {
+                // No truncation needed - question text is typically short
+                // TODO: Consider truncation if questions become very long
+            }
+            "exit_plan_mode" => {
+                // No truncation needed - no arguments
+            }
+            unknown_tool => {
+                // ERROR-level: Unknown tool can cause database bloat
+                // Tool was added to ToolExecutor but truncate logic not added here
+                tracing::error!(
+                    tool = %unknown_tool,
+                    "Unknown tool '{}' encountered in summarize_tool_inputs. \
+                     Tool was added to ToolExecutor but truncate logic not added. \
+                     This may cause DATABASE BLOAT if tool has large inputs. \
+                     Add explicit handling for this tool.",
+                    unknown_tool
+                );
+            }
+        }
+
+        summary
+    }
+
+    /// Summarizes tool outputs (results) to prevent database bloat.
+    /// Handles 'read', 'ls', 'grep' specifically, and generic truncation for others.
+    pub fn summarize_tool_outputs(tool_name: &str, output: &str) -> String {
+        // If output is small, keep it all
+        if output.len() < MAX_TOOL_OUTPUT_LENGTH {
+            return output.to_string();
+        }
+
+        match tool_name {
+            "read" => {
+                // Special handling: Line-based preview with stats
+                let line_count = output.lines().count();
+                let byte_count = output.len();
+                let preview = output.lines().take(READ_PREVIEW_LINES).collect::<Vec<_>>().join("\n");
+                format!(
+                    "[Read {} bytes, {} lines. Preview:]\n{}\n... [truncated]",
+                    byte_count, line_count, preview
+                )
+            }
+            "ls" => {
+                // Special handling: Item count preview
+                let lines: Vec<&str> = output.lines().collect();
+                if lines.len() > LS_PREVIEW_ITEMS {
+                    let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more items)", preview, lines.len() - LS_PREVIEW_ITEMS)
+                } else {
+                    output.to_string()
+                }
+            }
+            "grep" => {
+                // Special handling: Match count preview
+                let lines: Vec<&str> = output.lines().collect();
+                if lines.len() > GREP_PREVIEW_MATCHES {
+                    let preview = lines.iter().take(GREP_PREVIEW_MATCHES).cloned().collect::<Vec<_>>().join("\n");
+                    format!("{}\n... ({} more matches)", preview, lines.len() - GREP_PREVIEW_MATCHES)
+                } else {
+                    output.to_string()
+                }
+            }
+            other_tool => {
+                // WARN-level: Generic truncation works but might be suboptimal
+                // Most tool outputs are short (error messages, confirmation text)
+                // Long outputs get head+tail preview with UTF-8 boundary safety
+                // If a tool needs special handling, add explicit case above
+                tracing::warn!(
+                    tool = %other_tool,
+                    "Tool '{}' using generic output truncation. If this tool needs \
+                     special handling (like read/ls/grep), add explicit case.",
+                    other_tool
+                );
+                // Generic truncation: Head + Tail, ensuring UTF-8 boundaries.
+                let head_byte_len = 1000;
+                let tail_byte_len = 500;
+
+                let mut head_end = head_byte_len.min(output.len());
+                while !output.is_char_boundary(head_end) && head_end > 0 {
+                    head_end -= 1;
+                }
+                let start = &output[..head_end];
+
+                let mut tail_start = output.len().saturating_sub(tail_byte_len);
+                while !output.is_char_boundary(tail_start) && tail_start < output.len() {
+                    tail_start += 1;
+                }
+                let end = &output[tail_start..];
+
+                let truncated_len = output.len().saturating_sub(start.len() + end.len());
+
+                format!(
+                    "{}\n... [{} bytes truncated] ...\n{}",
+                    start,
+                    truncated_len,
+                    end
+                )
+            }
         }
     }
 

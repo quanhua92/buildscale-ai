@@ -200,11 +200,33 @@ impl AttachmentManager {
         for (key, value) in &self.map {
             match key {
                 AttachmentKey::WorkspaceFile(_) => {
+                    // Wrap workspace files in XML-like markers
                     output.push_str("<file_context>\n");
                     output.push_str(&value.content);
                     output.push_str("\n</file_context>\n\n");
                 }
-                _ => {
+                AttachmentKey::SystemPersona => {
+                    // System persona - just content
+                    output.push_str(&value.content);
+                    output.push_str("\n\n");
+                }
+                AttachmentKey::ActiveSkill(_) => {
+                    // Active skill - just content
+                    output.push_str(&value.content);
+                    output.push_str("\n\n");
+                }
+                AttachmentKey::Environment => {
+                    // Environment context - just content
+                    output.push_str(&value.content);
+                    output.push_str("\n\n");
+                }
+                AttachmentKey::ChatHistory => {
+                    // Chat history - just content
+                    output.push_str(&value.content);
+                    output.push_str("\n\n");
+                }
+                AttachmentKey::UserRequest => {
+                    // User request - just content
                     output.push_str(&value.content);
                     output.push_str("\n\n");
                 }

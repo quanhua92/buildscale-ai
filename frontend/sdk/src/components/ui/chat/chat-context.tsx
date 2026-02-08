@@ -12,7 +12,7 @@ import {
   type ModeChangedData,
 } from "../../../api/types"
 
-export type MessageRole = "user" | "assistant" | "system"
+export type MessageRole = "user" | "assistant" | "system" | "tool"
 
 export type MessagePart =
   | { type: "text"; content: string }
@@ -598,15 +598,61 @@ export function ChatProvider({
       setIsLoading(true)
       try {
         const session = await apiClientRef.current.getChat(workspaceId, chatId)
-        if (mounted) {
-          const historyMessages: ChatMessageItem[] = session.messages.map(msg => ({
-            id: msg.id,
-            role: msg.role as MessageRole,
-            parts: [{ type: "text", content: msg.content }],
-            status: "completed",
-            created_at: msg.created_at
-          }))
-          setMessages(historyMessages)
+         if (mounted) {
+           // Group messages by reasoning_id to merge reasoning, tools, and response parts into a single bubble per turn
+           const messageGroups = new Map<string, ChatMessageItem>();
+
+            for (const msg of session.messages) {
+              const role = msg.role as MessageRole;
+              const meta = msg.metadata;
+              const reasoningId = meta?.reasoning_id;
+             // If reasoning_id exists, group by it. Otherwise use msg.id for unique messages (user, system, etc)
+             const groupKey = reasoningId || msg.id;
+
+             let group = messageGroups.get(groupKey);
+             if (!group) {
+               group = {
+                 id: groupKey,
+                 role,
+                 parts: [],
+                 status: "completed",
+                 created_at: msg.created_at,
+               };
+               messageGroups.set(groupKey, group);
+             }
+
+             const messageType = meta?.message_type;
+             if (messageType === "reasoning_chunk" || messageType === "reasoning_complete") {
+               const lastPart = group.parts[group.parts.length - 1];
+               if (lastPart?.type === "thought") {
+                 lastPart.content += msg.content;
+               } else {
+                 group.parts.push({ type: "thought", content: msg.content });
+               }
+              } else if (messageType === "tool_call") {
+                group.parts.push({
+                  type: "call",
+                  tool: meta?.tool_name || "unknown",
+                  args: meta?.tool_arguments,
+                  id: msg.id,
+                });
+              } else if (messageType === "tool_result") {
+                group.parts.push({
+                  type: "observation",
+                  output: meta?.tool_output || "",
+                  success: meta?.tool_success ?? true,
+                  callId: msg.id,
+                });
+              } else {
+               // Normal text message
+               group.parts.push({ type: "text", content: msg.content });
+             }
+           }
+
+           const historyMessages: ChatMessageItem[] = Array.from(messageGroups.values())
+             .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+           setMessages(historyMessages);
 
           // Load model from existing chat session
           // Priority: 1) chat's saved model (if available), 2) API's default model

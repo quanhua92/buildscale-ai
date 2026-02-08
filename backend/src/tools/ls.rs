@@ -39,7 +39,10 @@ BAD EXAMPLES (will fail):
             "type": "object",
             "properties": {
                 "path": {"type": ["string", "null"]},
-                "recursive": {"type": ["boolean", "null"]}
+                "recursive": {
+                    "type": ["boolean", "string", "null"],
+                    "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). Defaults to false if not provided."
+                }
             },
             "additionalProperties": false
         })

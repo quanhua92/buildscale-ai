@@ -10,11 +10,18 @@ export interface ChatThoughtProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const ChatThought = React.forwardRef<HTMLDivElement, ChatThoughtProps>(
-  ({ className, content, defaultExpanded = true, ...props }, ref) => {
+  ({ className, content, defaultExpanded = false, ...props }, ref) => {
     const { message } = useChatMessage()
     const [isOpen, setIsOpen] = React.useState(defaultExpanded)
 
     const displayContent = content || ""
+
+    // Auto-expand when streaming
+    React.useEffect(() => {
+      if (message.status === "streaming" && !isOpen) {
+        setIsOpen(true)
+      }
+    }, [message.status, isOpen])
 
     // Only render if there is actual thinking content
     if (!displayContent.trim()) return null
