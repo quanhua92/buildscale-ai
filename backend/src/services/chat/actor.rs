@@ -728,6 +728,23 @@ impl ChatActor {
                             &arguments_json,
                         );
 
+                        // Build detailed content for .chat file
+                        let args_preview = if let Ok(args_str) = serde_json::to_string_pretty(&summarized_args) {
+                            // Truncate if too long for file content
+                            if args_str.len() > 500 {
+                                format!("{}...\n[Arguments truncated, see metadata for full details]", &args_str[..500])
+                            } else {
+                                args_str
+                            }
+                        } else {
+                            "[Could not serialize arguments]".to_string()
+                        };
+                        let tool_call_content = format!(
+                            "AI called tool: {}\nArguments:\n{}",
+                            tool_call.function.name,
+                            args_preview
+                        );
+
                         // Persist tool call for audit trail
                         let reasoning_id = {
                             let mut state = self.state.lock().await;
@@ -747,7 +764,7 @@ impl ChatActor {
                             self.workspace_id,
                             self.chat_id,
                             ChatMessageRole::Tool,
-                            format!("AI called tool: {}", tool_call.function.name),
+                            tool_call_content,
                             metadata,
                         ).await {
                             tracing::error!(
@@ -916,6 +933,14 @@ impl ChatActor {
                                   // Summarize output for persistence to avoid DB bloat
                                   let summarized_output = ChatService::summarize_tool_outputs(&tool_name, &output);
 
+                                  // Build detailed content for .chat file
+                                  let tool_result_content = format!(
+                                      "Tool {}: {}\nOutput:\n{}",
+                                      tool_name,
+                                      if success { "succeeded" } else { "failed" },
+                                      summarized_output
+                                  );
+
                                   let metadata = ChatMessageMetadata {
                                       message_type: Some("tool_result".to_string()),
                                       reasoning_id,
@@ -930,7 +955,7 @@ impl ChatActor {
                                       self.workspace_id,
                                       self.chat_id,
                                       ChatMessageRole::Tool,
-                                      format!("Tool {}: {}", tool_name, if success { "succeeded" } else { "failed" }),
+                                      tool_result_content,
                                       metadata,
                                   ).await {
                                       tracing::error!(
