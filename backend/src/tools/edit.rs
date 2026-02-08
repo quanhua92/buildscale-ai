@@ -33,8 +33,180 @@ async fn perform_edit(
 ) -> Result<ToolResponse> {
     let path = super::normalize_path(&args.path);
 
+    // Determine operation type
+    let is_replace = args.old_string.is_some() && args.new_string.is_some();
+    let is_insert = args.insert_line.is_some() && args.insert_content.is_some();
+
+    // Validation: must specify either replace or insert
+    if !is_replace && !is_insert {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "operation".to_string(),
+            message: "Must specify either (old_string + new_string) for Replace operation or (insert_line + insert_content) for Insert operation".to_string(),
+        }));
+    }
+
+    // Validation: cannot specify both operations
+    if is_replace && is_insert {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "operation".to_string(),
+            message: "Cannot specify both Replace and Insert operations. Choose one.".to_string(),
+        }));
+    }
+
+    if is_insert {
+        return perform_insert(conn, storage, workspace_id, user_id, config, path, args).await;
+    }
+
+    // Original replace logic
+    perform_replace(conn, storage, workspace_id, user_id, config, path, args).await
+}
+
+/// Perform Insert operation (add content at specific line)
+async fn perform_insert(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    config: ToolConfig,
+    path: String,
+    args: EditArgs,
+) -> Result<ToolResponse> {
+    let insert_line = args.insert_line.unwrap(); // We know this is Some due to validation
+    let insert_content = args.insert_content.unwrap(); // We know this is Some due to validation
+
+    // Validation: insert_content cannot be empty
+    if insert_content.is_empty() {
+         return Err(Error::Validation(ValidationErrors::Single {
+            field: "insert_content".to_string(),
+            message: "Insert content cannot be empty".to_string(),
+        }));
+    }
+
+    let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
+
+    let file = if let Some(f) = existing_file {
+        f
+    } else {
+        return Err(Error::NotFound(format!("File not found: {}", path)));
+    };
+
+    // Plan Mode Guard: Only allow Plan files in plan mode
+    if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "path".to_string(),
+            message: super::PLAN_MODE_ERROR.to_string(),
+        }));
+    }
+
+    // Virtual File Protection: Prevent direct edits to system-managed files
+    if file.is_virtual {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "path".to_string(),
+            message: "Cannot edit a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
+        }));
+    }
+
+    // Folders cannot be edited as text
+    if matches!(file.file_type, FileType::Folder) {
+         return Err(Error::Validation(ValidationErrors::Single {
+            field: "path".to_string(),
+            message: "Cannot edit a folder. Edit tool only works on files with text content.".to_string(),
+        }));
+    }
+
+    // Get latest content (with disk fallback)
+    let file_content = get_file_content_for_edit(conn, storage, file.id).await?;
+
+    // Get the version hash for validation
+    let latest_version = file_queries::get_latest_version(conn, file.id).await?;
+
+    // Optional: Reject if not read latest modification
+    if let Some(last_read_hash) = args.last_read_hash
+        && latest_version.hash != last_read_hash
+    {
+        return Err(Error::Conflict(format!(
+            "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
+            last_read_hash, latest_version.hash
+        )));
+    }
+
+    // Extract text representation for editing
+    let content_text = match file_content.get("text") {
+        Some(Value::String(s)) => s.clone(),
+        _ => {
+            if let Some(s) = file_content.as_str() {
+                s.to_string()
+            } else {
+                // For non-standard types, try recursive extraction
+                let extracted = files::extract_text_recursively(&file_content);
+                if extracted.is_empty() {
+                    return Err(Error::Validation(ValidationErrors::Single {
+                        field: "path".to_string(),
+                        message: "File content does not contain editable text".to_string(),
+                    }));
+                }
+                extracted
+            }
+        },
+    };
+
+    // Convert to lines
+    let mut lines: Vec<&str> = content_text.lines().collect();
+
+    // Validate insert_line is within bounds
+    if insert_line > lines.len() {
+        return Err(Error::Validation(ValidationErrors::Single {
+            field: "insert_line".to_string(),
+            message: format!("Insert line {} is out of bounds (file has {} lines)", insert_line, lines.len()),
+        }));
+    }
+
+    // Insert content at specified line
+    lines.insert(insert_line, &insert_content);
+
+    // Rejoin lines
+    let new_content_text = lines.join("\n");
+
+    // Store as raw string (not wrapped in {"text": ...})
+    let final_content = serde_json::json!(new_content_text);
+
+    // Save new version
+    let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
+        author_id: Some(user_id),
+        branch: Some("main".to_string()),
+        content: final_content,
+        app_data: None,
+    }).await?;
+
+    let result = WriteResult {
+        path,
+        file_id: file.id,
+        version_id: version.id,
+        hash: version.hash,
+    };
+
+    Ok(ToolResponse {
+        success: true,
+        result: serde_json::to_value(result)?,
+        error: None,
+    })
+}
+
+/// Perform Replace operation (original edit behavior)
+async fn perform_replace(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    config: ToolConfig,
+    path: String,
+    args: EditArgs,
+) -> Result<ToolResponse> {
+    let old_string = args.old_string.unwrap(); // We know this is Some due to validation
+    let new_string = args.new_string.unwrap(); // We know this is Some due to validation
+
     // Validation: old_string cannot be empty
-    if args.old_string.is_empty() {
+    if old_string.is_empty() {
          return Err(Error::Validation(ValidationErrors::Single {
             field: "old_string".to_string(),
             message: "Search string cannot be empty".to_string(),
@@ -110,7 +282,7 @@ async fn perform_edit(
     };
 
     // Search and Count
-    let matches: Vec<_> = content_text.match_indices(&args.old_string).collect();
+    let matches: Vec<_> = content_text.match_indices(&old_string).collect();
     let count = matches.len();
 
     if count == 0 {
@@ -128,7 +300,7 @@ async fn perform_edit(
     }
 
     // Replace
-    let new_content_text = content_text.replacen(&args.old_string, &args.new_string, 1);
+    let new_content_text = content_text.replacen(&old_string, &new_string, 1);
 
     // Store as raw string (not wrapped in {"text": ...})
     let final_content = serde_json::json!(new_content_text);
@@ -157,7 +329,7 @@ async fn perform_edit(
 
 /// Edit file content tool
 ///
-/// Edits a file by replacing a unique search string with a replacement string.
+/// Supports both Replace and Insert operations for file editing.
 pub struct EditTool;
 
 #[async_trait]
@@ -167,34 +339,35 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Edits a file by replacing a unique search string with a replacement string.
+        r#"Edits files with two operations: REPLACE (original) and INSERT (new).
 
-⚠️ MANDATORY WORKFLOW (MUST FOLLOW IN ORDER):
-1. READ the file FIRST using read tool → this gives you exact current content AND last_read_hash
-2. COPY the exact text from read response to use as old_string (character-perfect match)
-3. EDIT by passing that exact text as old_string, your replacement as new_string, AND the last_read_hash
+REPLACE OPERATION (original behavior):
+⚠️ MANDATORY WORKFLOW:
+1. READ the file FIRST → get exact content AND last_read_hash
+2. COPY exact text from read as old_string (character-perfect match)
+3. EDIT with old_string, new_string, AND last_read_hash
 
-❌ WRONG: Edit without reading first → old_string won't match → edit fails
-✓ CORRECT: read file → use exact content from response as old_string → edit succeeds
-
-CRITICAL REQUIREMENTS:
-• old_string MUST be non-empty and must match file content EXACTLY (use copy-paste from read response)
-• old_string must be UNIQUE (appears exactly once in the file)
-• This is a REPLACE operation - old_string is completely removed, replaced by new_string
+CRITICAL FOR REPLACE:
+• old_string MUST be non-empty and match file content EXACTLY
+• old_string must be UNIQUE (appears exactly once)
+• This is a REPLACE operation - old_string is completely removed
 • To preserve original content, you MUST include it in new_string
-• Always include last_read_hash from the most recent read (prevents edit conflicts)
 
-ERROR EXAMPLE: If you edit without reading, old_string might have wrong whitespace/formatting → fails with "Search string not found"
+INSERT OPERATION (new - cleaner for adding content):
+• insert_line: Line number where content is added (0-indexed)
+• insert_content: Content to insert at that line
+• Simpler than replace - no need to match existing text
+• Specify exact line position for adding content
 
-🔄 IF EDIT FAILS (search string not found), FOLLOW THESE STEPS IN ORDER:
-1. Re-read the file to get fresh content (file may have changed)
-2. Try a SMALLER, more unique substring (2-3 unique words instead of entire paragraph)
-3. Try different unique text near your target edit location
-4. Only use write tool as LAST RESORT (write overwrites entire file, risk of data loss)
+COMMON TO BOTH OPERATIONS:
+• Always include last_read_hash from most recent read (prevents edit conflicts)
+• Re-read file if edit fails (content may have changed)
 
-EXAMPLE - EDIT FAILS, WHAT TO DO:
-❌ BAD: edit fails → immediately use write (loses data you didn't intend to change)
-✓ GOOD: edit fails → re-read file → find smaller unique text → try edit again → if still fails, then consider write"#
+REPLACE EXAMPLE:
+{"path": "/file.txt", "old_string": "old line", "new_string": "new line", "last_read_hash": "abc123"}
+
+INSERT EXAMPLE:
+{"path": "/file.txt", "insert_line": 5, "insert_content": "new line to add", "last_read_hash": "abc123"}"#
     }
 
     fn definition(&self) -> Value {
@@ -202,15 +375,17 @@ EXAMPLE - EDIT FAILS, WHAT TO DO:
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "old_string": {"type": "string"},
-                "new_string": {"type": "string"},
-                "last_read_hash": {"type": ["string", "null"]}
+                "old_string": {"type": ["string", "null"], "description": "For REPLACE: text to find and replace (must be unique and non-empty)"},
+                "new_string": {"type": ["string", "null"], "description": "For REPLACE: replacement text"},
+                "insert_line": {"type": ["integer", "null"], "description": "For INSERT: line number (0-indexed) where content is added"},
+                "insert_content": {"type": ["string", "null"], "description": "For INSERT: content to insert at insert_line"},
+                "last_read_hash": {"type": ["string", "null"], "description": "Hash from latest read (prevents conflicts)"}
             },
-            "required": ["path", "old_string", "new_string"],
+            "required": ["path"],
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,

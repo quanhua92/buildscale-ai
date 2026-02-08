@@ -71,7 +71,21 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &'static str {
-        "Reads up to 500 lines by default. Use offset to control position (positive=from start, negative=from end). Example: offset=-100 reads last 100 lines. Use limit to control max lines. Returns content, hash for change detection, and metadata (total_lines, truncated flag). Cannot read folders. Always read before editing to get the latest hash."
+        r#"Reads up to 500 lines by default. Use offset to control position (positive=from start, negative=from end). Example: offset=-100 reads last 100 lines. Use limit to control max lines.
+
+SCROLL MODE (for navigating large files):
+- Set cursor to enable scroll mode (e.g., cursor=100 starts at line 100)
+- offset becomes relative to cursor (e.g., cursor=100, offset=-50 reads lines 50-100)
+- Positive offset scrolls down, negative offset scrolls up
+- Returns cursor field showing position at end of read for next scroll operation
+
+EXAMPLES:
+- Read first 500 lines: {"path": "/file.txt"}
+- Read last 100 lines: {"path": "/file.txt", "offset": -100, "limit": 100}
+- Scroll mode - start at line 1000, read 100 lines: {"path": "/file.txt", "cursor": 1000, "offset": 0, "limit": 100}
+- Scroll up 50 lines from cursor 200: {"path": "/file.txt", "cursor": 200, "offset": -50, "limit": 50}
+
+Returns content, hash for change detection, and metadata (total_lines, truncated flag, cursor position)."#
     }
 
     fn definition(&self) -> Value {
@@ -81,11 +95,15 @@ impl Tool for ReadTool {
                 "path": {"type": "string"},
                 "offset": {
                     "type": "integer",
-                    "description": "Starting line position (default: 0). Positive values read from beginning (e.g., 100 = line 100+). Negative values read from end (e.g., -100 = last 100 lines)."
+                    "description": "Starting line position (default: 0). Positive values from start (e.g., 100 = line 100+). Negative values from end (e.g., -100 = last 100 lines). In scroll mode (with cursor), offset is relative to cursor."
                 },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of lines to read. Default: 500"
+                },
+                "cursor": {
+                    "type": ["integer", "null"],
+                    "description": "Optional cursor position (line number) for scroll mode. When set, offset becomes relative to cursor. Enables navigation of large files without calculating absolute positions."
                 }
             },
             "required": ["path"],
@@ -108,6 +126,7 @@ impl Tool for ReadTool {
         // Apply defaults
         let offset = read_args.offset.unwrap_or(0);
         let limit = read_args.limit.unwrap_or(DEFAULT_READ_LIMIT);
+        let cursor = read_args.cursor;
 
         let file = file_queries::get_file_by_path(conn, workspace_id, &path)
             .await?
@@ -122,16 +141,47 @@ impl Tool for ReadTool {
 
         let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
 
+        // Calculate offset based on mode (cursor vs absolute)
+        let (calculated_offset, cursor_mode) = if let Some(cursor_pos) = cursor {
+            // Scroll mode: offset is relative to cursor
+            let relative_offset = if offset < 0 {
+                // Scroll up: negative offset from cursor
+                let up_lines = offset.abs() as usize;
+                if up_lines >= cursor_pos {
+                    0 // Can't scroll past beginning
+                } else {
+                    cursor_pos - up_lines
+                }
+            } else {
+                // Scroll down: positive offset from cursor
+                cursor_pos + offset as usize
+            };
+            (relative_offset, true)
+        } else {
+            // Absolute offset mode
+            let abs_offset = if offset < 0 {
+                // Negative offset: read from end
+                0 // Will be handled in slice_content_from_end
+            } else {
+                offset as usize
+            };
+            (abs_offset, false)
+        };
+
         // Apply offset/limit for string content
         let (content, total_lines, truncated) = match &file_with_content.content {
             serde_json::Value::String(s) => {
-                let (sliced, total, was_truncated) = if offset < 0 {
-                    // Negative offset: read from end
-                    let lines_from_end = offset.abs() as usize;
-                    slice_content_from_end(s, lines_from_end, limit)
+                let (sliced, total, was_truncated) = if cursor_mode {
+                    // Scroll mode: always use positive offset from beginning
+                    slice_content_by_lines(s, calculated_offset, limit)
                 } else {
-                    // Positive/zero offset: read from beginning
-                    slice_content_by_lines(s, offset as usize, limit)
+                    // Absolute mode: handle negative offset for reading from end
+                    if offset < 0 {
+                        let lines_from_end = offset.abs() as usize;
+                        slice_content_from_end(s, lines_from_end, limit)
+                    } else {
+                        slice_content_by_lines(s, calculated_offset, limit)
+                    }
                 };
                 (serde_json::Value::String(sliced), Some(total), Some(was_truncated))
             }
@@ -139,13 +189,19 @@ impl Tool for ReadTool {
         };
 
         // Calculate actual offset for result (convert negative to actual position)
-        let actual_offset = if offset < 0 {
+        let actual_offset = if offset < 0 && cursor.is_none() {
             let total = total_lines.unwrap_or(0);
             let abs_offset = offset.abs() as usize;
             if abs_offset >= total { 0 } else { total - abs_offset }
         } else {
-            offset as usize
+            calculated_offset
         };
+
+        // Calculate new cursor position (end of current read)
+        let total_lines_read = content.as_str()
+            .map(|s| s.lines().count())
+            .unwrap_or(0);
+        let new_cursor = actual_offset + total_lines_read;
 
         let result = ReadResult {
             path,
@@ -155,6 +211,7 @@ impl Tool for ReadTool {
             truncated,
             offset: Some(actual_offset),
             limit: Some(limit),
+            cursor: Some(new_cursor),
         };
 
         Ok(ToolResponse {
