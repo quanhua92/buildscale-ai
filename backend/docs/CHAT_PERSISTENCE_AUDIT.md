@@ -192,15 +192,35 @@ This ensures essential audit info is preserved without storing megabytes of raw 
 
 ## 4. History Reconstruction & Context
 
-### 4.1 AI Context (Unchanged)
+### 4.1 AI Context (Updated for Tool History)
 
-`convert_history()` continues to exclude `Tool` and `System` messages. The AI should **not** see raw tool calls/results in its context—those are managed by Rig's runtime. Only `User` and `Assistant` messages are sent to the LLM in subsequent turns.
+`convert_history()` now handles `Tool` role messages correctly by converting them to Rig's format:
+- Tool role with `message_type="tool_call"` → Reconstructed as Rig ToolCall (Assistant message)
+- Tool role with `message_type="tool_result"` → Reconstructed as Rig ToolResult (User message)
+- System role → Excluded (filtered out)
+
+This conversion enables multi-turn conversations where the AI maintains context of previous tool calls and results.
 
 ```rust
-// Existing behavior preserved
-Message::user(msg.content.clone())  // User
-Message::assistant(msg.content.clone())  // Assistant
-_ => None,  // System, Tool excluded
+// Updated behavior
+ChatMessageRole::Tool => {
+    if let Some(ref message_type) = msg.metadata.message_type {
+        match message_type.as_str() {
+            "tool_call" => {
+                // Reconstruct ToolCall from metadata
+                // Returns: Message::Assistant with ToolCall content
+            }
+            "tool_result" => {
+                // Reconstruct ToolResult from metadata
+                // Returns: Message::User with ToolResult content
+            }
+            _ => None
+        }
+    } else {
+        None
+    }
+}
+ChatMessageRole::System => None  // Filtered out
 ```
 
 ### 4.2 Audit Trail Query

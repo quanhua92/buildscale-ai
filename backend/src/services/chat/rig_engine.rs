@@ -525,8 +525,57 @@ impl RigService {
                         None
                     }
                     ChatMessageRole::Tool => {
-                        // Should not happen with new logic, but filter out anyway
-                        None
+                        // Convert Tool role messages to Rig format
+                        // This enables multi-turn conversations with tool history
+                        if let Some(ref message_type) = msg.metadata.message_type {
+                            match message_type.as_str() {
+                                "tool_call" => {
+                                    // Reconstruct ToolCall from metadata
+                                    let tool_id = msg.metadata.reasoning_id.clone()
+                                        .unwrap_or_else(|| Uuid::new_v4().to_string());
+                                    if let (Some(tool_name), Some(tool_args)) =
+                                        (&msg.metadata.tool_name, &msg.metadata.tool_arguments)
+                                    {
+                                        Some(Message::Assistant {
+                                            id: None,
+                                            content: rig::OneOrMany::one(
+                                                AssistantContent::ToolCall(ToolCall {
+                                                    id: tool_id,
+                                                    call_id: None,
+                                                    function: ToolFunction {
+                                                        name: tool_name.clone(),
+                                                        arguments: tool_args.clone(),
+                                                    },
+                                                    signature: None,
+                                                    additional_params: None,
+                                                })
+                                            )
+                                        })
+                                    } else {
+                                        None  // Metadata incomplete, skip
+                                    }
+                                }
+                                "tool_result" => {
+                                    // Reconstruct ToolResult from metadata
+                                    let tool_id = msg.metadata.reasoning_id.clone()
+                                        .unwrap_or_else(|| Uuid::new_v4().to_string());
+                                    let tool_output = msg.metadata.tool_output.clone()
+                                        .unwrap_or_else(|| "[No output]".to_string());
+                                    Some(Message::User {
+                                        content: rig::OneOrMany::one(
+                                            UserContent::ToolResult(ToolResult {
+                                                id: tool_id,
+                                                call_id: None,
+                                                content: rig::OneOrMany::one(ToolResultContent::Text(Text { text: tool_output })),
+                                            })
+                                        )
+                                    })
+                                }
+                                _ => None  // Unknown message_type
+                            }
+                        } else {
+                            None  // Tool role without message_type metadata
+                        }
                     }
                 }
             })
@@ -684,10 +733,48 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_history_filters_system_and_tool_roles() {
+    fn test_convert_history_converts_tool_role_messages() {
         let service = RigService::dummy();
 
-        // Create messages with different roles
+        // Create a Tool role message with tool_call metadata
+        let tool_call_msg = ChatMessage {
+            id: Uuid::new_v4(),
+            file_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            role: ChatMessageRole::Tool,
+            content: "Tool call: ls".to_string(),
+            metadata: ChatMessageMetadata {
+                message_type: Some("tool_call".to_string()),
+                reasoning_id: Some("test-tool-id-456".to_string()),
+                tool_name: Some("ls".to_string()),
+                tool_arguments: Some(serde_json::json!({"path": "/tmp"})),
+                ..Default::default()
+            }.into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        // Create a Tool role message with tool_result metadata
+        let tool_result_msg = ChatMessage {
+            id: Uuid::new_v4(),
+            file_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            role: ChatMessageRole::Tool,
+            content: "Tool result: success".to_string(),
+            metadata: ChatMessageMetadata {
+                message_type: Some("tool_result".to_string()),
+                reasoning_id: Some("test-tool-id-456".to_string()),
+                tool_output: Some("file1.txt\nfile2.txt".to_string()),
+                tool_success: Some(true),
+                ..Default::default()
+            }.into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        // Create a system message (should be filtered out)
         let system_msg = ChatMessage {
             id: Uuid::new_v4(),
             file_id: Uuid::new_v4(),
@@ -700,45 +787,43 @@ mod tests {
             deleted_at: None,
         };
 
-        let tool_role_msg = ChatMessage {
-            id: Uuid::new_v4(),
-            file_id: Uuid::new_v4(),
-            workspace_id: Uuid::new_v4(),
-            role: ChatMessageRole::Tool, // This should be filtered out
-            content: "Tool message".to_string(),
-            metadata: ChatMessageMetadata::default().into(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            deleted_at: None,
-        };
-
-        let user_msg = ChatMessage {
-            id: Uuid::new_v4(),
-            file_id: Uuid::new_v4(),
-            workspace_id: Uuid::new_v4(),
-            role: ChatMessageRole::User,
-            content: "User message".to_string(),
-            metadata: ChatMessageMetadata::default().into(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            deleted_at: None,
-        };
-
-        let messages = vec![system_msg, tool_role_msg, user_msg];
+        let messages = vec![tool_call_msg, tool_result_msg, system_msg];
         let converted = service.convert_history(&messages);
 
-        // Only the user message should be included
-        assert_eq!(converted.len(), 1);
+        // Should have 2 messages: tool_call and tool_result (system filtered out)
+        assert_eq!(converted.len(), 2, "Should convert Tool role messages with metadata and filter System role");
+
+        // First message: Tool call (as Assistant)
         match &converted[0] {
-            rig::completion::Message::User { content } => {
+            rig::completion::Message::Assistant { content, .. } => {
                 match content.iter().next() {
-                    Some(UserContent::Text(text)) => {
-                        assert_eq!(text.text, "User message");
+                    Some(AssistantContent::ToolCall(tool_call)) => {
+                        assert_eq!(tool_call.function.name, "ls");
+                        assert_eq!(tool_call.id, "test-tool-id-456");
                     }
-                    _ => panic!("Expected text content"),
+                    _ => panic!("Expected ToolCall content"),
                 }
             }
-            _ => panic!("Expected User message"),
+            _ => panic!("Expected Assistant message for tool call"),
+        }
+
+        // Second message: Tool result (as User)
+        match &converted[1] {
+            rig::completion::Message::User { content } => {
+                match content.iter().next() {
+                    Some(UserContent::ToolResult(result)) => {
+                        assert_eq!(result.id, "test-tool-id-456");
+                        match result.content.iter().next() {
+                            Some(ToolResultContent::Text(text)) => {
+                                assert!(text.text.contains("file1.txt"));
+                            }
+                            _ => panic!("Expected Text content in tool result"),
+                        }
+                    }
+                    _ => panic!("Expected ToolResult content"),
+                }
+            }
+            _ => panic!("Expected User message for tool result"),
         }
     }
 }
