@@ -34,7 +34,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | Tool | Description | Arguments | Returns |
 |------|-------------|-----------|---------|
 | `ls` | List directory contents | `path?`, `recursive?` | `path`, `entries[]` |
-| `read` | Read file contents | `path` | `content` |
+| `read` | Read file contents with line range control | `path`, `offset?`, `limit?` | `content`, `total_lines`, `truncated`, `offset`, `limit`, `hash` |
 | `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
 | `rm` | Delete file or folder | `path` | `file_id` |
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
@@ -249,22 +249,27 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ### read - Read File Contents
 
-Reads the latest version of a file within a workspace.
+Reads the latest version of a file within a workspace. Supports line range control for efficient token usage.
 
 #### Arguments
 
 ```json
 {
-  "path": "/file.txt"
+  "path": "/file.txt",
+  "offset": 100,
+  "limit": 50
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | Yes | Full path to the file |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `path` | string | Yes | - | Full path to the file |
+| `offset` | integer | No | 0 | Starting line offset (0-indexed). Lines before this are skipped. |
+| `limit` | integer | No | 500 | Maximum number of lines to read. Content is truncated at this limit. |
 
-#### Request Example
+#### Request Examples
 
+**Default read (first 2000 lines):**
 ```bash
 curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   -H "Authorization: Bearer <access_token>" \
@@ -277,6 +282,21 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   }'
 ```
 
+**Read middle section of file:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read",
+    "args": {
+      "path": "/src/main.rs",
+      "offset": 100,
+      "limit": 50
+    }
+  }'
+```
+
 #### Response (200 OK)
 
 ```json
@@ -285,7 +305,11 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "result": {
     "path": "/documents/report.md",
     "content": "# Annual Report\n\nThis is the content...",
-    "hash": "a1b2c3d4..."
+    "hash": "a1b2c3d4...",
+    "total_lines": 5000,
+    "truncated": true,
+    "offset": 0,
+    "limit": 500
   },
   "error": null
 }
@@ -296,19 +320,29 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was read |
-| `result.content` | string or object | File content as stored |
-| `result.hash` | string | SHA-256 hash of the content |
+| `result.content` | string or object | File content as stored (truncated if applicable) |
+| `result.hash` | string | SHA-256 hash of the full content (not affected by truncation) |
+| `result.total_lines` | integer or null | Total number of lines in the full file (null for non-text content) |
+| `result.truncated` | boolean or null | `true` if content was truncated due to limit, `false` otherwise (null for non-text) |
+| `result.offset` | integer or null | The offset used for this read |
+| `result.limit` | integer or null | The limit used for this read |
 
 #### Behavior Notes
 
 - **Latest version**: Always returns the most recent file version
-- **No content modification**: Content is returned as-is without any transformation
-- **Not found error**: Returns 404 if path does not exist
+- **Line-based truncation**: Only applies to text content (strings). JSON objects returned as-is.
+- **Default limit**: Without `limit`, reads first 500 lines (configurable via `DEFAULT_READ_LIMIT` constant)
+- **Hash integrity**: The `hash` field represents the FULL file content, not the truncated portion
+- **0-indexed offset**: Line 0 is the first line in the file
+- **No content modification**: Content is returned as-is without any transformation (except truncation)
 
 **CRITICAL USAGE NOTES:**
 - Returns `hash` field that MUST be used with `edit` tool's `last_read_hash` parameter
+- `hash` is computed from the FULL file content, even when reading a truncated portion
 - Cannot read folders - will return validation error if path is a folder
 - Always read a file before editing to get the latest content hash
+- For large files, use `offset`/`limit` to read specific sections efficiently
+- `total_lines` helps AI understand file structure when reading truncated content
 
 ---
 

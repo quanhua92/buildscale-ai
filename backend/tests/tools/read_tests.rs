@@ -27,11 +27,11 @@ async fn test_read_nonexistent_file() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Read Nonexistent Test").await;
-    
+
     let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
         "path": "/nonexistent.md"
     })).await;
-    
+
     assert_eq!(response.status(), 404);
 }
 
@@ -70,3 +70,172 @@ async fn test_read_multiline_content() {
     assert_eq!(body["result"]["content"], content);
 }
 
+#[tokio::test]
+async fn test_read_with_default_limit() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Default Limit Test").await;
+
+    // Create a file with 1000 lines
+    let content: String = (0..1000).map(|i| format!("Line {}", i)).collect::<Vec<_>>().join("\n");
+    write_file(&app, &workspace_id, &token, "/large.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/large.md"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should return only first 500 lines (default limit)
+    let returned_content = body["result"]["content"].as_str().unwrap();
+    let line_count = returned_content.lines().count();
+    assert_eq!(line_count, 500);
+
+    // Metadata should indicate truncation
+    assert_eq!(body["result"]["total_lines"], 1000);
+    assert_eq!(body["result"]["truncated"], true);
+    assert_eq!(body["result"]["offset"], 0);
+    assert_eq!(body["result"]["limit"], 500);
+}
+
+#[tokio::test]
+async fn test_read_with_offset_and_limit() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Offset Limit Test").await;
+
+    // Create a file with 100 lines
+    let content: String = (0..100).map(|i| format!("Line {}", i)).collect::<Vec<_>>().join("\n");
+    write_file(&app, &workspace_id, &token, "/file.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md",
+        "offset": 50,
+        "limit": 10
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should return lines 50-59 (10 lines total)
+    let returned_content = body["result"]["content"].as_str().unwrap();
+    let line_count = returned_content.lines().count();
+    assert_eq!(line_count, 10);
+
+    // Verify content starts with line 50
+    assert!(returned_content.starts_with("Line 50"));
+
+    // Metadata
+    assert_eq!(body["result"]["total_lines"], 100);
+    assert_eq!(body["result"]["truncated"], true); // More lines exist after line 59
+    assert_eq!(body["result"]["offset"], 50);
+    assert_eq!(body["result"]["limit"], 10);
+}
+
+#[tokio::test]
+async fn test_read_with_offset_exceeds_file() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Offset Exceeds Test").await;
+
+    let content = "Line 0\nLine 1\nLine 2";
+    write_file(&app, &workspace_id, &token, "/small.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/small.md",
+        "offset": 100,
+        "limit": 10
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should return empty content
+    assert_eq!(body["result"]["content"].as_str().unwrap(), "");
+    assert_eq!(body["result"]["total_lines"], 3);
+    assert_eq!(body["result"]["truncated"], false);
+}
+
+#[tokio::test]
+async fn test_read_with_zero_limit() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Zero Limit Test").await;
+
+    let content = "Line 0\nLine 1\nLine 2";
+    write_file(&app, &workspace_id, &token, "/file.md", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md",
+        "limit": 0
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Should return empty content
+    assert_eq!(body["result"]["content"].as_str().unwrap(), "");
+    assert_eq!(body["result"]["total_lines"], 3);
+    assert_eq!(body["result"]["truncated"], true); // More lines exist
+}
+
+#[tokio::test]
+async fn test_read_json_content_no_truncation() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read JSON Test").await;
+
+    let json_content = serde_json::json!({
+        "elements": ["a", "b", "c"],
+        "nested": { "key": "value" }
+    });
+    write_file(&app, &workspace_id, &token, "/data.json", json_content.clone()).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/data.json",
+        "limit": 1
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // JSON content should be returned as-is (no line truncation)
+    assert_eq!(body["result"]["content"], json_content);
+    // total_lines, truncated should be null for non-string content
+    assert!(body["result"]["total_lines"].is_null());
+    assert!(body["result"]["truncated"].is_null());
+}
+
+#[tokio::test]
+async fn test_read_hash_unchanged_by_truncation() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Hash Test").await;
+
+    let content = "Line 0\nLine 1\nLine 2\nLine 3\nLine 4";
+    write_file(&app, &workspace_id, &token, "/file.md", serde_json::json!(content)).await;
+
+    // Read full file
+    let full_response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md"
+    })).await;
+    let full_body: serde_json::Value = full_response.json().await.unwrap();
+    let full_hash = full_body["result"]["hash"].as_str().unwrap();
+
+    // Read truncated version
+    let trunc_response = execute_tool(&app, &workspace_id, &token, "read", serde_json::json!({
+        "path": "/file.md",
+        "limit": 2
+    })).await;
+    let trunc_body: serde_json::Value = trunc_response.json().await.unwrap();
+    let trunc_hash = trunc_body["result"]["hash"].as_str().unwrap();
+
+    // Hashes should be identical (computed from full content)
+    assert_eq!(full_hash, trunc_hash);
+}

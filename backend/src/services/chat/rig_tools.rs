@@ -17,14 +17,13 @@ use uuid::Uuid;
 ///
 /// This macro reduces boilerplate by generating the struct definition and RigTool impl
 /// for each workspace tool. All tools follow the same pattern with only minor variations
-/// in tool name, args type, core tool type, and description.
+/// in tool name, args type, and core tool type.
 ///
 /// # Arguments
 /// * `$rig_tool_name` - Name of the generated struct (e.g., RigLsTool)
 /// * `$core_tool:path` - Path to the core tool type (e.g., tools::ls::LsTool)
 /// * `$args_type:ty` - Type of the args (e.g., LsArgs)
 /// * `$name:expr` - Tool name as string literal (e.g., "ls")
-/// * `$description:expr` - Tool description
 ///
 /// # Example
 /// This example demonstrates the macro usage pattern. The macro invocation below
@@ -35,8 +34,7 @@ use uuid::Uuid;
 ///     RigLsTool,
 ///     tools::ls::LsTool,
 ///     LsArgs,
-///     "ls",
-///     "Lists files and folders in a directory within the workspace."
+///     "ls"
 /// );
 /// ```
 ///
@@ -49,8 +47,7 @@ macro_rules! define_rig_tool {
         $rig_tool_name:ident,
         $core_tool:path,
         $args_type:ty,
-        $name:expr,
-        $description:expr
+        $name:expr
     ) => {
         pub struct $rig_tool_name {
             pub pool: DbPool,
@@ -211,72 +208,63 @@ define_rig_tool!(
     RigLsTool,
     tools::ls::LsTool,
     LsArgs,
-    "ls",
-    "Lists files and folders in a directory within the workspace."
+    "ls"
 );
 
 define_rig_tool!(
     RigReadTool,
     tools::read::ReadTool,
     ReadArgs,
-    "read",
-    "Reads the content and hash of a file. Content is returned as stored - raw text for text files, JSON for structured data. Use this to get the 'hash' before calling 'edit'. PERFORMANCE WARNING: Do NOT use this tool to search for strings in multiple files; use 'grep' instead for efficiency."
+    "read"
 );
 
 define_rig_tool!(
     RigWriteTool,
     tools::write::WriteTool,
     WriteArgs,
-    "write",
-    "Creates a NEW file or completely OVERWRITES an existing file. SAFETY WARNING: This tool is destructive and bypasses concurrency checks. For modifying existing code or config files, you MUST prefer 'edit' to ensure safety and preserve surrounding context. Content is stored as-is: strings are stored as raw text, JSON objects as structured data. Supported file_type: 'document' (default), 'plan', 'canvas', 'whiteboard'. DO NOT use 'text' or 'json' as types."
+    "write"
 );
 
 define_rig_tool!(
     RigRmTool,
     tools::rm::RmTool,
     RmArgs,
-    "rm",
-    "Deletes a file or empty folder at the specified path."
+    "rm"
 );
 
 define_rig_tool!(
     RigMvTool,
     tools::mv::MvTool,
     MvArgs,
-    "mv",
-    "Moves or renames a file. To rename, provide the full new path. To move, provide the new parent directory path."
+    "mv"
 );
 
 define_rig_tool!(
     RigTouchTool,
     tools::touch::TouchTool,
     TouchArgs,
-    "touch",
-    "Updates the access and modification times of a file, or creates an empty 'document' file if it doesn't exist. To create directories, use 'mkdir' instead."
+    "touch"
 );
 
 define_rig_tool!(
     RigEditTool,
     tools::edit::EditTool,
     EditArgs,
-    "edit",
-    "Edits a file by replacing a UNIQUE search string with a replacement string. Use this for precision changes. You SHOULD provide 'last_read_hash' for safety. Fails if the string is not unique."
+    "edit"
 );
 
 define_rig_tool!(
     RigGrepTool,
     tools::grep::GrepTool,
     GrepArgs,
-    "grep",
-    "REQUIRED for searching. Performs a high-performance, workspace-wide regex search across all files. Returns line numbers and matching text. Always use this instead of reading files manually when looking for patterns."
+    "grep"
 );
 
 define_rig_tool!(
     RigMkdirTool,
     tools::mkdir::MkdirTool,
     MkdirArgs,
-    "mkdir",
-    "Recursively creates folders to ensure the specified path exists."
+    "mkdir"
 );
 
 // System tools for Plan Mode workflow
@@ -284,15 +272,13 @@ define_rig_tool!(
     RigAskUserTool,
     tools::ask_user::AskUserTool,
     AskUserArgs,
-    "ask_user",
-    "Suspends generation to request structured input or confirmation from the user. Supports asking multiple questions in batch. Questions are ephemeral - they exist only in the SSE stream and frontend memory. User answers come through normal chat messages with metadata."
+    "ask_user"
 );
 
 define_rig_tool!(
     RigExitPlanModeTool,
     tools::exit_plan_mode::ExitPlanModeTool,
     ExitPlanModeArgs,
-    "exit_plan_mode",
-    "Transitions the workspace from Plan Mode to Build Mode. Call this after the user approves the implementation plan. Updates chat metadata and prepares the system for executing the approved plan."
+    "exit_plan_mode"
 );
 

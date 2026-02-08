@@ -391,6 +391,16 @@ pub struct LsArgs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadArgs {
     pub path: String,
+
+    /// Optional starting line offset (0-indexed)
+    /// Default: 0 (read from beginning)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+
+    /// Optional maximum number of lines to read
+    /// Default: 2000 (matches Claude Code's behavior)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -518,6 +528,22 @@ pub struct ReadResult {
     pub path: String,
     pub content: serde_json::Value,
     pub hash: String,
+
+    /// Total number of lines in the file (if applicable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_lines: Option<usize>,
+
+    /// Whether the content was truncated (partial read)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
+
+    /// The offset used for this read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+
+    /// The limit used for this read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

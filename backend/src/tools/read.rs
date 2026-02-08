@@ -7,6 +7,30 @@ use serde_json::Value;
 use async_trait::async_trait;
 use super::{Tool, ToolConfig};
 
+/// Default maximum number of lines to read from a file.
+/// This balances token efficiency with coverage - most files are under 500 lines.
+/// For large files, use the offset and limit parameters to read specific sections.
+const DEFAULT_READ_LIMIT: usize = 500;
+
+/// Slices content string by lines with offset and limit
+/// Returns (sliced_content, total_lines, was_truncated)
+fn slice_content_by_lines(
+    content: &str,
+    offset: usize,
+    limit: usize,
+) -> (String, usize, bool) {
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
+    let was_truncated = offset + limit < total_lines;
+
+    let end = (offset + limit).min(total_lines);
+    let sliced_lines = lines.get(offset..end)
+        .unwrap_or(&[])
+        .join("\n");
+
+    (sliced_lines, total_lines, was_truncated)
+}
+
 /// Read file contents tool
 ///
 /// Reads the latest version of a file within a workspace.
@@ -19,14 +43,22 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &'static str {
-        "Reads the content of a file at the specified path. Returns file content with a hash for change detection. Content is returned as stored - raw text for text files, JSON for structured data. Cannot read folders - folders have no content. Always read a file before editing to get the latest hash."
+        "Reads up to 500 lines of a file by default. Use offset (0-indexed) and limit parameters to read specific portions. Returns content, hash for change detection, and metadata (total_lines, truncated flag). For text files, content is returned with line numbering preserved. Cannot read folders. Always read before editing to get the latest hash."
     }
 
     fn definition(&self) -> Value {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "path": {"type": "string"}
+                "path": {"type": "string"},
+                "offset": {
+                    "type": "integer",
+                    "description": "Starting line offset (0-indexed). Default: 0"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of lines to read. Default: 500"
+                }
             },
             "required": ["path"],
             "additionalProperties": false
@@ -44,24 +76,42 @@ impl Tool for ReadTool {
     ) -> Result<ToolResponse> {
         let read_args: ReadArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&read_args.path);
-        
+
+        // Apply defaults
+        let offset = read_args.offset.unwrap_or(0);
+        let limit = read_args.limit.unwrap_or(DEFAULT_READ_LIMIT);
+
         let file = file_queries::get_file_by_path(conn, workspace_id, &path)
             .await?
             .ok_or_else(|| crate::error::Error::NotFound(format!("File not found: {}", path)))?;
-        
+
         if matches!(file.file_type, crate::models::files::FileType::Folder) {
             return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
                 field: "path".to_string(),
                 message: "Cannot read content of a folder".to_string(),
             }));
         }
-        
+
         let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
+
+        // Apply offset/limit for string content
+        let (content, total_lines, truncated) = match &file_with_content.content {
+            serde_json::Value::String(s) => {
+                let (sliced, total, was_truncated) =
+                    slice_content_by_lines(s, offset, limit);
+                (serde_json::Value::String(sliced), Some(total), Some(was_truncated))
+            }
+            other => (other.clone(), None, None), // Non-string content returned as-is
+        };
 
         let result = ReadResult {
             path,
-            content: file_with_content.content,
+            content,
             hash: file_with_content.latest_version.hash,
+            total_lines,
+            truncated,
+            offset: Some(offset),
+            limit: Some(limit),
         };
 
         Ok(ToolResponse {
