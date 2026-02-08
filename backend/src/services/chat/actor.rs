@@ -972,16 +972,15 @@ impl ChatActor {
                     "Received FinalResponse from stream"
                 );
 
-                // Store final response for database save, but DON'T send as SSE chunk
-                // The response has already been streamed via Text chunks above
+                // Note: FinalResponse contains the complete text, but we DON'T append it
+                // because full_response has already accumulated all Text chunks during streaming.
+                // Appending would cause duplication in the saved message.
+                //
+                // FinalResponse is only used here for logging and usage statistics.
                 let response_text = final_response.response();
-                if !response_text.is_empty() {
-                    if !*has_started_responding {
-                        tracing::info!("[ChatActor] AI started responding (via FinalResponse) for chat {}", self.chat_id);
-                        *has_started_responding = true;
-                    }
-                    // Only store for database, don't send as SSE chunk (already streamed)
-                    full_response.push_str(response_text);
+                if !response_text.is_empty() && !*has_started_responding {
+                    tracing::info!("[ChatActor] AI started responding (via FinalResponse) for chat {}", self.chat_id);
+                    *has_started_responding = true;
                 }
             }
             // Catch-all for future Rig variants (MultiTurnStreamItem is non-exhaustive)
