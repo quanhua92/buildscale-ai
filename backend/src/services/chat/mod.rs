@@ -259,6 +259,7 @@ impl ChatService {
         // Truncate specific fields based on tool
         match tool_name {
             "write" => {
+                // Truncate 'content' field (can be very large)
                 if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
                     if content.len() > MAX_WRITE_CONTENT_LENGTH {
                         let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
@@ -270,6 +271,7 @@ impl ChatService {
                 }
             }
             "edit" => {
+                // Truncate 'old_string' and 'new_string' fields
                 for field in ["old_string", "new_string"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
                         if val.len() > MAX_EDIT_DIFF_LENGTH {
@@ -282,7 +284,47 @@ impl ChatService {
                     }
                 }
             }
-            _ => {}
+            // Tools that don't need input truncation (arguments are small):
+            "ls" => {
+                // No truncation needed - arguments are small (path, recursive flag)
+            }
+            "read" => {
+                // No truncation needed - only path argument
+            }
+            "rm" => {
+                // No truncation needed - only path argument
+            }
+            "mv" => {
+                // No truncation needed - two path arguments (small)
+            }
+            "touch" => {
+                // No truncation needed - only path argument
+            }
+            "grep" => {
+                // No truncation needed - pattern and path are small
+            }
+            "mkdir" => {
+                // No truncation needed - only path argument
+            }
+            "ask_user" => {
+                // No truncation needed - question text is typically short
+                // TODO: Consider truncation if questions become very long
+            }
+            "exit_plan_mode" => {
+                // No truncation needed - no arguments
+            }
+            unknown_tool => {
+                // ERROR-level: Unknown tool can cause database bloat
+                // Tool was added to ToolExecutor but truncate logic not added here
+                tracing::error!(
+                    tool = %unknown_tool,
+                    "Unknown tool '{}' encountered in summarize_tool_inputs. \
+                     Tool was added to ToolExecutor but truncate logic not added. \
+                     This may cause DATABASE BLOAT if tool has large inputs. \
+                     Add explicit handling for this tool.",
+                    unknown_tool
+                );
+            }
         }
 
         summary
@@ -298,6 +340,7 @@ impl ChatService {
 
         match tool_name {
             "read" => {
+                // Special handling: Line-based preview with stats
                 let line_count = output.lines().count();
                 let byte_count = output.len();
                 let preview = output.lines().take(READ_PREVIEW_LINES).collect::<Vec<_>>().join("\n");
@@ -307,6 +350,7 @@ impl ChatService {
                 )
             }
             "ls" => {
+                // Special handling: Item count preview
                 let lines: Vec<&str> = output.lines().collect();
                 if lines.len() > LS_PREVIEW_ITEMS {
                     let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
@@ -316,6 +360,7 @@ impl ChatService {
                 }
             }
             "grep" => {
+                // Special handling: Match count preview
                 let lines: Vec<&str> = output.lines().collect();
                 if lines.len() > GREP_PREVIEW_MATCHES {
                     let preview = lines.iter().take(GREP_PREVIEW_MATCHES).cloned().collect::<Vec<_>>().join("\n");
@@ -324,7 +369,17 @@ impl ChatService {
                     output.to_string()
                 }
             }
-            _ => {
+            other_tool => {
+                // WARN-level: Generic truncation works but might be suboptimal
+                // Most tool outputs are short (error messages, confirmation text)
+                // Long outputs get head+tail preview with UTF-8 boundary safety
+                // If a tool needs special handling, add explicit case above
+                tracing::warn!(
+                    tool = %other_tool,
+                    "Tool '{}' using generic output truncation. If this tool needs \
+                     special handling (like read/ls/grep), add explicit case.",
+                    other_tool
+                );
                 // Generic truncation: Head + Tail, ensuring UTF-8 boundaries.
                 let head_byte_len = 1000;
                 let tail_byte_len = 500;

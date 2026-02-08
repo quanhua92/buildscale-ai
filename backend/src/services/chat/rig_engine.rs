@@ -177,7 +177,9 @@ impl RigService {
                     "Default provider is OpenRouter, but OpenRouter is not configured".to_string()
                 ));
             }
-            _ => {}
+            AiProvider::OpenAi | AiProvider::OpenRouter => {
+                // Valid configuration, continue
+            }
         }
 
         Ok(RigService {
@@ -561,7 +563,16 @@ impl RigService {
                                     // Reconstruct ToolResult from metadata
                                     self.reconstruct_tool_result(msg, false)
                                 }
-                                _ => None  // Unknown message_type
+                                unknown_type => {
+                                    // ERROR-level: Unknown message_type gets filtered = data loss
+                                    tracing::error!(
+                                        message_type = %unknown_type,
+                                        "Unknown message_type '{}' in Tool role, filtered from AI context. \
+                                         This may cause DATA LOSS. Add explicit handling if this is a valid message type.",
+                                        unknown_type
+                                    );
+                                    None
+                                }
                             }
                         } else {
                             None  // Tool role without message_type metadata

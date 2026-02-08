@@ -766,6 +766,108 @@ git commit -m "Commit message describing the completed feature"
 
 ## Development Guidelines
 
+## Code Quality Guidelines
+
+### Explicit Match Statements
+
+**Always prefer explicit match cases over catch-all patterns.**
+
+**Why:** Catch-all patterns (`_ => {}`) silently handle future additions, creating maintenance traps where developers don't realize new cases need special handling.
+
+**Bad - Silent catch-all:**
+```rust
+match tool_name {
+    "write" => { /* truncate content */ }
+    "edit" => { /* truncate diffs */ }
+    _ => {} // Silent fallback - future tools pass through without review!
+}
+```
+
+**Good - Explicit cases with warnings:**
+```rust
+match tool_name {
+    "write" => {
+        // Truncate 'content' field (can be very large)
+        if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
+            if content.len() > MAX_WRITE_CONTENT_LENGTH {
+                let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
+                obj.insert("content".to_string(), serde_json::json!(...));
+            }
+        }
+    }
+    "edit" => {
+        // Truncate 'old_string' and 'new_string' fields
+        for field in ["old_string", "new_string"] {
+            // ... truncation logic
+        }
+    }
+    // Tools that don't need input truncation (arguments are small):
+    "ls" => {
+        // No truncation needed - arguments are small (path, recursive flag)
+    }
+    "read" => {
+        // No truncation needed - only path argument
+    }
+    // ... list all other tools explicitly with comments
+    unknown_tool => {
+        // Future tool: Explicitly documented that no truncation is applied
+        // When adding new tools, update this match to add explicit handling
+        tracing::warn!(
+            tool = %unknown_tool,
+            "Unknown tool '{}' in summarize_tool_inputs, no input truncation applied. \
+             If this tool has large inputs, add explicit truncation logic.",
+            unknown_tool
+        );
+    }
+}
+```
+
+**Guidelines:**
+1. **List all enum variants explicitly** - Don't use `_ => {}` unless it's an external/non-exhaustive enum
+2. **Add comments** for each case explaining why it doesn't need special handling
+3. **Use named catch-all** - Replace `_ => {}` with `unknown_thing =>` to make it intentional
+4. **Add appropriate logs** - Use correct log levels based on risk severity:
+   - **ERROR-level**: Critical risks (data loss, database bloat, security issues)
+   - **WARN-level**: Suboptimal but working cases (generic truncation, missing optimizations)
+   - **INFO-level**: Expected behavior that should be monitored
+   - **DEBUG-level**: Detailed diagnostics for troubleshooting
+5. **Document intent** - Add comments explaining what the catch-all does and why
+6. **Remove dead code** - Delete unreachable catch-alls (e.g., after exhaustive matches)
+
+**Log level strategy:**
+- **ERROR** (use for critical risks):
+  - Unknown tools in `summarize_tool_inputs` - can cause database bloat
+  - Unknown message_type in `convert_history` - causes data loss in AI context
+- **WARN** (use for suboptimal but working):
+  - Unknown tools in `summarize_tool_outputs` - generic truncation works, but might be suboptimal
+  - External enum variants (Rig framework additions)
+- **No logging** (acceptable fallbacks):
+  - Explicitly handled cases with comments explaining why no special handling needed
+
+**When catch-alls are acceptable:**
+- External enums (Rig, third-party libraries) that are marked `#[non_exhaustive]`
+- Generic fallback logic that is explicitly documented and logged
+- Enums that you control and can guarantee won't have new variants added
+
+**Example: Dead code removal:**
+```rust
+// BEFORE (bad - unreachable)
+match default_provider {
+    AiProvider::OpenAi if openai.is_none() => return Err(...),
+    AiProvider::OpenRouter if openrouter.is_none() => return Err(...),
+    _ => {} // UNREACHABLE!
+}
+
+// AFTER (good - exhaustive)
+match default_provider {
+    AiProvider::OpenAi if openai.is_none() => return Err(...),
+    AiProvider::OpenRouter if openrouter.is_none() => return Err(...),
+    AiProvider::OpenAi | AiProvider::OpenRouter => {
+        // Valid, continue
+    }
+}
+```
+
 ## Architecture Rules
 
 ### Handler vs Service Responsibility
