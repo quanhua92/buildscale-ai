@@ -918,6 +918,95 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ---
 
+### glob - Pattern-Based File Discovery
+
+Finds files matching glob patterns (e.g., `*.rs`, `**/*.md`, `/src/**/*.rs`). Uses ripgrep for efficient file discovery without searching file contents. Returns matches with metadata (path, name, file_type, is_virtual, updated_at).
+
+#### Arguments
+
+```json
+{
+  "pattern": "*.rs",
+  "path": "/src"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | Yes | Glob pattern to match files (e.g., `*.rs`, `**/*.md`, `test_*`) |
+| `path` | string | No | Base directory for search (default: `/` for workspace root) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "glob",
+    "args": {
+      "pattern": "*.rs"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "pattern": "*.rs",
+    "base_path": "/",
+    "matches": [
+      {
+        "path": "/main.rs",
+        "name": "main.rs",
+        "file_type": "document",
+        "is_virtual": false,
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      },
+      {
+        "path": "/src/lib.rs",
+        "name": "lib.rs",
+        "file_type": "document",
+        "is_virtual": false,
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Implementation**: Uses ripgrep (`rg --files`) for efficient file discovery.
+- **Glob Syntax**: Supports standard glob patterns including `*` (matches any characters), `**` (matches across directories), and `?` (matches single character).
+- **Workspace Isolation**: The search is restricted to the workspace directory to prevent accessing files outside the workspace.
+- **Path Normalization**: All returned paths are workspace-relative and start with `/`.
+- **Virtual Files**: Returns metadata for both regular files and virtual files (e.g., Chats, system-managed files).
+- **Performance**: Much faster than recursive `ls` for pattern matching, especially in large codebases.
+- **Pattern Validation**: Rejects patterns containing `..` to prevent path traversal attacks.
+
+**SUPPORTED PATTERNS:**
+- `*.rs` - matches all `.rs` files in the current directory
+- `**/*.md` - matches all `.md` files recursively
+- `/src/**/*.rs` - matches all `.rs` files under `/src/`
+- `test_*` - matches files/folders starting with `test_`
+- `*/file.txt` - matches `file.txt` in any immediate subdirectory
+
+**CRITICAL USAGE NOTES:**
+- **Requires ripgrep**: The tool requires `ripgrep (rg)` to be installed on the system
+- **Use for file discovery**: Use glob when you need to find files by pattern without reading contents
+- **Use ls for browsing**: Use the `ls` tool when browsing directory contents or exploring folder structure
+- **Use grep for content**: Use the `grep` tool when searching for patterns within file contents
+- **No content reading**: Glob only returns file metadata, not file contents
+
+---
+
 ### Path Normalization
 
 All tools automatically normalize provided paths to ensure consistency:
