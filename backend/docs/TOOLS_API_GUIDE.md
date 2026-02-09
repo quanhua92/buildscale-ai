@@ -1166,24 +1166,28 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ### find - Search Files by Metadata
 
-Finds files by metadata criteria (name pattern, path, file_type). Complements `grep` which searches by content. Use find to locate files without reading their contents.
+Finds files by metadata criteria using Unix find command for filesystem discovery, then enriches results with database metadata. Complements `grep` which searches by content. Use find to locate files without reading their contents.
 
 #### Arguments
 
 ```json
 {
   "name": "*.txt",
-  "path": "/src/*",
-  "file_type": "document",
+  "path": "/src",
+  "file_type": "folder",
+  "min_size": 1048576,
+  "max_size": 10485760,
   "recursive": true
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | No | Filename pattern with `*` wildcards (e.g., `*.txt`, `test_*`) |
-| `path` | string | No | Path pattern for searching (e.g., `/src/*`, `/**/*.rs`) |
+| `name` | string | No | Filename pattern with wildcards (e.g., `*.txt`, `test_*`) |
+| `path` | string | No | Base directory for search (default: `/` for workspace root) |
 | `file_type` | string | No | File type filter (`document`, `folder`, `canvas`, etc.) |
+| `min_size` | integer | No | Minimum file size in bytes |
+| `max_size` | integer | No | Maximum file size in bytes |
 | `recursive` | boolean | No | Search subdirectories (default: `true`) |
 
 #### Request Example
@@ -1196,8 +1200,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "find",
     "args": {
       "name": "*.rs",
-      "path": "/src",
-      "recursive": true
+      "path": "/src"
     }
   }'
 ```
@@ -1231,26 +1234,28 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 #### Behavior Notes
 
-- **Metadata Search**: Searches file metadata from database (does not read file contents).
-- **Name Patterns**: Supports `*` wildcards for filename matching (e.g., `*.txt`, `test_*`, `*_backup`).
-- **Path Filtering**: Normalizes path patterns and searches within specified directories.
-- **File Type Filter**: Matches exact file_type values (`document`, `folder`, `canvas`, etc.).
-- **Recursive Search**: When `true` (default), searches all subdirectories under the base path.
-- **Database Query**: Uses SQL `LIKE` pattern matching for efficient filtering.
-- **Size Filtering**: The `min_size` and `max_size` parameters are accepted but not yet implemented.
+- **Implementation**: Uses Unix `find` command for filesystem discovery (like `find . -name "*.txt" -type f`).
+- **Database Enrichment**: Results are enriched with database metadata (file_type enum, is_virtual flag, etc.).
+- **Name Patterns**: Supports find-style wildcards (`*`, `?`, `[]`) for filename matching.
+- **Path Filtering**: Normalizes path patterns and restricts search to workspace directory.
+- **File Type Filter**: Maps file_type to find's `-type` option (`folder` → `-type d`, others → `-type f`).
+- **Recursive Search**: When `true` (default), searches all subdirectories. When `false`, uses `-maxdepth 1`.
+- **Size Filtering**: Uses find's `-size` flag with byte units (`+1048576c` = >1MB, `-10485760c` = <10MB).
+- **Workspace Isolation**: The search is restricted to the workspace directory to prevent accessing files outside the workspace.
 
 **DIFFERENCES FROM OTHER TOOLS:**
-- **find**: Searches by metadata (name, type, size, date)
+- **find**: Searches by metadata (name, type, size) using Unix find command
 - **grep**: Searches by content (text within files)
-- **glob**: Pattern matching for filenames only (faster, simpler)
+- **glob**: Pattern matching for filenames using ripgrep (faster, simpler)
 - **ls**: Lists directory contents (browsing, not searching)
 
 **CRITICAL USAGE NOTES:**
+- **Requires find**: The tool requires Unix `find` command to be installed on the system
 - **Use with grep**: Combine `find` (metadata) and `grep` (content) for comprehensive searches
-- **Pattern syntax**: Name patterns use simple `*` wildcards (not full regex)
-- **Path normalization**: Path patterns are automatically normalized (leading slashes, etc.)
-- **Size not implemented**: `min_size` and `max_size` parameters are accepted but currently ignored
-- **Performance**: Database queries are faster than reading file contents
+- **Pattern syntax**: Name patterns use find-style wildcards (more powerful than simple `*`)
+- **Size filtering**: Now fully implemented using find's `-size` flag
+- **Real files only**: Only finds files/folders that exist on disk (database-only entities won't be found)
+- **Performance**: Unix find is highly optimized for filesystem traversal
 
 ---
 
