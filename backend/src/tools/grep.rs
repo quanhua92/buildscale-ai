@@ -204,16 +204,16 @@ Returns matching file paths with line numbers and context lines. Use for discove
                     "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). Defaults to false (case-insensitive) if not provided."
                 },
                 "before_context": {
-                    "type": ["integer", "null"],
-                    "description": "Number of lines to show before each match (default: 0)"
+                    "type": ["integer", "string", "null"],
+                    "description": "Number of lines to show before each match. Accepts integer or string (e.g., 5 or '5'). Default: 0"
                 },
                 "after_context": {
-                    "type": ["integer", "null"],
-                    "description": "Number of lines to show after each match (default: 0)"
+                    "type": ["integer", "string", "null"],
+                    "description": "Number of lines to show after each match. Accepts integer or string (e.g., 5 or '5'). Default: 0"
                 },
                 "context": {
-                    "type": ["integer", "null"],
-                    "description": "Shorthand for before_context and after_context combined"
+                    "type": ["integer", "string", "null"],
+                    "description": "Shorthand for before_context and after_context combined. Accepts integer or string (e.g., 3 or '3')"
                 }
             },
             "required": ["pattern"],

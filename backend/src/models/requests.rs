@@ -305,6 +305,194 @@ where
     }
 }
 
+/// Custom deserializer for flexible usize (unsigned integer) parsing
+/// Accepts:
+/// - JSON numbers: 5, 10, 100
+/// - Strings (decimal): "5", "10", "100"
+/// - Strings with whitespace: " 5 ", " 10 "
+pub fn deserialize_flexible_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    match serde_json::Value::deserialize(deserializer)? {
+        // Accept number directly
+        serde_json::Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                Ok(u as usize)
+            } else if let Some(i) = n.as_i64() {
+                if i >= 0 {
+                    Ok(i as usize)
+                } else {
+                    Err(D::Error::custom(format!(
+                        "Invalid usize value: '{}'. Expected non-negative integer",
+                        i
+                    )))
+                }
+            } else {
+                Err(D::Error::custom("Invalid number format".to_string()))
+            }
+        },
+
+        // Accept string representations
+        serde_json::Value::String(s) => {
+            s.trim().parse::<usize>().map_err(|_| {
+                D::Error::custom(format!(
+                    "Invalid usize string: '{}'. Expected non-negative integer",
+                    s
+                ))
+            })
+        },
+
+        other => Err(D::Error::custom(format!(
+            "Invalid usize type: {:?}. Expected: number or string",
+            other
+        ))),
+    }
+}
+
+/// Custom deserializer for flexible optional usize parsing
+/// Same as deserialize_flexible_usize but handles Option<usize>
+pub fn deserialize_flexible_usize_option<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    match serde_json::Value::deserialize(deserializer)? {
+        // Accept null directly
+        serde_json::Value::Null => Ok(None),
+
+        // Accept number directly
+        serde_json::Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                Ok(Some(u as usize))
+            } else if let Some(i) = n.as_i64() {
+                if i >= 0 {
+                    Ok(Some(i as usize))
+                } else {
+                    Err(D::Error::custom(format!(
+                        "Invalid usize value: '{}'. Expected non-negative integer or null",
+                        i
+                    )))
+                }
+            } else {
+                Err(D::Error::custom("Invalid number format".to_string()))
+            }
+        },
+
+        // Accept string representations
+        serde_json::Value::String(s) => {
+            s.trim().parse::<usize>().map(|v| Some(v)).map_err(|_| {
+                D::Error::custom(format!(
+                    "Invalid usize string: '{}'. Expected non-negative integer or null",
+                    s
+                ))
+            })
+        },
+
+        other => Err(D::Error::custom(format!(
+            "Invalid usize type: {:?}. Expected: number, string, or null",
+            other
+        ))),
+    }
+}
+
+/// Custom deserializer for flexible isize (signed integer) parsing
+/// Accepts:
+/// - JSON numbers: 5, -10, 100
+/// - Strings (decimal): "5", "-10", "100"
+/// - Strings with whitespace: " 5 ", " -10 "
+pub fn deserialize_flexible_isize<'de, D>(deserializer: D) -> Result<isize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    match serde_json::Value::deserialize(deserializer)? {
+        // Accept number directly
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(i as isize)
+            } else if let Some(u) = n.as_u64() {
+                if u <= isize::MAX as u64 {
+                    Ok(u as isize)
+                } else {
+                    Err(D::Error::custom(format!(
+                        "Invalid isize value: '{}'. Exceeds maximum value",
+                        u
+                    )))
+                }
+            } else {
+                Err(D::Error::custom("Invalid number format".to_string()))
+            }
+        },
+
+        // Accept string representations
+        serde_json::Value::String(s) => {
+            s.trim().parse::<isize>().map_err(|_| {
+                D::Error::custom(format!(
+                    "Invalid isize string: '{}'. Expected integer",
+                    s
+                ))
+            })
+        },
+
+        other => Err(D::Error::custom(format!(
+            "Invalid isize type: {:?}. Expected: number or string",
+            other
+        ))),
+    }
+}
+
+/// Custom deserializer for flexible optional isize parsing
+/// Same as deserialize_flexible_isize but handles Option<isize>
+pub fn deserialize_flexible_isize_option<'de, D>(deserializer: D) -> Result<Option<isize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    match serde_json::Value::deserialize(deserializer)? {
+        // Accept null directly
+        serde_json::Value::Null => Ok(None),
+
+        // Accept number directly
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Some(i as isize))
+            } else if let Some(u) = n.as_u64() {
+                if u <= isize::MAX as u64 {
+                    Ok(Some(u as isize))
+                } else {
+                    Err(D::Error::custom(format!(
+                        "Invalid isize value: '{}'. Exceeds maximum value or null",
+                        u
+                    )))
+                }
+            } else {
+                Err(D::Error::custom("Invalid number format".to_string()))
+            }
+        },
+
+        // Accept string representations
+        serde_json::Value::String(s) => {
+            s.trim().parse::<isize>().map(|v| Some(v)).map_err(|_| {
+                D::Error::custom(format!(
+                    "Invalid isize string: '{}'. Expected integer or null",
+                    s
+                ))
+            })
+        },
+
+        other => Err(D::Error::custom(format!(
+            "Invalid isize type: {:?}. Expected: number, string, or null",
+            other
+        ))),
+    }
+}
+
 /// HTTP API request for adding a tag to a file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddTagHttp {
@@ -396,19 +584,19 @@ pub struct ReadArgs {
     /// Positive: from beginning (e.g., 100 = start at line 100)
     /// Negative: from end (e.g., -100 = last 100 lines)
     /// Default: 0 (read from beginning)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_isize_option")]
     pub offset: Option<isize>,
 
     /// Optional maximum number of lines to read
     /// Default: 500 (matches DEFAULT_READ_LIMIT)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub limit: Option<usize>,
 
     /// Optional cursor position for scroll mode (0-indexed line number)
     /// When set, enables scroll mode where offset is relative to cursor
     /// Example: cursor=100, offset=-50 reads lines 50-100 (scroll up 50 from cursor)
     /// Default: null (disabled, uses absolute offset mode)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub cursor: Option<usize>,
 }
 
@@ -469,13 +657,13 @@ pub struct GrepArgs {
     #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub case_sensitive: Option<bool>,
     /// Number of lines to show before each match
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub before_context: Option<usize>,
     /// Number of lines to show after each match
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub after_context: Option<usize>,
     /// Number of lines to show before and after each match (shorthand for before_context + after_context)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub context: Option<usize>,
 }
 

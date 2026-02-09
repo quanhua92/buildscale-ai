@@ -94,16 +94,16 @@ Returns content, hash for change detection, and metadata (total_lines, truncated
             "properties": {
                 "path": {"type": "string"},
                 "offset": {
-                    "type": "integer",
-                    "description": "Starting line position (default: 0). Positive values from start (e.g., 100 = line 100+). Negative values from end (e.g., -100 = last 100 lines). In scroll mode (with cursor), offset is relative to cursor."
+                    "type": ["integer", "string"],
+                    "description": "Starting line position (default: 0). Accepts integer or string (e.g., 100 or '100'). Positive values from start (e.g., 100 = line 100+). Negative values from end (e.g., -100 = last 100 lines). In scroll mode (with cursor), offset is relative to cursor."
                 },
                 "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of lines to read. Default: 500"
+                    "type": ["integer", "string"],
+                    "description": "Maximum number of lines to read. Accepts integer or string (e.g., 500 or '500'). Default: 500"
                 },
                 "cursor": {
-                    "type": ["integer", "null"],
-                    "description": "Optional cursor position (line number) for scroll mode. When set, offset becomes relative to cursor. Enables navigation of large files without calculating absolute positions."
+                    "type": ["integer", "string", "null"],
+                    "description": "Optional cursor position (line number) for scroll mode. Accepts integer or string (e.g., 100 or '100'). When set, offset becomes relative to cursor. Enables navigation of large files without calculating absolute positions."
                 }
             },
             "required": ["path"],
