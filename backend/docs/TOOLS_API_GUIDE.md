@@ -1007,6 +1007,367 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ---
 
+### cat - Concatenate Files with Unix-Style Formatting
+
+Concatenates and displays multiple files with Unix-style formatting options for debugging. Use cat to reveal hidden characters (tabs, trailing whitespace) or combine multiple files. Use read for single-file navigation with pagination.
+
+#### Arguments
+
+```json
+{
+  "paths": ["/config.json", "/.env"],
+  "show_ends": true,
+  "show_tabs": true,
+  "squeeze_blank": true,
+  "number_lines": false,
+  "show_headers": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `paths` | array | Yes | List of file paths to concatenate (max 20 files) |
+| `show_ends` | boolean | No | Display `$` at end of each line to show trailing whitespace (default: `false`) |
+| `show_tabs` | boolean | No | Display tab characters as `^I` (default: `false`) |
+| `squeeze_blank` | boolean | No | Suppress repeated empty lines (default: `false`) |
+| `number_lines` | boolean | No | Add line numbers to all lines (default: `false`) |
+| `show_headers` | boolean | No | Add filename headers before each file (default: `false`) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "cat",
+    "args": {
+      "paths": ["/src/main.rs", "/src/lib.rs"],
+      "show_ends": true,
+      "show_tabs": true
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "content": "fn main() {\n    println!(\"Hello\");$}\n...",
+    "files": [
+      {
+        "path": "/src/main.rs",
+        "content": "fn main() {\n    println!(\"Hello\");$}",
+        "line_count": 2
+      },
+      {
+        "path": "/src/lib.rs",
+        "content": "pub fn hello() {}\n$",
+        "line_count": 1
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Concatenation**: Joins multiple files sequentially with optional separators.
+- **Special Characters**: Uses Unix-style formatting (`show_ends` adds `$`, `show_tabs` shows `^I`).
+- **Line Numbers**: When enabled, lines are numbered starting from 1 (format: `     1	content`).
+- **Blank Line Squeezing**: `squeeze_blank` replaces multiple consecutive newlines with a single newline.
+- **Headers**: When `show_headers` is `true`, adds `==> filename <==` before each file.
+- **File Limit**: Maximum 20 files per request to prevent excessive output.
+- **Partial Success**: If some files fail to read, errors are shown in their entries but other files are returned.
+
+**SPECIAL CHARACTER OPTIONS:**
+- `show_ends`: Displays `$` at line endings to reveal trailing whitespace (like `cat -E`)
+- `show_tabs`: Displays tabs as `^I` to distinguish from spaces (like `cat -T`)
+- `squeeze_blank`: Suppresses repeated empty lines (like `cat -s`)
+
+**CRITICAL USAGE NOTES:**
+- **Use cat for debugging**: Special character display helps identify tabs vs spaces, trailing whitespace
+- **Use read for navigation**: The `read` tool supports pagination and scrolling for large files
+- **Token efficiency**: Special characters help identify whitespace issues without seeing raw bytes
+- **Line numbers**: Use `number_lines` for code review or debugging reference
+- **Multiple files**: Cat is more efficient than multiple `read` calls for concatenation
+
+---
+
+### file_info - Query File Metadata
+
+Gets file metadata without reading full content. Returns path, file_type, size, line_count (for text files), timestamps, and content hash. Use file_info to check file size or verify existence before reading.
+
+#### Arguments
+
+```json
+{
+  "path": "/large-file.log"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Full path to the file |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "file_info",
+    "args": {
+      "path": "/config.json"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/config.json",
+    "file_type": "document",
+    "size": null,
+    "line_count": 25,
+    "created_at": "2025-01-15T10:30:00Z",
+    "updated_at": "2025-01-15T10:30:00Z",
+    "hash": "a1b2c3d4e5f6..."
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Metadata Query**: Only reads file metadata, not full content (except for line_count).
+- **Line Count**: For text files (`file_type: "document"`), content is read to count lines.
+- **Size Field**: Currently returns `null` (size tracking not yet implemented in storage).
+- **Content Hash**: Returns SHA-256 hash of the full file content from the latest version.
+- **Timestamps**: Returns both `created_at` and `updated_at` for file tracking.
+- **Virtual Files**: Works with both regular files and virtual files (e.g., Chats).
+- **Token Efficiency**: Use this tool to check file properties before reading full content.
+
+**CRITICAL USAGE NOTES:**
+- **Check before reading**: Use `file_info` to verify file existence and size before using `read`
+- **Line count accuracy**: For text files, the content is read to count lines (not metadata-only)
+- **Hash for editing**: The `hash` field is required for `edit` tool's `last_read_hash` parameter
+- **Size not implemented**: The `size` field returns `null` until storage layer tracking is added
+- **Use case decisions**: Use `file_info` for quick checks, `read` when you need the actual content
+
+---
+
+### find - Search Files by Metadata
+
+Finds files by metadata criteria (name pattern, path, file_type). Complements `grep` which searches by content. Use find to locate files without reading their contents.
+
+#### Arguments
+
+```json
+{
+  "name": "*.txt",
+  "path": "/src/*",
+  "file_type": "document",
+  "recursive": true
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | Filename pattern with `*` wildcards (e.g., `*.txt`, `test_*`) |
+| `path` | string | No | Path pattern for searching (e.g., `/src/*`, `/**/*.rs`) |
+| `file_type` | string | No | File type filter (`document`, `folder`, `canvas`, etc.) |
+| `recursive` | boolean | No | Search subdirectories (default: `true`) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "find",
+    "args": {
+      "name": "*.rs",
+      "path": "/src",
+      "recursive": true
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "matches": [
+      {
+        "path": "/src/main.rs",
+        "name": "main.rs",
+        "file_type": "document",
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      },
+      {
+        "path": "/src/lib.rs",
+        "name": "lib.rs",
+        "file_type": "document",
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Metadata Search**: Searches file metadata from database (does not read file contents).
+- **Name Patterns**: Supports `*` wildcards for filename matching (e.g., `*.txt`, `test_*`, `*_backup`).
+- **Path Filtering**: Normalizes path patterns and searches within specified directories.
+- **File Type Filter**: Matches exact file_type values (`document`, `folder`, `canvas`, etc.).
+- **Recursive Search**: When `true` (default), searches all subdirectories under the base path.
+- **Database Query**: Uses SQL `LIKE` pattern matching for efficient filtering.
+- **Size Filtering**: The `min_size` and `max_size` parameters are accepted but not yet implemented.
+
+**DIFFERENCES FROM OTHER TOOLS:**
+- **find**: Searches by metadata (name, type, size, date)
+- **grep**: Searches by content (text within files)
+- **glob**: Pattern matching for filenames only (faster, simpler)
+- **ls**: Lists directory contents (browsing, not searching)
+
+**CRITICAL USAGE NOTES:**
+- **Use with grep**: Combine `find` (metadata) and `grep` (content) for comprehensive searches
+- **Pattern syntax**: Name patterns use simple `*` wildcards (not full regex)
+- **Path normalization**: Path patterns are automatically normalized (leading slashes, etc.)
+- **Size not implemented**: `min_size` and `max_size` parameters are accepted but currently ignored
+- **Performance**: Database queries are faster than reading file contents
+
+---
+
+### read_multiple_files - Read Multiple Files in Single Call
+
+Reads multiple files in a single tool call, reducing network round-trips. Returns per-file success/error status with content, hash, and metadata. Use for batch file analysis or cross-referencing.
+
+#### Arguments
+
+```json
+{
+  "paths": ["/config.json", "/README.md", "/src/main.rs"],
+  "limit": 100
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `paths` | array | Yes | List of file paths to read (max 50 files) |
+| `limit` | integer | No | Maximum lines per file (default: `500`) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read_multiple_files",
+    "args": {
+      "paths": ["/config.json", "/README.md"],
+      "limit": 100
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "files": [
+      {
+        "path": "/config.json",
+        "success": true,
+        "content": "{\n  \"key\": \"value\"\n}",
+        "hash": "abc123...",
+        "error": null,
+        "total_lines": 3,
+        "truncated": false
+      },
+      {
+        "path": "/README.md",
+        "success": true,
+        "content": "# Project\n\n...",
+        "hash": "def456...",
+        "error": null,
+        "total_lines": 150,
+        "truncated": true
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Response (Partial Success - Some Files Failed)
+
+```json
+{
+  "success": true,
+  "result": {
+    "files": [
+      {
+        "path": "/config.json",
+        "success": true,
+        "content": "{...}",
+        "hash": "abc123...",
+        "error": null,
+        "total_lines": 3,
+        "truncated": false
+      },
+      {
+        "path": "/nonexistent.txt",
+        "success": false,
+        "content": null,
+        "hash": null,
+        "error": "File not found: /nonexistent.txt",
+        "total_lines": null,
+        "truncated": null
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Batch Reading**: Reads multiple files in a single API call (reduces network latency).
+- **Sequential Processing**: Files are read sequentially (not parallel) due to database connection constraints.
+- **Partial Success**: If some files fail, errors are returned in their entries but other files succeed.
+- **Line Limit**: The `limit` parameter applies to each file individually (default: 500 lines per file).
+- **Content Truncation**: When content exceeds the limit, `truncated: true` and `total_lines` shows the full count.
+- **Hash Integrity**: Each file's SHA-256 hash is returned for content verification.
+- **File Limit**: Maximum 50 files per request to prevent excessive memory usage.
+
+**CRITICAL USAGE NOTES:**
+- **Reduced round-trips**: More efficient than multiple individual `read` calls
+- **Error handling**: Check `success` field for each file result to handle failures
+- **Token efficiency**: Content is truncated per-file to stay within token limits
+- **Use for batches**: Ideal for config files, documentation, or log analysis across multiple files
+- **Hash for editing**: Use returned `hash` values with `edit` tool's `last_read_hash` parameter
+
+---
+
 ### Path Normalization
 
 All tools automatically normalize provided paths to ensure consistency:
