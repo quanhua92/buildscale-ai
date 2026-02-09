@@ -1,15 +1,28 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FindArgs, FindResult, FindMatch}, models::files::FileType};
-use crate::queries::files as file_queries;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FindArgs, FindResult, FindMatch}, queries::files};
 use crate::services::storage::FileStorageService;
+use crate::models::files::FileType;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
+use std::process::Command as StdCommand;
+use tokio::process::Command as TokioCommand;
+use std::path::Path;
 use super::{Tool, ToolConfig};
 
-/// Find tool for searching files by metadata
+/// Find tool for searching files by metadata using Unix find command
 ///
-/// Finds files matching metadata criteria (name, path, file_type, size, date).
-/// Complements grep which searches by content.
+/// Finds files matching metadata criteria using the Unix `find` command for
+/// filesystem discovery, then enriches results with database metadata.
+///
+/// # Security: Workspace Isolation
+///
+/// This tool ensures workspace isolation by:
+/// 1. Setting find's current directory to the workspace root
+/// 2. Using workspace_id to get the correct storage path
+/// 3. Validating path patterns to prevent traversal attacks
+///
+/// Files from other workspaces cannot be accessed because find operates
+/// within the workspace's isolated directory structure.
 pub struct FindTool;
 
 #[async_trait]
@@ -19,14 +32,14 @@ impl Tool for FindTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Finds files by metadata (name, path, type, size, date). Complements grep which searches by content.
+        r#"Finds files by metadata (name, path, type, size, date). Uses Unix find command for filesystem discovery, then enriches with database metadata. Complements grep which searches by content.
 
 SEARCH PARAMETERS:
-- name: Filename pattern (supports * wildcards, e.g., "*.txt", "test_*")
-- path: Path pattern (e.g., "/src/*", "/**/*.rs")
-- file_type: Filter by type (document, folder, canvas, etc.)
-- min_size: Minimum file size in bytes
-- max_size: Maximum file size in bytes
+- name: Filename pattern (supports find wildcards: *, ?, [])
+- path: Directory to search (default: workspace root)
+- file_type: Filter by type (document, folder, canvas)
+- min_size: Minimum file size (e.g., 1048576 for 1MB)
+- max_size: Maximum file size
 - recursive: Search subdirectories (default: true)
 
 DIFFERENCES FROM OTHER TOOLS:
@@ -39,13 +52,15 @@ USE CASES:
 - Find all files larger than 1MB
 - Find all folders in a directory
 - Find all canvas files
-- Find files created/modified recently
+- Find files modified recently
 
 EXAMPLES:
 {"name": "*.txt", "recursive": true} - All text files
-{"path": "/src/**/*.rs"} - All Rust files under src
+{"path": "/src", "name": "*.rs"} - Rust files under src
 {"file_type": "folder"} - All folders
-{"min_size": 1000000} - Files larger than 1MB"#
+{"min_size": 1048576} - Files larger than 1MB
+
+REQUIREMENTS: Requires Unix find command to be installed on the system."#
     }
 
     fn definition(&self) -> Value {
@@ -54,11 +69,11 @@ EXAMPLES:
             "properties": {
                 "name": {
                     "type": ["string", "null"],
-                    "description": "Filename pattern with * wildcards (e.g., '*.txt', 'test_*')"
+                    "description": "Filename pattern with wildcards (e.g., '*.txt', 'test_*')"
                 },
                 "path": {
                     "type": ["string", "null"],
-                    "description": "Path pattern (e.g., '/src/*', '/**/*.rs')"
+                    "description": "Base directory for search (default: '/' for workspace root)"
                 },
                 "file_type": {
                     "type": ["string", "null"],
@@ -85,7 +100,7 @@ EXAMPLES:
     async fn execute(
         &self,
         conn: &mut DbConn,
-        _storage: &FileStorageService,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         _config: ToolConfig,
@@ -100,45 +115,129 @@ EXAMPLES:
             "/".to_string()
         };
 
-        // Get parent_id for base path (if not root)
-        let parent_id = if base_path == "/" {
-            None
-        } else {
-            let parent_file = file_queries::get_file_by_path(conn, workspace_id, &base_path).await?
-                .ok_or_else(|| Error::NotFound(format!("Base path not found: {}", base_path)))?;
+        // Security: Validate path doesn't attempt to escape workspace
+        if base_path.contains("..") {
+            return Ok(ToolResponse {
+                success: false,
+                result: Value::Null,
+                error: Some("Path cannot contain '..' (parent directory reference)".to_string()),
+            });
+        }
 
-            if !matches!(parent_file.file_type, FileType::Folder) {
-                return Err(Error::Validation(crate::error::ValidationErrors::Single {
-                    field: "path".to_string(),
-                    message: format!("Base path is not a directory: {}", base_path),
-                }));
+        // Get workspace directory for security isolation
+        let workspace_path = storage.get_workspace_path(workspace_id);
+
+        // Check if workspace directory exists
+        if !workspace_path.exists() {
+            return Ok(ToolResponse {
+                success: true,
+                result: serde_json::to_value(FindResult {
+                    matches: Vec::new(),
+                })?,
+                error: None,
+            });
+        }
+
+        // Verify base_path exists and is a directory (if not root)
+        if base_path != "/" {
+            let parent_file = files::get_file_by_path(conn, workspace_id, &base_path).await?;
+            if let Some(file) = parent_file {
+                if !matches!(file.file_type, FileType::Folder) {
+                    return Err(Error::Validation(crate::error::ValidationErrors::Single {
+                        field: "path".to_string(),
+                        message: format!("Base path is not a directory: {}", base_path),
+                    }));
+                }
+            } else {
+                return Err(Error::NotFound(format!("Base path not found: {}", base_path)));
             }
-
-            Some(parent_file.id)
-        };
+        }
 
         // Determine if recursive (default: true)
         let recursive = args.recursive.unwrap_or(true);
 
-        // Get candidate files
-        let all_files = if recursive {
-            Self::list_files_recursive(conn, workspace_id, &base_path).await?
-        } else {
-            file_queries::list_files_in_folder(conn, workspace_id, parent_id).await?
-        };
+        // Build find command
+        let mut cmd = build_find_command(
+            args.name.as_deref(),
+            &base_path,
+            recursive,
+            args.min_size,
+            args.max_size,
+            args.file_type.as_ref(),
+            &workspace_path,
+        )?;
 
-        // Filter files by criteria
-        let mut matches: Vec<FindMatch> = all_files
-            .into_iter()
-            .filter(|file| Self::file_matches_criteria(file, &args))
-            .map(|file| FindMatch {
-                path: file.path.clone(),
-                name: file.name.clone(),
-                file_type: file.file_type,
-                size: None, // TODO: Implement size tracking in storage
-                updated_at: file.updated_at,
-            })
-            .collect();
+        tracing::debug!("Executing find command in directory: {:?}", workspace_path);
+
+        // Execute command
+        let output = cmd.output().await.map_err(|e| {
+            Error::Internal(format!("Failed to execute find command: {}", e))
+        })?;
+
+        // Handle exit codes
+        // 0 = matches found
+        // 1 = no matches found (successful search)
+        // >1 = error
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(2);
+            if code == 1 {
+                // No matches - return success with empty list
+                tracing::debug!("Find found no matches");
+                return Ok(ToolResponse {
+                    success: true,
+                    result: serde_json::to_value(FindResult {
+                        matches: Vec::new(),
+                    })?,
+                    error: None,
+                });
+            }
+
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::error!("Find command failed (code {}): {}", code, stderr);
+            return Ok(ToolResponse {
+                success: false,
+                result: Value::Null,
+                error: Some(format!("Find command failed: {}", stderr)),
+            });
+        }
+
+        // Parse output - each line is a file path
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        tracing::debug!("Find stdout length: {} bytes", stdout.len());
+
+        let mut matches = Vec::new();
+
+        for file_path in stdout.lines() {
+            // Skip "." (current directory) which find always returns
+            if file_path == "." || file_path == "./." {
+                continue;
+            }
+
+            // Convert relative path from find to workspace path format
+            let workspace_relative_path = file_path.strip_prefix("./").unwrap_or(file_path);
+            let full_path = format!("/{}", workspace_relative_path);
+
+            // Get metadata from database to enrich the result
+            if let Ok(Some(file)) = files::get_file_by_path(conn, workspace_id, &full_path).await {
+                // Filter by file_type if specified
+                // Convert FileType enum to string for comparison with target_type
+                if let Some(ref target_type) = args.file_type {
+                    if file.file_type.to_string() != target_type.to_string() {
+                        continue;
+                    }
+                }
+
+                matches.push(FindMatch {
+                    path: file.path.clone(),
+                    name: file.name.clone(),
+                    file_type: file.file_type,
+                    size: None, // Size would require additional storage access
+                    updated_at: file.updated_at,
+                });
+            }
+        }
+
+        tracing::debug!("Found {} matches after database filtering", matches.len());
 
         // Sort matches by path for deterministic output
         matches.sort_by(|a, b| a.path.cmp(&b.path));
@@ -155,98 +254,103 @@ EXAMPLES:
     }
 }
 
-impl FindTool {
-    async fn list_files_recursive(
-        conn: &mut DbConn,
-        workspace_id: Uuid,
-        path_prefix: &str,
-    ) -> Result<Vec<crate::models::files::File>> {
-        let files = sqlx::query_as!(
-            crate::models::files::File,
-            r#"
-            SELECT
-                id, workspace_id, parent_id, author_id,
-                file_type as "file_type: crate::models::files::FileType",
-                status as "status: crate::models::files::FileStatus",
-                name, slug, path,
-                is_virtual, is_remote, permission,
-                latest_version_id,
-                deleted_at, created_at, updated_at
-            FROM files
-            WHERE workspace_id = $1
-              AND path LIKE $2 || '%'
-              AND path != $2
-              AND deleted_at IS NULL
-            ORDER BY path ASC
-            "#,
-            workspace_id,
-            path_prefix
-        )
-        .fetch_all(conn)
-        .await
-        .map_err(Error::Sqlx)?;
+/// Builds the Unix find command for file discovery
+///
+/// Requires the find command to be installed. Returns an error if find is not available.
+///
+/// # Security
+///
+/// The command uses current_dir to restrict find to the workspace directory,
+/// preventing access to files outside the workspace.
+///
+/// # Size Format
+///
+/// Uses find's size format:
+/// - `b` for 512-byte blocks (default)
+/// - `c` for bytes
+/// - `k` for kilobytes
+/// - `M` for megabytes
+/// - `G` for gigabytes
+///
+/// Examples:
+/// - `1048576c` = exactly 1,048,576 bytes
+/// - `+1048576c` = greater than 1MB
+/// - `-10485760c` = less than 10MB
+fn build_find_command(
+    name_pattern: Option<&str>,
+    base_path: &str,
+    recursive: bool,
+    min_size: Option<usize>,
+    max_size: Option<usize>,
+    file_type: Option<&FileType>,
+    workspace_path: &Path,
+) -> Result<TokioCommand> {
+    // Check if find is available
+    // Note: Both GNU and BSD find support basic operations, so we test with a simple command
+    if StdCommand::new("find")
+        .arg(".")
+        .arg("-maxdepth")
+        .arg("0")
+        .output()
+        .ok()
+        .is_some()
+    {
+        tracing::debug!("Using find for metadata search");
 
-        Ok(files)
-    }
+        let mut cmd = TokioCommand::new("find");
 
-    fn file_matches_criteria(file: &crate::models::files::File, args: &FindArgs) -> bool {
-        // Filter by name pattern
-        if let Some(ref name_pattern) = args.name {
-            if !Self::matches_pattern(&file.name, name_pattern) {
-                return false;
-            }
-        }
+        // SECURITY: Set current directory to workspace path to isolate the search
+        // This prevents find from accessing files outside this workspace
+        cmd.current_dir(workspace_path);
 
-        // Filter by file_type
-        if let Some(ref file_type) = args.file_type {
-            if &file.file_type != file_type {
-                return false;
-            }
-        }
-
-        // Filter by size (not implemented yet - would require storage metadata)
-        if args.min_size.is_some() || args.max_size.is_some() {
-            // Size filtering not implemented - skip for now
-            // TODO: Implement when size tracking is added to storage
-        }
-
-        true
-    }
-
-    fn matches_pattern(text: &str, pattern: &str) -> bool {
-        // Simple glob-style pattern matching
-        // Supports * wildcard only for now
-        if pattern.contains('*') {
-            let parts: Vec<&str> = pattern.split('*').collect();
-            if parts.len() == 2 {
-                let (prefix, suffix) = (parts[0], parts[1]);
-                if suffix.is_empty() {
-                    // Pattern like "test_*" - starts with
-                    text.starts_with(prefix)
-                } else if prefix.is_empty() {
-                    // Pattern like "*.txt" - ends with
-                    text.ends_with(suffix)
-                } else {
-                    // Pattern like "*test*" - contains
-                    text.starts_with(prefix) && text.ends_with(suffix)
-                }
-            } else {
-                // Multiple wildcards - do substring match
-                let mut result = true;
-                let mut pos = 0;
-                for part in parts {
-                    if let Some(idx) = text[pos..].find(part) {
-                        pos = idx + part.len();
-                    } else {
-                        result = false;
-                        break;
-                    }
-                }
-                result
-            }
+        // Add search directory (relative to workspace root)
+        let search_dir = if base_path == "/" {
+            "."
         } else {
-            // No wildcards - exact match
-            text == pattern
+            // Strip leading slash to get relative path from workspace root
+            base_path.strip_prefix('/').unwrap_or(base_path)
+        };
+        cmd.arg(search_dir);
+
+        // Add recursive/non-recursive flag
+        if !recursive {
+            cmd.arg("-maxdepth").arg("1");
         }
+
+        // Add type filter if file_type is specified
+        // Map our FileType to find's type options:
+        // - folder -> d (directory)
+        // - document -> f (regular file)
+        // - canvas, other -> f (regular file)
+        if let Some(ft) = file_type {
+            let find_type = match ft {
+                FileType::Folder => "d",
+                _ => "f", // All non-folder types are regular files
+            };
+            cmd.arg("-type").arg(find_type);
+        }
+
+        // Add name pattern if provided
+        if let Some(name) = name_pattern {
+            cmd.arg("-name").arg(name);
+        }
+
+        // Add size filters if provided
+        // find size format: n[cwbkMG] (c=bytes, k=KB, M=MB, G=GB)
+        if let Some(min) = min_size {
+            cmd.arg("-size").arg(format!("+{}c", min));
+        }
+        if let Some(max) = max_size {
+            cmd.arg("-size").arg(format!("-{}c", max));
+        }
+
+        // Print results (one per line)
+        cmd.arg("-print");
+
+        return Ok(cmd);
     }
+
+    Err(Error::Internal(
+        "find command not found on system. Required for find tool.".to_string()
+    ))
 }
