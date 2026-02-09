@@ -395,17 +395,6 @@ impl ChatService {
                     output.to_string()
                 }
             }
-            "file_info" => {
-                // No special handling needed - output is small (metadata)
-                // If output exceeds MAX_TOOL_OUTPUT_LENGTH, use generic truncation
-                if output.len() < MAX_TOOL_OUTPUT_LENGTH {
-                    output.to_string()
-                } else {
-                    // Fallback to generic truncation (shouldn't happen for file_info)
-                    let preview_len = 500.min(output.len());
-                    format!("{}... [truncated]", &output[..preview_len])
-                }
-            }
             other_tool => {
                 // WARN-level: Generic truncation works but might be suboptimal
                 // Most tool outputs are short (error messages, confirmation text)

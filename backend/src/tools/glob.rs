@@ -7,36 +7,6 @@ use super::{Tool, ToolConfig};
 
 /// Pattern matching helper for glob patterns
 ///
-/// Converts glob patterns to SQL LIKE patterns for database querying.
-/// Supports:
-/// - `*.rs` - matches all .rs files in any directory
-/// - `**/*.rs` - matches all .rs files recursively
-/// - `/src/**/*.rs` - matches all .rs files under src
-/// - `test_*.md` - matches all markdown files starting with test_
-fn convert_glob_to_sql_like(pattern: &str, base_path: &str) -> String {
-    let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
-
-    // Handle ** patterns (recursive)
-    if pattern.contains("**") {
-        // **/*.rs becomes %.rs (matches anything ending in .rs)
-        // /src/**/*.rs becomes src/%.rs
-        let without_globstar = pattern.replace("**/", "%");
-        return format!("{}{}", base_path.trim_end_matches('/'), without_globstar.replace('*', "%"));
-    }
-
-    // Handle * patterns (single level)
-    // *.rs becomes %.rs
-    // src/*.rs becomes src/%.rs
-    let sql_pattern = pattern.replace('*', "%");
-
-    if base_path == "/" {
-        format!("/{}", sql_pattern)
-    } else {
-        let separator = if sql_pattern.starts_with('/') { "" } else { "/" };
-        format!("{}{}{}", base_path.trim_end_matches('/'), separator, sql_pattern)
-    }
-}
-
 /// Checks if a file path matches a glob pattern
 ///
 /// This is used for additional filtering after SQL queries

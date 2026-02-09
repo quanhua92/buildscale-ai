@@ -269,7 +269,7 @@ Reads the latest version of a file within a workspace. Supports line range contr
 
 #### Request Examples
 
-**Default read (first 2000 lines):**
+**Default read (first 500 lines):**
 ```bash
 curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   -H "Authorization: Bearer <access_token>" \
