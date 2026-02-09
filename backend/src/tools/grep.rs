@@ -432,7 +432,20 @@ fn build_ripgrep_command(
     // Strip leading slashes to make pattern relative to workspace root
     if let Some(path_pattern) = path_pattern {
         let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
-        cmd.arg("--glob").arg(normalized_pattern);
+
+        // Fix: If pattern looks like a directory (no wildcards), append ** to match files inside
+        // Example: "scripts" -> "scripts/**" to match all files under scripts/
+        // Example: "*.py" -> "*.py" (already a file pattern, keep as-is)
+        // Example: "scripts/**/*.py" -> "scripts/**/*.py" (already has wildcard, keep as-is)
+        let glob_pattern = if !normalized_pattern.contains('*') {
+            // Directory-like pattern without wildcards - append /**
+            format!("{}/**", normalized_pattern)
+        } else {
+            // Already contains wildcards - use as-is
+            normalized_pattern.to_string()
+        };
+
+        cmd.arg("--glob").arg(glob_pattern);
     }
 
     // Case sensitivity
@@ -486,17 +499,38 @@ fn build_standard_grep_command(
     // Note: grep's --include only supports filename patterns, not path patterns
     // For path-based filtering (e.g., "scripts/*.rs"), we filter during parsing
     // For simple filename patterns (e.g., "*.rs"), we can use --include
+    // For directory patterns (e.g., "scripts"), we search in that directory
+    let search_dir = if let Some(path_pattern) = path_pattern {
+        let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
+
+        if !normalized_pattern.contains('/') && !normalized_pattern.contains('*') {
+            // Simple directory name like "scripts" - search in that directory
+            normalized_pattern
+        } else if !normalized_pattern.contains('*') {
+            // Path with directory like "src/lib" - search in that directory
+            normalized_pattern
+        } else {
+            // Pattern contains wildcards like "*.py" or "scripts/**/*.py"
+            // Keep search at "." and let filtering happen during parsing or via --include
+            "."
+        }
+    } else {
+        "."
+    };
+
+    // For simple filename patterns (no directory path), use --include
     if let Some(path_pattern) = path_pattern {
         let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
-        // Only use --include if it's a simple filename pattern (no directory path)
-        if !normalized_pattern.contains('/') {
+        // Only use --include if it's a simple filename pattern (no directory path, no wildcards in directory part)
+        if !normalized_pattern.contains('/') && normalized_pattern.contains('*') {
             cmd.arg("--include").arg(normalized_pattern);
         }
+        // If it's a directory name without wildcards, don't use --include
     }
 
     // Set current directory to workspace_path
     cmd.current_dir(workspace_path);
-    cmd.arg(".");
+    cmd.arg(search_dir);
 
     Ok(cmd)
 }

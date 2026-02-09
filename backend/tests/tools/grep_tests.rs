@@ -250,3 +250,46 @@ async fn test_grep_path_pattern_parent_directory_rejected() {
                 "Expected specific error message for pattern: '{}'", pattern);
     }
 }
+
+#[tokio::test]
+async fn test_grep_directory_search() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Directory Search Test").await;
+    
+    // Create a scripts directory with a Python file containing main()
+    write_file(&app, &workspace_id, &token, "/scripts/build_index.py", serde_json::json!(r#"
+#!/usr/bin/env python3
+def main():
+    print("Building index...")
+    notes = []
+    return notes
+
+if __name__ == "__main__":
+    main()
+"#)).await;
+    
+    // Also create a file in root to ensure we only search in scripts
+    write_file(&app, &workspace_id, &token, "/main.py", serde_json::json!("def other_function(): pass")).await;
+
+    // Search for "main" in scripts directory
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "main",
+        "path_pattern": "scripts"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+    
+    let matches = body["result"]["matches"].as_array().unwrap();
+    
+    // Should find matches in scripts/build_index.py, NOT in root main.py
+    assert!(matches.len() >= 2, "Should find at least 'def main()' and 'main()' calls");
+    
+    // Verify all matches are in the scripts directory
+    for match_obj in matches {
+        let path = match_obj["path"].as_str().unwrap();
+        assert!(path.starts_with("/scripts/"), "All matches should be in /scripts/ directory, got: {}", path);
+    }
+}
