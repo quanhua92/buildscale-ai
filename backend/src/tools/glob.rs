@@ -11,6 +11,13 @@ use super::{Tool, ToolConfig};
 ///
 /// This is used for additional filtering after SQL queries
 /// since SQL LIKE may not cover all glob edge cases.
+///
+/// NOTE: We use a custom implementation instead of glob/globset crates because:
+/// 1. SQL queries already do most of the filtering work (path prefix matching)
+/// 2. We only need to handle common simple patterns (*.rs, **/*.md, etc.)
+/// 3. The database-backed file system doesn't map directly to filesystem paths
+/// 4. Custom logic allows tight integration with our SQL-based pattern matching
+/// 5. The patterns we support are intentionally limited to well-defined cases
 fn path_matches_glob(file_path: &str, pattern: &str) -> bool {
     let file_path = file_path.strip_prefix('/').unwrap_or(file_path);
     let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
