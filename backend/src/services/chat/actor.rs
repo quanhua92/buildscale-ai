@@ -816,13 +816,46 @@ impl ChatActor {
                             "Tool execution completed".to_string()
                         };
 
-                         // Heuristic: if the output contains "Error:" it's likely a failure
-                         let success = !output.to_lowercase().contains("error:");
+                        // Determine tool success by parsing the response
+                        // Tools return ToolResponse {success, result, error} format
+                        let (success, normalized_output) = if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
+                            // Check if this is a ToolResponse format with explicit success field
+                            if let Some(success_bool) = result_json.get("success").and_then(|v| v.as_bool()) {
+                                // ToolResponse format: {"success": true/false, "result": ..., "error": ...}
+                                let normalized = if success_bool {
+                                    // Success: extract result field
+                                    result_json.get("result")
+                                        .cloned()
+                                        .unwrap_or(result_json)
+                                        .to_string()
+                                } else {
+                                    // Failure: extract error message
+                                    result_json.get("error")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| output.clone())
+                                };
+                                (success_bool, normalized)
+                            } else {
+                                // No success field - likely a bare result (success)
+                                // Check for error patterns in the output
+                                let has_error = output.starts_with("Error:") ||
+                                                 output.starts_with("error:") ||
+                                                 (output.contains("Tool error") && output.contains("failed"));
+                                (!has_error, output.clone())
+                            }
+                        } else {
+                            // Not JSON - use heuristic for plain text
+                            let has_error = output.starts_with("Error:") ||
+                                             output.starts_with("error:") ||
+                                             (output.contains("Tool error") && output.contains("failed"));
+                            (!has_error, output.clone())
+                        };
 
-                         // Check if this is an ask_user tool result with question_pending
+                        // Check if this is an ask_user tool result with question_pending
                          // Only ask_user returns question_pending status
                          if success {
-                             if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
+                             if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&normalized_output) {
                                  // Handle question_pending (ask_user tool)
                                  if let Some(status) = result_json.get("status").and_then(|s| s.as_str()) {
                                      if status == "question_pending" {
@@ -919,7 +952,7 @@ impl ChatActor {
                                  output.clone()
                              }
                          );
-                          if let Err(e) = self.event_tx.send(SseEvent::Observation { output: output.clone(), success }) {
+                          if let Err(e) = self.event_tx.send(SseEvent::Observation { output: normalized_output.clone(), success }) {
                               tracing::error!("[ChatActor] [SSE] Failed to send Observation event: {:?}", e);
                           }
 
@@ -931,7 +964,7 @@ impl ChatActor {
                               };
                               if let Some(tool_name) = tool_name_opt {
                                   // Summarize output for persistence to avoid DB bloat
-                                  let summarized_output = ChatService::summarize_tool_outputs(&tool_name, &output);
+                                  let summarized_output = ChatService::summarize_tool_outputs(&tool_name, &normalized_output);
 
                                   // Build detailed content for .chat file
                                   let tool_result_content = format!(

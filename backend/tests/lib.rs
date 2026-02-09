@@ -9,3 +9,4 @@ pub mod tools;
 pub mod services;
 pub mod chat;
 pub mod flexible_parsing_tests;
+pub mod tool_success_tests;
