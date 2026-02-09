@@ -527,14 +527,14 @@ pub struct GlobArgs {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobResult {
     pub pattern: String,
     pub base_path: String,
     pub matches: Vec<GlobMatch>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobMatch {
     pub path: String,
     pub name: String,
@@ -647,13 +647,13 @@ pub struct ToolResponse {
 }
 
 /// Tool-specific result structures
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsResult {
     pub path: String,
     pub entries: Vec<LsEntry>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsEntry {
     pub id: Uuid,
     pub name: String,
@@ -664,12 +664,12 @@ pub struct LsEntry {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrepResult {
     pub matches: Vec<GrepMatch>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrepMatch {
     pub path: String,
     pub line_number: i32,
