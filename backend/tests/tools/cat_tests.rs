@@ -136,3 +136,95 @@ async fn test_cat_partial_failure() {
     let content = files[1]["content"].as_str().unwrap();
     assert!(content.contains("Error reading"));
 }
+
+#[tokio::test]
+async fn test_cat_show_ends() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Show Ends Test").await;
+
+    let content = "line 1   \nline 2\nline 3   "; // Trailing spaces
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "show_ends": true
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    assert!(result_content.contains("line 1   $"));
+    assert!(result_content.contains("line 2$"));
+    assert!(result_content.contains("line 3   $"));
+}
+
+#[tokio::test]
+async fn test_cat_show_tabs() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Show Tabs Test").await;
+
+    let content = "line\t1\n\tindented\nmixed\t \tspaces";
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "show_tabs": true
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    assert!(result_content.contains("line^I1"));
+    assert!(result_content.contains("^Iindented"));
+    assert!(result_content.contains("mixed^I ^Ispaces"));
+}
+
+#[tokio::test]
+async fn test_cat_squeeze_blank() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Squeeze Blank Test").await;
+
+    let content = "line 1\n\n\n\nline 2\n\n\nline 3"; // Multiple blank lines
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "squeeze_blank": true
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    // Should squeeze repeated blank lines
+    assert!(result_content.matches("\n\n").count() <= 2);
+}
+
+#[tokio::test]
+async fn test_cat_combined_special_chars() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Combined Test").await;
+
+    let content = "line\t1   \n\n\nline\t2   ";
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "show_ends": true,
+        "show_tabs": true,
+        "squeeze_blank": true
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    assert!(result_content.contains("line^I1   $"));
+    assert!(result_content.contains("line^I2   $"));
+}

@@ -811,6 +811,14 @@ pub struct CatArgs {
     pub show_headers: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub number_lines: Option<bool>,
+
+    // Tier 1 - Special character display options
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub show_ends: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub show_tabs: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub squeeze_blank: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
