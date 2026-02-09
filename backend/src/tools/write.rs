@@ -103,7 +103,7 @@ impl Tool for WriteTool {
         }
 
         let result = if let Some(file) = existing_file {
-            // Prepare content: handle auto-wrapping for documents
+            // Prepare content: validate content type compatibility (content stored as-is)
             let final_content = Self::prepare_content_for_type(file.file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
@@ -133,7 +133,7 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
-            // Prepare content: handle auto-wrapping for documents
+            // Prepare content: validate content type compatibility (content stored as-is)
             let final_content = Self::prepare_content_for_type(file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
@@ -168,8 +168,14 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    /// Validates content based on the file type.
-    /// Documents and Chat files can contain raw text or arbitrary JSON.
+    /// Validates content type compatibility (no wrapping/transformation).
+    ///
+    /// IMPORTANT: This function does NOT wrap or transform content.
+    /// Content is stored exactly as provided:
+    /// - Raw strings → stored as JSON strings
+    /// - JSON objects → stored as structured JSON
+    ///
+    /// This is consistent with edit.rs which also stores content as raw strings.
     fn prepare_content_for_type(
         actual_type: FileType,
         content: Value,
