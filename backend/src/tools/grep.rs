@@ -10,6 +10,56 @@ use std::path::Path;
 use std::collections::HashMap;
 use super::{Tool, ToolConfig};
 
+/// State for tracking context lines across ripgrep JSON events
+struct ContextTracker {
+    before_context: Vec<String>,
+    after_context: Vec<String>,
+    pending_match: Option<GrepMatch>,
+}
+
+impl ContextTracker {
+    fn new() -> Self {
+        Self {
+            before_context: Vec::new(),
+            after_context: Vec::new(),
+            pending_match: None,
+        }
+    }
+
+    fn add_before_context(&mut self, line: String) {
+        self.before_context.push(line);
+    }
+
+    fn add_after_context(&mut self, line: String) {
+        self.after_context.push(line);
+    }
+
+    fn set_match(&mut self, grep_match: GrepMatch) {
+        // Attach any accumulated before-context to this match
+        let mut match_with_context = grep_match;
+        if !self.before_context.is_empty() {
+            match_with_context.before_context = Some(std::mem::take(&mut self.before_context));
+        }
+        self.pending_match = Some(match_with_context);
+    }
+
+    fn finalize_match(&mut self) -> Option<GrepMatch> {
+        if let Some(mut match_with_context) = self.pending_match.take() {
+            // Attach any accumulated after-context to this match
+            if !self.after_context.is_empty() {
+                match_with_context.after_context = Some(std::mem::take(&mut self.after_context));
+            }
+            Some(match_with_context)
+        } else {
+            None
+        }
+    }
+
+    fn has_pending_match(&self) -> bool {
+        self.pending_match.is_some()
+    }
+}
+
 /// Checks if a file path matches a glob pattern
 /// Supports basic wildcards: * and **
 fn path_matches_glob(file_path: &str, pattern: &str) -> bool {
@@ -271,14 +321,19 @@ Returns matching file paths with line numbers and context lines. Use for discove
             // Use JSON parser for ripgrep
             tracing::debug!("Parsing ripgrep JSON output");
             let mut file_path_cache = HashMap::new();
+            let mut context_tracker = ContextTracker::new();
             for line in stdout.lines() {
                 if matches.len() >= MAX_MATCHES {
                     break;
                 }
 
-                if let Some(grep_match) = parse_json_grep_output(line, &search_path, &mut file_path_cache) {
+                if let Some(grep_match) = parse_json_grep_output(line, &search_path, &mut file_path_cache, &mut context_tracker) {
                     matches.push(grep_match);
                 }
+            }
+            // Don't forget to finalize the last match if there is one
+            if let Some(final_match) = context_tracker.finalize_match() {
+                matches.push(final_match);
             }
         } else {
             // Use plain text parser for grep
@@ -489,6 +544,7 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
 enum RipgrepEvent {
     Begin { data: BeginData },
     Match { data: MatchData },
+    Context { data: ContextData },
     End {
         #[allow(dead_code)]
         data: EndData
@@ -511,6 +567,19 @@ struct MatchData {
     line_number: Option<u64>,
     #[allow(dead_code)]
     submatches: Vec<Submatch>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ContextData {
+    #[allow(dead_code)]
+    path: PathField,
+    lines: LinesField,
+    #[allow(dead_code)]
+    line_number: u64,
+    #[allow(dead_code)]
+    absolute_offset: u64,
+    #[allow(dead_code)]
+    submatches: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -553,8 +622,14 @@ struct Submatch {
 }
 
 /// Parses ripgrep JSON output (line-delimited JSON)
-/// Returns None for non-match events (begin/end/summary)
-fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &mut HashMap<String, String>) -> Option<GrepMatch> {
+/// Returns None for non-match events (begin/end/summary/context)
+/// Returns Some(match) when a match is finalized (after seeing its after-context or next event)
+fn parse_json_grep_output(
+    line: &str,
+    workspace_path: &Path,
+    file_path_cache: &mut HashMap<String, String>,
+    context_tracker: &mut ContextTracker,
+) -> Option<GrepMatch> {
     let event: RipgrepEvent = serde_json::from_str(line).ok()?;
 
     match event {
@@ -576,7 +651,22 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
             file_path_cache.insert(full_path.clone(), path_with_slash);
             None
         }
+        RipgrepEvent::Context { data } => {
+            let line_text = data.lines.text.trim_end().to_string();
+
+            if context_tracker.has_pending_match() {
+                // This is after-context for the current match
+                context_tracker.add_after_context(line_text);
+            } else {
+                // This is before-context for the next match
+                context_tracker.add_before_context(line_text);
+            }
+            None
+        }
         RipgrepEvent::Match { data } => {
+            // Finalize previous match if there is one
+            let previous_match = context_tracker.finalize_match();
+
             // Get the path from cache or resolve it
             let full_path = data.path.text;
             let relative_path = file_path_cache.get(&full_path)
@@ -600,17 +690,22 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
 
             tracing::trace!("JSON match: {}:{}: {}", relative_path, line_number, line_text);
 
-            Some(GrepMatch {
+            // Set this as the pending match (will be finalized when we see the next event)
+            context_tracker.set_match(GrepMatch {
                 path: relative_path,
                 line_number,
                 line_text,
-                before_context: None,  // Context parsing from JSON is complex, skip for now
+                before_context: None,
                 after_context: None,
-            })
+            });
+
+            // Return the previous match (now finalized)
+            previous_match
         }
         RipgrepEvent::End { .. } => {
             tracing::trace!("JSON end event");
-            None
+            // Finalize any pending match when we reach end of file
+            context_tracker.finalize_match()
         }
         RipgrepEvent::Summary { .. } => {
             tracing::trace!("JSON summary event");

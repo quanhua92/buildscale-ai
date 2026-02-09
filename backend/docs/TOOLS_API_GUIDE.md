@@ -264,7 +264,7 @@ Reads the latest version of a file within a workspace. Supports line range contr
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `path` | string | Yes | - | Full path to the file |
-| `offset` | integer | No | 0 | Starting line position. Positive: from beginning (e.g., 100 = line 100+). Negative: from end (e.g., -100 = last 100 lines). |
+| `offset` | integer | No | 0 | Starting line number (0-indexed). `0` is the first line. Positive values count from beginning (e.g., `100` starts at line 101). Negative values count from end (e.g., `-100` reads the last 100 lines). |
 | `limit` | integer | No | 500 | Maximum number of lines to read. Content is truncated at this limit. |
 
 #### Request Examples

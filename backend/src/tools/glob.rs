@@ -25,12 +25,36 @@ fn path_matches_glob(file_path: &str, pattern: &str) -> bool {
                 // Pattern like "src/**" - matches everything under src
                 return file_path.starts_with(prefix) || file_path == prefix;
             }
-            // Pattern like "**/*.rs" - matches anything ending in .rs
+            // Pattern like "**/*.rs" - matches any .rs file
             if prefix.is_empty() {
-                return file_path.ends_with(&suffix.replace('*', ""));
+                // Suffix might be "*.rs" where * is a single wildcard, not globstar
+                // We need to match paths ending with .rs (and not containing / in the suffix part after **)
+                // For "**/*.rs", suffix is "/*.rs", we need to match paths where the last segment matches *.rs
+                // Extract just the filename pattern from suffix (after any slashes)
+                let filename_pattern = suffix.trim_start_matches('/');
+                if filename_pattern.contains('*') {
+                    // Simple case: *.ext pattern - check if file ends with .ext
+                    // Replace * with empty string to get just .ext
+                    let ext = filename_pattern.replace('*', "");
+                    return file_path.ends_with(&ext) && !file_path[file_path.len() - ext.len()..].contains('/');
+                }
+                return file_path.ends_with(suffix);
             }
             // Pattern like "src/**/*.rs"
-            return file_path.starts_with(prefix) && file_path.ends_with(&suffix.replace('*', ""));
+            // File must start with prefix and end with a path matching the suffix pattern
+            if !file_path.starts_with(prefix) {
+                return false;
+            }
+            // For "src/**/*.rs", suffix is "/*.rs"
+            // We need to check if the path after prefix matches *.rs
+            let remaining = &file_path[prefix.len()..];
+            let filename_pattern = suffix.trim_start_matches('/');
+            if filename_pattern.contains('*') {
+                // Simple case: *.ext pattern
+                let ext = filename_pattern.replace('*', "");
+                return remaining.ends_with(&ext) && !remaining[remaining.len() - ext.len()..].contains('/');
+            }
+            return remaining.ends_with(suffix);
         }
     }
 
