@@ -841,6 +841,7 @@ impl ChatActor {
                                 // Check for error patterns in the output
                                 let has_error = output.starts_with("Error:") ||
                                                  output.starts_with("error:") ||
+                                                 output.contains("ToolCallError") ||
                                                  (output.contains("Tool error") && output.contains("failed"));
                                 (!has_error, output.clone())
                             }
@@ -848,6 +849,7 @@ impl ChatActor {
                             // Not JSON - use heuristic for plain text
                             let has_error = output.starts_with("Error:") ||
                                              output.starts_with("error:") ||
+                                             output.contains("ToolCallError") ||
                                              (output.contains("Tool error") && output.contains("failed"));
                             (!has_error, output.clone())
                         };
