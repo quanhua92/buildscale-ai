@@ -80,16 +80,16 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
                     "description": "File type filter (document, folder, canvas, etc.)"
                 },
                 "min_size": {
-                    "type": ["integer", "null"],
-                    "description": "Minimum file size in bytes"
+                    "type": ["integer", "string", "null"],
+                    "description": "Minimum file size in bytes. Accepts integer or string (e.g., 1048576 or '1048576')."
                 },
                 "max_size": {
-                    "type": ["integer", "null"],
-                    "description": "Maximum file size in bytes"
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum file size in bytes. Accepts integer or string (e.g., 10485760 or '10485760')."
                 },
                 "recursive": {
-                    "type": ["boolean", "null"],
-                    "description": "Search subdirectories (default: true)"
+                    "type": ["boolean", "string", "null"],
+                    "description": "Search subdirectories (default: true). Accepts boolean or string (e.g., true or 'true')."
                 }
             },
             "required": [],

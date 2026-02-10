@@ -924,6 +924,78 @@ pub async fn update_workspace(
 - **No Hidden Logic**: Should strictly call `Tool::execute` after basic type conversion.
 - **Interface Owner**: Defines the JSON Schema exposed to the AI, but delegates implementation details to the core tools.
 
+### CRITICAL: Flexible Deserializers for All Tool Parameters
+
+**⚠️ MANDATORY REQUIREMENT**: ALL tool parameters that accept numeric or boolean values MUST use flexible deserializers.
+
+**Why**: AI agents often pass parameters as strings (e.g., `"50"` instead of `50`, `"true"` instead of `true`). Without flexible deserializers, this causes `ToolCallError: JsonError`.
+
+**Required Deserializers** (defined in `/src/models/requests.rs`):
+- `deserialize_flexible_bool` / `deserialize_flexible_bool_option` - for `bool` or `Option<bool>`
+- `deserialize_flexible_usize` / `deserialize_flexible_usize_option` - for `usize` or `Option<usize>`
+- `deserialize_flexible_isize` / `deserialize_flexible_isize_option` - for `isize` or `Option<isize>`
+
+**Implementation Pattern**:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YourToolArgs {
+    // ✅ CORRECT: Use flexible deserializer for boolean parameter
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub your_flag: Option<bool>,
+
+    // ✅ CORRECT: Use flexible deserializer for numeric parameter
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub your_limit: Option<usize>,
+
+    // ❌ WRONG: Will fail when AI passes string values
+    #[serde(default)]
+    pub your_limit: Option<usize>,
+}
+```
+
+**JSON Schema Requirements**:
+In the tool's `definition()` method, all numeric/boolean parameters MUST accept strings:
+```rust
+fn definition(&self) -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "your_flag": {
+                // ✅ CORRECT: Accept boolean OR string
+                "type": ["boolean", "string", "null"],
+                "description": "Accepts boolean or string (e.g., true or 'true')"
+            },
+            "your_limit": {
+                // ✅ CORRECT: Accept integer OR string
+                "type": ["integer", "string", "null"],
+                "description": "Accepts integer or string (e.g., 100 or '100')"
+            },
+            // ❌ WRONG: Only accepts integer, will fail with string values
+            "your_limit": {
+                "type": ["integer", "null"],
+                "description": "..."
+            }
+        }
+    })
+}
+```
+
+**Examples of Tools Using Flexible Deserializers**:
+- `ls`: `recursive` uses `deserialize_flexible_bool_option`
+- `read`: `offset`, `limit`, `cursor` use `deserialize_flexible_isize_option` / `deserialize_flexible_usize_option`
+- `grep`: `case_sensitive`, `before_context`, `after_context`, `context` use flexible deserializers
+- `cat`: `offset`, `limit` use flexible deserializers
+- `find`: `recursive`, `min_size`, `max_size` use flexible deserializers
+- `read_multiple_files`: `limit` uses `deserialize_flexible_usize_option`
+
+**Verification Checklist** for New Tools:
+- [ ] All `bool`/`Option<bool>` fields use `deserialize_flexible_bool` or `deserialize_flexible_bool_option`
+- [ ] All `usize`/`Option<usize>` fields use `deserialize_flexible_usize` or `deserialize_flexible_usize_option`
+- [ ] All `isize`/`Option<isize>` fields use `deserialize_flexible_isize` or `deserialize_flexible_isize_option`
+- [ ] JSON schema accepts `["boolean", "string", "null"]` for booleans
+- [ ] JSON schema accepts `["integer", "string", "null"]` for numbers
+- [ ] Tests verify both numeric and string parameter values work correctly
+
 ### Workflow: Adding a New Workspace Tool
 
 Follow these 6 steps to ensure consistency across code, documentation, and AI orchestration:

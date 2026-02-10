@@ -62,8 +62,8 @@ Array of results, one per file, with:
                     "description": "List of file paths to read"
                 },
                 "limit": {
-                    "type": ["integer", "null"],
-                    "description": "Optional maximum lines per file (default: 500)"
+                    "type": ["integer", "string", "null"],
+                    "description": "Optional maximum lines per file (default: 500). Accepts integer or string (e.g., 100 or '100')."
                 }
             },
             "required": ["paths"],

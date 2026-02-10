@@ -755,7 +755,7 @@ pub struct FileInfoResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadMultipleFilesArgs {
     pub paths: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub limit: Option<usize>,
 }
 
@@ -784,9 +784,11 @@ pub struct FindArgs {
     pub name: Option<String>,
     pub path: Option<String>,
     pub file_type: Option<FileType>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub min_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub max_size: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_bool_option")]
     pub recursive: Option<bool>,
 }
 
