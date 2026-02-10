@@ -819,6 +819,12 @@ pub struct CatArgs {
     pub show_tabs: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub squeeze_blank: Option<bool>,
+
+    // Line range filtering
+    #[serde(default)]
+    pub offset: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -832,6 +838,10 @@ pub struct CatFileEntry {
     pub path: String,
     pub content: String,
     pub line_count: usize,
+    // Range metadata
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+    pub total_lines: Option<usize>,
 }
 
 /// Unified tool response structure

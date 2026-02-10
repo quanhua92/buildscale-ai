@@ -228,3 +228,145 @@ async fn test_cat_combined_special_chars() {
     assert!(result_content.contains("line^I1   $"));
     assert!(result_content.contains("line^I2   $"));
 }
+
+#[tokio::test]
+async fn test_cat_with_offset() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Offset Test").await;
+
+    let content = "line 1\nline 2\nline 3\nline 4\nline 5";
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "offset": 2,
+        "limit": 2
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    // Should only contain lines 3-4 (0-based offset: lines 2-3)
+    assert!(result_content.contains("line 3"));
+    assert!(result_content.contains("line 4"));
+    assert!(!result_content.contains("line 1"));
+    assert!(!result_content.contains("line 5"));
+
+    // Check metadata
+    let files = body["result"]["files"].as_array().unwrap();
+    assert_eq!(files[0]["offset"], 2);
+    assert_eq!(files[0]["limit"], 2);
+    assert_eq!(files[0]["total_lines"], 5);
+}
+
+#[tokio::test]
+async fn test_cat_with_negative_offset() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Negative Offset Test").await;
+
+    let content = "line 1\nline 2\nline 3\nline 4\nline 5";
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "offset": -2,
+        "limit": 10
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    // Should contain last 2 lines
+    assert!(result_content.contains("line 4"));
+    assert!(result_content.contains("line 5"));
+    assert!(!result_content.contains("line 1"));
+    assert!(!result_content.contains("line 2"));
+}
+
+#[tokio::test]
+async fn test_cat_offset_with_smart_line_numbering() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Smart Line Numbers Test").await;
+
+    let content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8";
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "offset": 5,
+        "limit": 3,
+        "number_lines": true
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    // Line numbers should start at 6 (offset + 1 for 1-based indexing)
+    assert!(result_content.contains("     6\tline 6"));
+    assert!(result_content.contains("     7\tline 7"));
+    assert!(result_content.contains("     8\tline 8"));
+    assert!(!result_content.contains("     1\tline 1"));
+}
+
+#[tokio::test]
+async fn test_cat_offset_with_special_chars() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Offset Special Chars Test").await;
+
+    let content = "line\t1\nline\t2\nline\t3\nline\t4\nline\t5";
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file.txt"],
+        "offset": 2,
+        "limit": 2,
+        "show_tabs": true,
+        "number_lines": true
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let result_content = body["result"]["content"].as_str().unwrap();
+
+    // Should show lines 3-4 with tabs as ^I and line numbers starting at 3
+    assert!(result_content.contains("     3\tline^I3"));
+    assert!(result_content.contains("     4\tline^I4"));
+}
+
+#[tokio::test]
+async fn test_cat_offset_multiple_files() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Cat Offset Multiple Files Test").await;
+
+    let content1 = "line 1\nline 2\nline 3\nline 4\nline 5";
+    let content2 = "line 1\nline 2\nline 3";
+    write_file(&app, &workspace_id, &token, "/file1.txt", serde_json::json!(content1)).await;
+    write_file(&app, &workspace_id, &token, "/file2.txt", serde_json::json!(content2)).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "cat", serde_json::json!({
+        "paths": ["/file1.txt", "/file2.txt"],
+        "offset": 1,
+        "limit": 2
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    let files = body["result"]["files"].as_array().unwrap();
+
+    // Both files should have same offset/limit applied
+    assert_eq!(files[0]["line_count"], 2);
+    assert_eq!(files[0]["offset"], 1);
+    assert_eq!(files[0]["total_lines"], 5);
+
+    assert_eq!(files[1]["line_count"], 2);
+    assert_eq!(files[1]["offset"], 1);
+    assert_eq!(files[1]["total_lines"], 3);
+}
