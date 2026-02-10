@@ -62,8 +62,18 @@ EXAMPLES:
         let file = file_queries::get_file_by_path(conn, workspace_id, &path).await?
             .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
 
-        // Get file size from storage if available
-        let size = None; // TODO: Implement size tracking in storage layer
+        // Get file size from filesystem using workspace path
+        let workspace_path = storage.get_workspace_path(workspace_id);
+        let relative_path = path.strip_prefix('/').unwrap_or(&path);
+        let file_path = workspace_path.join(relative_path);
+
+        let size = if !matches!(file.file_type, crate::models::files::FileType::Folder) {
+            tokio::fs::metadata(&file_path).await
+                .map(|metadata| Some(metadata.len() as usize))
+                .unwrap_or(None)
+        } else {
+            None // Folders don't have a size
+        };
 
         // Get line count for text files only
         let line_count = if matches!(file.file_type, crate::models::files::FileType::Document) {
