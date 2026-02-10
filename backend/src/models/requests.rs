@@ -863,7 +863,7 @@ pub struct LsResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsEntry {
-    pub id: Uuid,
+    pub id: Option<Uuid>,  // None for filesystem-only files (not in database)
     pub name: String,
     pub display_name: String,
     pub path: String,
