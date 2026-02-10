@@ -640,7 +640,7 @@ pub struct EditArgs {
     pub new_string: Option<String>,
 
     // For Insert operation: insert_line and content
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub insert_line: Option<usize>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

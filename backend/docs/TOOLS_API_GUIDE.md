@@ -1188,7 +1188,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "result": {
     "path": "/config.json",
     "file_type": "document",
-    "size": null,
+    "size": 1024,
     "line_count": 25,
     "created_at": "2025-01-15T10:30:00Z",
     "updated_at": "2025-01-15T10:30:00Z",
@@ -1202,7 +1202,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Metadata Query**: Only reads file metadata, not full content (except for line_count).
 - **Line Count**: For text files (`file_type: "document"`), content is read to count lines.
-- **Size Field**: Currently returns `null` (size tracking not yet implemented in storage).
+- **Size Field**: Returns actual file size in bytes by querying the filesystem metadata.
 - **Content Hash**: Returns SHA-256 hash of the full file content from the latest version.
 - **Timestamps**: Returns both `created_at` and `updated_at` for file tracking.
 - **Virtual Files**: Works with both regular files and virtual files (e.g., Chats).
@@ -1212,7 +1212,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Check before reading**: Use `file_info` to verify file existence and size before using `read`
 - **Line count accuracy**: For text files, the content is read to count lines (not metadata-only)
 - **Hash for editing**: The `hash` field is required for `edit` tool's `last_read_hash` parameter
-- **Size not implemented**: The `size` field returns `null` until storage layer tracking is added
+- **Size accuracy**: The `size` field returns the actual file size from disk (not database storage)
 - **Use case decisions**: Use `file_info` for quick checks, `read` when you need the actual content
 
 ---

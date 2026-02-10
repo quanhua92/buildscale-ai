@@ -377,7 +377,7 @@ INSERT EXAMPLE:
                 "path": {"type": "string"},
                 "old_string": {"type": ["string", "null"], "description": "For REPLACE: text to find and replace (must be unique and non-empty)"},
                 "new_string": {"type": ["string", "null"], "description": "For REPLACE: replacement text"},
-                "insert_line": {"type": ["integer", "null"], "description": "For INSERT: line number (0-indexed) where content is added"},
+                "insert_line": {"type": ["integer", "string", "null"], "description": "For INSERT: line number (0-indexed) where content is added. Accepts integer or string (e.g., 0 or '0')."},
                 "insert_content": {"type": ["string", "null"], "description": "For INSERT: content to insert at insert_line"},
                 "last_read_hash": {"type": ["string", "null"], "description": "Hash from latest read (prevents conflicts)"}
             },
