@@ -42,6 +42,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `mkdir` | Create directory | `path` | `path`, `file_id` |
 | `edit` | Edit file content | `path`, `old_string`, `new_string`, `last_read_hash?` | `path`, `file_id`, `version_id` |
 | `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
+| `cat` | Concatenate files with formatting | `paths[]`, `offset?`, `limit?`, `show_ends?`, `show_tabs?`, `squeeze_blank?`, `number_lines?`, `show_headers?` | `content`, `files[]` with `offset`, `limit`, `total_lines` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -1020,7 +1021,9 @@ Concatenates and displays multiple files with Unix-style formatting options for 
   "show_tabs": true,
   "squeeze_blank": true,
   "number_lines": false,
-  "show_headers": false
+  "show_headers": false,
+  "offset": 100,
+  "limit": 50
 }
 ```
 
@@ -1030,11 +1033,14 @@ Concatenates and displays multiple files with Unix-style formatting options for 
 | `show_ends` | boolean | No | Display `$` at end of each line to show trailing whitespace (default: `false`) |
 | `show_tabs` | boolean | No | Display tab characters as `^I` (default: `false`) |
 | `squeeze_blank` | boolean | No | Suppress repeated empty lines (default: `false`) |
-| `number_lines` | boolean | No | Add line numbers to all lines (default: `false`) |
+| `number_lines` | boolean | No | Add line numbers to all lines (default: `false`). Line numbers reflect actual file position when using offset. |
 | `show_headers` | boolean | No | Add filename headers before each file (default: `false`) |
+| `offset` | integer | No | Starting line position (default: `0`). Positive values start from beginning (e.g., `100` = line 100+). Negative values read from end (e.g., `-50` = last 50 lines). |
+| `limit` | integer | No | Maximum number of lines to read per file (default: unlimited). Use with offset to read specific ranges. |
 
-#### Request Example
+#### Request Examples
 
+**Basic concatenation with special characters:**
 ```bash
 curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   -H "Authorization: Bearer <access_token>" \
@@ -1045,6 +1051,38 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
       "paths": ["/src/main.rs", "/src/lib.rs"],
       "show_ends": true,
       "show_tabs": true
+    }
+  }'
+```
+
+**Read specific line range with smart numbering:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "cat",
+    "args": {
+      "paths": ["/src/main.rs"],
+      "offset": 100,
+      "limit": 50,
+      "number_lines": true,
+      "show_tabs": true
+    }
+  }'
+```
+
+**Read last 100 lines:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "cat",
+    "args": {
+      "paths": ["/logs/error.log"],
+      "offset": -100,
+      "show_ends": true
     }
   }'
 ```
@@ -1060,12 +1098,18 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
       {
         "path": "/src/main.rs",
         "content": "fn main() {\n    println!(\"Hello\");$}",
-        "line_count": 2
+        "line_count": 2,
+        "offset": 0,
+        "limit": 50,
+        "total_lines": 150
       },
       {
         "path": "/src/lib.rs",
         "content": "pub fn hello() {}\n$",
-        "line_count": 1
+        "line_count": 1,
+        "offset": 0,
+        "limit": 50,
+        "total_lines": 50
       }
     ]
   },
@@ -1077,7 +1121,11 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Concatenation**: Joins multiple files sequentially with optional separators.
 - **Special Characters**: Uses Unix-style formatting (`show_ends` adds `$`, `show_tabs` shows `^I`).
-- **Line Numbers**: When enabled, lines are numbered starting from 1 (format: `     1	content`).
+- **Smart Line Numbers**: When `number_lines=true` with `offset`, line numbers reflect actual file position (e.g., `offset=100` starts numbering at 101).
+- **Line Range Filtering**: `offset` and `limit` enable reading specific portions of files for targeted debugging.
+  - **Positive offset**: Reads from specified line number (0-indexed, so `offset=100` starts at line 100).
+  - **Negative offset**: Reads from end (e.g., `offset=-50` reads last 50 lines).
+  - **Per-file application**: Offset/limit applies to each file individually when concatenating multiple files.
 - **Blank Line Squeezing**: `squeeze_blank` replaces multiple consecutive newlines with a single newline.
 - **Headers**: When `show_headers` is `true`, adds `==> filename <==` before each file.
 - **File Limit**: Maximum 20 files per request to prevent excessive output.
@@ -1088,12 +1136,17 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - `show_tabs`: Displays tabs as `^I` to distinguish from spaces (like `cat -T`)
 - `squeeze_blank`: Suppresses repeated empty lines (like `cat -s`)
 
+**LINE RANGE FILTERING:**
+- `offset`: Controls starting position (positive from start, negative from end)
+- `limit`: Controls maximum lines to read per file
+- Smart numbering helps identify which lines have issues when debugging specific ranges
+
 **CRITICAL USAGE NOTES:**
-- **Use cat for debugging**: Special character display helps identify tabs vs spaces, trailing whitespace
+- **Use cat for debugging**: Special character display helps identify tabs vs spaces, trailing whitespace in specific line ranges
 - **Use read for navigation**: The `read` tool supports pagination and scrolling for large files
-- **Token efficiency**: Special characters help identify whitespace issues without seeing raw bytes
-- **Line numbers**: Use `number_lines` for code review or debugging reference
-- **Multiple files**: Cat is more efficient than multiple `read` calls for concatenation
+- **Token efficiency**: Combine offset/limit with special characters to debug specific sections without reading entire files
+- **Line numbers**: Smart numbering with offset helps pinpoint exact line locations for debugging
+- **Multiple files**: Cat is more efficient than multiple `read` calls for concatenation with line range filtering
 
 ---
 
