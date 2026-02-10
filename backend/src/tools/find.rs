@@ -217,6 +217,13 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
             let workspace_relative_path = file_path.strip_prefix("./").unwrap_or(file_path);
             let full_path = format!("/{}", workspace_relative_path);
 
+            // Get file size using stat command (portable: works on both Linux and macOS)
+            let size = if let Ok(metadata) = tokio::fs::metadata(workspace_path.join(&workspace_relative_path)).await {
+                Some(metadata.len() as usize)
+            } else {
+                None
+            };
+
             // Get metadata from database to enrich the result
             if let Ok(Some(file)) = files::get_file_by_path(conn, workspace_id, &full_path).await {
                 // Filter by file_type if specified
@@ -231,7 +238,7 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
                     path: file.path.clone(),
                     name: file.name.clone(),
                     file_type: file.file_type,
-                    size: None, // Size would require additional storage access
+                    size, // Use actual file size from filesystem stat
                     updated_at: file.updated_at,
                 });
             }
@@ -276,6 +283,11 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
 /// - `1048576c` = exactly 1,048,576 bytes
 /// - `+1048576c` = greater than 1MB
 /// - `-10485760c` = less than 10MB
+///
+/// # Size Retrieval Strategy
+///
+/// Uses stat command to get file sizes (portable across GNU and BSD find).
+/// This is necessary because -printf is GNU-find-only and not available on macOS.
 fn build_find_command(
     name_pattern: Option<&str>,
     base_path: &str,
@@ -344,7 +356,7 @@ fn build_find_command(
             cmd.arg("-size").arg(format!("-{}c", max));
         }
 
-        // Print results (one per line)
+        // Print file paths (will use stat to get sizes - portable across GNU/BSD find)
         cmd.arg("-print");
 
         return Ok(cmd);
