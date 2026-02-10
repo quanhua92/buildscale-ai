@@ -821,9 +821,9 @@ pub struct CatArgs {
     pub squeeze_blank: Option<bool>,
 
     // Line range filtering
-    #[serde(default)]
-    pub offset: Option<i64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_isize_option")]
+    pub offset: Option<isize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub limit: Option<usize>,
 }
 

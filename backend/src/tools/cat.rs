@@ -211,12 +211,12 @@ RETURNS:
                     "description": "Suppress repeated empty lines (squeeze multiple \\n into one). Accepts boolean or string (e.g., true or 'true'). Default: false"
                 },
                 "offset": {
-                    "type": ["integer", "null"],
-                    "description": "Starting line position (default: 0). Positive values start from beginning (e.g., 100 = line 100+). Negative values read from end (e.g., -50 = last 50 lines). Line numbers reflect actual position."
+                    "type": ["integer", "string", "null"],
+                    "description": "Starting line position (default: 0). Accepts integer or string (e.g., 100 or '100'). Positive values start from beginning (e.g., 100 = line 100+). Negative values read from end (e.g., -50 = last 50 lines). Line numbers reflect actual position."
                 },
                 "limit": {
-                    "type": ["integer", "null"],
-                    "description": "Maximum number of lines to read per file (default: unlimited). Use with offset to read specific ranges."
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum number of lines to read per file (default: unlimited). Accepts integer or string (e.g., 50 or '50'). Use with offset to read specific ranges."
                 }
             },
             "required": ["paths"],
