@@ -241,6 +241,23 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
                     size, // Use actual file size from filesystem stat
                     updated_at: file.updated_at,
                 });
+            } else {
+                // File exists on disk but not in database - add with minimal info
+                // This can happen for files created externally (SSH, migration scripts, etc.)
+                let path_obj = std::path::Path::new(&workspace_relative_path);
+                let name = path_obj
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                matches.push(FindMatch {
+                    path: full_path.clone(),
+                    name,
+                    file_type: crate::models::files::FileType::Document, // Default to document
+                    size,
+                    updated_at: chrono::Utc::now(),
+                });
             }
         }
 
