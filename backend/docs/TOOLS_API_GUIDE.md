@@ -18,6 +18,13 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [mkdir - Create Directory](#mkdir---create-directory)
   - [edit - Edit File Content](#edit---edit-file-content)
   - [grep - Regex Search Files](#grep---regex-search-files)
+  - [glob - Pattern-Based File Discovery](#glob---pattern-based-file-discovery)
+  - [file_info - Query File Metadata](#file_info---query-file-metadata)
+  - [find - Search Files by Metadata](#find---search-files-by-metadata)
+  - [read_multiple_files - Batch File Reading](#read_multiple_files---batch-file-reading)
+  - [cat - Concatenate Files with Formatting](#cat---concatenate-files-with-formatting)
+  - [ask_user - Request User Input](#ask_user---request-user-input)
+  - [exit_plan_mode - Transition to Build Mode](#exit_plan_mode---transition-to-build-mode)
   - [Path Normalization](#path-normalization)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
@@ -40,9 +47,15 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
 | `mkdir` | Create directory | `path` | `path`, `file_id` |
-| `edit` | Edit file content | `path`, `old_string`, `new_string`, `last_read_hash?` | `path`, `file_id`, `version_id` |
-| `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
+| `edit` | Edit file content | `path`, `old_string`, `new_string`, `insert_line?`, `insert_content?`, `last_read_hash?` | `path`, `file_id`, `version_id` |
+| `grep` | Regex search files with context | `pattern`, `path_pattern?`, `case_sensitive?`, `before_context?`, `after_context?`, `context?` | `matches[]` with context lines |
 | `cat` | Concatenate files with formatting | `paths[]`, `offset?`, `limit?`, `show_ends?`, `show_tabs?`, `squeeze_blank?`, `number_lines?`, `show_headers?` | `content`, `files[]` with `offset`, `limit`, `total_lines` |
+| `glob` | Pattern-based file discovery | `patterns[]`, `path?` | `pattern`, `base_path`, `matches[]` |
+| `file_info` | Query file metadata | `path` | `path`, `file_type`, `size`, `line_count`, `timestamps`, `hash` |
+| `find` | Search files by metadata | `name?`, `path?`, `file_type?`, `min_size?`, `max_size?`, `recursive?` | `matches[]` |
+| `read_multiple_files` | Read multiple files in single call | `paths[]`, `limit?` | `files[]` with per-file results |
+| `ask_user` | Request input or confirmation from user | `questions[]` | `question_id`, `questions[]` |
+| `exit_plan_mode` | Transition from Plan to Build Mode | `allowedPrompts?`, `pushToRemote?`, `remoteSessionId?`, `remoteSessionUrl?`, `remoteSessionTitle?` | `mode`, `plan_file` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -1423,6 +1436,323 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Token efficiency**: Content is truncated per-file to stay within token limits
 - **Use for batches**: Ideal for config files, documentation, or log analysis across multiple files
 - **Hash for editing**: Use returned `hash` values with `edit` tool's `last_read_hash` parameter
+
+---
+
+### ask_user - Request User Input
+
+Request structured input or confirmation from the user during AI execution. Supports multiple questions in a single call with flexible JSON Schema validation.
+
+#### When to Use
+
+1. **Clarification Needed**: User's request is ambiguous or incomplete
+2. **Multiple Valid Approaches**: Several options exist and user preference matters
+3. **Confirmation Required**: Action is significant or irreversible (deletion, major changes)
+4. **Missing Information**: You need specific details to proceed
+5. **Design Decisions**: User's input affects the outcome
+
+#### Arguments
+
+```json
+{
+  "questions": [
+    {
+      "name": "choice",
+      "question": "Which approach do you prefer?",
+      "schema": "{\"type\":\"string\",\"enum\":[\"Option A\",\"Option B\",\"Option C\"]}",
+      "buttons": [
+        {"label": "Option A", "value": "A"},
+        {"label": "Option B", "value": "B"},
+        {"label": "Option C", "value": "C"}
+      ]
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `questions` | array | Yes | Array of question objects (1-4 questions) |
+| `questions[].name` | string | Yes | Variable name for the answer |
+| `questions[].question` | string | Yes | Question text to display |
+| `questions[].schema` | string | Yes | JSON Schema string for validation |
+| `questions[].buttons` | array | No | Optional button labels for single-select (string enum) questions |
+
+#### Common JSON Schema Patterns
+
+**String with enum (radio buttons):**
+```json
+{"type":"string","enum":["Yes","No","Cancel"]}
+```
+
+**String with pattern (text input):**
+```json
+{"type":"string","pattern":"^[a-z0-9]+$","minLength":3}
+```
+
+**Number with range:**
+```json
+{"type":"number","minimum":1,"maximum":100}
+```
+
+**Array/checkbox (multi-select):**
+```json
+{"type":"array","items":{"type":"string","enum":["A","B","C"]},"minItems":1}
+```
+
+#### Critical Usage Rules
+
+**Single-Select Questions** (Use buttons):
+- Schema: `{"type": "string", "enum": ["A", "B", "C"]}`
+- Add `buttons` field for better UX
+- DO NOT use buttons for array-type questions
+
+**Multi-Select Questions** (NO buttons!):
+- Schema: `{"type": "array", "items": {"type": "string", "enum": ["A", "B", "C"]}}`
+- DO NOT add `buttons` field - frontend will render checkboxes automatically
+
+**Always:**
+- Make questions specific and concise
+- Provide context in the question text
+- Use "Select one" or "choose all that apply" suffix to indicate selection type
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "ask_user",
+    "args": {
+      "questions": [
+        {
+          "name": "framework",
+          "question": "Which testing framework should I use?",
+          "schema": "{\"type\":\"string\",\"enum\":[\"Jest\",\"Vitest\",\"Mocha\"]}",
+          "buttons": [
+            {"label": "Jest", "value": "Jest"},
+            {"label": "Vitest", "value": "Vitest"},
+            {"label": "Mocha", "value": "Mocha"}
+          ]
+        }
+      ]
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "status": "question_pending",
+    "question_id": "0193abcd-1234-5678-9abc-123456789abc",
+    "questions": [
+      {
+        "name": "framework",
+        "question": "Which testing framework should I use?",
+        "schema": {"type":"string","enum":["Jest","Vitest","Mocha"]},
+        "buttons": [
+          {"label": "Jest", "value": "Jest"},
+          {"label": "Vitest", "value": "Vitest"},
+          {"label": "Mocha", "value": "Mocha"}
+        ]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Ephemeral Questions**: Questions exist only in SSE stream and frontend memory (not persisted to database)
+- **Time-Ordered IDs**: Uses UUID v7 for better debugging and logging capabilities
+- **Validation**: Questions array cannot be empty
+- **Multi-Question Support**: Can ask 1-4 questions in a single call
+- **Flexible Schema**: Supports any valid JSON Schema for validation
+- **Button Detection**: Frontend renders buttons automatically for single-select string enum questions
+
+**CRITICAL USAGE NOTES:**
+- **Human-in-the-Loop**: Use when AI needs user guidance to proceed
+- **Structured Input**: Provides type-safe input validation via JSON Schema
+- **Better UX**: Use buttons for single-select questions (not multi-select)
+- **Confirmation**: Ideal for significant or irreversible operations
+- **Clarification**: Use when requirements are ambiguous or incomplete
+
+---
+
+### exit_plan_mode - Transition to Build Mode
+
+Transitions the workspace from Plan Mode (strategy/planning) to Build Mode (implementation). This tool should only be called after the user has explicitly approved an implementation plan.
+
+#### Safety Warning
+
+⚠️ **IMMEDIATE TRANSITION**: This tool exits Plan Mode immediately. Only call after EXPLICIT user approval via button click.
+
+#### Safety Checklist (Must Verify All)
+
+Before calling this tool, you MUST verify ALL of the following:
+1. ✅ You just received a response from `ask_user` tool
+2. ✅ The response value is exactly `"Accept"` (not `"accept"`, not similar, EXACTLY `"Accept"`)
+3. ✅ This response came from a BUTTON CLICK, not a chat message
+4. ✅ You previously showed an Accept/Reject question to the user
+5. ✅ The plan file exists and has `file_type="plan"`
+
+If ANY of the above is FALSE, DO NOT CALL THIS TOOL.
+
+#### What is a Valid Plan File
+
+A valid plan file MUST have:
+1. **File extension**: `.plan` (e.g., `/plans/mighty-willow-symphony.plan`)
+2. **File name**: 3 random words joined by hyphens (NOT `implementation.plan`)
+3. **File type**: `"plan"` (set via `file_type` parameter when creating)
+4. **Content**: Implementation plan with tasks and execution strategy
+
+**Good plan file names** (3 random words):
+- `/plans/gleeful-tangerine-expedition.plan`
+- `/plans/jubilant-river-transformation.plan`
+- `/plans/bold-meadow-revelation.plan`
+
+**Bad plan file names**:
+- `/plans/implementation.plan` (too generic)
+- `/plans/my-plan.plan` (not unique enough)
+
+#### Arguments
+
+```json
+{
+  "plan_file_path": "/plans/fearless-ember-invention.plan"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `plan_file_path` | string | Yes | Path to the plan file (.plan extension) |
+
+#### How to Create a Plan File
+
+Use the `write` tool with BOTH the `.plan` extension AND `file_type` parameter:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "write",
+    "args": {
+      "path": "/plans/fearless-ember-invention.plan",
+      "content": "# Implementation Plan\n\n## Task 1\n...",
+      "file_type": "plan"
+    }
+  }'
+```
+
+**CRITICAL**: If you don't specify `file_type="plan"`, the file will be created as type `"document"` and `exit_plan_mode` will fail with "File is not a plan file".
+
+#### Required Workflow
+
+**Step 1**: Create plan file with `write` tool (with `.plan` extension and `file_type="plan"`)
+**Step 2**: IMMEDIATELY call `ask_user` with:
+  - question: "Review the implementation plan. Ready to proceed to Build Mode?"
+  - schema: `type="string", enum=["Accept", "Reject"]`
+  - buttons: Accept → "Accept", Reject → "Reject"
+**Step 3**: Wait for user response
+**Step 4**: IF response is `"Accept"` (from button click):
+  - THEN call `exit_plan_mode`
+  - ELSE IF `"Reject"`: Ask for feedback, revise, go to Step 2
+**Step 5**: System transitions to Build Mode
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "exit_plan_mode",
+    "args": {
+      "plan_file_path": "/plans/fearless-ember-invention.plan"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "mode": "build",
+    "plan_file": "/plans/fearless-ember-invention.plan"
+  },
+  "error": null
+}
+```
+
+#### When to Call (Only This Scenario)
+
+✅ **CORRECT** - Call immediately when:
+- User clicked "Accept" button on your `ask_user` question
+- You just received: `{"approval": "Accept"}` from `ask_user` response
+- You previously showed the Accept/Reject question
+
+This is the ONLY valid scenario. No other situation justifies calling this tool.
+
+#### When NOT to Call (All These Are Wrong)
+
+❌ **WRONG** - User said in chat (NOT button click):
+- "do it", "work on it", "proceed", "let's start"
+- "looks good", "that's fine", "go ahead"
+- "start implementing", "I approve", "yes, do it"
+
+**Instead**: Show Accept/Reject question via `ask_user` to confirm
+
+❌ **WRONG** - User seemed positive but unclear:
+- "I think that works"
+- "seems good to me"
+- "ok let's try it"
+- "sounds like a plan"
+
+**Instead**: Show Accept/Reject question via `ask_user` to confirm
+
+❌ **WRONG** - You just finished creating the plan:
+- No user input yet
+- User hasn't seen the plan
+- You haven't asked for approval
+
+**Instead**: Show Accept/Reject question via `ask_user` first
+
+#### How to Detect Button Click
+
+A response from `ask_user` is a **button click** when:
+- You just called `ask_user` tool
+- The response contains the question name and answer
+- The value matches one of your button values exactly
+
+A chat message is **NOT a button click** when:
+- User typed in the chat input
+- You did NOT just call `ask_user`
+- The message is natural language, not a structured answer
+
+**Remember**: BUTTON CLICK = `ask_user` response, CHAT MESSAGE = user typing
+
+#### Behavior Notes
+
+- **Validation**: Verifies plan file exists and has `file_type="plan"`
+- **Immediate Transition**: Exits Plan Mode immediately upon successful execution
+- **Database Update**: Updates chat metadata to switch workspace context to Build Mode
+- **File Verification**: Checks plan file has content before transitioning
+- **Error Handling**: Returns detailed error if plan file is invalid or missing
+
+**CRITICAL USAGE NOTES:**
+- **Explicit Approval Only**: Only call after user clicks "Accept" button
+- **Plan File Validation**: Plan must have `.plan` extension and `file_type="plan"`
+- **No Chat Approval**: Natural language approval is NOT sufficient (must use button)
+- **Create → Ask → Exit**: Always follow the 3-step workflow (create plan, ask user, exit plan mode)
+- **Unique Names**: Use random 3-word hyphenated names for plan files
 
 ---
 
