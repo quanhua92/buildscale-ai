@@ -425,6 +425,7 @@ pub async fn get_file_with_content(
 /// Updates a file's metadata (move, rename, virtual status, permissions)
 pub async fn update_file(
     conn: &mut DbConn,
+    storage: &FileStorageService,
     file_id: Uuid,
     request: UpdateFileRequest,
 ) -> Result<File> {
@@ -437,7 +438,7 @@ pub async fn update_file(
         Some(new_parent) => new_parent, // Some(Some(uuid)) or Some(None) for root
         None => current_file.parent_id, // Field omitted
     };
-    
+
     let target_name = request.name.as_deref().unwrap_or(&current_file.name).trim().to_string();
     if target_name.is_empty() {
         return Err(Error::Validation(crate::error::ValidationErrors::Single {
@@ -477,9 +478,9 @@ pub async fn update_file(
     let target_path = calculate_path(parent_path.as_deref(), &target_slug);
 
     // 5. Check if anything actually changed
-    if target_parent_id == current_file.parent_id 
-        && target_name == current_file.name 
-        && target_slug == current_file.slug 
+    if target_parent_id == current_file.parent_id
+        && target_name == current_file.name
+        && target_slug == current_file.slug
         && target_path == current_file.path
         && target_is_virtual == current_file.is_virtual
         && target_is_remote == current_file.is_remote
@@ -511,10 +512,10 @@ pub async fn update_file(
 
     // 8. Update metadata
     let updated_file = files::update_file_metadata(
-        &mut tx, 
-        file_id, 
-        target_parent_id, 
-        &target_name, 
+        &mut tx,
+        file_id,
+        target_parent_id,
+        &target_name,
         &target_slug,
         &target_path,
         target_is_virtual,
@@ -525,14 +526,20 @@ pub async fn update_file(
     // 9. If folder, update descendants (REBASE)
     if current_file.file_type == FileType::Folder && current_file.path != target_path {
         files::update_descendant_paths(
-            &mut tx, 
-            current_file.workspace_id, 
-            &current_file.path, 
+            &mut tx,
+            current_file.workspace_id,
+            &current_file.path,
             &target_path
         ).await?;
     }
 
-    // 10. Commit
+    // 10. Move file/folder on disk if path changed
+    if current_file.path != target_path {
+        // Move the file or folder on disk to match the new database path
+        storage.move_file(current_file.workspace_id, &current_file.path, &target_path).await?;
+    }
+
+    // 11. Commit
     tx.commit().await.map_err(|e| {
         Error::Internal(format!("Failed to commit transaction: {}", e))
     })?;

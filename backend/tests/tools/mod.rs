@@ -21,4 +21,5 @@ pub mod integration_tests;
 pub mod virtual_files_tests;
 pub mod plan_mode_tests;
 pub mod find_vs_glob_fallback_analysis;
+pub mod mv_integration_test;
 pub mod common;

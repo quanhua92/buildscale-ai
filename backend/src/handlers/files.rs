@@ -116,7 +116,7 @@ pub async fn update_file(
         permission: request.permission,
     };
 
-    let result = file_services::update_file(&mut conn, file_id, update_request)
+    let result = file_services::update_file(&mut conn, &state.storage, file_id, update_request)
         .await
         .inspect_err(|e| log_handler_error("update_file", e))?;
 

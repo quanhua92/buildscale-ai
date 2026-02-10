@@ -39,7 +39,7 @@ impl Tool for MvTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
-        _storage: &FileStorageService,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         config: ToolConfig,
@@ -146,7 +146,7 @@ impl Tool for MvTool {
             permission: None,
         };
         
-        let updated_file = files::update_file(conn, source_file.id, update_request).await?;
+        let updated_file = files::update_file(conn, storage, source_file.id, update_request).await?;
         
         let result = MvResult {
             from_path: source_path,
