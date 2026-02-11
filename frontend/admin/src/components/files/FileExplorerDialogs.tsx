@@ -277,15 +277,16 @@ function FileViewer() {
           )}
         </div>
         <DialogFooter className="p-4 sm:p-0 border-t sm:border-0 flex flex-col gap-2 sm:flex-col sm:space-x-0">
-          {isChat && activeFile && (
-            <Button 
+          {isChat && activeFile && activeFile.id && (
+            <Button
               className="w-full"
               onClick={() => {
                 setViewerOpen(false)
+                const chatId = activeFile.id! // Non-null assertion since we checked above
                 navigate({
                   to: '/workspaces/$workspaceId/chat',
                   params: { workspaceId },
-                  search: { chatId: activeFile.id }
+                  search: { chatId }
                 })
               }}
             >
