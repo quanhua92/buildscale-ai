@@ -53,6 +53,59 @@ Attachments become part of the stable prefix when they're older than the current
 
 4. **Cache-Efficient Conversion**: Older items become stable prefix, newer items vary only at the end.
 
+## Tool Result Optimization
+
+Tool results can be very large (file contents, directory listings, grep output). To reduce context size, we use **age-based truncation** for old tool results.
+
+### Strategy
+
+- Keep full outputs for the **most recent 5 tool results**
+- Truncate older tool results to **100 characters** with a hint to re-run
+- Tool calls are always preserved (AI knows what was executed)
+
+### Why This Works
+
+1. **AI can re-run tools**: If the AI needs fresh data, it can execute the tool again
+2. **Tool calls are cheap**: Most tools are fast (file reads, listings)
+3. **Reduces context bloat**: Old `read` results with 10KB+ content are trimmed
+4. **Preserves conversation flow**: Tool calls remain, so the AI knows what it did
+
+### Implementation
+
+```rust
+// Constants in rig_engine.rs
+const KEEP_RECENT_TOOL_RESULTS: usize = 5;
+const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 100;
+
+// Truncate old tool results
+if is_old_tool_result {
+    metadata.tool_output = Some(format!(
+        "{}... [truncated - re-run tool for fresh data]",
+        &tool_output[..100]
+    ));
+}
+```
+
+### Example
+
+```
+Turn 1: read /src/main.rs → 5000 lines (full output)
+Turn 2: grep "fn " → 50 matches (full output)
+...
+Turn 10: read /src/lib.rs → 2000 lines (full output)
+
+After optimization:
+- Turns 1-4 tool results: "Line 1... [truncated - re-run tool for fresh data]"
+- Turns 5-10 tool results: Full output preserved (most recent 5)
+```
+
+### Configuration
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `KEEP_RECENT_TOOL_RESULTS` | 5 | Number of recent tool results to keep full |
+| `TRUNCATED_TOOL_RESULT_PREVIEW` | 100 | Characters to show for truncated results |
+
 ### Key Implementation Files
 
 | File | Purpose |
@@ -246,10 +299,14 @@ The cache optimization is achieved through:
 2. **Attachment interleaving** in `convert_history_with_attachments()`
 3. **Stable prefix construction** - older content first
 4. **Attachment metadata tracking** - `created_at`, `updated_at` fields
+5. **Tool result truncation** - age-based pruning of old tool outputs
 
 ```rust
 // Sort by timestamp (oldest first = better caching)
 items.sort_by_key(|item| item.timestamp());
+
+// Truncate old tool results
+let truncate_from_index = tool_result_indices.len().saturating_sub(KEEP_RECENT_TOOL_RESULTS);
 ```
 
 ## References

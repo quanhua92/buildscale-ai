@@ -20,6 +20,13 @@ use uuid::Uuid;
 /// This prevents infinite loops while allowing complex multi-step workflows.
 const DEFAULT_MAX_TOOL_ITERATIONS: usize = 100;
 
+/// Number of recent tool results to keep full outputs for.
+/// Older tool results are truncated to reduce context size since the AI can re-run tools.
+const KEEP_RECENT_TOOL_RESULTS: usize = 5;
+
+/// Maximum characters for truncated old tool results
+const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 100;
+
 /// Add all Rig tools to an agent builder
 fn add_tools_to_agent<M>(
     builder: rig::agent::AgentBuilder<M>,
@@ -577,6 +584,12 @@ impl RigService {
     ///                         cacheable                      varies only
     /// ```
     ///
+    /// # Tool Result Optimization
+    ///
+    /// Tool results can be very large. To reduce context size, we truncate outputs for
+    /// tool results that are older than `KEEP_RECENT_TOOL_RESULTS` turns. The AI can
+    /// re-run tools if it needs fresh data.
+    ///
     /// # Arguments
     /// * `messages` - Chat message history (excluding current message)
     /// * `attachments` - Optional attachment manager with file contents
@@ -618,11 +631,43 @@ impl RigService {
         // Sort by timestamp (oldest first = better caching)
         items.sort_by_key(|item| item.timestamp());
 
+        // Identify tool result indices for age-based truncation
+        let tool_result_indices: Vec<usize> = items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                if let ContextItem::Message { metadata, .. } = item {
+                    if metadata.message_type.as_deref() == Some("tool_result") {
+                        return Some(i);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        // Truncate old tool results (keep only the most recent N)
+        let truncate_from_index = tool_result_indices.len().saturating_sub(KEEP_RECENT_TOOL_RESULTS);
+        let indices_to_truncate: std::collections::HashSet<usize> = tool_result_indices
+            .into_iter()
+            .take(truncate_from_index)
+            .collect();
+
         // Convert to Rig Messages
         let mut result = Vec::new();
-        for item in items {
+        for (idx, item) in items.into_iter().enumerate() {
             match item {
-                ContextItem::Message { role, content, metadata, .. } => {
+                ContextItem::Message { role, content, mut metadata, .. } => {
+                    // Truncate tool output for old tool results
+                    if indices_to_truncate.contains(&idx) {
+                        if let Some(ref tool_output) = metadata.tool_output {
+                            if tool_output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
+                                metadata.tool_output = Some(format!(
+                                    "{}... [truncated - re-run tool for fresh data]",
+                                    &tool_output[..TRUNCATED_TOOL_RESULT_PREVIEW.min(tool_output.len())]
+                                ));
+                            }
+                        }
+                    }
                     // Reuse existing message conversion logic
                     if let Some(msg) = Self::convert_single_message(role, content, metadata, self) {
                         result.push(msg);
