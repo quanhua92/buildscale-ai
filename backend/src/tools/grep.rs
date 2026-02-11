@@ -10,6 +10,56 @@ use std::path::Path;
 use std::collections::HashMap;
 use super::{Tool, ToolConfig};
 
+/// State for tracking context lines across ripgrep JSON events
+struct ContextTracker {
+    before_context: Vec<String>,
+    after_context: Vec<String>,
+    pending_match: Option<GrepMatch>,
+}
+
+impl ContextTracker {
+    fn new() -> Self {
+        Self {
+            before_context: Vec::new(),
+            after_context: Vec::new(),
+            pending_match: None,
+        }
+    }
+
+    fn add_before_context(&mut self, line: String) {
+        self.before_context.push(line);
+    }
+
+    fn add_after_context(&mut self, line: String) {
+        self.after_context.push(line);
+    }
+
+    fn set_match(&mut self, grep_match: GrepMatch) {
+        // Attach any accumulated before-context to this match
+        let mut match_with_context = grep_match;
+        if !self.before_context.is_empty() {
+            match_with_context.before_context = Some(std::mem::take(&mut self.before_context));
+        }
+        self.pending_match = Some(match_with_context);
+    }
+
+    fn finalize_match(&mut self) -> Option<GrepMatch> {
+        if let Some(mut match_with_context) = self.pending_match.take() {
+            // Attach any accumulated after-context to this match
+            if !self.after_context.is_empty() {
+                match_with_context.after_context = Some(std::mem::take(&mut self.after_context));
+            }
+            Some(match_with_context)
+        } else {
+            None
+        }
+    }
+
+    fn has_pending_match(&self) -> bool {
+        self.pending_match.is_some()
+    }
+}
+
 /// Checks if a file path matches a glob pattern
 /// Supports basic wildcards: * and **
 fn path_matches_glob(file_path: &str, pattern: &str) -> bool {
@@ -133,7 +183,14 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &'static str {
-        "Searches for a regex pattern across all document files in a workspace using ripgrep or grep. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search. Returns matching file paths with context. Use for discovering code patterns or finding specific content."
+        r#"Searches for a regex pattern across all document files in a workspace using ripgrep or grep. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search.
+
+CONTEXT PARAMETERS (optional):
+- before_context: Number of lines to show before each match
+- after_context: Number of lines to show after each match
+- context: Shorthand for both before and after context (e.g., context=3 shows 3 lines before and after)
+
+Returns matching file paths with line numbers and context lines. Use for discovering code patterns or finding specific content."#
     }
 
     fn definition(&self) -> Value {
@@ -145,6 +202,18 @@ impl Tool for GrepTool {
                 "case_sensitive": {
                     "type": ["boolean", "string", "null"],
                     "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). Defaults to false (case-insensitive) if not provided."
+                },
+                "before_context": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Number of lines to show before each match. Accepts integer or string (e.g., 5 or '5'). Default: 0"
+                },
+                "after_context": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Number of lines to show after each match. Accepts integer or string (e.g., 5 or '5'). Default: 0"
+                },
+                "context": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Shorthand for before_context and after_context combined. Accepts integer or string (e.g., 3 or '3')"
                 }
             },
             "required": ["pattern"],
@@ -188,10 +257,18 @@ impl Tool for GrepTool {
         }
 
         // Build command (tries ripgrep, then grep)
+        // Determine context parameters
+        let before = grep_args.context.unwrap_or(0);
+        let after = grep_args.context.unwrap_or(0);
+        let before_context = grep_args.before_context.unwrap_or(before);
+        let after_context = grep_args.after_context.unwrap_or(after);
+
         let mut cmd = build_grep_command(
             &grep_args.pattern,
             grep_args.path_pattern.as_deref(),
             grep_args.case_sensitive.unwrap_or(false),
+            before_context,
+            after_context,
             &search_path,
         )?;
 
@@ -244,14 +321,19 @@ impl Tool for GrepTool {
             // Use JSON parser for ripgrep
             tracing::debug!("Parsing ripgrep JSON output");
             let mut file_path_cache = HashMap::new();
+            let mut context_tracker = ContextTracker::new();
             for line in stdout.lines() {
                 if matches.len() >= MAX_MATCHES {
                     break;
                 }
 
-                if let Some(grep_match) = parse_json_grep_output(line, &search_path, &mut file_path_cache) {
+                if let Some(grep_match) = parse_json_grep_output(line, &search_path, &mut file_path_cache, &mut context_tracker) {
                     matches.push(grep_match);
                 }
+            }
+            // Don't forget to finalize the last match if there is one
+            if let Some(final_match) = context_tracker.finalize_match() {
+                matches.push(final_match);
             }
         } else {
             // Use plain text parser for grep
@@ -296,6 +378,8 @@ fn build_grep_command(
     pattern: &str,
     path_pattern: Option<&str>,
     case_sensitive: bool,
+    before_context: usize,
+    after_context: usize,
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     // Try ripgrep first
@@ -307,7 +391,7 @@ fn build_grep_command(
         .is_some()
     {
         tracing::debug!("Using ripgrep for search");
-        return build_ripgrep_command(pattern, path_pattern, case_sensitive, workspace_path);
+        return build_ripgrep_command(pattern, path_pattern, case_sensitive, before_context, after_context, workspace_path);
     }
 
     // Fallback to grep
@@ -319,7 +403,7 @@ fn build_grep_command(
         .is_some()
     {
         tracing::debug!("Using grep for search");
-        return build_standard_grep_command(pattern, path_pattern, case_sensitive, workspace_path);
+        return build_standard_grep_command(pattern, path_pattern, case_sensitive, before_context, after_context, workspace_path);
     }
 
     Err(Error::Internal(
@@ -332,6 +416,8 @@ fn build_ripgrep_command(
     pattern: &str,
     path_pattern: Option<&str>,
     case_sensitive: bool,
+    before_context: usize,
+    after_context: usize,
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     let mut cmd = TokioCommand::new("rg");
@@ -346,7 +432,20 @@ fn build_ripgrep_command(
     // Strip leading slashes to make pattern relative to workspace root
     if let Some(path_pattern) = path_pattern {
         let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
-        cmd.arg("--glob").arg(normalized_pattern);
+
+        // Fix: If pattern looks like a directory (no wildcards), append ** to match files inside
+        // Example: "scripts" -> "scripts/**" to match all files under scripts/
+        // Example: "*.py" -> "*.py" (already a file pattern, keep as-is)
+        // Example: "scripts/**/*.py" -> "scripts/**/*.py" (already has wildcard, keep as-is)
+        let glob_pattern = if !normalized_pattern.contains('*') {
+            // Directory-like pattern without wildcards - append /**
+            format!("{}/**", normalized_pattern)
+        } else {
+            // Already contains wildcards - use as-is
+            normalized_pattern.to_string()
+        };
+
+        cmd.arg("--glob").arg(glob_pattern);
     }
 
     // Case sensitivity
@@ -354,6 +453,14 @@ fn build_ripgrep_command(
         cmd.arg("--case-sensitive");
     } else {
         cmd.arg("--ignore-case");
+    }
+
+    // Add context if requested
+    if before_context > 0 {
+        cmd.arg("--before-context").arg(before_context.to_string());
+    }
+    if after_context > 0 {
+        cmd.arg("--after-context").arg(after_context.to_string());
     }
 
     // Use JSON output for machine-readable parsing
@@ -367,6 +474,8 @@ fn build_standard_grep_command(
     pattern: &str,
     path_pattern: Option<&str>,
     case_sensitive: bool,
+    before_context: usize,
+    after_context: usize,
     workspace_path: &Path,
 ) -> Result<TokioCommand> {
     let mut cmd = TokioCommand::new("grep");
@@ -379,20 +488,49 @@ fn build_standard_grep_command(
         cmd.arg("-i");  // Case insensitive
     }
 
+    // Add context if requested
+    if before_context > 0 {
+        cmd.arg("-B").arg(before_context.to_string());
+    }
+    if after_context > 0 {
+        cmd.arg("-A").arg(after_context.to_string());
+    }
+
     // Note: grep's --include only supports filename patterns, not path patterns
     // For path-based filtering (e.g., "scripts/*.rs"), we filter during parsing
     // For simple filename patterns (e.g., "*.rs"), we can use --include
+    // For directory patterns (e.g., "scripts"), we search in that directory
+    let search_dir = if let Some(path_pattern) = path_pattern {
+        let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
+
+        if !normalized_pattern.contains('/') && !normalized_pattern.contains('*') {
+            // Simple directory name like "scripts" - search in that directory
+            normalized_pattern
+        } else if !normalized_pattern.contains('*') {
+            // Path with directory like "src/lib" - search in that directory
+            normalized_pattern
+        } else {
+            // Pattern contains wildcards like "*.py" or "scripts/**/*.py"
+            // Keep search at "." and let filtering happen during parsing or via --include
+            "."
+        }
+    } else {
+        "."
+    };
+
+    // For simple filename patterns (no directory path), use --include
     if let Some(path_pattern) = path_pattern {
         let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
-        // Only use --include if it's a simple filename pattern (no directory path)
-        if !normalized_pattern.contains('/') {
+        // Only use --include if it's a simple filename pattern (no directory path, no wildcards in directory part)
+        if !normalized_pattern.contains('/') && normalized_pattern.contains('*') {
             cmd.arg("--include").arg(normalized_pattern);
         }
+        // If it's a directory name without wildcards, don't use --include
     }
 
     // Set current directory to workspace_path
     cmd.current_dir(workspace_path);
-    cmd.arg(".");
+    cmd.arg(search_dir);
 
     Ok(cmd)
 }
@@ -429,6 +567,8 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
         path: path_with_slash,
         line_number,
         line_text,
+        before_context: None,  // Context parsing for plain grep is complex, skip for now
+        after_context: None,
     })
 }
 
@@ -438,6 +578,7 @@ fn parse_grep_output(line: &str, workspace_path: &Path) -> Option<GrepMatch> {
 enum RipgrepEvent {
     Begin { data: BeginData },
     Match { data: MatchData },
+    Context { data: ContextData },
     End {
         #[allow(dead_code)]
         data: EndData
@@ -460,6 +601,19 @@ struct MatchData {
     line_number: Option<u64>,
     #[allow(dead_code)]
     submatches: Vec<Submatch>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ContextData {
+    #[allow(dead_code)]
+    path: PathField,
+    lines: LinesField,
+    #[allow(dead_code)]
+    line_number: u64,
+    #[allow(dead_code)]
+    absolute_offset: u64,
+    #[allow(dead_code)]
+    submatches: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -502,8 +656,14 @@ struct Submatch {
 }
 
 /// Parses ripgrep JSON output (line-delimited JSON)
-/// Returns None for non-match events (begin/end/summary)
-fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &mut HashMap<String, String>) -> Option<GrepMatch> {
+/// Returns None for non-match events (begin/end/summary/context)
+/// Returns Some(match) when a match is finalized (after seeing its after-context or next event)
+fn parse_json_grep_output(
+    line: &str,
+    workspace_path: &Path,
+    file_path_cache: &mut HashMap<String, String>,
+    context_tracker: &mut ContextTracker,
+) -> Option<GrepMatch> {
     let event: RipgrepEvent = serde_json::from_str(line).ok()?;
 
     match event {
@@ -525,7 +685,22 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
             file_path_cache.insert(full_path.clone(), path_with_slash);
             None
         }
+        RipgrepEvent::Context { data } => {
+            let line_text = data.lines.text.trim_end().to_string();
+
+            if context_tracker.has_pending_match() {
+                // This is after-context for the current match
+                context_tracker.add_after_context(line_text);
+            } else {
+                // This is before-context for the next match
+                context_tracker.add_before_context(line_text);
+            }
+            None
+        }
         RipgrepEvent::Match { data } => {
+            // Finalize previous match if there is one
+            let previous_match = context_tracker.finalize_match();
+
             // Get the path from cache or resolve it
             let full_path = data.path.text;
             let relative_path = file_path_cache.get(&full_path)
@@ -549,15 +724,22 @@ fn parse_json_grep_output(line: &str, workspace_path: &Path, file_path_cache: &m
 
             tracing::trace!("JSON match: {}:{}: {}", relative_path, line_number, line_text);
 
-            Some(GrepMatch {
+            // Set this as the pending match (will be finalized when we see the next event)
+            context_tracker.set_match(GrepMatch {
                 path: relative_path,
                 line_number,
                 line_text,
-            })
+                before_context: None,
+                after_context: None,
+            });
+
+            // Return the previous match (now finalized)
+            previous_match
         }
         RipgrepEvent::End { .. } => {
             tracing::trace!("JSON end event");
-            None
+            // Finalize any pending match when we reach end of file
+            context_tracker.finalize_match()
         }
         RipgrepEvent::Summary { .. } => {
             tracing::trace!("JSON summary event");

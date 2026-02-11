@@ -176,7 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         is_remote: None,
         permission: None,
     };
-    let doc2_updated = update_file(&mut conn, doc2.file.id, move_request).await?;
+    let doc2_updated = update_file(&mut conn, &storage, doc2.file.id, move_request).await?;
     println!("✓ Moved and Renamed: {} (Slug: /{})", doc2_updated.name, doc2_updated.slug);
     println!();
 

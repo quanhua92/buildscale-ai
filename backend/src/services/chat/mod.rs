@@ -113,6 +113,7 @@ mod tests;
 use crate::{
     error::{Error, Result},
     models::chat::{AgentConfig, ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL},
+    models::requests::{GrepResult, GlobResult, LsResult},
     queries, DbConn,
 };
 use uuid::Uuid;
@@ -271,8 +272,8 @@ impl ChatService {
                 }
             }
             "edit" => {
-                // Truncate 'old_string' and 'new_string' fields
-                for field in ["old_string", "new_string"] {
+                // Truncate 'old_string', 'new_string', and 'insert_content' fields
+                for field in ["old_string", "new_string", "insert_content"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
                         if val.len() > MAX_EDIT_DIFF_LENGTH {
                             let preview = Self::extract_string_preview(val, EDIT_ARG_PREVIEW_WORDS);
@@ -289,7 +290,7 @@ impl ChatService {
                 // No truncation needed - arguments are small (path, recursive flag)
             }
             "read" => {
-                // No truncation needed - only path argument
+                // No truncation needed - only path argument (plus optional offset/limit)
             }
             "rm" => {
                 // No truncation needed - only path argument
@@ -301,7 +302,7 @@ impl ChatService {
                 // No truncation needed - only path argument
             }
             "grep" => {
-                // No truncation needed - pattern and path are small
+                // No truncation needed - pattern, path, and context params are small
             }
             "mkdir" => {
                 // No truncation needed - only path argument
@@ -311,7 +312,23 @@ impl ChatService {
                 // TODO: Consider truncation if questions become very long
             }
             "exit_plan_mode" => {
-                // No truncation needed - no arguments
+                // No truncation needed - only path argument
+            }
+            "glob" => {
+                // No truncation needed - pattern and path arguments are small
+            }
+            "file_info" => {
+                // No truncation needed - only path argument
+            }
+            "read_multiple_files" => {
+                // No truncation needed for paths array (small strings)
+                // Limit parameter is a small integer
+            }
+            "find" => {
+                // No truncation needed - all arguments are small strings/ints
+            }
+            "cat" => {
+                // No truncation needed for paths array and boolean flags
             }
             unknown_tool => {
                 // ERROR-level: Unknown tool can cause database bloat
@@ -331,7 +348,7 @@ impl ChatService {
     }
 
     /// Summarizes tool outputs (results) to prevent database bloat.
-    /// Handles 'read', 'ls', 'grep' specifically, and generic truncation for others.
+    /// Uses smart semantic truncation for grep/glob/ls to preserve JSON structure.
     pub fn summarize_tool_outputs(tool_name: &str, output: &str) -> String {
         // If output is small, keep it all
         if output.len() < MAX_TOOL_OUTPUT_LENGTH {
@@ -349,25 +366,18 @@ impl ChatService {
                     byte_count, line_count, preview
                 )
             }
-            "ls" => {
-                // Special handling: Item count preview
-                let lines: Vec<&str> = output.lines().collect();
-                if lines.len() > LS_PREVIEW_ITEMS {
-                    let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
-                    format!("{}\n... ({} more items)", preview, lines.len() - LS_PREVIEW_ITEMS)
-                } else {
-                    output.to_string()
-                }
-            }
             "grep" => {
-                // Special handling: Match count preview
-                let lines: Vec<&str> = output.lines().collect();
-                if lines.len() > GREP_PREVIEW_MATCHES {
-                    let preview = lines.iter().take(GREP_PREVIEW_MATCHES).cloned().collect::<Vec<_>>().join("\n");
-                    format!("{}\n... ({} more matches)", preview, lines.len() - GREP_PREVIEW_MATCHES)
-                } else {
-                    output.to_string()
-                }
+                // INDUSTRY STANDARD: Parse → Truncate → Re-serialize
+                // Preserves JSON structure and complete match records with context
+                Self::truncate_grep_result(output)
+            }
+            "glob" => {
+                // INDUSTRY STANDARD: Parse → Truncate → Re-serialize
+                Self::truncate_glob_result(output)
+            }
+            "ls" => {
+                // INDUSTRY STANDARD: Parse → Truncate → Re-serialize
+                Self::truncate_ls_result(output)
             }
             other_tool => {
                 // WARN-level: Generic truncation works but might be suboptimal
@@ -377,7 +387,7 @@ impl ChatService {
                 tracing::warn!(
                     tool = %other_tool,
                     "Tool '{}' using generic output truncation. If this tool needs \
-                     special handling (like read/ls/grep), add explicit case.",
+                     special handling (like read/ls/grep/glob), add explicit case.",
                     other_tool
                 );
                 // Generic truncation: Head + Tail, ensuring UTF-8 boundaries.
@@ -425,6 +435,129 @@ impl ChatService {
             format!("{}...", preview)
         } else {
             preview
+        }
+    }
+
+    /// Smart truncation for grep results: Parse → Truncate at match boundaries → Re-serialize
+    /// Preserves JSON structure and complete match records with context.
+    fn truncate_grep_result(output: &str) -> String {
+        // Try to parse as GrepResult for smart truncation
+        if let Ok(parsed) = serde_json::from_str::<GrepResult>(output) {
+            let total_matches = parsed.matches.len();
+
+            if total_matches > GREP_PREVIEW_MATCHES {
+                // Truncate at match boundary (not line boundary)
+                let truncated = GrepResult {
+                    matches: parsed.matches.into_iter()
+                        .take(GREP_PREVIEW_MATCHES)
+                        .collect(),
+                };
+
+                // Re-serialize as compact JSON (single line per match for readability)
+                if let Ok(compact) = serde_json::to_string(&truncated) {
+                    return format!(
+                        "{}\n... ({} more matches truncated)",
+                        compact,
+                        total_matches - GREP_PREVIEW_MATCHES
+                    );
+                }
+            }
+
+            // Small enough or serialization failed, return original
+            output.to_string()
+        } else {
+            // Fallback to line-based for malformed JSON (shouldn't happen in normal operation)
+            tracing::warn!(
+                tool = "grep",
+                output_len = output.len(),
+                "Failed to parse grep result as JSON, falling back to line-based truncation"
+            );
+            let lines: Vec<&str> = output.lines().collect();
+            if lines.len() > GREP_PREVIEW_MATCHES {
+                let preview = lines.iter().take(GREP_PREVIEW_MATCHES).cloned().collect::<Vec<_>>().join("\n");
+                format!("{}\n... ({} more matches)", preview, lines.len() - GREP_PREVIEW_MATCHES)
+            } else {
+                output.to_string()
+            }
+        }
+    }
+
+    /// Smart truncation for glob results: Parse → Truncate at match boundaries → Re-serialize
+    fn truncate_glob_result(output: &str) -> String {
+        if let Ok(parsed) = serde_json::from_str::<GlobResult>(output) {
+            let total_matches = parsed.matches.len();
+
+            if total_matches > LS_PREVIEW_ITEMS {
+                let truncated = GlobResult {
+                    pattern: parsed.pattern,
+                    base_path: parsed.base_path,
+                    matches: parsed.matches.into_iter()
+                        .take(LS_PREVIEW_ITEMS)
+                        .collect(),
+                };
+
+                if let Ok(compact) = serde_json::to_string(&truncated) {
+                    return format!(
+                        "{}\n... ({} more matches truncated)",
+                        compact,
+                        total_matches - LS_PREVIEW_ITEMS
+                    );
+                }
+            }
+
+            output.to_string()
+        } else {
+            tracing::warn!(
+                tool = "glob",
+                output_len = output.len(),
+                "Failed to parse glob result as JSON, falling back to line-based truncation"
+            );
+            let lines: Vec<&str> = output.lines().collect();
+            if lines.len() > LS_PREVIEW_ITEMS {
+                let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
+                format!("{}\n... ({} more matches)", preview, lines.len() - LS_PREVIEW_ITEMS)
+            } else {
+                output.to_string()
+            }
+        }
+    }
+
+    /// Smart truncation for ls results: Parse → Truncate at entry boundaries → Re-serialize
+    fn truncate_ls_result(output: &str) -> String {
+        if let Ok(parsed) = serde_json::from_str::<LsResult>(output) {
+            let total_entries = parsed.entries.len();
+
+            if total_entries > LS_PREVIEW_ITEMS {
+                let truncated = LsResult {
+                    path: parsed.path,
+                    entries: parsed.entries.into_iter()
+                        .take(LS_PREVIEW_ITEMS)
+                        .collect(),
+                };
+
+                if let Ok(compact) = serde_json::to_string(&truncated) {
+                    return format!(
+                        "{}\n... ({} more entries truncated)",
+                        compact,
+                        total_entries - LS_PREVIEW_ITEMS
+                    );
+                }
+            }
+
+            output.to_string()
+        } else {
+            tracing::warn!(
+                tool = "ls",
+                output_len = output.len(),
+                "Failed to parse ls result as JSON, falling back to line-based truncation"
+            );
+            let lines: Vec<&str> = output.lines().collect();
+            if lines.len() > LS_PREVIEW_ITEMS {
+                let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
+                format!("{}\n... ({} more items)", preview, lines.len() - LS_PREVIEW_ITEMS)
+            } else {
+                output.to_string()
+            }
         }
     }
 

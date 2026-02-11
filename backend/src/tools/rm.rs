@@ -1,4 +1,6 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, RmArgs, RmResult}, services::files, queries::files as file_queries};
+use crate::services::storage::FileStorageService;
+use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -33,7 +35,7 @@ impl Tool for RmTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         config: ToolConfig,
@@ -50,17 +52,34 @@ impl Tool for RmTool {
             }));
         }
 
-        let file = file_queries::get_file_by_path(conn, workspace_id, &path)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
+        let (file_id, _result) = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {
+            Some(file) => {
+                // File exists in database - delete from DB + disk
+                files::soft_delete_file(conn, storage, file.id).await?;
+                (Some(file.id), "Deleted from database and disk")
+            }
+            None => {
+                // File not in DB - try disk deletion only
+                match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+                    Ok(true) => {
+                        helpers::delete_file_from_disk(storage, workspace_id, &path).await?;
+                        (None, "Deleted from disk only (was not in database)")
+                    }
+                    Ok(false) => {
+                        return Err(Error::NotFound(format!("File not found: {}", path)));
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
+            }
+        };
 
-        files::soft_delete_file(conn, storage, file.id).await?;
-        
         let result = RmResult {
             path,
-            file_id: file.id,
+            file_id,
         };
-        
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,

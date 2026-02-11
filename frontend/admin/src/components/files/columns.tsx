@@ -1,9 +1,8 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { LsEntry } from "./types"
-import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor, Move } from "lucide-react"
-import { formatDateTime } from "@buildscale/sdk"
-import { Button } from "@buildscale/sdk"
+import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor, Move, CheckCircle, CloudOff } from "lucide-react"
+import { formatDateTime, Button } from "@buildscale/sdk"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +20,19 @@ declare module '@tanstack/react-table' {
     onView?: (file: TData) => void
     onMove?: (file: TData) => void
   }
+}
+
+// Sync status indicator component
+function SyncStatusIndicator({ synced }: { synced: boolean }) {
+  return (
+    <div className="flex items-center" title={synced ? "Synced to database" : "Not synced - exists on disk only"}>
+      {synced ? (
+        <CheckCircle className="h-4 w-4 text-green-500" />
+      ) : (
+        <CloudOff className="h-4 w-4 text-yellow-500" />
+      )}
+    </div>
+  )
 }
 
 export const columns: ColumnDef<LsEntry>[] = [
@@ -49,8 +61,9 @@ export const columns: ColumnDef<LsEntry>[] = [
     accessorKey: "name",
     header: "Name",
     cell: ({ row }) => {
-      const fileType = row.original.file_type
-      
+      const entry = row.original
+      const fileType = entry.file_type
+
       const config: Record<string, { Icon: any; color: string }> = {
         folder: { Icon: FolderIcon, color: "text-blue-500" },
         canvas: { Icon: Presentation, color: "text-purple-500" },
@@ -59,14 +72,23 @@ export const columns: ColumnDef<LsEntry>[] = [
       }
 
       const { Icon, color } = config[fileType] || { Icon: FileTextIcon, color: "text-gray-500" }
-      
+
       return (
         <div className="flex items-center gap-2">
           <Icon className={`h-4 w-4 ${color}`} />
-          <span className="font-medium">{row.getValue("name")}</span>
+          <span className="font-medium">{entry.display_name || entry.name}</span>
         </div>
       )
     },
+  },
+  {
+    accessorKey: "synced",
+    header: "Sync",
+    cell: ({ row }) => {
+      const entry = row.original
+      return <SyncStatusIndicator synced={entry.synced ?? true} />
+    },
+    size: 50,
   },
   {
     accessorKey: "file_type",
@@ -89,11 +111,13 @@ export const columns: ColumnDef<LsEntry>[] = [
     cell: ({ row, table }) => {
       const entry = row.original
       const meta = table.options.meta
-      
+
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+            <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => {
+              e.stopPropagation()
+            }}>
               <span className="sr-only">Open menu</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
@@ -137,4 +161,3 @@ export const columns: ColumnDef<LsEntry>[] = [
     size: 50,
   },
 ]
-

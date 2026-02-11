@@ -4,8 +4,10 @@ import React from "react"
 export type FileType = "document" | "folder" | "canvas" | "chat" | "whiteboard"
 
 export interface LsEntry {
-  id: string
+  id?: string | null  // null for filesystem-only files (not in database)
+  synced: boolean  // true = in database, false = filesystem-only
   name: string
+  display_name: string
   path: string
   file_type: FileType | string
   is_virtual: boolean
@@ -21,6 +23,12 @@ export interface ReadResult {
   path: string
   content: any
   hash: string
+  synced: boolean  // true = in database, false = filesystem-only
+  total_lines?: number | null
+  truncated?: boolean | null
+  offset?: number | null
+  limit?: number | null
+  cursor?: number | null
 }
 
 export interface ToolResponse<T> {

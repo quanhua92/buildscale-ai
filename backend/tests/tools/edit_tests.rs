@@ -197,3 +197,164 @@ async fn test_edit_raw_string_content() {
     let read_content = read_file(&app, &workspace_id, &token, "/raw.txt").await;
     assert_eq!(read_content.as_str().unwrap(), "raw updated content");
 }
+
+// ============================================================================
+// INSERT OPERATION TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_edit_insert_at_beginning() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert Beginning Test").await;
+
+    let initial_content = "Line 1\nLine 2\nLine 3";
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(initial_content)).await;
+
+    // Insert at line 0 (beginning)
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "insert_line": 0,
+        "insert_content": "First line!"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    // Verify content
+    let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
+    let expected = "First line!\nLine 1\nLine 2\nLine 3";
+    assert_eq!(read_content.as_str().unwrap(), expected);
+}
+
+#[tokio::test]
+async fn test_edit_insert_at_middle() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert Middle Test").await;
+
+    let initial_content = "Line 1\nLine 2\nLine 3";
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(initial_content)).await;
+
+    // Insert at line 1 (middle)
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "insert_line": 1,
+        "insert_content": "Inserted line"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+
+    let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
+    let expected = "Line 1\nInserted line\nLine 2\nLine 3";
+    assert_eq!(read_content.as_str().unwrap(), expected);
+}
+
+#[tokio::test]
+async fn test_edit_insert_at_end() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert End Test").await;
+
+    let initial_content = "Line 1\nLine 2\nLine 3";
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(initial_content)).await;
+
+    // Insert at line 3 (end - after last line)
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "insert_line": 3,
+        "insert_content": "Last line"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+
+    let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
+    let expected = "Line 1\nLine 2\nLine 3\nLast line";
+    assert_eq!(read_content.as_str().unwrap(), expected);
+}
+
+#[tokio::test]
+async fn test_edit_insert_out_of_bounds() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert Out of Bounds Test").await;
+
+    let initial_content = "Line 1\nLine 2";
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!(initial_content)).await;
+
+    // Try to insert at line 100 (out of bounds)
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "insert_line": 100,
+        "insert_content": "Out of bounds"
+    })).await;
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+    assert!(body["fields"]["insert_line"].as_str().unwrap().contains("out of bounds"));
+}
+
+#[tokio::test]
+async fn test_edit_insert_empty_content() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert Empty Test").await;
+
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("content")).await;
+
+    // Try to insert empty content
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "insert_line": 1,
+        "insert_content": ""
+    })).await;
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn test_edit_insert_requires_both_params() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert Missing Params Test").await;
+
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("content")).await;
+
+    // Try to insert without insert_content
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "insert_line": 1
+    })).await;
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+    assert!(body["fields"]["operation"].as_str().unwrap().contains("Must specify"));
+}
+
+#[tokio::test]
+async fn test_edit_insert_and_replace_mutually_exclusive() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Edit Insert Replace Exclusive Test").await;
+
+    write_file(&app, &workspace_id, &token, "/test.txt", serde_json::json!("content")).await;
+
+    // Try to specify both replace and insert params
+    let response = execute_tool(&app, &workspace_id, &token, "edit", serde_json::json!({
+        "path": "/test.txt",
+        "old_string": "old",
+        "new_string": "new",
+        "insert_line": 1,
+        "insert_content": "inserted"
+    })).await;
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+    assert!(body["fields"]["operation"].as_str().unwrap().contains("Cannot specify both"));
+}

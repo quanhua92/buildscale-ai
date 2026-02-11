@@ -18,6 +18,13 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [mkdir - Create Directory](#mkdir---create-directory)
   - [edit - Edit File Content](#edit---edit-file-content)
   - [grep - Regex Search Files](#grep---regex-search-files)
+  - [glob - Pattern-Based File Discovery](#glob---pattern-based-file-discovery)
+  - [file_info - Query File Metadata](#file_info---query-file-metadata)
+  - [find - Search Files by Metadata](#find---search-files-by-metadata)
+  - [read_multiple_files - Batch File Reading](#read_multiple_files---batch-file-reading)
+  - [cat - Concatenate Files with Formatting](#cat---concatenate-files-with-formatting)
+  - [ask_user - Request User Input](#ask_user---request-user-input)
+  - [exit_plan_mode - Transition to Build Mode](#exit_plan_mode---transition-to-build-mode)
   - [Path Normalization](#path-normalization)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
@@ -33,15 +40,22 @@ HTTP REST API for the BuildScale extensible tool execution system.
 
 | Tool | Description | Arguments | Returns |
 |------|-------------|-----------|---------|
-| `ls` | List directory contents | `path?`, `recursive?` | `path`, `entries[]` |
-| `read` | Read file contents | `path` | `content` |
+| `ls` | List directory contents | `path?`, `recursive?` | `path`, `entries[]` with `synced` status |
+| `read` | Read file contents with line range control | `path`, `offset?`, `limit?` | `content`, `synced`, `total_lines`, `truncated`, `offset`, `limit`, `hash` |
 | `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
-| `rm` | Delete file or folder | `path` | `file_id` |
+| `rm` | Delete file or folder | `path` | `file_id` (or null for filesystem-only) |
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
 | `mkdir` | Create directory | `path` | `path`, `file_id` |
-| `edit` | Edit file content | `path`, `old_string`, `new_string`, `last_read_hash?` | `path`, `file_id`, `version_id` |
-| `grep` | Regex search files | `pattern`, `path_pattern?`, `case_sensitive?` | `matches[]` |
+| `edit` | Edit file content | `path`, `old_string`, `new_string`, `insert_line?`, `insert_content?`, `last_read_hash?` | `path`, `file_id`, `version_id` |
+| `grep` | Regex search files with context | `pattern`, `path_pattern?`, `case_sensitive?`, `before_context?`, `after_context?`, `context?` | `matches[]` with context lines |
+| `cat` | Concatenate files with formatting | `paths[]`, `offset?`, `limit?`, `show_ends?`, `show_tabs?`, `squeeze_blank?`, `number_lines?`, `show_headers?` | `content`, `files[]` with `synced`, `offset`, `limit`, `total_lines` |
+| `glob` | Pattern-based file discovery | `patterns[]`, `path?` | `pattern`, `base_path`, `matches[]` with `synced` status |
+| `file_info` | Query file metadata | `path` | `path`, `synced`, `file_type`, `size`, `line_count`, `timestamps`, `hash` |
+| `find` | Search files by metadata | `name?`, `path?`, `file_type?`, `min_size?`, `max_size?`, `recursive?` | `matches[]` with `synced` status |
+| `read_multiple_files` | Read multiple files in single call | `paths[]`, `limit?` | `files[]` with per-file `synced` status |
+| `ask_user` | Request input or confirmation from user | `questions[]` | `question_id`, `questions[]` |
+| `exit_plan_mode` | Transition from Plan to Build Mode | `allowedPrompts?`, `pushToRemote?`, `remoteSessionId?`, `remoteSessionUrl?`, `remoteSessionTitle?` | `mode`, `plan_file` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -71,6 +85,77 @@ The Tools API provides a unified, extensible interface for executing filesystem 
 - **CLI Tools**: Command-line interfaces for workspace management
 - **Web Applications**: Browser-based file editors and managers
 - **Integration**: Third-party tools can interact with BuildScale workspaces
+
+---
+
+## File Sync Status
+
+The Tools API supports **hybrid file discovery** that works with both database-synced and filesystem-only files. This provides flexibility for files created through various means:
+
+### Sync Status Field
+
+All tool responses that return file information include a `synced` boolean field:
+
+| Value | Meaning | Metadata Available |
+|-------|---------|-------------------|
+| `true` | File is in the database | Full metadata (id, created_at, versions, etc.) |
+| `false` | File exists on disk only | Basic metadata (name, path, size, updated_at) |
+
+### How Files Become Unsynced
+
+Files may be `synced: false` when:
+
+1. **Created via SSH**: Direct file system access
+2. **Migration scripts**: Batch imports
+3. **External tools**: Files from other systems
+4. **Manual operations**: Direct file system manipulation
+
+### Tool Behavior with Sync Status
+
+#### Discovery Tools (ls, find, glob)
+- Return **all files** (synced + unsynced)
+- `synced: true` for database entries
+- `synced: false` for filesystem-only entries
+- Database entries take precedence in merging
+
+#### Access Tools (read, cat, file_info, read_multiple_files)
+- **Try database first** → return with `synced: true`
+- **Fallback to disk** → return with `synced: false`
+- **404 only if** not found in either location
+
+#### Mutation Tools (edit, mv)
+- **Try database first** → operate normally
+- **Fallback to disk** → **auto-import to database**, then operate
+- Result: file becomes `synced: true` after operation
+
+#### Deletion Tool (rm)
+- **If synced**: Delete from database + disk
+- **If unsynced**: Delete from disk only
+- Returns `file_id: null` for filesystem-only deletions
+
+### Visual Indicators (UI Integration)
+
+Frontend applications can use the `synced` field to show visual status:
+
+```typescript
+// Example: File list item rendering
+{file.synced ? (
+  <Tooltip title="Synced to database">
+    <CheckCircleIcon className="text-green-500" />
+  </Tooltip>
+) : (
+  <Tooltip title="Exists on disk only">
+    <CloudOffIcon className="text-yellow-500" />
+  </Tooltip>
+)}
+```
+
+### Benefits
+
+1. **No broken workflows**: Discovery matches access capabilities
+2. **Transparent auto-import**: Editing external files seamlessly imports them
+3. **Clear status indication**: Users know which files are fully managed
+4. **Backward compatible**: Existing clients work without changes
 
 ---
 
@@ -224,6 +309,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 |-------|------|-------------|
 | `result.path` | string | The path that was listed |
 | `result.entries[]` | array | Array of file/folder entries |
+| `entries[].id` | UUID or null | Database ID (null for filesystem-only files) |
+| `entries[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
 | `entries[].name` | string | Technical identifier (slug) used in paths |
 | `entries[].display_name` | string | Human-readable name for UI display |
 | `entries[].path` | string | Full path to the item |
@@ -249,22 +336,27 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ### read - Read File Contents
 
-Reads the latest version of a file within a workspace.
+Reads the latest version of a file within a workspace. Supports line range control for efficient token usage.
 
 #### Arguments
 
 ```json
 {
-  "path": "/file.txt"
+  "path": "/file.txt",
+  "offset": 100,
+  "limit": 50
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | Yes | Full path to the file |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `path` | string | Yes | - | Full path to the file |
+| `offset` | integer | No | 0 | Starting line number (0-indexed). `0` is the first line. Positive values count from beginning (e.g., `100` starts at line 100). Negative values count from end (e.g., `-100` reads the last 100 lines). |
+| `limit` | integer | No | 500 | Maximum number of lines to read. Content is truncated at this limit. |
 
-#### Request Example
+#### Request Examples
 
+**Default read (first 500 lines):**
 ```bash
 curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   -H "Authorization: Bearer <access_token>" \
@@ -277,6 +369,50 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   }'
 ```
 
+**Read middle section of file:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read",
+    "args": {
+      "path": "/src/main.rs",
+      "offset": 100,
+      "limit": 50
+    }
+  }'
+```
+
+**Read last 100 lines (like `tail -n 100`):**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read",
+    "args": {
+      "path": "/logs/error.log",
+      "offset": -100
+    }
+  }'
+```
+
+**Read last 1000 lines, return only first 50:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read",
+    "args": {
+      "path": "/large.log",
+      "offset": -1000,
+      "limit": 50
+    }
+  }'
+```
+
 #### Response (200 OK)
 
 ```json
@@ -285,7 +421,11 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "result": {
     "path": "/documents/report.md",
     "content": "# Annual Report\n\nThis is the content...",
-    "hash": "a1b2c3d4..."
+    "hash": "a1b2c3d4...",
+    "total_lines": 5000,
+    "truncated": true,
+    "offset": 0,
+    "limit": 500
   },
   "error": null
 }
@@ -296,19 +436,32 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was read |
-| `result.content` | string or object | File content as stored |
-| `result.hash` | string | SHA-256 hash of the content |
+| `result.content` | string or object | File content as stored (truncated if applicable) |
+| `result.hash` | string | SHA-256 hash of the full content (not affected by truncation) |
+| `result.synced` | boolean | `true` if file is in database (full metadata), `false` if filesystem-only |
+| `result.total_lines` | integer or null | Total number of lines in the full file (null for non-text content) |
+| `result.truncated` | boolean or null | `true` if content was truncated due to limit, `false` otherwise (null for non-text) |
+| `result.offset` | integer or null | The offset used for this read |
+| `result.limit` | integer or null | The limit used for this read |
 
 #### Behavior Notes
 
 - **Latest version**: Always returns the most recent file version
-- **No content modification**: Content is returned as-is without any transformation
-- **Not found error**: Returns 404 if path does not exist
+- **Line-based truncation**: Only applies to text content (strings). JSON objects returned as-is.
+- **Positive offset**: Reads from beginning (e.g., offset=100 starts at line 100)
+- **Negative offset**: Reads from end (e.g., offset=-100 reads last 100 lines)
+- **Default limit**: Without `limit`, reads first 500 lines (configurable via `DEFAULT_READ_LIMIT` constant)
+- **Hash integrity**: The `hash` field represents the FULL file content, not the truncated portion
+- **0-indexed offset**: Line 0 is the first line in the file
+- **No content modification**: Content is returned as-is without any transformation (except truncation)
 
 **CRITICAL USAGE NOTES:**
 - Returns `hash` field that MUST be used with `edit` tool's `last_read_hash` parameter
+- `hash` is computed from the FULL file content, even when reading a truncated portion
 - Cannot read folders - will return validation error if path is a folder
 - Always read a file before editing to get the latest content hash
+- For large files, use `offset`/`limit` to read specific sections efficiently
+- `total_lines` helps AI understand file structure when reading truncated content
 
 ---
 
@@ -511,7 +664,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 ### rm - Delete File or Folder
 
 
-Soft deletes a file or empty folder within a workspace. Soft delete preserves data for recovery.
+Soft deletes a file or empty folder within a workspace. Works with both database-synced files and filesystem-only files.
 
 #### Arguments
 
@@ -557,11 +710,13 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was deleted |
-| `result.file_id` | UUID | File identifier that was deleted |
+| `result.file_id` | UUID or null | File identifier that was deleted (null for filesystem-only files) |
 
 #### Behavior Notes
 
-- **Soft delete**: Sets `deleted_at` timestamp (file remains in database)
+- **Hybrid deletion**: Works with both database-synced and filesystem-only files
+- **Database files**: Sets `deleted_at` timestamp (file remains in database) and deletes from disk
+- **Filesystem-only files**: Deletes from disk only (no database record)
 - **Folder Protection**:
     - **Hierarchical Check**: Returns `409 Conflict` if the folder has active children (via `parent_id`).
     - **Logical Check**: Returns `409 Conflict` if any active file's path starts with the folder's path prefix (catches orphaned files).
@@ -850,6 +1005,898 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - `case_sensitive: false` (default) makes pattern case-insensitive
 - Use for **pattern discovery** across all files - faster than reading each file
 - Returns matching file paths with line numbers and line text context
+
+---
+
+### glob - Pattern-Based File Discovery
+
+Finds files matching glob patterns (e.g., `*.rs`, `**/*.md`, `/src/**/*.rs`). Uses ripgrep for efficient file discovery without searching file contents. Returns matches with metadata including sync status (synced: true for database files, synced: false for filesystem-only).
+
+#### Arguments
+
+```json
+{
+  "pattern": "*.rs",
+  "path": "/src"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | Yes | Glob pattern to match files (e.g., `*.rs`, `**/*.md`, `test_*`) |
+| `path` | string | No | Base directory for search (default: `/` for workspace root) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "glob",
+    "args": {
+      "pattern": "*.rs"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "pattern": "*.rs",
+    "base_path": "/",
+    "matches": [
+      {
+        "path": "/main.rs",
+        "name": "main.rs",
+        "file_type": "document",
+        "is_virtual": false,
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      },
+      {
+        "path": "/src/lib.rs",
+        "name": "lib.rs",
+        "file_type": "document",
+        "is_virtual": false,
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.pattern` | string | The glob pattern that was used |
+| `result.base_path` | string | The base directory for the search |
+| `result.matches[]` | array | Array of matching files |
+| `matches[].path` | string | Full path to the file |
+| `matches[].name` | string | File name |
+| `matches[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `matches[].file_type` | string | Type: `document`, `folder`, etc. |
+| `matches[].is_virtual` | boolean | `true` if file is system-managed |
+| `matches[].size` | integer or null | File size in bytes (null if not calculated) |
+| `matches[].updated_at` | string | ISO8601 timestamp |
+
+#### Behavior Notes
+
+- **Implementation**: Uses ripgrep (`rg --files`) for efficient file discovery.
+- **Glob Syntax**: Supports standard glob patterns including `*` (matches any characters), `**` (matches across directories), and `?` (matches single character).
+- **Workspace Isolation**: The search is restricted to the workspace directory to prevent accessing files outside the workspace.
+- **Path Normalization**: All returned paths are workspace-relative and start with `/`.
+- **Virtual Files**: Returns metadata for both regular files and virtual files (e.g., Chats, system-managed files).
+- **Performance**: Much faster than recursive `ls` for pattern matching, especially in large codebases.
+- **Pattern Validation**: Rejects patterns containing `..` to prevent path traversal attacks.
+
+**SUPPORTED PATTERNS:**
+- `*.rs` - matches all `.rs` files in the current directory
+- `**/*.md` - matches all `.md` files recursively
+- `/src/**/*.rs` - matches all `.rs` files under `/src/`
+- `test_*` - matches files/folders starting with `test_`
+- `*/file.txt` - matches `file.txt` in any immediate subdirectory
+
+**CRITICAL USAGE NOTES:**
+- **Requires ripgrep**: The tool requires `ripgrep (rg)` to be installed on the system
+- **Use for file discovery**: Use glob when you need to find files by pattern without reading contents
+- **Use ls for browsing**: Use the `ls` tool when browsing directory contents or exploring folder structure
+- **Use grep for content**: Use the `grep` tool when searching for patterns within file contents
+- **No content reading**: Glob only returns file metadata, not file contents
+
+---
+
+### cat - Concatenate Files with Unix-Style Formatting
+
+Concatenates and displays multiple files with Unix-style formatting options for debugging. Use cat to reveal hidden characters (tabs, trailing whitespace) or combine multiple files. Use read for single-file navigation with pagination.
+
+#### Arguments
+
+```json
+{
+  "paths": ["/config.json", "/.env"],
+  "show_ends": true,
+  "show_tabs": true,
+  "squeeze_blank": true,
+  "number_lines": false,
+  "show_headers": false,
+  "offset": 100,
+  "limit": 50
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `paths` | array | Yes | List of file paths to concatenate (max 20 files) |
+| `show_ends` | boolean | No | Display `$` at end of each line to show trailing whitespace (default: `false`) |
+| `show_tabs` | boolean | No | Display tab characters as `^I` (default: `false`) |
+| `squeeze_blank` | boolean | No | Suppress repeated empty lines (default: `false`) |
+| `number_lines` | boolean | No | Add line numbers to all lines (default: `false`). Line numbers reflect actual file position when using offset. |
+| `show_headers` | boolean | No | Add filename headers before each file (default: `false`) |
+| `offset` | integer | No | Starting line position (default: `0`). Positive values start from beginning (e.g., `100` = line 100+). Negative values read from end (e.g., `-50` = last 50 lines). |
+| `limit` | integer | No | Maximum number of lines to read per file (default: unlimited). Use with offset to read specific ranges. |
+
+#### Request Examples
+
+**Basic concatenation with special characters:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "cat",
+    "args": {
+      "paths": ["/src/main.rs", "/src/lib.rs"],
+      "show_ends": true,
+      "show_tabs": true
+    }
+  }'
+```
+
+**Read specific line range with smart numbering:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "cat",
+    "args": {
+      "paths": ["/src/main.rs"],
+      "offset": 100,
+      "limit": 50,
+      "number_lines": true,
+      "show_tabs": true
+    }
+  }'
+```
+
+**Read last 100 lines:**
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "cat",
+    "args": {
+      "paths": ["/logs/error.log"],
+      "offset": -100,
+      "show_ends": true
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "content": "fn main() {\n    println!(\"Hello\");$}\n...",
+    "files": [
+      {
+        "path": "/src/main.rs",
+        "content": "fn main() {\n    println!(\"Hello\");$}",
+        "line_count": 2,
+        "offset": 0,
+        "limit": 50,
+        "total_lines": 150
+      },
+      {
+        "path": "/src/lib.rs",
+        "content": "pub fn hello() {}\n$",
+        "line_count": 1,
+        "offset": 0,
+        "limit": 50,
+        "total_lines": 50
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.content` | string | Concatenated and formatted content of all files |
+| `result.files[]` | array | Array of per-file entries |
+| `files[].path` | string | File path |
+| `files[].content` | string | Formatted content for this file |
+| `files[].line_count` | integer | Number of lines in this file |
+| `files[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `files[].offset` | integer or null | Starting line position for this file |
+| `files[].limit` | integer or null | Maximum lines read from this file |
+| `files[].total_lines` | integer or null | Total lines in the full file |
+
+#### Behavior Notes
+
+- **Concatenation**: Joins multiple files sequentially with optional separators.
+- **Special Characters**: Uses Unix-style formatting (`show_ends` adds `$`, `show_tabs` shows `^I`).
+- **Smart Line Numbers**: When `number_lines=true` with `offset`, line numbers reflect actual file position (e.g., `offset=100` starts numbering at 101).
+- **Line Range Filtering**: `offset` and `limit` enable reading specific portions of files for targeted debugging.
+  - **Positive offset**: Reads from specified line number (0-indexed, so `offset=100` starts at line 100).
+  - **Negative offset**: Reads from end (e.g., `offset=-50` reads last 50 lines).
+  - **Per-file application**: Offset/limit applies to each file individually when concatenating multiple files.
+- **Blank Line Squeezing**: `squeeze_blank` replaces multiple consecutive newlines with a single newline.
+- **Headers**: When `show_headers` is `true`, adds `==> filename <==` before each file.
+- **File Limit**: Maximum 20 files per request to prevent excessive output.
+- **Partial Success**: If some files fail to read, errors are shown in their entries but other files are returned.
+
+**SPECIAL CHARACTER OPTIONS:**
+- `show_ends`: Displays `$` at line endings to reveal trailing whitespace (like `cat -E`)
+- `show_tabs`: Displays tabs as `^I` to distinguish from spaces (like `cat -T`)
+- `squeeze_blank`: Suppresses repeated empty lines (like `cat -s`)
+
+**LINE RANGE FILTERING:**
+- `offset`: Controls starting position (positive from start, negative from end)
+- `limit`: Controls maximum lines to read per file
+- Smart numbering helps identify which lines have issues when debugging specific ranges
+
+**CRITICAL USAGE NOTES:**
+- **Use cat for debugging**: Special character display helps identify tabs vs spaces, trailing whitespace in specific line ranges
+- **Use read for navigation**: The `read` tool supports pagination and scrolling for large files
+- **Token efficiency**: Combine offset/limit with special characters to debug specific sections without reading entire files
+- **Line numbers**: Smart numbering with offset helps pinpoint exact line locations for debugging
+- **Multiple files**: Cat is more efficient than multiple `read` calls for concatenation with line range filtering
+
+---
+
+### file_info - Query File Metadata
+
+Gets file metadata without reading full content. Returns path, file_type, size, line_count (for text files), timestamps, and content hash. Use file_info to check file size or verify existence before reading.
+
+#### Arguments
+
+```json
+{
+  "path": "/large-file.log"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Full path to the file |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "file_info",
+    "args": {
+      "path": "/config.json"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/config.json",
+    "file_type": "document",
+    "size": 1024,
+    "line_count": 25,
+    "created_at": "2025-01-15T10:30:00Z",
+    "updated_at": "2025-01-15T10:30:00Z",
+    "hash": "a1b2c3d4e5f6..."
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.path` | string | File path |
+| `result.file_type` | string | Type: `document`, `folder`, etc. |
+| `result.size` | integer or null | File size in bytes |
+| `result.line_count` | integer or null | Number of lines (for text files) |
+| `result.synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `result.created_at` | string | ISO8601 timestamp when file was created |
+| `result.updated_at` | string | ISO8601 timestamp of last update |
+| `result.hash` | string | SHA-256 hash of the file content |
+
+#### Behavior Notes
+
+- **Metadata Query**: Only reads file metadata, not full content (except for line_count).
+- **Line Count**: For text files (`file_type: "document"`), content is read to count lines.
+- **Size Field**: Returns actual file size in bytes by querying the filesystem metadata.
+- **Content Hash**: Returns SHA-256 hash of the full file content from the latest version.
+- **Timestamps**: Returns both `created_at` and `updated_at` for file tracking.
+- **Virtual Files**: Works with both regular files and virtual files (e.g., Chats).
+- **Token Efficiency**: Use this tool to check file properties before reading full content.
+
+**CRITICAL USAGE NOTES:**
+- **Check before reading**: Use `file_info` to verify file existence and size before using `read`
+- **Line count accuracy**: For text files, the content is read to count lines (not metadata-only)
+- **Hash for editing**: The `hash` field is required for `edit` tool's `last_read_hash` parameter
+- **Size accuracy**: The `size` field returns the actual file size from disk (not database storage)
+- **Use case decisions**: Use `file_info` for quick checks, `read` when you need the actual content
+
+---
+
+### find - Search Files by Metadata
+
+Finds files by metadata criteria using Unix find command for filesystem discovery, then enriches results with database metadata. Complements `grep` which searches by content. Use find to locate files without reading their contents.
+
+#### Arguments
+
+```json
+{
+  "name": "*.txt",
+  "path": "/src",
+  "file_type": "folder",
+  "min_size": 1048576,
+  "max_size": 10485760,
+  "recursive": true
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | Filename pattern with wildcards (e.g., `*.txt`, `test_*`) |
+| `path` | string | No | Base directory for search (default: `/` for workspace root) |
+| `file_type` | string | No | File type filter (`document`, `folder`, `canvas`, etc.) |
+| `min_size` | integer | No | Minimum file size in bytes |
+| `max_size` | integer | No | Maximum file size in bytes |
+| `recursive` | boolean | No | Search subdirectories (default: `true`) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "find",
+    "args": {
+      "name": "*.rs",
+      "path": "/src"
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "matches": [
+      {
+        "path": "/src/main.rs",
+        "name": "main.rs",
+        "file_type": "document",
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      },
+      {
+        "path": "/src/lib.rs",
+        "name": "lib.rs",
+        "file_type": "document",
+        "size": null,
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.matches[]` | array | Array of matching files |
+| `matches[].path` | string | Full path to the file |
+| `matches[].name` | string | File name |
+| `matches[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `matches[].file_type` | string | Type: `document`, `folder`, etc. |
+| `matches[].size` | integer or null | File size in bytes (from filesystem stat) |
+| `matches[].updated_at` | string | ISO8601 timestamp |
+
+#### Behavior Notes
+
+- **Implementation**: Uses Unix `find` command for filesystem discovery (like `find . -name "*.txt" -type f`).
+- **Database Enrichment**: Results are enriched with database metadata (file_type enum, is_virtual flag, etc.).
+- **Name Patterns**: Supports find-style wildcards (`*`, `?`, `[]`) for filename matching.
+- **Path Filtering**: Normalizes path patterns and restricts search to workspace directory.
+- **File Type Filter**: Maps file_type to find's `-type` option (`folder` → `-type d`, others → `-type f`).
+- **Recursive Search**: When `true` (default), searches all subdirectories. When `false`, uses `-maxdepth 1`.
+- **Size Filtering**: Uses find's `-size` flag with byte units (`+1048576c` = >1MB, `-10485760c` = <10MB).
+- **Workspace Isolation**: The search is restricted to the workspace directory to prevent accessing files outside the workspace.
+
+**DIFFERENCES FROM OTHER TOOLS:**
+- **find**: Searches by metadata (name, type, size) using Unix find command
+- **grep**: Searches by content (text within files)
+- **glob**: Pattern matching for filenames using ripgrep (faster, simpler)
+- **ls**: Lists directory contents (browsing, not searching)
+
+**CRITICAL USAGE NOTES:**
+- **Requires find**: The tool requires Unix `find` command to be installed on the system
+- **Use with grep**: Combine `find` (metadata) and `grep` (content) for comprehensive searches
+- **Pattern syntax**: Name patterns use find-style wildcards (more powerful than simple `*`)
+- **Size filtering**: Now fully implemented using find's `-size` flag
+- **Real files only**: Only finds files/folders that exist on disk (database-only entities won't be found)
+- **Performance**: Unix find is highly optimized for filesystem traversal
+
+---
+
+### read_multiple_files - Read Multiple Files in Single Call
+
+Reads multiple files in a single tool call, reducing network round-trips. Returns per-file success/error status with content, hash, and metadata. Use for batch file analysis or cross-referencing.
+
+#### Arguments
+
+```json
+{
+  "paths": ["/config.json", "/README.md", "/src/main.rs"],
+  "limit": 100
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `paths` | array | Yes | List of file paths to read (max 50 files) |
+| `limit` | integer | No | Maximum lines per file (default: `500`) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "read_multiple_files",
+    "args": {
+      "paths": ["/config.json", "/README.md"],
+      "limit": 100
+    }
+  }'
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "result": {
+    "files": [
+      {
+        "path": "/config.json",
+        "success": true,
+        "content": "{\n  \"key\": \"value\"\n}",
+        "hash": "abc123...",
+        "error": null,
+        "total_lines": 3,
+        "truncated": false
+      },
+      {
+        "path": "/README.md",
+        "success": true,
+        "content": "# Project\n\n...",
+        "hash": "def456...",
+        "error": null,
+        "total_lines": 150,
+        "truncated": true
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Response (Partial Success - Some Files Failed)
+
+```json
+{
+  "success": true,
+  "result": {
+    "files": [
+      {
+        "path": "/config.json",
+        "success": true,
+        "content": "{...}",
+        "hash": "abc123...",
+        "error": null,
+        "total_lines": 3,
+        "truncated": false
+      },
+      {
+        "path": "/nonexistent.txt",
+        "success": false,
+        "content": null,
+        "hash": null,
+        "error": "File not found: /nonexistent.txt",
+        "total_lines": null,
+        "truncated": null
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.files[]` | array | Array of per-file results |
+| `files[].path` | string | File path |
+| `files[].success` | boolean | `true` if file was read successfully |
+| `files[].content` | object or null | File content (null if failed) |
+| `files[].hash` | string or null | SHA-256 hash of content (null if failed) |
+| `files[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `files[].error` | string or null | Error message (null if success) |
+| `files[].total_lines` | integer or null | Total lines in file (null if failed or non-text) |
+| `files[].truncated` | boolean or null | `true` if content was truncated (null if failed) |
+
+#### Behavior Notes
+
+- **Batch Reading**: Reads multiple files in a single API call (reduces network latency).
+- **Sequential Processing**: Files are read sequentially (not parallel) due to database connection constraints.
+- **Partial Success**: If some files fail, errors are returned in their entries but other files succeed.
+- **Line Limit**: The `limit` parameter applies to each file individually (default: 500 lines per file).
+- **Content Truncation**: When content exceeds the limit, `truncated: true` and `total_lines` shows the full count.
+- **Hash Integrity**: Each file's SHA-256 hash is returned for content verification.
+- **File Limit**: Maximum 50 files per request to prevent excessive memory usage.
+
+**CRITICAL USAGE NOTES:**
+- **Reduced round-trips**: More efficient than multiple individual `read` calls
+- **Error handling**: Check `success` field for each file result to handle failures
+- **Token efficiency**: Content is truncated per-file to stay within token limits
+- **Use for batches**: Ideal for config files, documentation, or log analysis across multiple files
+- **Hash for editing**: Use returned `hash` values with `edit` tool's `last_read_hash` parameter
+
+---
+
+### ask_user - Request User Input
+
+Request structured input or confirmation from the user during AI execution. Supports multiple questions in a single call with flexible JSON Schema validation.
+
+#### When to Use
+
+1. **Clarification Needed**: User's request is ambiguous or incomplete
+2. **Multiple Valid Approaches**: Several options exist and user preference matters
+3. **Confirmation Required**: Action is significant or irreversible (deletion, major changes)
+4. **Missing Information**: You need specific details to proceed
+5. **Design Decisions**: User's input affects the outcome
+
+#### Arguments
+
+```json
+{
+  "questions": [
+    {
+      "name": "choice",
+      "question": "Which approach do you prefer?",
+      "schema": "{\"type\":\"string\",\"enum\":[\"Option A\",\"Option B\",\"Option C\"]}",
+      "buttons": [
+        {"label": "Option A", "value": "A"},
+        {"label": "Option B", "value": "B"},
+        {"label": "Option C", "value": "C"}
+      ]
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `questions` | array | Yes | Array of question objects (1-4 questions) |
+| `questions[].name` | string | Yes | Variable name for the answer |
+| `questions[].question` | string | Yes | Question text to display |
+| `questions[].schema` | string | Yes | JSON Schema string for validation |
+| `questions[].buttons` | array | No | Optional button labels for single-select (string enum) questions |
+
+#### Common JSON Schema Patterns
+
+**String with enum (radio buttons):**
+```json
+{"type":"string","enum":["Yes","No","Cancel"]}
+```
+
+**String with pattern (text input):**
+```json
+{"type":"string","pattern":"^[a-z0-9]+$","minLength":3}
+```
+
+**Number with range:**
+```json
+{"type":"number","minimum":1,"maximum":100}
+```
+
+**Array/checkbox (multi-select):**
+```json
+{"type":"array","items":{"type":"string","enum":["A","B","C"]},"minItems":1}
+```
+
+#### Critical Usage Rules
+
+**Single-Select Questions** (Use buttons):
+- Schema: `{"type": "string", "enum": ["A", "B", "C"]}`
+- Add `buttons` field for better UX
+- DO NOT use buttons for array-type questions
+
+**Multi-Select Questions** (NO buttons!):
+- Schema: `{"type": "array", "items": {"type": "string", "enum": ["A", "B", "C"]}}`
+- DO NOT add `buttons` field - frontend will render checkboxes automatically
+
+**Always:**
+- Make questions specific and concise
+- Provide context in the question text
+- Use "Select one" or "choose all that apply" suffix to indicate selection type
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "ask_user",
+    "args": {
+      "questions": [
+        {
+          "name": "framework",
+          "question": "Which testing framework should I use?",
+          "schema": "{\"type\":\"string\",\"enum\":[\"Jest\",\"Vitest\",\"Mocha\"]}",
+          "buttons": [
+            {"label": "Jest", "value": "Jest"},
+            {"label": "Vitest", "value": "Vitest"},
+            {"label": "Mocha", "value": "Mocha"}
+          ]
+        }
+      ]
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "status": "question_pending",
+    "question_id": "0193abcd-1234-5678-9abc-123456789abc",
+    "questions": [
+      {
+        "name": "framework",
+        "question": "Which testing framework should I use?",
+        "schema": {"type":"string","enum":["Jest","Vitest","Mocha"]},
+        "buttons": [
+          {"label": "Jest", "value": "Jest"},
+          {"label": "Vitest", "value": "Vitest"},
+          {"label": "Mocha", "value": "Mocha"}
+        ]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Behavior Notes
+
+- **Ephemeral Questions**: Questions exist only in SSE stream and frontend memory (not persisted to database)
+- **Time-Ordered IDs**: Uses UUID v7 for better debugging and logging capabilities
+- **Validation**: Questions array cannot be empty
+- **Multi-Question Support**: Can ask 1-4 questions in a single call
+- **Flexible Schema**: Supports any valid JSON Schema for validation
+- **Button Detection**: Frontend renders buttons automatically for single-select string enum questions
+
+**CRITICAL USAGE NOTES:**
+- **Human-in-the-Loop**: Use when AI needs user guidance to proceed
+- **Structured Input**: Provides type-safe input validation via JSON Schema
+- **Better UX**: Use buttons for single-select questions (not multi-select)
+- **Confirmation**: Ideal for significant or irreversible operations
+- **Clarification**: Use when requirements are ambiguous or incomplete
+
+---
+
+### exit_plan_mode - Transition to Build Mode
+
+Transitions the workspace from Plan Mode (strategy/planning) to Build Mode (implementation). This tool should only be called after the user has explicitly approved an implementation plan.
+
+#### Safety Warning
+
+⚠️ **IMMEDIATE TRANSITION**: This tool exits Plan Mode immediately. Only call after EXPLICIT user approval via button click.
+
+#### Safety Checklist (Must Verify All)
+
+Before calling this tool, you MUST verify ALL of the following:
+1. ✅ You just received a response from `ask_user` tool
+2. ✅ The response value is exactly `"Accept"` (not `"accept"`, not similar, EXACTLY `"Accept"`)
+3. ✅ This response came from a BUTTON CLICK, not a chat message
+4. ✅ You previously showed an Accept/Reject question to the user
+5. ✅ The plan file exists and has `file_type="plan"`
+
+If ANY of the above is FALSE, DO NOT CALL THIS TOOL.
+
+#### What is a Valid Plan File
+
+A valid plan file MUST have:
+1. **File extension**: `.plan` (e.g., `/plans/mighty-willow-symphony.plan`)
+2. **File name**: 3 random words joined by hyphens (NOT `implementation.plan`)
+3. **File type**: `"plan"` (set via `file_type` parameter when creating)
+4. **Content**: Implementation plan with tasks and execution strategy
+
+**Good plan file names** (3 random words):
+- `/plans/gleeful-tangerine-expedition.plan`
+- `/plans/jubilant-river-transformation.plan`
+- `/plans/bold-meadow-revelation.plan`
+
+**Bad plan file names**:
+- `/plans/implementation.plan` (too generic)
+- `/plans/my-plan.plan` (not unique enough)
+
+#### Arguments
+
+```json
+{
+  "plan_file_path": "/plans/fearless-ember-invention.plan"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `plan_file_path` | string | Yes | Path to the plan file (.plan extension) |
+
+#### How to Create a Plan File
+
+Use the `write` tool with BOTH the `.plan` extension AND `file_type` parameter:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "write",
+    "args": {
+      "path": "/plans/fearless-ember-invention.plan",
+      "content": "# Implementation Plan\n\n## Task 1\n...",
+      "file_type": "plan"
+    }
+  }'
+```
+
+**CRITICAL**: If you don't specify `file_type="plan"`, the file will be created as type `"document"` and `exit_plan_mode` will fail with "File is not a plan file".
+
+#### Required Workflow
+
+**Step 1**: Create plan file with `write` tool (with `.plan` extension and `file_type="plan"`)
+**Step 2**: IMMEDIATELY call `ask_user` with:
+  - question: "Review the implementation plan. Ready to proceed to Build Mode?"
+  - schema: `type="string", enum=["Accept", "Reject"]`
+  - buttons: Accept → "Accept", Reject → "Reject"
+**Step 3**: Wait for user response
+**Step 4**: IF response is `"Accept"` (from button click):
+  - THEN call `exit_plan_mode`
+  - ELSE IF `"Reject"`: Ask for feedback, revise, go to Step 2
+**Step 5**: System transitions to Build Mode
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "exit_plan_mode",
+    "args": {
+      "plan_file_path": "/plans/fearless-ember-invention.plan"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "mode": "build",
+    "plan_file": "/plans/fearless-ember-invention.plan"
+  },
+  "error": null
+}
+```
+
+#### When to Call (Only This Scenario)
+
+✅ **CORRECT** - Call immediately when:
+- User clicked "Accept" button on your `ask_user` question
+- You just received: `{"approval": "Accept"}` from `ask_user` response
+- You previously showed the Accept/Reject question
+
+This is the ONLY valid scenario. No other situation justifies calling this tool.
+
+#### When NOT to Call (All These Are Wrong)
+
+❌ **WRONG** - User said in chat (NOT button click):
+- "do it", "work on it", "proceed", "let's start"
+- "looks good", "that's fine", "go ahead"
+- "start implementing", "I approve", "yes, do it"
+
+**Instead**: Show Accept/Reject question via `ask_user` to confirm
+
+❌ **WRONG** - User seemed positive but unclear:
+- "I think that works"
+- "seems good to me"
+- "ok let's try it"
+- "sounds like a plan"
+
+**Instead**: Show Accept/Reject question via `ask_user` to confirm
+
+❌ **WRONG** - You just finished creating the plan:
+- No user input yet
+- User hasn't seen the plan
+- You haven't asked for approval
+
+**Instead**: Show Accept/Reject question via `ask_user` first
+
+#### How to Detect Button Click
+
+A response from `ask_user` is a **button click** when:
+- You just called `ask_user` tool
+- The response contains the question name and answer
+- The value matches one of your button values exactly
+
+A chat message is **NOT a button click** when:
+- User typed in the chat input
+- You did NOT just call `ask_user`
+- The message is natural language, not a structured answer
+
+**Remember**: BUTTON CLICK = `ask_user` response, CHAT MESSAGE = user typing
+
+#### Behavior Notes
+
+- **Validation**: Verifies plan file exists and has `file_type="plan"`
+- **Immediate Transition**: Exits Plan Mode immediately upon successful execution
+- **Database Update**: Updates chat metadata to switch workspace context to Build Mode
+- **File Verification**: Checks plan file has content before transitioning
+- **Error Handling**: Returns detailed error if plan file is invalid or missing
+
+**CRITICAL USAGE NOTES:**
+- **Explicit Approval Only**: Only call after user clicks "Accept" button
+- **Plan File Validation**: Plan must have `.plan` extension and `file_type="plan"`
+- **No Chat Approval**: Natural language approval is NOT sufficient (must use button)
+- **Create → Ask → Exit**: Always follow the 3-step workflow (create plan, ask user, exit plan mode)
+- **Unique Names**: Use random 3-word hyphenated names for plan files
 
 ---
 

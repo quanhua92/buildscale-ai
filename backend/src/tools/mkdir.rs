@@ -36,7 +36,7 @@ impl Tool for MkdirTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
-        _storage: &FileStorageService,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
         config: ToolConfig,
@@ -53,18 +53,22 @@ impl Tool for MkdirTool {
             }));
         }
 
+        // Create the folder in the database (ensures parent folders exist)
         let folder_id = file_services::ensure_path_exists(
             conn,
             workspace_id,
             &path,
             user_id
         ).await?;
-        
+
+        // Create the actual directory on disk
+        storage.create_folder(workspace_id, &path).await?;
+
         let result = MkdirResult {
             path,
             file_id: folder_id,
         };
-        
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,

@@ -62,7 +62,7 @@ export function FileExplorerList() {
   const table = useReactTable({
     data: files,
     columns,
-    getRowId: (row) => row.id,
+    getRowId: (row) => row.path, // Use path as unique key since id can be null for unsynced files
     getCoreRowModel: getCoreRowModel(),
     onSortingChange: setSorting,
     getSortedRowModel: getSortedRowModel(),
