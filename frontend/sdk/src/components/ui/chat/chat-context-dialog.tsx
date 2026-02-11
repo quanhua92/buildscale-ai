@@ -139,15 +139,15 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                 <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                   {expanded.summary ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                   <span className="font-semibold">Summary</span>
-                  <span className="ml-auto text-sm text-muted-foreground">
+                  <span className="ml-auto text-sm text-muted-foreground shrink-0">
                     {formatTokens(data.summary.total_tokens)} / {formatTokens(data.summary.token_limit)} tokens
                   </span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3 space-y-3">
                   {/* Model & Mode */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Model</span>
-                    <code className="text-xs bg-muted px-2 py-0.5 rounded">{data.summary.model}</code>
+                  <div className="flex items-center justify-between text-sm gap-2">
+                    <span className="text-muted-foreground shrink-0">Model</span>
+                    <code className="text-xs bg-muted px-2 py-0.5 rounded truncate max-w-full">{data.summary.model}</code>
                   </div>
 
                   {/* Utilization */}
@@ -165,7 +165,7 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                   </div>
 
                   {/* Token Breakdown */}
-                  <div className="grid grid-cols-4 gap-2 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     {Object.entries({
                       System: data.summary.breakdown.system_prompt_tokens,
                       History: data.summary.breakdown.history_tokens,
@@ -187,9 +187,9 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
               <Collapsible open={expanded.systemPrompt} onOpenChange={() => toggleSection('systemPrompt')}>
                 <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                   {expanded.systemPrompt ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                  <FileText className="size-4" />
+                  <FileText className="size-4 shrink-0" />
                   <span className="font-semibold">System Prompt</span>
-                  <span className="ml-auto text-sm text-muted-foreground">
+                  <span className="ml-auto text-sm text-muted-foreground shrink-0">
                     {formatTokens(data.system_prompt.token_count)} tokens
                   </span>
                 </CollapsibleTrigger>
@@ -197,7 +197,7 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                   <div className="bg-muted rounded p-3 text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
                     {data.system_prompt.content}
                   </div>
-                  <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
                     <span>Type: {data.system_prompt.persona_type}</span>
                     <span>Mode: {data.system_prompt.mode}</span>
                     <span>Chars: {data.system_prompt.char_count.toLocaleString()}</span>
@@ -211,10 +211,10 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
               <Collapsible open={expanded.history} onOpenChange={() => toggleSection('history')}>
                 <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                   {expanded.history ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                  <MessageSquare className="size-4" />
+                  <MessageSquare className="size-4 shrink-0" />
                   <span className="font-semibold">History</span>
-                  <span className="ml-auto text-sm text-muted-foreground">
-                    {data.history.message_count} messages, {formatTokens(data.history.total_tokens)} tokens
+                  <span className="ml-auto text-sm text-muted-foreground shrink-0">
+                    {data.history.message_count} msgs, {formatTokens(data.history.total_tokens)} tok
                   </span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3 space-y-2">
@@ -225,7 +225,7 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                       <div key={i} className="bg-muted rounded p-2 text-xs">
                         <div className="flex items-center gap-2 mb-1">
                           <span className={cn(
-                            "px-1.5 py-0.5 rounded font-medium uppercase",
+                            "px-1.5 py-0.5 rounded font-medium uppercase shrink-0",
                             msg.role === "user" && "bg-blue-500/20 text-blue-600",
                             msg.role === "assistant" && "bg-green-500/20 text-green-600",
                             msg.role === "tool" && "bg-orange-500/20 text-orange-600",
@@ -233,9 +233,9 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                           )}>
                             {msg.role}
                           </span>
-                          <span className="text-muted-foreground">{formatTokens(msg.token_count)} tokens</span>
+                          <span className="text-muted-foreground">{formatTokens(msg.token_count)} tok</span>
                         </div>
-                        <div className="text-muted-foreground line-clamp-2">
+                        <div className="text-muted-foreground line-clamp-2 break-all">
                           {msg.content_preview}
                         </div>
                       </div>
@@ -250,10 +250,10 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
               <Collapsible open={expanded.tools} onOpenChange={() => toggleSection('tools')}>
                 <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                   {expanded.tools ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                  <Wrench className="size-4" />
+                  <Wrench className="size-4 shrink-0" />
                   <span className="font-semibold">Tools</span>
-                  <span className="ml-auto text-sm text-muted-foreground">
-                    {data.tools.tool_count} tools, ~{formatTokens(data.tools.estimated_schema_tokens)} tokens
+                  <span className="ml-auto text-sm text-muted-foreground shrink-0">
+                    {data.tools.tool_count} tools, ~{formatTokens(data.tools.estimated_schema_tokens)} tok
                   </span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3">
@@ -273,10 +273,10 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
               <Collapsible open={expanded.attachments} onOpenChange={() => toggleSection('attachments')}>
                 <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                   {expanded.attachments ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                  <Paperclip className="size-4" />
+                  <Paperclip className="size-4 shrink-0" />
                   <span className="font-semibold">Attachments</span>
-                  <span className="ml-auto text-sm text-muted-foreground">
-                    {data.attachments.attachment_count} files, {formatTokens(data.attachments.total_tokens)} tokens
+                  <span className="ml-auto text-sm text-muted-foreground shrink-0">
+                    {data.attachments.attachment_count} files, {formatTokens(data.attachments.total_tokens)} tok
                   </span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3 space-y-2">
@@ -285,11 +285,11 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                   ) : (
                     data.attachments.attachments.map((att, i) => (
                       <div key={i} className="bg-muted rounded p-2 text-xs">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">{att.attachment_type}</span>
-                          <span className="text-muted-foreground">{formatTokens(att.token_count)} tokens</span>
+                        <div className="flex items-center justify-between mb-1 gap-2">
+                          <span className="font-medium truncate">{att.attachment_type}</span>
+                          <span className="text-muted-foreground shrink-0">{formatTokens(att.token_count)} tok</span>
                         </div>
-                        <div className="text-muted-foreground line-clamp-2">
+                        <div className="text-muted-foreground line-clamp-2 break-all">
                           {att.content_preview}
                         </div>
                       </div>
