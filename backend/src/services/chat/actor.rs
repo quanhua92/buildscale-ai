@@ -818,6 +818,14 @@ impl ChatActor {
 
                         // Determine tool success by parsing the response
                         // Tools return ToolResponse {success, result, error} format
+                        // Define error detection heuristic once to avoid duplication
+                        let has_error_heuristic = |s: &str| {
+                            s.starts_with("Error:")
+                                || s.starts_with("error:")
+                                || s.contains("ToolCallError")
+                                || (s.contains("Tool error") && s.contains("failed"))
+                        };
+
                         let (success, normalized_output) = if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
                             // Check if this is a ToolResponse format with explicit success field
                             if let Some(success_bool) = result_json.get("success").and_then(|v| v.as_bool()) {
@@ -839,18 +847,12 @@ impl ChatActor {
                             } else {
                                 // No success field - likely a bare result (success)
                                 // Check for error patterns in the output
-                                let has_error = output.starts_with("Error:") ||
-                                                 output.starts_with("error:") ||
-                                                 output.contains("ToolCallError") ||
-                                                 (output.contains("Tool error") && output.contains("failed"));
+                                let has_error = has_error_heuristic(&output);
                                 (!has_error, output.clone())
                             }
                         } else {
                             // Not JSON - use heuristic for plain text
-                            let has_error = output.starts_with("Error:") ||
-                                             output.starts_with("error:") ||
-                                             output.contains("ToolCallError") ||
-                                             (output.contains("Tool error") && output.contains("failed"));
+                            let has_error = has_error_heuristic(&output);
                             (!has_error, output.clone())
                         };
 
