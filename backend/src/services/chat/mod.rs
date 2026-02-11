@@ -118,8 +118,8 @@ use crate::{
 };
 use uuid::Uuid;
 
-/// Default token limit for the context window in the MVP.
-pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
+/// Default token limit for the context window (128k for modern models).
+pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 128000;
 
 /// Max length for tool output before truncation (2KB)
 const MAX_TOOL_OUTPUT_LENGTH: usize = 2048;
@@ -895,14 +895,9 @@ impl ChatService {
         workspace_id: Uuid,
         chat_file_id: Uuid,
         default_persona: &str,
-        token_limit: usize,
+        fallback_token_limit: usize,
     ) -> Result<crate::models::chat::ChatContextResponse> {
-        // 1. Build context using existing method
-        let context = Self::build_context(
-            conn, storage, workspace_id, chat_file_id, default_persona, token_limit
-        ).await?;
-
-        // 2. Get session for model/mode info
+        // 1. Get session for model/mode info first (needed to determine token limit)
         let _file = queries::files::get_file_by_id(conn, chat_file_id).await?;
 
         let agent_config: crate::models::chat::AgentConfig = match queries::files::get_latest_version(conn, chat_file_id).await {
@@ -912,13 +907,23 @@ impl ChatService {
             }
         };
 
-        // 3. Build each section
+        // 2. Look up model's context window from database
+        let token_limit = Self::get_model_context_window(conn, &agent_config.model)
+            .await
+            .unwrap_or(fallback_token_limit);
+
+        // 3. Build context using existing method
+        let context = Self::build_context(
+            conn, storage, workspace_id, chat_file_id, default_persona, token_limit
+        ).await?;
+
+        // 4. Build each section
         let system_prompt = Self::build_system_prompt_section(&context.persona, &agent_config.mode);
         let history = Self::build_history_section(&context.history.messages);
         let tools = Self::build_tools_section();
         let attachments = Self::build_attachments_section(&context.attachment_manager);
 
-        // 4. Build summary
+        // 5. Build summary
         let summary = Self::build_context_summary(
             &system_prompt, &history, &tools, &attachments, &agent_config.model, token_limit
         );
@@ -930,6 +935,16 @@ impl ChatService {
             attachments,
             summary,
         })
+    }
+
+    /// Get the context window for a model from the database.
+    /// Model string format: "provider:model_name" (e.g., "openai:gpt-4o")
+    async fn get_model_context_window(conn: &mut DbConn, model: &str) -> Option<usize> {
+        let (provider, model_name) = model.split_once(':')?;
+        let ai_model = queries::ai_models::get_model_by_provider_and_name_conn(
+            conn, provider, model_name
+        ).await.ok()??;
+        ai_model.context_window.map(|cw| cw as usize)
     }
 
     fn build_system_prompt_section(persona: &str, mode: &str) -> crate::models::chat::SystemPromptSection {
