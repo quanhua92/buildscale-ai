@@ -236,7 +236,8 @@ pub async fn import_file_to_database(
     // Determine file type (simple heuristic: check if it's a directory)
     let workspace_path = storage.get_workspace_path(workspace_id);
     let relative_path = path.strip_prefix('/').unwrap_or(path);
-    let file_path = workspace_path.join("latest").join(relative_path);
+    // Note: workspace_path already includes /latest, don't add it again
+    let file_path = workspace_path.join(relative_path);
 
     let file_type = if file_path.is_dir() {
         FileType::Folder
