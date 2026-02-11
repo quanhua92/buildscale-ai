@@ -31,7 +31,23 @@ pub async fn file_exists_on_disk(
     let relative_path = path.strip_prefix('/').unwrap_or(path);
     let file_path = workspace_path.join("latest").join(relative_path);
 
-    Ok(tokio::fs::metadata(&file_path).await.is_ok())
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        path = %path,
+        file_path = %file_path.display(),
+        "Checking if file exists on disk"
+    );
+
+    let exists = tokio::fs::metadata(&file_path).await.is_ok();
+
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        path = %path,
+        exists = exists,
+        "File existence check result"
+    );
+
+    Ok(exists)
 }
 
 /// Read file content from disk
@@ -53,11 +69,26 @@ pub async fn read_file_from_disk(
     let relative_path = path.strip_prefix('/').unwrap_or(path);
     let file_path = workspace_path.join("latest").join(relative_path);
 
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        path = %path,
+        file_path = %file_path.display(),
+        "Reading file from disk"
+    );
+
     let content = tokio::fs::read_to_string(&file_path).await?;
 
     // Calculate SHA-256 hash
     let hash = Sha256::digest(&content);
     let hash_hex = hex::encode(hash);
+
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        path = %path,
+        content_length = content.len(),
+        hash = %hash_hex,
+        "Successfully read file from disk"
+    );
 
     Ok((content, hash_hex))
 }

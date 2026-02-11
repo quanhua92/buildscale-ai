@@ -131,17 +131,24 @@ Returns content, hash for change detection, and metadata (total_lines, truncated
 
         // Try database lookup first
         let file = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {
-            Some(f) => f,
+            Some(f) => {
+                tracing::debug!(workspace_id = %workspace_id, path = %path, "File found in database");
+                f
+            },
             None => {
+                tracing::debug!(workspace_id = %workspace_id, path = %path, "File not found in database, checking filesystem");
                 // Fallback: Check if file exists on disk
                 match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
                     Ok(true) => {
+                        tracing::debug!(workspace_id = %workspace_id, path = %path, "File exists on disk, reading from filesystem");
                         // File exists on disk but not in database - read from disk
                         let (content, hash) = helpers::read_file_from_disk(
                             storage,
                             workspace_id,
                             &path,
                         ).await?;
+
+                        tracing::debug!(workspace_id = %workspace_id, path = %path, content_length = content.len(), "Successfully read file from disk");
 
                         // For disk-only files, return immediately with basic metadata
                         // We can't support scroll mode or line counting for unsynced files
@@ -164,10 +171,12 @@ Returns content, hash for change detection, and metadata (total_lines, truncated
                         });
                     }
                     Ok(false) => {
+                        tracing::debug!(workspace_id = %workspace_id, path = %path, "File not found on disk either");
                         // File not found in database or on disk
                         return Err(Error::NotFound(format!("File not found: {}", path)));
                     }
                     Err(e) => {
+                        tracing::error!(workspace_id = %workspace_id, path = %path, error = %e.to_string(), "Error checking if file exists on disk");
                         // Error checking disk - return the error
                         return Err(e);
                     }
