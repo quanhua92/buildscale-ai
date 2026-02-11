@@ -2,8 +2,55 @@ use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
+
+// --- Tool Result Truncation Constants ---
+
+/// Number of recent tool results to keep full outputs for.
+/// Older tool results are truncated to reduce context size since the AI can re-run tools.
+pub const KEEP_RECENT_TOOL_RESULTS: usize = 5;
+
+/// Maximum characters for truncated old tool results
+pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 100;
+
+/// Identify which tool result indices should be truncated based on age.
+///
+/// Returns a HashSet of indices that are tool results and should be truncated
+/// because they are older than KEEP_RECENT_TOOL_RESULTS.
+///
+/// # Arguments
+/// * `tool_result_indices` - Slice of indices (in chronological order) that are tool results
+///
+/// # Returns
+/// HashSet of indices to truncate
+pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usize> {
+    let truncate_from_index = tool_result_indices.len().saturating_sub(KEEP_RECENT_TOOL_RESULTS);
+    tool_result_indices
+        .iter()
+        .take(truncate_from_index)
+        .copied()
+        .collect()
+}
+
+/// Truncate a tool result output if it's too long.
+///
+/// # Arguments
+/// * `output` - The tool output string
+///
+/// # Returns
+/// Truncated string with hint to re-run tool
+pub fn truncate_tool_output(output: &str) -> String {
+    if output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
+        format!(
+            "{}... [truncated - re-run tool for fresh data]",
+            &output[..TRUNCATED_TOOL_RESULT_PREVIEW.min(output.len())]
+        )
+    } else {
+        output.to_string()
+    }
+}
 
 /// Attachment key types for identifying different attachment sources.
 ///

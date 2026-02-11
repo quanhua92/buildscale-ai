@@ -4,7 +4,9 @@ use crate::services::chat::rig_tools::{
     RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
     RigAskUserTool, RigExitPlanModeTool,
 };
-use crate::services::chat::context::{AttachmentKey, AttachmentManager, ContextItem};
+use crate::services::chat::context::{
+    get_old_tool_result_indices, truncate_tool_output, AttachmentKey, AttachmentManager, ContextItem,
+};
 use crate::services::storage::FileStorageService;
 use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
 use crate::config::AiConfig;
@@ -19,13 +21,6 @@ use uuid::Uuid;
 /// Maximum number of tool-calling iterations allowed per user message.
 /// This prevents infinite loops while allowing complex multi-step workflows.
 const DEFAULT_MAX_TOOL_ITERATIONS: usize = 100;
-
-/// Number of recent tool results to keep full outputs for.
-/// Older tool results are truncated to reduce context size since the AI can re-run tools.
-const KEEP_RECENT_TOOL_RESULTS: usize = 5;
-
-/// Maximum characters for truncated old tool results
-const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 100;
 
 /// Add all Rig tools to an agent builder
 fn add_tools_to_agent<M>(
@@ -645,27 +640,18 @@ impl RigService {
             })
             .collect();
 
-        // Truncate old tool results (keep only the most recent N)
-        let truncate_from_index = tool_result_indices.len().saturating_sub(KEEP_RECENT_TOOL_RESULTS);
-        let indices_to_truncate: std::collections::HashSet<usize> = tool_result_indices
-            .into_iter()
-            .take(truncate_from_index)
-            .collect();
+        // Use shared function to get indices to truncate
+        let indices_to_truncate = get_old_tool_result_indices(&tool_result_indices);
 
         // Convert to Rig Messages
         let mut result = Vec::new();
         for (idx, item) in items.into_iter().enumerate() {
             match item {
                 ContextItem::Message { role, content, mut metadata, .. } => {
-                    // Truncate tool output for old tool results
+                    // Truncate tool output for old tool results using shared function
                     if indices_to_truncate.contains(&idx) {
                         if let Some(ref tool_output) = metadata.tool_output {
-                            if tool_output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
-                                metadata.tool_output = Some(format!(
-                                    "{}... [truncated - re-run tool for fresh data]",
-                                    &tool_output[..TRUNCATED_TOOL_RESULT_PREVIEW.min(tool_output.len())]
-                                ));
-                            }
+                            metadata.tool_output = Some(truncate_tool_output(tool_output));
                         }
                     }
                     // Reuse existing message conversion logic

@@ -101,8 +101,10 @@ pub mod rig_tools;
 pub mod sync;
 
 pub use context::{
-    AttachmentManager, AttachmentKey, AttachmentValue, ContextItem, ESTIMATED_CHARS_PER_TOKEN,
+    get_old_tool_result_indices, truncate_tool_output, AttachmentManager, AttachmentKey,
+    AttachmentValue, ContextItem, ESTIMATED_CHARS_PER_TOKEN, KEEP_RECENT_TOOL_RESULTS,
     HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM,
+    TRUNCATED_TOOL_RESULT_PREVIEW,
 };
 
 pub use sync::{ChatFrontmatter, YamlFrontmatter};
@@ -967,18 +969,41 @@ impl ChatService {
     }
 
     fn build_history_section(messages: &[ChatMessage]) -> crate::models::chat::HistorySection {
-        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = messages.iter().map(|msg| {
-            let preview = if msg.content.len() > Self::CONTENT_PREVIEW_LENGTH {
-                format!("{}...", &msg.content[..Self::CONTENT_PREVIEW_LENGTH])
+        // Identify tool result indices for age-based truncation
+        let tool_result_indices: Vec<usize> = messages
+            .iter()
+            .enumerate()
+            .filter_map(|(i, msg)| {
+                if msg.metadata.message_type.as_deref() == Some("tool_result") {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let indices_to_truncate = get_old_tool_result_indices(&tool_result_indices);
+
+        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = messages.iter().enumerate().map(|(idx, msg)| {
+            let mut content = msg.content.clone();
+            let original_length = msg.content.len();
+
+            // Truncate old tool results using shared function
+            if indices_to_truncate.contains(&idx) {
+                content = truncate_tool_output(&content);
+            }
+
+            let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
+                format!("{}...", &content[..Self::CONTENT_PREVIEW_LENGTH])
             } else {
-                msg.content.clone()
+                content
             };
 
             crate::models::chat::HistoryMessageInfo {
                 role: msg.role.to_string().to_lowercase(),
                 content_preview: preview,
-                content_length: msg.content.len(),
-                token_count: msg.content.len() / ESTIMATED_CHARS_PER_TOKEN,
+                content_length: original_length,
+                token_count: original_length / ESTIMATED_CHARS_PER_TOKEN,
                 metadata: Some(crate::models::chat::HistoryMessageMetadata {
                     message_type: msg.metadata.message_type.clone(),
                     reasoning_id: msg.metadata.reasoning_id.clone(),
