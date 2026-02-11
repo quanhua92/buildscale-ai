@@ -124,7 +124,7 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
 
       {/* Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Cpu className="size-5" />
@@ -150,7 +150,7 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
           )}
 
           {data && (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 min-w-0">
               {/* Summary Card */}
               <Collapsible open={expanded.summary} onOpenChange={() => toggleSection('summary')}>
                 <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
@@ -168,11 +168,11 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                   </div>
 
                   {/* Utilization */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Utilization</span>
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center justify-between text-sm gap-2">
+                      <span className="text-muted-foreground shrink-0">Utilization</span>
                       <span className={cn(
-                        "font-medium",
+                        "font-medium shrink-0",
                         data.summary.utilization_percent >= 80 && "text-red-500"
                       )}>
                         {data.summary.utilization_percent.toFixed(1)}%
@@ -189,9 +189,9 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                       Tools: data.summary.breakdown.tools_tokens,
                       Attachments: data.summary.breakdown.attachments_tokens,
                     }).map(([label, tokens]) => (
-                      <div key={label} className="bg-muted rounded p-2 text-center">
-                        <div className="font-medium">{formatTokens(tokens)}</div>
-                        <div className="text-muted-foreground">{label}</div>
+                      <div key={label} className="bg-muted rounded p-2 text-center min-w-0">
+                        <div className="font-medium truncate">{formatTokens(tokens)}</div>
+                        <div className="text-muted-foreground truncate">{label}</div>
                       </div>
                     ))}
                   </div>
