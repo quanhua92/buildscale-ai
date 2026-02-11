@@ -60,7 +60,7 @@ Tool results can be very large (file contents, directory listings, grep output).
 ### Strategy
 
 - Keep full outputs for the **most recent 5 tool results**
-- Truncate older tool results to **100 characters** with a hint to re-run
+- Truncate older tool results to **50 characters** with `…` suffix
 - Tool calls are always preserved (AI knows what was executed)
 
 ### Why This Works
@@ -104,7 +104,7 @@ After optimization:
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `KEEP_RECENT_TOOL_RESULTS` | 5 | Number of recent tool results to keep full |
-| `TRUNCATED_TOOL_RESULT_PREVIEW` | 100 | Characters to show for truncated results |
+| `TRUNCATED_TOOL_RESULT_PREVIEW` | 50 | Characters to show before `…` |
 
 ### Key Implementation Files
 

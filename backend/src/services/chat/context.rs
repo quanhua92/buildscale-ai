@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub const KEEP_RECENT_TOOL_RESULTS: usize = 5;
 
 /// Maximum characters for truncated old tool results
-pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 100;
+pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
 
 /// Identify which tool result indices should be truncated based on age.
 ///
@@ -44,7 +44,7 @@ pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usi
 pub fn truncate_tool_output(output: &str) -> String {
     if output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
         format!(
-            "{}... [truncated - re-run tool for fresh data]",
+            "{}…[re-run]",
             &output[..TRUNCATED_TOOL_RESULT_PREVIEW.min(output.len())]
         )
     } else {
