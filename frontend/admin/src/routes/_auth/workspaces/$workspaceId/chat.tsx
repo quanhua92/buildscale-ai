@@ -31,13 +31,13 @@ function ChatRoute() {
         chatId={chatId}
         onChatCreated={handleChatCreated}
       >
-        <ChatContent />
+        <ChatContent workspaceId={workspaceId} chatId={chatId} />
       </Chat.Provider>
     </div>
   )
 }
 
-function ChatContent() {
+function ChatContent({ workspaceId, chatId }: { workspaceId: string; chatId?: string }) {
   const {
     messages,
     isStreaming,
@@ -84,6 +84,8 @@ function ChatContent() {
           onModeChange={handleModeChange}
           disabled={isChangingMode}
         />
+        {/* Context Dialog */}
+        <Chat.ContextDialog workspaceId={workspaceId} chatId={chatId} />
       </Chat.Header>
 
       {/* Question Bar (appears when AI asks a question) */}

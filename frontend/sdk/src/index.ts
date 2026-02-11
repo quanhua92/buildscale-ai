@@ -32,6 +32,7 @@ export {
   ChatSchemaForm,
   ChatModeIndicator,
   ChatModeToggle,
+  ChatContextDialog,
 } from './components/ui/chat'
 export type {
   ChatMode,
@@ -43,6 +44,18 @@ export type {
   ModeChangedData,
   JSONSchema,
   JSONSchemaType,
+  // Context API types
+  ChatContextResponse,
+  SystemPromptSection,
+  HistorySection,
+  HistoryMessageInfo,
+  HistoryMessageMetadata,
+  ToolsSection,
+  ToolDefinition,
+  AttachmentsSection,
+  AttachmentInfo,
+  ContextSummary,
+  TokenBreakdown,
 } from './api/types'
 export type {
   NavigationMenuProps,
