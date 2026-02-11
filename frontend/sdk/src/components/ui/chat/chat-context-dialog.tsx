@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Info, ChevronDown, ChevronRight, FileText, MessageSquare, Wrench, Paperclip, Cpu } from "lucide-react"
+import { Info, ChevronDown, ChevronRight, FileText, MessageSquare, Wrench, Paperclip, Cpu, Clock } from "lucide-react"
 import { Button } from "../button"
 import {
   Dialog,
@@ -23,6 +23,23 @@ import type { ChatContextResponse } from "../../../api/types"
 const formatTokens = (tokens: number): string => {
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
   return tokens.toString()
+}
+
+// Utility for formatting relative time
+const formatRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffSec < 60) return "just now"
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHour < 24) return `${diffHour}h ago`
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString()
 }
 
 // Progress bar component for utilization
@@ -289,8 +306,20 @@ export function ChatContextDialog({ workspaceId, chatId }: ChatContextDialogProp
                           <span className="font-medium truncate">{att.attachment_type}</span>
                           <span className="text-muted-foreground shrink-0">{formatTokens(att.token_count)} tok</span>
                         </div>
-                        <div className="text-muted-foreground line-clamp-2 break-all">
+                        <div className="text-muted-foreground line-clamp-2 break-all mb-1">
                           {att.content_preview}
+                        </div>
+                        {/* Timestamps */}
+                        <div className="flex items-center gap-3 text-[10px] text-muted-foreground/70">
+                          <span className="flex items-center gap-1">
+                            <Clock className="size-2.5" />
+                            Added: {formatRelativeTime(att.created_at)}
+                          </span>
+                          {att.updated_at && (
+                            <span className="flex items-center gap-1">
+                              Modified: {formatRelativeTime(att.updated_at)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))

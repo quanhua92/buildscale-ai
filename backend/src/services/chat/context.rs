@@ -1,4 +1,5 @@
-use crate::models::chat::{ChatMessage, ChatMessageRole};
+use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
@@ -26,6 +27,41 @@ pub struct AttachmentValue {
     pub priority: i32,
     pub tokens: usize,
     pub is_essential: bool,
+    /// When the attachment was added to the context
+    pub created_at: DateTime<Utc>,
+    /// When the source content was last modified (e.g., file updated_at)
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+/// Unified context item for chronological sorting of messages and attachments.
+///
+/// This enables cache-optimized context construction where older content
+/// (both messages and attachments) becomes part of a stable, cacheable prefix.
+#[derive(Debug, Clone)]
+pub enum ContextItem {
+    /// A chat message from the conversation history
+    Message {
+        role: ChatMessageRole,
+        content: String,
+        created_at: DateTime<Utc>,
+        metadata: ChatMessageMetadata,
+    },
+    /// An attachment (file, skill, etc.) with rendered XML content
+    Attachment {
+        key: AttachmentKey,
+        value: AttachmentValue,
+        rendered: String,
+    },
+}
+
+impl ContextItem {
+    /// Get the timestamp for chronological sorting
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        match self {
+            ContextItem::Message { created_at, .. } => *created_at,
+            ContextItem::Attachment { value, .. } => value.created_at,
+        }
+    }
 }
 
 pub type AttachmentMap = IndexMap<AttachmentKey, AttachmentValue>;

@@ -101,7 +101,7 @@ pub mod rig_tools;
 pub mod sync;
 
 pub use context::{
-    AttachmentManager, AttachmentKey, AttachmentValue, ESTIMATED_CHARS_PER_TOKEN,
+    AttachmentManager, AttachmentKey, AttachmentValue, ContextItem, ESTIMATED_CHARS_PER_TOKEN,
     HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM,
 };
 
@@ -848,6 +848,9 @@ impl ChatService {
                         // Estimate tokens (rough approximation: 4 chars per token)
                         let estimated_tokens = content.len() / ESTIMATED_CHARS_PER_TOKEN;
 
+                        // Get the file's updated_at timestamp for cache optimization
+                        let source_modified_at = Some(file_with_content.file.updated_at);
+
                         // Add to attachment manager with workspace file key
                         // Use MEDIUM priority for user-attached files
                         attachment_manager.add_fragment(
@@ -857,6 +860,8 @@ impl ChatService {
                                 priority: PRIORITY_MEDIUM,
                                 tokens: estimated_tokens,
                                 is_essential: false,
+                                created_at: chrono::Utc::now(),
+                                updated_at: source_modified_at,
                             },
                         );
                     }
@@ -1029,6 +1034,8 @@ impl ChatService {
                 token_count: value.tokens,
                 priority: value.priority,
                 is_essential: value.is_essential,
+                created_at: value.created_at,
+                updated_at: value.updated_at,
             }
         }).collect();
 

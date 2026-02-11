@@ -205,6 +205,10 @@ pub struct AttachmentInfo {
     pub token_count: usize,
     pub priority: i32,
     pub is_essential: bool,
+    /// When the attachment was added to the context
+    pub created_at: DateTime<Utc>,
+    /// When the source content was last modified
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

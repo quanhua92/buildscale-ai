@@ -507,6 +507,10 @@ export interface AttachmentInfo {
   token_count: number
   priority: number
   is_essential: boolean
+  // When the attachment was added to the context
+  created_at: string
+  // When the source content was last modified
+  updated_at: string | null
 }
 
 export interface ContextSummary {

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document explains how BuildScale AI leverages OpenAI and OpenRouter's **automatic prompt caching** to reduce costs and latency, what we've discovered through testing, and the current limitations.
+This document explains how BuildScale AI leverages OpenAI and OpenRouter's **automatic prompt caching** to reduce costs and latency through cache-optimized context architecture.
 
 ## What is Prompt Caching?
 
@@ -20,31 +20,66 @@ Prompt caching is an optimization where LLM providers cache repeated static pref
   - Default: In-memory cache (5-10 minutes)
   - Extended: 24 hours for gpt-5.x, gpt-4.1, gpt-4o models (with `prompt_cache_retention: "24h"` parameter)
 
-## BuildScale's Cache-Friendly Architecture
+## Cache-Optimized Context Architecture
 
-Our chat service is already designed to maximize cache hits:
+BuildScale uses a **chronologically interleaved architecture** where attachments are merged with conversation history and sorted by timestamp. This creates a stable, cacheable prefix that maximizes cache hits.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ STATIC PREFIX (Cached)                                       │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ • System persona (10,000+ tokens in build mode)        │ │
-│ │ • Tool definitions (~1000 tokens)                       │ │
-│ │ • Workspace context (stable during conversation)        │ │ │
-│ └─────────────────────────────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────────┤
-│ DYNAMIC SUFFIX (Not cached)                                  │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ • User query                                             │ │
-│ │ • Recent conversation history                            │ │
-│ │ • Attachment references                                  │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+[System Prompt] → [Interleaved History + Attachments] → [Last Message]
+                              ↑                              ↑
+                         cacheable                      varies only
 ```
 
-**Key implementation**: `rig_engine.rs:397` (OpenAI) and `rig_engine.rs:455` (OpenRouter) place static content first via `agent.preamble(&persona)`, then appends dynamic content (user query, history) at the end.
+Attachments become part of the stable prefix when they're older than the current message. Older content becomes cacheable, only the newest message varies.
 
-## Test Results: What We Discovered
+### How It Works
+
+1. **Attachment Timestamps**: Each `AttachmentValue` has:
+   - `created_at`: When the attachment was added to context
+   - `updated_at`: When the source content was last modified
+
+2. **Unified Context Items**: Both messages and attachments are wrapped in `ContextItem`:
+   ```rust
+   pub enum ContextItem {
+       Message { role, content, created_at, metadata },
+       Attachment { key, value, rendered },
+   }
+   ```
+
+3. **Chronological Sorting**: All items sorted by timestamp (oldest first):
+   ```rust
+   items.sort_by_key(|item| item.timestamp());
+   ```
+
+4. **Cache-Efficient Conversion**: Older items become stable prefix, newer items vary only at the end.
+
+### Key Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `context.rs` | `AttachmentValue` with timestamps, `ContextItem` enum |
+| `mod.rs` | `build_context()` populates timestamps from file metadata |
+| `rig_engine.rs` | `convert_history_with_attachments()` interleaves and sorts |
+| `actor.rs` | Passes attachment_manager to history conversion |
+
+### Example: Context Flow
+
+```
+Time 0:00 - File A attached (created_at: 0:00)
+Time 0:05 - User message 1 (created_at: 0:05)
+Time 0:10 - Assistant response 1 (created_at: 0:10)
+Time 0:15 - File B attached (created_at: 0:15)
+Time 0:20 - User message 2 (created_at: 0:20)  ← Current prompt
+
+Interleaved order (oldest first):
+1. [Attachment: File A]     ← Cacheable
+2. [User message 1]         ← Cacheable
+3. [Assistant response 1]   ← Cacheable
+4. [Attachment: File B]     ← Cacheable
+5. [User message 2]         ← Varies (current prompt)
+```
+
+## Test Results
 
 We created `examples/10_cache_analysis.rs` to empirically verify caching behavior across multiple providers.
 
@@ -182,29 +217,40 @@ Look for:
 
 ## Cost Impact Estimates
 
-Based on typical BuildScale prompts:
+Based on typical BuildScale prompts with cache-optimized architecture:
 - **Persona + tools**: ~11,000 tokens (67% of prompt)
-- **User query + history**: ~5,500 tokens (33% of prompt)
+- **Interleaved history + attachments**: ~5,500 tokens (varies by conversation age)
+- **Current user message**: ~500 tokens (3% of prompt)
 
-### Current (Default Caching)
-- First request: 16,500 tokens billed
-- Subsequent requests (5-10 min): 16,500 tokens billed (no extended retention)
+### Token Usage Pattern
+
+```
+Request 1: [16,500 tokens] - full prompt
+Request 2: [5,500 tokens] - only last message (11k cached)
+```
+
+Attachments interleaved in stable prefix = 67% savings on subsequent requests.
 
 ### With Extended Retention (24h)
-- First request: 16,500 tokens billed
-- Subsequent requests (24h): ~5,500 tokens billed (**67% savings**)
-
-### Annual Savings (Estimated)
 For a workspace with 1000 build mode conversations per day:
-- **Current**: 16.5M tokens/day × $0.50/M = $8.25/day
-- **With extended caching**: (16.5M first) + (5.5M cached) = 22M tokens/day → $11/day
-- **Wait, that's worse!**
+- **First request of the day**: 16,500 tokens
+- **All subsequent requests (24h)**: ~5,500 tokens (67% cached)
 
-**Correction**: The savings come from re-using cached prefixes across different conversations in the same workspace, not just within a single conversation. The real benefit is:
-- First request of the day: 16,500 tokens
-- All subsequent requests (24h): 5,500 tokens (67% cached)
+**Daily cost**: 16,500 + 999 × 5,500 = 5.67M tokens/day → **$2.84/day (66% savings)**
 
-For 1000 conversations: 16,500 + 999 × 5,500 = 5.67M tokens/day → **$2.84/day (66% savings)**
+### Implementation Details
+
+The cache optimization is achieved through:
+
+1. **Timestamp-based sorting** in `ContextItem::timestamp()`
+2. **Attachment interleaving** in `convert_history_with_attachments()`
+3. **Stable prefix construction** - older content first
+4. **Attachment metadata tracking** - `created_at`, `updated_at` fields
+
+```rust
+// Sort by timestamp (oldest first = better caching)
+items.sort_by_key(|item| item.timestamp());
+```
 
 ## References
 

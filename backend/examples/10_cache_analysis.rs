@@ -190,7 +190,7 @@ async fn run_scenario(
         let latency = start.elapsed().as_millis();
 
         // Extract token info from usage
-        let (input_tokens, output_tokens, total_tokens, cached_tokens) = if let Some(usage) = final_usage {
+        let (input_tokens, output_tokens, _total_tokens, cached_tokens) = if let Some(usage) = final_usage {
             if let Ok(json) = serde_json::to_value(&usage) {
                 let input = json.get("input_tokens").or_else(|| json.get("prompt_tokens")).and_then(|v| v.as_u64());
                 let output = json.get("output_tokens").or_else(|| json.get("completion_tokens")).and_then(|v| v.as_u64());
@@ -227,7 +227,6 @@ async fn run_scenario(
             latency_ms: latency,
             input_tokens,
             output_tokens,
-            total_tokens,
             cached_tokens,
             text: response_text.clone(),
         };

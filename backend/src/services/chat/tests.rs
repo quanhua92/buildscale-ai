@@ -4,11 +4,13 @@ mod tests {
         AttachmentKey, AttachmentManager, AttachmentValue, PRIORITY_ESSENTIAL, PRIORITY_HIGH,
         PRIORITY_LOW, PRIORITY_MEDIUM,
     };
+    use chrono::Utc;
     use uuid::Uuid;
 
     #[test]
     fn test_attachment_ordering() {
         let mut manager = AttachmentManager::new();
+        let now = Utc::now();
 
         // Add fragments out of order
         manager.add_fragment(
@@ -18,6 +20,8 @@ mod tests {
                 priority: 1,
                 tokens: 10,
                 is_essential: true,
+                created_at: now,
+                updated_at: None,
             },
         );
         manager.add_fragment(
@@ -27,6 +31,8 @@ mod tests {
                 priority: 0,
                 tokens: 10,
                 is_essential: true,
+                created_at: now,
+                updated_at: None,
             },
         );
         manager.add_fragment(
@@ -36,6 +42,8 @@ mod tests {
                 priority: 2,
                 tokens: 10,
                 is_essential: false,
+                created_at: now,
+                updated_at: None,
             },
         );
 
@@ -52,6 +60,7 @@ mod tests {
     #[test]
     fn test_token_pruning() {
         let mut manager = AttachmentManager::new();
+        let now = Utc::now();
 
         // Essential fragment
         manager.add_fragment(
@@ -61,6 +70,8 @@ mod tests {
                 priority: PRIORITY_ESSENTIAL,
                 tokens: 100,
                 is_essential: true,
+                created_at: now,
+                updated_at: None,
             },
         );
 
@@ -72,6 +83,8 @@ mod tests {
                 priority: PRIORITY_LOW,
                 tokens: 200,
                 is_essential: false,
+                created_at: now,
+                updated_at: None,
             },
         );
 
@@ -84,6 +97,8 @@ mod tests {
                 priority: PRIORITY_MEDIUM,
                 tokens: 150,
                 is_essential: false,
+                created_at: now,
+                updated_at: None,
             },
         );
 
@@ -102,6 +117,7 @@ mod tests {
     fn test_fragment_replacement() {
         let mut manager = AttachmentManager::new();
         let file_id = Uuid::now_v7();
+        let now = Utc::now();
 
         manager.add_fragment(
             AttachmentKey::WorkspaceFile(file_id),
@@ -110,6 +126,8 @@ mod tests {
                 priority: PRIORITY_HIGH,
                 tokens: 10,
                 is_essential: false,
+                created_at: now,
+                updated_at: None,
             },
         );
 
@@ -121,6 +139,8 @@ mod tests {
                 priority: PRIORITY_HIGH,
                 tokens: 15,
                 is_essential: false,
+                created_at: now,
+                updated_at: None,
             },
         );
 
