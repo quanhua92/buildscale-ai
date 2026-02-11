@@ -48,16 +48,128 @@ export interface File {
 // ============================================================================
 
 export interface LsEntry {
+  id?: string | null  // null for filesystem-only files (not in database)
+  synced: boolean  // true = in database, false = filesystem-only
   name: string
   display_name: string
   path: string
   file_type: string
+  is_virtual: boolean
   updated_at: string
 }
 
 export interface LsResult {
   path: string
   entries: LsEntry[]
+}
+
+export interface ReadResult {
+  path: string
+  content: any  // Can be string or JSON object
+  hash: string
+  synced: boolean  // true = in database, false = filesystem-only
+  total_lines?: number | null
+  truncated?: boolean | null
+  offset?: number | null
+  limit?: number | null
+  cursor?: number | null
+}
+
+export interface GlobMatch {
+  path: string
+  name: string
+  synced: boolean  // true = in database, false = filesystem-only
+  file_type: string
+  is_virtual: boolean
+  size?: number | null
+  updated_at: string
+}
+
+export interface GlobResult {
+  pattern: string
+  base_path: string
+  matches: GlobMatch[]
+}
+
+export interface FindMatch {
+  path: string
+  name: string
+  synced: boolean  // true = in database, false = filesystem-only
+  file_type: string
+  size?: number | null
+  updated_at: string
+}
+
+export interface FindResult {
+  matches: FindMatch[]
+}
+
+export interface FileInfoResult {
+  path: string
+  file_type: string
+  size?: number | null
+  line_count?: number | null
+  synced: boolean  // true = in database, false = filesystem-only
+  created_at: string
+  updated_at: string
+  hash: string
+}
+
+export interface ReadFileResult {
+  path: string
+  success: boolean
+  content?: any | null
+  hash?: string | null
+  synced: boolean  // true = in database, false = filesystem-only
+  error?: string | null
+  total_lines?: number | null
+  truncated?: boolean | null
+}
+
+export interface ReadMultipleFilesResult {
+  files: ReadFileResult[]
+}
+
+export interface CatFileEntry {
+  path: string
+  content: string
+  line_count: number
+  synced: boolean  // true = in database, false = filesystem-only
+  offset?: number | null
+  limit?: number | null
+  total_lines?: number | null
+}
+
+export interface CatResult {
+  content: string
+  files: CatFileEntry[]
+}
+
+export interface RmResult {
+  path: string
+  file_id?: string | null  // null for filesystem-only files (not in database)
+}
+
+export interface WriteResult {
+  path: string
+  file_id: string
+  version_id: string
+  hash: string
+}
+
+export interface MkdirResult {
+  path: string
+  file_id?: string | null
+}
+
+export interface TouchResult {
+  path: string
+  file_id: string
+}
+
+export interface MvResult {
+  from_path: string
+  to_path: string
 }
 
 // ============================================================================
