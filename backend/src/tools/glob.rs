@@ -180,6 +180,7 @@ REQUIREMENTS: Requires ripgrep (rg) to be installed on the system."#
                 matches.push(GlobMatch {
                     path: file.path.clone(),
                     name: file.name.clone(),
+                    synced: true,  // Database entry
                     file_type: file.file_type,
                     is_virtual: file.is_virtual,
                     size: None, // Size would require additional storage access
@@ -198,6 +199,7 @@ REQUIREMENTS: Requires ripgrep (rg) to be installed on the system."#
                 matches.push(GlobMatch {
                     path: full_path.clone(),
                     name,
+                    synced: false,  // Filesystem-only
                     file_type: crate::models::files::FileType::Document, // Default to document
                     is_virtual: false,
                     size: None,

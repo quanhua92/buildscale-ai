@@ -1,6 +1,7 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FileInfoArgs, FileInfoResult}, queries::files as file_queries};
 use crate::services::files;
 use crate::services::storage::FileStorageService;
+use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -59,8 +60,57 @@ EXAMPLES:
         let file_info_args: FileInfoArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&file_info_args.path);
 
-        let file = file_queries::get_file_by_path(conn, workspace_id, &path).await?
-            .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
+        // Try database lookup first
+        let file = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {
+            Some(f) => f,
+            None => {
+                // Fallback: Check if file exists on disk
+                match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+                    Ok(true) => {
+                        // File exists on disk but not in database - get metadata from disk
+                        let (size, updated_at) = helpers::get_file_metadata_from_disk(
+                            storage,
+                            workspace_id,
+                            &path,
+                        ).await?;
+
+                        // Read file to get line count for text files
+                        let (content, _hash) = helpers::read_file_from_disk(
+                            storage,
+                            workspace_id,
+                            &path,
+                        ).await?;
+
+                        let line_count = Some(content.lines().count());
+
+                        let result = FileInfoResult {
+                            path,
+                            file_type: crate::models::files::FileType::Document,  // Default for disk files
+                            size: Some(size),
+                            line_count,
+                            synced: false,  // Filesystem-only
+                            created_at: updated_at,  // Use updated_at as fallback
+                            updated_at,
+                            hash: _hash,
+                        };
+
+                        return Ok(ToolResponse {
+                            success: true,
+                            result: serde_json::to_value(result)?,
+                            error: None,
+                        });
+                    }
+                    Ok(false) => {
+                        // File not found in database or on disk
+                        return Err(Error::NotFound(format!("File not found: {}", path)));
+                    }
+                    Err(e) => {
+                        // Error checking disk - return the error
+                        return Err(e);
+                    }
+                }
+            }
+        };
 
         // Get file size from filesystem using workspace path
         let workspace_path = storage.get_workspace_path(workspace_id);
@@ -104,6 +154,7 @@ EXAMPLES:
             file_type: file.file_type,
             size,
             line_count,
+            synced: true,  // Database entry
             created_at: file.created_at,
             updated_at: file.updated_at,
             hash,

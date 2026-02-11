@@ -726,6 +726,7 @@ pub struct GlobResult {
 pub struct GlobMatch {
     pub path: String,
     pub name: String,
+    pub synced: bool,       // true = in database, false = filesystem-only
     pub file_type: FileType,
     pub is_virtual: bool,
     pub size: Option<usize>,
@@ -743,6 +744,7 @@ pub struct FileInfoResult {
     pub file_type: FileType,
     pub size: Option<usize>,
     pub line_count: Option<usize>,
+    pub synced: bool,       // true = in database, false = filesystem-only
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub hash: String,
@@ -770,6 +772,7 @@ pub struct ReadFileResult {
     pub success: bool,
     pub content: Option<serde_json::Value>,
     pub hash: Option<String>,
+    pub synced: bool,       // true = in database, false = filesystem-only
     pub error: Option<String>,
     pub total_lines: Option<usize>,
     pub truncated: Option<bool>,
@@ -801,6 +804,7 @@ pub struct FindResult {
 pub struct FindMatch {
     pub path: String,
     pub name: String,
+    pub synced: bool,       // true = in database, false = filesystem-only
     pub file_type: FileType,
     pub size: Option<usize>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -840,6 +844,7 @@ pub struct CatFileEntry {
     pub path: String,
     pub content: String,
     pub line_count: usize,
+    pub synced: bool,       // true = in database, false = filesystem-only
     // Range metadata
     pub offset: Option<usize>,
     pub limit: Option<usize>,
@@ -864,6 +869,7 @@ pub struct LsResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsEntry {
     pub id: Option<Uuid>,  // None for filesystem-only files (not in database)
+    pub synced: bool,       // true = in database, false = filesystem-only
     pub name: String,
     pub display_name: String,
     pub path: String,
@@ -895,6 +901,7 @@ pub struct ReadResult {
     pub path: String,
     pub content: serde_json::Value,
     pub hash: String,
+    pub synced: bool,       // true = in database, false = filesystem-only
 
     /// Total number of lines in the file (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -929,7 +936,7 @@ pub struct WriteResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RmResult {
     pub path: String,
-    pub file_id: Uuid,
+    pub file_id: Option<Uuid>,  // None for filesystem-only files (not in database)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

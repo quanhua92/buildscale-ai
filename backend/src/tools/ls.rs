@@ -302,6 +302,7 @@ impl LsTool {
             db_paths.insert(file.path.clone());
             merged.push(LsEntry {
                 id: Some(file.id),
+                synced: true,  // Database entry
                 name: file.slug.clone(),
                 display_name: file.name.clone(),
                 path: file.path.clone(),
@@ -334,6 +335,7 @@ impl LsTool {
 
             merged.push(LsEntry {
                 id: None,  // No database ID for filesystem-only files
+                synced: false,  // Filesystem-only
                 name,
                 display_name,
                 path: workspace_path_str,

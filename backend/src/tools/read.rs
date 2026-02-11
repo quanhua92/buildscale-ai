@@ -1,7 +1,8 @@
-use crate::{DbConn, error::Result};
+use crate::{DbConn, error::{Result, Error}};
 use crate::models::requests::{ToolResponse, ReadArgs, ReadResult};
 use crate::services::files;
 use crate::queries::files as file_queries;
+use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -128,9 +129,51 @@ Returns content, hash for change detection, and metadata (total_lines, truncated
         let limit = read_args.limit.unwrap_or(DEFAULT_READ_LIMIT);
         let cursor = read_args.cursor;
 
-        let file = file_queries::get_file_by_path(conn, workspace_id, &path)
-            .await?
-            .ok_or_else(|| crate::error::Error::NotFound(format!("File not found: {}", path)))?;
+        // Try database lookup first
+        let file = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {
+            Some(f) => f,
+            None => {
+                // Fallback: Check if file exists on disk
+                match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+                    Ok(true) => {
+                        // File exists on disk but not in database - read from disk
+                        let (content, hash) = helpers::read_file_from_disk(
+                            storage,
+                            workspace_id,
+                            &path,
+                        ).await?;
+
+                        // For disk-only files, return immediately with basic metadata
+                        // We can't support scroll mode or line counting for unsynced files
+                        let result = ReadResult {
+                            path: path.clone(),
+                            content: serde_json::json!(content),
+                            hash,
+                            synced: false,  // Filesystem-only
+                            total_lines: Some(content.lines().count()),
+                            truncated: Some(false),
+                            offset: Some(0),
+                            limit: Some(limit),
+                            cursor: None,  // Scroll mode not supported for unsynced files
+                        };
+
+                        return Ok(ToolResponse {
+                            success: true,
+                            result: serde_json::to_value(result)?,
+                            error: None,
+                        });
+                    }
+                    Ok(false) => {
+                        // File not found in database or on disk
+                        return Err(Error::NotFound(format!("File not found: {}", path)));
+                    }
+                    Err(e) => {
+                        // Error checking disk - return the error
+                        return Err(e);
+                    }
+                }
+            }
+        };
 
         if matches!(file.file_type, crate::models::files::FileType::Folder) {
             return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
@@ -207,6 +250,7 @@ Returns content, hash for change detection, and metadata (total_lines, truncated
             path,
             content,
             hash: file_with_content.latest_version.hash,
+            synced: true,  // Database entry
             total_lines,
             truncated,
             offset: Some(actual_offset),

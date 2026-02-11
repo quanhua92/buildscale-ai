@@ -237,6 +237,7 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
                 matches.push(FindMatch {
                     path: file.path.clone(),
                     name: file.name.clone(),
+                    synced: true,  // Database entry
                     file_type: file.file_type,
                     size, // Use actual file size from filesystem stat
                     updated_at: file.updated_at,
@@ -254,6 +255,7 @@ REQUIREMENTS: Requires Unix find command to be installed on the system."#
                 matches.push(FindMatch {
                     path: full_path.clone(),
                     name,
+                    synced: false,  // Filesystem-only
                     file_type: crate::models::files::FileType::Document, // Default to document
                     size,
                     updated_at: chrono::Utc::now(),

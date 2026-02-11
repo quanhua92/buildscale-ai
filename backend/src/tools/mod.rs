@@ -21,6 +21,8 @@ pub mod read_multiple_files;
 pub mod find;
 pub mod cat;
 
+pub mod helpers;
+
 use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, services::storage::FileStorageService};
 use uuid::Uuid;
 use serde_json::Value;

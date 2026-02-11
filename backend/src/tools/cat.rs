@@ -1,5 +1,6 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, CatArgs, CatResult, CatFileEntry}, queries::files as file_queries, services::files};
 use crate::services::storage::FileStorageService;
+use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -288,7 +289,7 @@ RETURNS:
 
             // Try to read the file
             match read_single_file(conn, storage, workspace_id, path.clone()).await {
-                Ok(content) => {
+                Ok((content, synced)) => {
                     // Apply offset/limit slicing
                     let (sliced_content, total_lines, _) = if offset < 0 {
                         // Negative offset: read from end
@@ -321,6 +322,7 @@ RETURNS:
                         path: path.clone(),
                         content: processed_content.clone(),
                         line_count: sliced_line_count,
+                        synced,  // synced: true for DB files, false for filesystem-only
                         offset: Some(if offset < 0 {
                             total_lines.saturating_sub(offset.abs() as usize)
                         } else {
@@ -341,6 +343,7 @@ RETURNS:
                         path: path.clone(),
                         content: error_msg.clone(),
                         line_count: 0,
+                        synced: false,  // Error case - not synced
                         offset: None,
                         limit: None,
                         total_lines: None,
@@ -364,15 +367,39 @@ RETURNS:
     }
 }
 
-/// Reads a single file, returning its content as a String
+/// Reads a single file, returning its content as a String and synced status
 async fn read_single_file(
     conn: &mut DbConn,
     storage: &FileStorageService,
     workspace_id: Uuid,
     path: String,
-) -> Result<String> {
-    let file = file_queries::get_file_by_path(conn, workspace_id, &path).await?
-        .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
+) -> Result<(String, bool)> {
+    // Try database lookup first
+    let file = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {
+        Some(f) => f,
+        None => {
+            // Fallback: Check if file exists on disk
+            match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+                Ok(true) => {
+                    // File exists on disk but not in database - read from disk
+                    let (content, _hash) = helpers::read_file_from_disk(
+                        storage,
+                        workspace_id,
+                        &path,
+                    ).await?;
+                    return Ok((content, false));  // synced: false
+                }
+                Ok(false) => {
+                    // File not found in database or on disk
+                    return Err(Error::NotFound(format!("File not found: {}", path)));
+                }
+                Err(e) => {
+                    // Error checking disk - return the error
+                    return Err(e);
+                }
+            }
+        }
+    };
 
     if matches!(file.file_type, crate::models::files::FileType::Folder) {
         return Err(Error::Validation(crate::error::ValidationErrors::Single {
@@ -395,5 +422,5 @@ async fn read_single_file(
         }
     };
 
-    Ok(content)
+    Ok((content, true))  // synced: true
 }

@@ -40,20 +40,20 @@ HTTP REST API for the BuildScale extensible tool execution system.
 
 | Tool | Description | Arguments | Returns |
 |------|-------------|-----------|---------|
-| `ls` | List directory contents | `path?`, `recursive?` | `path`, `entries[]` |
-| `read` | Read file contents with line range control | `path`, `offset?`, `limit?` | `content`, `total_lines`, `truncated`, `offset`, `limit`, `hash` |
+| `ls` | List directory contents | `path?`, `recursive?` | `path`, `entries[]` with `synced` status |
+| `read` | Read file contents with line range control | `path`, `offset?`, `limit?` | `content`, `synced`, `total_lines`, `truncated`, `offset`, `limit`, `hash` |
 | `write` | Create or update file | `path`, `content`, `file_type?` | `file_id`, `version_id` |
-| `rm` | Delete file or folder | `path` | `file_id` |
+| `rm` | Delete file or folder | `path` | `file_id` (or null for filesystem-only) |
 | `mv` | Move or rename file | `source`, `destination` | `from_path`, `to_path` |
 | `touch` | Update time or create empty | `path` | `path`, `file_id` |
 | `mkdir` | Create directory | `path` | `path`, `file_id` |
 | `edit` | Edit file content | `path`, `old_string`, `new_string`, `insert_line?`, `insert_content?`, `last_read_hash?` | `path`, `file_id`, `version_id` |
 | `grep` | Regex search files with context | `pattern`, `path_pattern?`, `case_sensitive?`, `before_context?`, `after_context?`, `context?` | `matches[]` with context lines |
-| `cat` | Concatenate files with formatting | `paths[]`, `offset?`, `limit?`, `show_ends?`, `show_tabs?`, `squeeze_blank?`, `number_lines?`, `show_headers?` | `content`, `files[]` with `offset`, `limit`, `total_lines` |
-| `glob` | Pattern-based file discovery | `patterns[]`, `path?` | `pattern`, `base_path`, `matches[]` |
-| `file_info` | Query file metadata | `path` | `path`, `file_type`, `size`, `line_count`, `timestamps`, `hash` |
-| `find` | Search files by metadata | `name?`, `path?`, `file_type?`, `min_size?`, `max_size?`, `recursive?` | `matches[]` |
-| `read_multiple_files` | Read multiple files in single call | `paths[]`, `limit?` | `files[]` with per-file results |
+| `cat` | Concatenate files with formatting | `paths[]`, `offset?`, `limit?`, `show_ends?`, `show_tabs?`, `squeeze_blank?`, `number_lines?`, `show_headers?` | `content`, `files[]` with `synced`, `offset`, `limit`, `total_lines` |
+| `glob` | Pattern-based file discovery | `patterns[]`, `path?` | `pattern`, `base_path`, `matches[]` with `synced` status |
+| `file_info` | Query file metadata | `path` | `path`, `synced`, `file_type`, `size`, `line_count`, `timestamps`, `hash` |
+| `find` | Search files by metadata | `name?`, `path?`, `file_type?`, `min_size?`, `max_size?`, `recursive?` | `matches[]` with `synced` status |
+| `read_multiple_files` | Read multiple files in single call | `paths[]`, `limit?` | `files[]` with per-file `synced` status |
 | `ask_user` | Request input or confirmation from user | `questions[]` | `question_id`, `questions[]` |
 | `exit_plan_mode` | Transition from Plan to Build Mode | `allowedPrompts?`, `pushToRemote?`, `remoteSessionId?`, `remoteSessionUrl?`, `remoteSessionTitle?` | `mode`, `plan_file` |
 
@@ -85,6 +85,77 @@ The Tools API provides a unified, extensible interface for executing filesystem 
 - **CLI Tools**: Command-line interfaces for workspace management
 - **Web Applications**: Browser-based file editors and managers
 - **Integration**: Third-party tools can interact with BuildScale workspaces
+
+---
+
+## File Sync Status
+
+The Tools API supports **hybrid file discovery** that works with both database-synced and filesystem-only files. This provides flexibility for files created through various means:
+
+### Sync Status Field
+
+All tool responses that return file information include a `synced` boolean field:
+
+| Value | Meaning | Metadata Available |
+|-------|---------|-------------------|
+| `true` | File is in the database | Full metadata (id, created_at, versions, etc.) |
+| `false` | File exists on disk only | Basic metadata (name, path, size, updated_at) |
+
+### How Files Become Unsynced
+
+Files may be `synced: false` when:
+
+1. **Created via SSH**: Direct file system access
+2. **Migration scripts**: Batch imports
+3. **External tools**: Files from other systems
+4. **Manual operations**: Direct file system manipulation
+
+### Tool Behavior with Sync Status
+
+#### Discovery Tools (ls, find, glob)
+- Return **all files** (synced + unsynced)
+- `synced: true` for database entries
+- `synced: false` for filesystem-only entries
+- Database entries take precedence in merging
+
+#### Access Tools (read, cat, file_info, read_multiple_files)
+- **Try database first** → return with `synced: true`
+- **Fallback to disk** → return with `synced: false`
+- **404 only if** not found in either location
+
+#### Mutation Tools (edit, mv)
+- **Try database first** → operate normally
+- **Fallback to disk** → **auto-import to database**, then operate
+- Result: file becomes `synced: true` after operation
+
+#### Deletion Tool (rm)
+- **If synced**: Delete from database + disk
+- **If unsynced**: Delete from disk only
+- Returns `file_id: null` for filesystem-only deletions
+
+### Visual Indicators (UI Integration)
+
+Frontend applications can use the `synced` field to show visual status:
+
+```typescript
+// Example: File list item rendering
+{file.synced ? (
+  <Tooltip title="Synced to database">
+    <CheckCircleIcon className="text-green-500" />
+  </Tooltip>
+) : (
+  <Tooltip title="Exists on disk only">
+    <CloudOffIcon className="text-yellow-500" />
+  </Tooltip>
+)}
+```
+
+### Benefits
+
+1. **No broken workflows**: Discovery matches access capabilities
+2. **Transparent auto-import**: Editing external files seamlessly imports them
+3. **Clear status indication**: Users know which files are fully managed
+4. **Backward compatible**: Existing clients work without changes
 
 ---
 
@@ -238,6 +309,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 |-------|------|-------------|
 | `result.path` | string | The path that was listed |
 | `result.entries[]` | array | Array of file/folder entries |
+| `entries[].id` | UUID or null | Database ID (null for filesystem-only files) |
+| `entries[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
 | `entries[].name` | string | Technical identifier (slug) used in paths |
 | `entries[].display_name` | string | Human-readable name for UI display |
 | `entries[].path` | string | Full path to the item |
@@ -365,6 +438,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | `result.path` | string | The path that was read |
 | `result.content` | string or object | File content as stored (truncated if applicable) |
 | `result.hash` | string | SHA-256 hash of the full content (not affected by truncation) |
+| `result.synced` | boolean | `true` if file is in database (full metadata), `false` if filesystem-only |
 | `result.total_lines` | integer or null | Total number of lines in the full file (null for non-text content) |
 | `result.truncated` | boolean or null | `true` if content was truncated due to limit, `false` otherwise (null for non-text) |
 | `result.offset` | integer or null | The offset used for this read |
@@ -590,7 +664,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 ### rm - Delete File or Folder
 
 
-Soft deletes a file or empty folder within a workspace. Soft delete preserves data for recovery.
+Soft deletes a file or empty folder within a workspace. Works with both database-synced files and filesystem-only files.
 
 #### Arguments
 
@@ -636,11 +710,13 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 | Field | Type | Description |
 |-------|------|-------------|
 | `result.path` | string | The path that was deleted |
-| `result.file_id` | UUID | File identifier that was deleted |
+| `result.file_id` | UUID or null | File identifier that was deleted (null for filesystem-only files) |
 
 #### Behavior Notes
 
-- **Soft delete**: Sets `deleted_at` timestamp (file remains in database)
+- **Hybrid deletion**: Works with both database-synced and filesystem-only files
+- **Database files**: Sets `deleted_at` timestamp (file remains in database) and deletes from disk
+- **Filesystem-only files**: Deletes from disk only (no database record)
 - **Folder Protection**:
     - **Hierarchical Check**: Returns `409 Conflict` if the folder has active children (via `parent_id`).
     - **Logical Check**: Returns `409 Conflict` if any active file's path starts with the folder's path prefix (catches orphaned files).
@@ -934,7 +1010,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 ### glob - Pattern-Based File Discovery
 
-Finds files matching glob patterns (e.g., `*.rs`, `**/*.md`, `/src/**/*.rs`). Uses ripgrep for efficient file discovery without searching file contents. Returns matches with metadata (path, name, file_type, is_virtual, updated_at).
+Finds files matching glob patterns (e.g., `*.rs`, `**/*.md`, `/src/**/*.rs`). Uses ripgrep for efficient file discovery without searching file contents. Returns matches with metadata including sync status (synced: true for database files, synced: false for filesystem-only).
 
 #### Arguments
 
@@ -994,6 +1070,21 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "error": null
 }
 ```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.pattern` | string | The glob pattern that was used |
+| `result.base_path` | string | The base directory for the search |
+| `result.matches[]` | array | Array of matching files |
+| `matches[].path` | string | Full path to the file |
+| `matches[].name` | string | File name |
+| `matches[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `matches[].file_type` | string | Type: `document`, `folder`, etc. |
+| `matches[].is_virtual` | boolean | `true` if file is system-managed |
+| `matches[].size` | integer or null | File size in bytes (null if not calculated) |
+| `matches[].updated_at` | string | ISO8601 timestamp |
 
 #### Behavior Notes
 
@@ -1130,6 +1221,20 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 }
 ```
 
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.content` | string | Concatenated and formatted content of all files |
+| `result.files[]` | array | Array of per-file entries |
+| `files[].path` | string | File path |
+| `files[].content` | string | Formatted content for this file |
+| `files[].line_count` | integer | Number of lines in this file |
+| `files[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `files[].offset` | integer or null | Starting line position for this file |
+| `files[].limit` | integer or null | Maximum lines read from this file |
+| `files[].total_lines` | integer or null | Total lines in the full file |
+
 #### Behavior Notes
 
 - **Concatenation**: Joins multiple files sequentially with optional separators.
@@ -1210,6 +1315,19 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "error": null
 }
 ```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.path` | string | File path |
+| `result.file_type` | string | Type: `document`, `folder`, etc. |
+| `result.size` | integer or null | File size in bytes |
+| `result.line_count` | integer or null | Number of lines (for text files) |
+| `result.synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `result.created_at` | string | ISO8601 timestamp when file was created |
+| `result.updated_at` | string | ISO8601 timestamp of last update |
+| `result.hash` | string | SHA-256 hash of the file content |
 
 #### Behavior Notes
 
@@ -1297,6 +1415,18 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "error": null
 }
 ```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.matches[]` | array | Array of matching files |
+| `matches[].path` | string | Full path to the file |
+| `matches[].name` | string | File name |
+| `matches[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `matches[].file_type` | string | Type: `document`, `folder`, etc. |
+| `matches[].size` | integer or null | File size in bytes (from filesystem stat) |
+| `matches[].updated_at` | string | ISO8601 timestamp |
 
 #### Behavior Notes
 
@@ -1419,6 +1549,20 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
   "error": null
 }
 ```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result.files[]` | array | Array of per-file results |
+| `files[].path` | string | File path |
+| `files[].success` | boolean | `true` if file was read successfully |
+| `files[].content` | object or null | File content (null if failed) |
+| `files[].hash` | string or null | SHA-256 hash of content (null if failed) |
+| `files[].synced` | boolean | `true` if file is in database, `false` if filesystem-only |
+| `files[].error` | string or null | Error message (null if success) |
+| `files[].total_lines` | integer or null | Total lines in file (null if failed or non-text) |
+| `files[].truncated` | boolean or null | `true` if content was truncated (null if failed) |
 
 #### Behavior Notes
 

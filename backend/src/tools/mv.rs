@@ -3,6 +3,7 @@ use crate::models::requests::{MvArgs, MvResult, ToolResponse};
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
+use crate::tools::helpers;
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -50,9 +51,24 @@ impl Tool for MvTool {
         let destination_path = super::normalize_path(&mv_args.destination);
 
         // 1. Resolve source file
-        let source_file = file_queries::get_file_by_path(conn, workspace_id, &source_path)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("Source file not found: {}", source_path)))?;
+        let source_file = match file_queries::get_file_by_path(conn, workspace_id, &source_path).await? {
+            Some(f) => f,
+            None => {
+                // File not found in database - check if it exists on disk
+                match helpers::file_exists_on_disk(storage, workspace_id, &source_path).await {
+                    Ok(true) => {
+                        // File exists on disk - auto-import to database
+                        helpers::import_file_to_database(conn, storage, workspace_id, &source_path, _user_id).await?
+                    }
+                    Ok(false) => {
+                        return Err(Error::NotFound(format!("Source file not found: {}", source_path)));
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
+            }
+        };
 
         // Plan Mode Guard: Check source file type
         if config.plan_mode && !matches!(source_file.file_type, crate::models::files::FileType::Plan) {

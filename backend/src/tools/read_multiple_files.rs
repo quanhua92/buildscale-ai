@@ -1,5 +1,6 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, ReadMultipleFilesArgs, ReadMultipleFilesResult, ReadFileResult}, queries::files as file_queries, services::files};
 use crate::services::storage::FileStorageService;
+use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -120,6 +121,7 @@ Array of results, one per file, with:
                     success: false,
                     content: None,
                     hash: None,
+                    synced: false,
                     error: Some(e.to_string()),
                     total_lines: None,
                     truncated: None,
@@ -147,8 +149,85 @@ async fn read_single_file(
     conn: &mut DbConn,
     storage: &FileStorageService,
 ) -> Result<ReadFileResult> {
-    let file = file_queries::get_file_by_path(conn, workspace_id, &path).await?
-        .ok_or_else(|| Error::NotFound(format!("File not found: {}", path)))?;
+    // Try database lookup first
+    let file = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {
+        Some(f) => f,
+        None => {
+            // Fallback: Check if file exists on disk
+            match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+                Ok(true) => {
+                    // File exists on disk but not in database - read from disk
+                    let (content, hash) = match helpers::read_file_from_disk(
+                        storage,
+                        workspace_id,
+                        &path,
+                    ).await {
+                        Ok((c, h)) => (c, h),
+                        Err(e) => {
+                            return Ok(ReadFileResult {
+                                path,
+                                success: false,
+                                content: None,
+                                hash: None,
+                                synced: false,
+                                error: Some(e.to_string()),
+                                total_lines: None,
+                                truncated: None,
+                            });
+                        }
+                    };
+
+                    let effective_limit = limit.unwrap_or(500);
+                    let lines: Vec<&str> = content.lines().collect();
+                    let total = lines.len();
+                    let was_truncated = total > effective_limit;
+
+                    let sliced_content = if was_truncated {
+                        lines.iter().take(effective_limit).cloned().collect::<Vec<_>>().join("\n")
+                    } else {
+                        content.clone()
+                    };
+
+                    return Ok(ReadFileResult {
+                        path,
+                        success: true,
+                        content: Some(Value::String(sliced_content)),
+                        hash: Some(hash),
+                        synced: false,  // Filesystem-only
+                        error: None,
+                        total_lines: Some(total),
+                        truncated: Some(was_truncated),
+                    });
+                }
+                Ok(false) => {
+                    // File not found in database or on disk
+                    return Ok(ReadFileResult {
+                        path: path.clone(),
+                        success: false,
+                        content: None,
+                        hash: None,
+                        synced: false,
+                        error: Some(format!("File not found: {}", path)),
+                        total_lines: None,
+                        truncated: None,
+                    });
+                }
+                Err(e) => {
+                    // Error checking disk - return error result
+                    return Ok(ReadFileResult {
+                        path,
+                        success: false,
+                        content: None,
+                        hash: None,
+                        synced: false,
+                        error: Some(e.to_string()),
+                        total_lines: None,
+                        truncated: None,
+                    });
+                }
+            }
+        }
+    };
 
     if matches!(file.file_type, crate::models::files::FileType::Folder) {
         return Err(Error::Validation(crate::error::ValidationErrors::Single {
@@ -184,6 +263,7 @@ async fn read_single_file(
         success: true,
         content: Some(content),
         hash: Some(latest_version.hash),
+        synced: true,  // Database entry
         error: None,
         total_lines,
         truncated,

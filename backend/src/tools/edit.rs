@@ -6,6 +6,7 @@ use crate::models::requests::{
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
+use crate::tools::helpers;
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -87,7 +88,19 @@ async fn perform_insert(
     let file = if let Some(f) = existing_file {
         f
     } else {
-        return Err(Error::NotFound(format!("File not found: {}", path)));
+        // File not found in database - check if it exists on disk
+        match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+            Ok(true) => {
+                // File exists on disk - auto-import to database
+                helpers::import_file_to_database(conn, storage, workspace_id, &path, user_id).await?
+            }
+            Ok(false) => {
+                return Err(Error::NotFound(format!("File not found: {}", path)));
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
     };
 
     // Plan Mode Guard: Only allow Plan files in plan mode
@@ -218,7 +231,19 @@ async fn perform_replace(
     let file = if let Some(f) = existing_file {
         f
     } else {
-        return Err(Error::NotFound(format!("File not found: {}", path)));
+        // File not found in database - check if it exists on disk
+        match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
+            Ok(true) => {
+                // File exists on disk - auto-import to database
+                helpers::import_file_to_database(conn, storage, workspace_id, &path, user_id).await?
+            }
+            Ok(false) => {
+                return Err(Error::NotFound(format!("File not found: {}", path)));
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
     };
 
     // Plan Mode Guard: Only allow Plan files in plan mode
