@@ -29,7 +29,8 @@ pub async fn file_exists_on_disk(
 ) -> Result<bool> {
     let workspace_path = storage.get_workspace_path(workspace_id);
     let relative_path = path.strip_prefix('/').unwrap_or(path);
-    let file_path = workspace_path.join("latest").join(relative_path);
+    // Note: workspace_path already includes /latest, don't add it again
+    let file_path = workspace_path.join(relative_path);
 
     tracing::debug!(
         workspace_id = %workspace_id,
@@ -67,7 +68,8 @@ pub async fn read_file_from_disk(
 ) -> Result<(String, String)> {
     let workspace_path = storage.get_workspace_path(workspace_id);
     let relative_path = path.strip_prefix('/').unwrap_or(path);
-    let file_path = workspace_path.join("latest").join(relative_path);
+    // Note: workspace_path already includes /latest, don't add it again
+    let file_path = workspace_path.join(relative_path);
 
     tracing::debug!(
         workspace_id = %workspace_id,
@@ -110,7 +112,8 @@ pub async fn get_file_metadata_from_disk(
 ) -> Result<(usize, chrono::DateTime<chrono::Utc>)> {
     let workspace_path = storage.get_workspace_path(workspace_id);
     let relative_path = path.strip_prefix('/').unwrap_or(path);
-    let file_path = workspace_path.join("latest").join(relative_path);
+    // Note: workspace_path already includes /latest, don't add it again
+    let file_path = workspace_path.join(relative_path);
 
     let metadata = tokio::fs::metadata(&file_path).await?;
 
@@ -286,7 +289,8 @@ pub async fn delete_file_from_disk(
 ) -> Result<()> {
     let workspace_path = storage.get_workspace_path(workspace_id);
     let relative_path = path.strip_prefix('/').unwrap_or(path);
-    let file_path = workspace_path.join("latest").join(relative_path);
+    // Note: workspace_path already includes /latest, don't add it again
+    let file_path = workspace_path.join(relative_path);
 
     tokio::fs::remove_file(&file_path).await?;
     Ok(())
