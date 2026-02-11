@@ -994,7 +994,14 @@ impl ChatService {
             }
 
             let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
-                format!("{}...", &content[..Self::CONTENT_PREVIEW_LENGTH])
+                // UTF-8-safe truncation: find valid character boundary
+                let truncate_at = content
+                    .char_indices()
+                    .take_while(|(idx, _)| *idx < Self::CONTENT_PREVIEW_LENGTH)
+                    .last()
+                    .map(|(idx, c)| idx + c.len_utf8())
+                    .unwrap_or(0);
+                format!("{}...", &content[..truncate_at])
             } else {
                 content
             };

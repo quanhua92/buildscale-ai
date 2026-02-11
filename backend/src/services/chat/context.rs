@@ -43,9 +43,17 @@ pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usi
 /// Truncated string with hint to re-run tool
 pub fn truncate_tool_output(output: &str) -> String {
     if output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
+        // Use char_indices to find a valid UTF-8 boundary
+        let truncate_at = output
+            .char_indices()
+            .take_while(|(idx, _)| *idx < TRUNCATED_TOOL_RESULT_PREVIEW)
+            .last()
+            .map(|(idx, c)| idx + c.len_utf8())
+            .unwrap_or(0);
+
         format!(
             "{}…[re-run]",
-            &output[..TRUNCATED_TOOL_RESULT_PREVIEW.min(output.len())]
+            &output[..truncate_at]
         )
     } else {
         output.to_string()
