@@ -876,6 +876,184 @@ impl ChatService {
             attachment_manager,
         })
     }
+
+    // ========================================================================
+    // Context API Methods
+    // ========================================================================
+
+    /// Content preview length for context API responses
+    const CONTENT_PREVIEW_LENGTH: usize = 200;
+
+    /// Get detailed context information for debugging/inspection.
+    ///
+    /// Returns structured information about everything sent to the AI,
+    /// including system prompt, history, tools, and attachments with
+    /// character counts, token estimates, and helpful statistics.
+    pub async fn get_context_info(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+        default_persona: &str,
+        token_limit: usize,
+    ) -> Result<crate::models::chat::ChatContextResponse> {
+        // 1. Build context using existing method
+        let context = Self::build_context(
+            conn, storage, workspace_id, chat_file_id, default_persona, token_limit
+        ).await?;
+
+        // 2. Get session for model/mode info
+        let _file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+        let agent_config: crate::models::chat::AgentConfig = match queries::files::get_latest_version(conn, chat_file_id).await {
+            Ok(version) => serde_json::from_value(version.app_data)?,
+            Err(_) => {
+                return Err(Error::NotFound("Chat has no configuration".into()));
+            }
+        };
+
+        // 3. Build each section
+        let system_prompt = Self::build_system_prompt_section(&context.persona, &agent_config.mode);
+        let history = Self::build_history_section(&context.history.messages);
+        let tools = Self::build_tools_section();
+        let attachments = Self::build_attachments_section(&context.attachment_manager);
+
+        // 4. Build summary
+        let summary = Self::build_context_summary(
+            &system_prompt, &history, &tools, &attachments, &agent_config.model, token_limit
+        );
+
+        Ok(crate::models::chat::ChatContextResponse {
+            system_prompt,
+            history,
+            tools,
+            attachments,
+            summary,
+        })
+    }
+
+    fn build_system_prompt_section(persona: &str, mode: &str) -> crate::models::chat::SystemPromptSection {
+        let persona_type = if persona.contains("Planner") { "planner" }
+            else if persona.contains("Builder") { "builder" }
+            else { "assistant" };
+
+        crate::models::chat::SystemPromptSection {
+            content: persona.to_string(),
+            char_count: persona.len(),
+            token_count: persona.len() / ESTIMATED_CHARS_PER_TOKEN,
+            persona_type: persona_type.to_string(),
+            mode: mode.to_string(),
+        }
+    }
+
+    fn build_history_section(messages: &[ChatMessage]) -> crate::models::chat::HistorySection {
+        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = messages.iter().map(|msg| {
+            let preview = if msg.content.len() > Self::CONTENT_PREVIEW_LENGTH {
+                format!("{}...", &msg.content[..Self::CONTENT_PREVIEW_LENGTH])
+            } else {
+                msg.content.clone()
+            };
+
+            crate::models::chat::HistoryMessageInfo {
+                role: msg.role.to_string().to_lowercase(),
+                content_preview: preview,
+                content_length: msg.content.len(),
+                token_count: msg.content.len() / ESTIMATED_CHARS_PER_TOKEN,
+                metadata: Some(crate::models::chat::HistoryMessageMetadata {
+                    message_type: msg.metadata.message_type.clone(),
+                    reasoning_id: msg.metadata.reasoning_id.clone(),
+                    tool_name: msg.metadata.tool_name.clone(),
+                    model: msg.metadata.model.clone(),
+                }),
+                created_at: msg.created_at,
+            }
+        }).collect();
+
+        crate::models::chat::HistorySection {
+            message_count: history_messages.len(),
+            total_tokens: history_messages.iter().map(|m| m.token_count).sum(),
+            messages: history_messages,
+        }
+    }
+
+    fn build_tools_section() -> crate::models::chat::ToolsSection {
+        // Get all tool definitions
+        let tools = crate::tools::get_all_tool_definitions();
+        let schema_json = serde_json::to_string(&tools).unwrap_or_default();
+        let tool_count = tools.len();
+
+        crate::models::chat::ToolsSection {
+            tools,
+            tool_count,
+            estimated_schema_tokens: schema_json.len() / ESTIMATED_CHARS_PER_TOKEN,
+        }
+    }
+
+    fn build_attachments_section(manager: &AttachmentManager) -> crate::models::chat::AttachmentsSection {
+        let attachments: Vec<crate::models::chat::AttachmentInfo> = manager.map.iter().map(|(key, value)| {
+            let (attachment_type, id) = match key {
+                AttachmentKey::WorkspaceFile(fid) => ("workspace_file", *fid),
+                AttachmentKey::ActiveSkill(sid) => ("skill", *sid),
+                AttachmentKey::SystemPersona => ("system_persona", Uuid::nil()),
+                AttachmentKey::Environment => ("environment", Uuid::nil()),
+                AttachmentKey::ChatHistory => ("chat_history", Uuid::nil()),
+                AttachmentKey::UserRequest => ("user_request", Uuid::nil()),
+            };
+
+            let preview = if value.content.len() > Self::CONTENT_PREVIEW_LENGTH {
+                format!("{}...", &value.content[..Self::CONTENT_PREVIEW_LENGTH])
+            } else {
+                value.content.clone()
+            };
+
+            crate::models::chat::AttachmentInfo {
+                attachment_type: attachment_type.to_string(),
+                id,
+                content_preview: preview,
+                content_length: value.content.len(),
+                token_count: value.tokens,
+                priority: value.priority,
+                is_essential: value.is_essential,
+            }
+        }).collect();
+
+        crate::models::chat::AttachmentsSection {
+            attachment_count: attachments.len(),
+            total_tokens: attachments.iter().map(|a| a.token_count).sum(),
+            attachments,
+        }
+    }
+
+    fn build_context_summary(
+        system_prompt: &crate::models::chat::SystemPromptSection,
+        history: &crate::models::chat::HistorySection,
+        tools: &crate::models::chat::ToolsSection,
+        attachments: &crate::models::chat::AttachmentsSection,
+        model: &str,
+        token_limit: usize,
+    ) -> crate::models::chat::ContextSummary {
+        let breakdown = crate::models::chat::TokenBreakdown {
+            system_prompt_tokens: system_prompt.token_count,
+            history_tokens: history.total_tokens,
+            tools_tokens: tools.estimated_schema_tokens,
+            attachments_tokens: attachments.total_tokens,
+        };
+
+        let total = breakdown.system_prompt_tokens + breakdown.history_tokens
+            + breakdown.tools_tokens + breakdown.attachments_tokens;
+
+        let utilization = if token_limit > 0 {
+            (total as f64 / token_limit as f64) * 100.0
+        } else { 0.0 };
+
+        crate::models::chat::ContextSummary {
+            total_tokens: total,
+            utilization_percent: utilization,
+            model: model.to_string(),
+            token_limit,
+            breakdown,
+        }
+    }
 }
 
 fn format_message_as_markdown(msg: &ChatMessage) -> String {

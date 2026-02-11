@@ -23,7 +23,7 @@ pub mod cat;
 
 pub mod helpers;
 
-use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, services::storage::FileStorageService};
+use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -275,4 +275,92 @@ impl ToolExecutor {
 
         result
     }
+}
+
+/// Get all tool definitions for the context API.
+///
+/// Returns a list of all available tools with their name, description, and JSON schema parameters.
+pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        ToolDefinition {
+            name: "ls".into(),
+            description: ls::LsTool.description().into(),
+            parameters: ls::LsTool.definition(),
+        },
+        ToolDefinition {
+            name: "read".into(),
+            description: read::ReadTool.description().into(),
+            parameters: read::ReadTool.definition(),
+        },
+        ToolDefinition {
+            name: "write".into(),
+            description: write::WriteTool.description().into(),
+            parameters: write::WriteTool.definition(),
+        },
+        ToolDefinition {
+            name: "edit".into(),
+            description: edit::EditTool.description().into(),
+            parameters: edit::EditTool.definition(),
+        },
+        ToolDefinition {
+            name: "rm".into(),
+            description: rm::RmTool.description().into(),
+            parameters: rm::RmTool.definition(),
+        },
+        ToolDefinition {
+            name: "mv".into(),
+            description: mv::MvTool.description().into(),
+            parameters: mv::MvTool.definition(),
+        },
+        ToolDefinition {
+            name: "touch".into(),
+            description: touch::TouchTool.description().into(),
+            parameters: touch::TouchTool.definition(),
+        },
+        ToolDefinition {
+            name: "mkdir".into(),
+            description: mkdir::MkdirTool.description().into(),
+            parameters: mkdir::MkdirTool.definition(),
+        },
+        ToolDefinition {
+            name: "grep".into(),
+            description: grep::GrepTool.description().into(),
+            parameters: grep::GrepTool.definition(),
+        },
+        ToolDefinition {
+            name: "glob".into(),
+            description: glob::GlobTool.description().into(),
+            parameters: glob::GlobTool.definition(),
+        },
+        ToolDefinition {
+            name: "file_info".into(),
+            description: file_info::FileInfoTool.description().into(),
+            parameters: file_info::FileInfoTool.definition(),
+        },
+        ToolDefinition {
+            name: "find".into(),
+            description: find::FindTool.description().into(),
+            parameters: find::FindTool.definition(),
+        },
+        ToolDefinition {
+            name: "cat".into(),
+            description: cat::CatTool.description().into(),
+            parameters: cat::CatTool.definition(),
+        },
+        ToolDefinition {
+            name: "read_multiple_files".into(),
+            description: read_multiple_files::ReadMultipleFilesTool.description().into(),
+            parameters: read_multiple_files::ReadMultipleFilesTool.definition(),
+        },
+        ToolDefinition {
+            name: "ask_user".into(),
+            description: ask_user::AskUserTool.description().into(),
+            parameters: ask_user::AskUserTool.definition(),
+        },
+        ToolDefinition {
+            name: "exit_plan_mode".into(),
+            description: exit_plan_mode::ExitPlanModeTool.description().into(),
+            parameters: exit_plan_mode::ExitPlanModeTool.definition(),
+        },
+    ]
 }

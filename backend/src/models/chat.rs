@@ -122,3 +122,104 @@ pub struct ChatSession {
     pub agent_config: AgentConfig,
     pub messages: Vec<ChatMessage>,
 }
+
+// ============================================================================
+// Context API Response Models
+// ============================================================================
+
+/// Response for GET /chat/{id}/context - detailed AI context information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatContextResponse {
+    pub system_prompt: SystemPromptSection,
+    pub history: HistorySection,
+    pub tools: ToolsSection,
+    pub attachments: AttachmentsSection,
+    pub summary: ContextSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemPromptSection {
+    pub content: String,
+    pub char_count: usize,
+    pub token_count: usize,
+    pub persona_type: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistorySection {
+    pub messages: Vec<HistoryMessageInfo>,
+    pub message_count: usize,
+    pub total_tokens: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryMessageInfo {
+    pub role: String,
+    pub content_preview: String,
+    pub content_length: usize,
+    pub token_count: usize,
+    pub metadata: Option<HistoryMessageMetadata>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryMessageMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolsSection {
+    pub tools: Vec<ToolDefinition>,
+    pub tool_count: usize,
+    pub estimated_schema_tokens: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentsSection {
+    pub attachments: Vec<AttachmentInfo>,
+    pub attachment_count: usize,
+    pub total_tokens: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentInfo {
+    pub attachment_type: String,
+    pub id: Uuid,
+    pub content_preview: String,
+    pub content_length: usize,
+    pub token_count: usize,
+    pub priority: i32,
+    pub is_essential: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSummary {
+    pub total_tokens: usize,
+    pub utilization_percent: f64,
+    pub model: String,
+    pub token_limit: usize,
+    pub breakdown: TokenBreakdown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenBreakdown {
+    pub system_prompt_tokens: usize,
+    pub history_tokens: usize,
+    pub tools_tokens: usize,
+    pub attachments_tokens: usize,
+}

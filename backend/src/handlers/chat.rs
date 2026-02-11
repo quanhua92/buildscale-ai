@@ -484,3 +484,31 @@ pub async fn stop_chat_generation(
         "chat_id": chat_id
     })))
 }
+
+/// GET /workspaces/{id}/chats/{chat_id}/context
+///
+/// Returns detailed information about everything sent to the AI for debugging
+/// and context visualization purposes.
+pub async fn get_chat_context(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthenticatedUser>,
+    Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<crate::models::chat::ChatContextResponse>> {
+    tracing::info!(
+        "[ChatHandler] Getting context for chat {} in workspace {}",
+        chat_id, workspace_id
+    );
+
+    let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+
+    let context_response = crate::services::chat::ChatService::get_context_info(
+        &mut conn,
+        &state.storage,
+        workspace_id,
+        chat_id,
+        &crate::agents::get_persona(None, None, None),
+        state.config.ai.default_context_token_limit,
+    ).await?;
+
+    Ok(Json(context_response))
+}
