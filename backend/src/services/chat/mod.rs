@@ -134,12 +134,8 @@ const MAX_EDIT_DIFF_LENGTH: usize = 500;
 const LS_PREVIEW_ITEMS: usize = 50;
 /// Number of matches to preview for 'grep' tool
 const GREP_PREVIEW_MATCHES: usize = 20;
-/// Number of lines to preview for 'read' tool
-const READ_PREVIEW_LINES: usize = 5;
-/// Number of words to preview for 'write' tool content argument
-const WRITE_ARG_PREVIEW_WORDS: usize = 20;
-/// Number of words to preview for 'edit' tool diff arguments
-const EDIT_ARG_PREVIEW_WORDS: usize = 10;
+/// Number of lines to preview for content truncation
+const CONTENT_PREVIEW_LINES: usize = 20;
 
 /// Structured context for AI chat sessions.
 ///
@@ -266,10 +262,13 @@ impl ChatService {
                 // Truncate 'content' field (can be very large)
                 if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
                     if content.len() > MAX_WRITE_CONTENT_LENGTH {
-                        let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
+                        // Use line-based preview for better readability (like read tool)
+                        let lines: Vec<&str> = content.lines().collect();
+                        let preview_lines: Vec<&str> = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect();
+                        let preview = preview_lines.join("\n");
                         obj.insert(
                             "content".to_string(),
-                            serde_json::json!(format!("{}... [truncated, size={}]", preview, content.len())),
+                            serde_json::json!(format!("{}\n... [truncated, {} lines total]", preview, lines.len())),
                         );
                     }
                 }
@@ -279,10 +278,13 @@ impl ChatService {
                 for field in ["old_string", "new_string", "insert_content"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
                         if val.len() > MAX_EDIT_DIFF_LENGTH {
-                            let preview = Self::extract_string_preview(val, EDIT_ARG_PREVIEW_WORDS);
+                            // Use line-based preview for better readability
+                            let lines: Vec<&str> = val.lines().collect();
+                            let preview_lines: Vec<&str> = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect();
+                            let preview = preview_lines.join("\n");
                             obj.insert(
                                 field.to_string(),
-                                serde_json::json!(format!("{}... [truncated]", preview)),
+                                serde_json::json!(format!("{}\n... [truncated, {} lines]", preview, lines.len())),
                             );
                         }
                     }
@@ -360,14 +362,16 @@ impl ChatService {
 
         match tool_name {
             "read" => {
-                // Special handling: Line-based preview with stats
-                let line_count = output.lines().count();
-                let byte_count = output.len();
-                let preview = output.lines().take(READ_PREVIEW_LINES).collect::<Vec<_>>().join("\n");
-                format!(
-                    "[Read {} bytes, {} lines. Preview:]\n{}\n... [truncated]",
-                    byte_count, line_count, preview
-                )
+                // INDUSTRY STANDARD: Parse → Truncate content → Re-serialize
+                Self::truncate_read_result(output)
+            }
+            "cat" => {
+                // INDUSTRY STANDARD: Parse → Truncate content → Re-serialize
+                Self::truncate_cat_result(output)
+            }
+            "read_multiple_files" => {
+                // INDUSTRY STANDARD: Parse → Truncate content → Re-serialize
+                Self::truncate_read_multiple_files_result(output)
             }
             "grep" => {
                 // INDUSTRY STANDARD: Parse → Truncate → Re-serialize
@@ -381,6 +385,11 @@ impl ChatService {
             "ls" => {
                 // INDUSTRY STANDARD: Parse → Truncate → Re-serialize
                 Self::truncate_ls_result(output)
+            }
+            "find" => {
+                // INDUSTRY STANDARD: Parse → Truncate → Re-serialize
+                // Find returns {matches: [...]} like glob, use same truncation
+                Self::truncate_find_result(output)
             }
             other_tool => {
                 // WARN-level: Generic truncation works but might be suboptimal
@@ -431,136 +440,158 @@ impl ChatService {
     ///
     /// # Returns
     /// String preview with "..." appended if truncated
-    fn extract_string_preview(s: &str, word_count: usize) -> String {
-        let words: Vec<&str> = s.split_whitespace().take(word_count).collect();
-        let preview = words.join(" ");
-        if s.split_whitespace().count() > word_count {
-            format!("{}...", preview)
+
+    /// Fallback line-based truncation for malformed JSON.
+    /// Used when JSON parsing fails in smart truncation functions.
+    fn fallback_line_truncation(output: &str, limit: usize, item_name: &str) -> String {
+        let lines: Vec<&str> = output.lines().collect();
+        if lines.len() > limit {
+            let preview = lines.iter().take(limit).cloned().collect::<Vec<_>>().join("\n");
+            format!("{}\n... ({} more {})", preview, lines.len() - limit, item_name)
         } else {
-            preview
+            output.to_string()
+        }
+    }
+
+    /// Generic truncation for list-based result types.
+    /// Uses the TruncatableList trait to truncate lists while preserving JSON structure.
+    fn truncate_list_result<T>(
+        output: &str,
+        limit: usize,
+        tool_name: &'static str,
+        item_name: &str,
+    ) -> String
+    where
+        T: serde::de::DeserializeOwned + serde::Serialize + crate::models::requests::TruncatableList,
+    {
+        if let Ok(parsed) = serde_json::from_str::<T>(output) {
+            if parsed.list_len() > limit {
+                let truncated = parsed.truncate_list(limit);
+                if let Ok(compact) = serde_json::to_string(&truncated) {
+                    return compact;
+                }
+            }
+            output.to_string()
+        } else {
+            tracing::warn!(
+                tool = tool_name,
+                output_len = output.len(),
+                "Failed to parse result as JSON, falling back to line-based truncation"
+            );
+            Self::fallback_line_truncation(output, limit, item_name)
         }
     }
 
     /// Smart truncation for grep results: Parse → Truncate at match boundaries → Re-serialize
     /// Preserves JSON structure and complete match records with context.
     fn truncate_grep_result(output: &str) -> String {
-        // Try to parse as GrepResult for smart truncation
-        if let Ok(parsed) = serde_json::from_str::<GrepResult>(output) {
-            let total_matches = parsed.matches.len();
-
-            if total_matches > GREP_PREVIEW_MATCHES {
-                // Truncate at match boundary (not line boundary)
-                let truncated = GrepResult {
-                    matches: parsed.matches.into_iter()
-                        .take(GREP_PREVIEW_MATCHES)
-                        .collect(),
-                };
-
-                // Re-serialize as compact JSON (single line per match for readability)
-                if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more matches truncated)",
-                        compact,
-                        total_matches - GREP_PREVIEW_MATCHES
-                    );
-                }
-            }
-
-            // Small enough or serialization failed, return original
-            output.to_string()
-        } else {
-            // Fallback to line-based for malformed JSON (shouldn't happen in normal operation)
-            tracing::warn!(
-                tool = "grep",
-                output_len = output.len(),
-                "Failed to parse grep result as JSON, falling back to line-based truncation"
-            );
-            let lines: Vec<&str> = output.lines().collect();
-            if lines.len() > GREP_PREVIEW_MATCHES {
-                let preview = lines.iter().take(GREP_PREVIEW_MATCHES).cloned().collect::<Vec<_>>().join("\n");
-                format!("{}\n... ({} more matches)", preview, lines.len() - GREP_PREVIEW_MATCHES)
-            } else {
-                output.to_string()
-            }
-        }
+        Self::truncate_list_result::<GrepResult>(output, GREP_PREVIEW_MATCHES, "grep", "matches")
     }
 
     /// Smart truncation for glob results: Parse → Truncate at match boundaries → Re-serialize
     fn truncate_glob_result(output: &str) -> String {
-        if let Ok(parsed) = serde_json::from_str::<GlobResult>(output) {
-            let total_matches = parsed.matches.len();
+        Self::truncate_list_result::<GlobResult>(output, LS_PREVIEW_ITEMS, "glob", "matches")
+    }
 
-            if total_matches > LS_PREVIEW_ITEMS {
-                let truncated = GlobResult {
-                    pattern: parsed.pattern,
-                    base_path: parsed.base_path,
-                    matches: parsed.matches.into_iter()
-                        .take(LS_PREVIEW_ITEMS)
-                        .collect(),
-                };
-
-                if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more matches truncated)",
-                        compact,
-                        total_matches - LS_PREVIEW_ITEMS
-                    );
-                }
-            }
-
-            output.to_string()
-        } else {
-            tracing::warn!(
-                tool = "glob",
-                output_len = output.len(),
-                "Failed to parse glob result as JSON, falling back to line-based truncation"
-            );
-            let lines: Vec<&str> = output.lines().collect();
-            if lines.len() > LS_PREVIEW_ITEMS {
-                let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
-                format!("{}\n... ({} more matches)", preview, lines.len() - LS_PREVIEW_ITEMS)
-            } else {
-                output.to_string()
-            }
-        }
+    /// Smart truncation for find results: Parse → Truncate at match boundaries → Re-serialize
+    fn truncate_find_result(output: &str) -> String {
+        use crate::models::requests::FindResult;
+        Self::truncate_list_result::<FindResult>(output, LS_PREVIEW_ITEMS, "find", "matches")
     }
 
     /// Smart truncation for ls results: Parse → Truncate at entry boundaries → Re-serialize
     fn truncate_ls_result(output: &str) -> String {
-        if let Ok(parsed) = serde_json::from_str::<LsResult>(output) {
-            let total_entries = parsed.entries.len();
+        Self::truncate_list_result::<LsResult>(output, LS_PREVIEW_ITEMS, "ls", "items")
+    }
 
-            if total_entries > LS_PREVIEW_ITEMS {
-                let truncated = LsResult {
-                    path: parsed.path,
-                    entries: parsed.entries.into_iter()
-                        .take(LS_PREVIEW_ITEMS)
-                        .collect(),
-                };
-
-                if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more entries truncated)",
-                        compact,
-                        total_entries - LS_PREVIEW_ITEMS
+    /// Smart truncation for read results: Parse → Truncate content → Re-serialize
+    fn truncate_read_result(output: &str) -> String {
+        use crate::models::requests::ReadResult;
+        if let Ok(mut parsed) = serde_json::from_str::<ReadResult>(output) {
+            if let Some(content_str) = parsed.content.as_str() {
+                if content_str.len() > MAX_TOOL_OUTPUT_LENGTH {
+                    let preview_lines: Vec<&str> = content_str.lines().take(CONTENT_PREVIEW_LINES).collect();
+                    let preview = preview_lines.join("\n");
+                    let line_count = content_str.lines().count();
+                    parsed.content = serde_json::json!(
+                        format!("[{} lines total, showing first {}]\n{}\n... [content truncated]",
+                            line_count, CONTENT_PREVIEW_LINES, preview)
                     );
+                    if let Ok(truncated) = serde_json::to_string(&parsed) {
+                        return truncated;
+                    }
                 }
             }
-
             output.to_string()
         } else {
             tracing::warn!(
-                tool = "ls",
+                tool = "read",
                 output_len = output.len(),
-                "Failed to parse ls result as JSON, falling back to line-based truncation"
+                "Failed to parse read result as JSON, falling back to line-based truncation"
             );
-            let lines: Vec<&str> = output.lines().collect();
-            if lines.len() > LS_PREVIEW_ITEMS {
-                let preview = lines.iter().take(LS_PREVIEW_ITEMS).cloned().collect::<Vec<_>>().join("\n");
-                format!("{}\n... ({} more items)", preview, lines.len() - LS_PREVIEW_ITEMS)
-            } else {
-                output.to_string()
+            Self::fallback_line_truncation(output, CONTENT_PREVIEW_LINES, "lines")
+        }
+    }
+
+    /// Smart truncation for cat results: Parse → Truncate content → Re-serialize
+    fn truncate_cat_result(output: &str) -> String {
+        use crate::models::requests::CatResult;
+        if let Ok(mut parsed) = serde_json::from_str::<CatResult>(output) {
+            if parsed.content.len() > MAX_TOOL_OUTPUT_LENGTH {
+                let preview_lines: Vec<&str> = parsed.content.lines().take(CONTENT_PREVIEW_LINES).collect();
+                let preview = preview_lines.join("\n");
+                let line_count = parsed.content.lines().count();
+                parsed.content = format!(
+                    "[{} lines total, showing first {}]\n{}\n... [content truncated]",
+                    line_count, CONTENT_PREVIEW_LINES, preview
+                );
+                if let Ok(truncated) = serde_json::to_string(&parsed) {
+                    return truncated;
+                }
             }
+            output.to_string()
+        } else {
+            tracing::warn!(
+                tool = "cat",
+                output_len = output.len(),
+                "Failed to parse cat result as JSON, falling back to line-based truncation"
+            );
+            Self::fallback_line_truncation(output, CONTENT_PREVIEW_LINES, "lines")
+        }
+    }
+
+    /// Smart truncation for read_multiple_files results: Parse → Truncate each file's content → Re-serialize
+    fn truncate_read_multiple_files_result(output: &str) -> String {
+        use crate::models::requests::ReadMultipleFilesResult;
+        if let Ok(mut parsed) = serde_json::from_str::<ReadMultipleFilesResult>(output) {
+            let mut any_truncated = false;
+            for file in &mut parsed.files {
+                if let Some(content_str) = file.content.as_ref().and_then(|c| c.as_str()) {
+                    if content_str.len() > MAX_TOOL_OUTPUT_LENGTH / 2 {
+                        let preview_lines: Vec<&str> = content_str.lines().take(CONTENT_PREVIEW_LINES).collect();
+                        let preview = preview_lines.join("\n");
+                        let line_count = content_str.lines().count();
+                        file.content = Some(serde_json::json!(
+                            format!("[{} lines, showing first {}]\n{}\n... [truncated]",
+                                line_count, CONTENT_PREVIEW_LINES, preview)
+                        ));
+                        any_truncated = true;
+                    }
+                }
+            }
+            if any_truncated {
+                if let Ok(truncated) = serde_json::to_string(&parsed) {
+                    return truncated;
+                }
+            }
+            output.to_string()
+        } else {
+            tracing::warn!(
+                tool = "read_multiple_files",
+                output_len = output.len(),
+                "Failed to parse read_multiple_files result as JSON, falling back to line-based truncation"
+            );
+            Self::fallback_line_truncation(output, LS_PREVIEW_ITEMS, "lines")
         }
     }
 
@@ -1029,6 +1060,9 @@ impl ChatService {
                     content = truncate_tool_output(&content);
                 }
 
+                // Calculate token count from truncated content (not original)
+                let truncated_length = content.len();
+
                 let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
                     let truncate_at = truncate_at_char_boundary(&content, Self::CONTENT_PREVIEW_LENGTH);
                     format!("{}...", &content[..truncate_at])
@@ -1040,7 +1074,7 @@ impl ChatService {
                     role: msg.role.to_string().to_lowercase(),
                     content_preview: preview,
                     content_length: original_length,
-                    token_count: original_length / ESTIMATED_CHARS_PER_TOKEN,
+                    token_count: truncated_length / ESTIMATED_CHARS_PER_TOKEN,
                     metadata: Some(crate::models::chat::HistoryMessageMetadata {
                         message_type: msg.metadata.message_type.clone(),
                         reasoning_id: msg.metadata.reasoning_id.clone(),

@@ -761,12 +761,12 @@ pub struct ReadMultipleFilesArgs {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadMultipleFilesResult {
     pub files: Vec<ReadFileResult>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadFileResult {
     pub path: String,
     pub success: bool,
@@ -795,12 +795,12 @@ pub struct FindArgs {
     pub recursive: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindResult {
     pub matches: Vec<FindMatch>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindMatch {
     pub path: String,
     pub name: String,
@@ -833,13 +833,13 @@ pub struct CatArgs {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatResult {
     pub content: String,
     pub files: Vec<CatFileEntry>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatFileEntry {
     pub path: String,
     pub content: String,
@@ -878,6 +878,60 @@ pub struct LsEntry {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Trait for result types that contain a truncatable list.
+/// Used by the chat service to smartly truncate large results while preserving JSON structure.
+pub trait TruncatableList: serde::Serialize + Sized {
+    /// Returns the length of the list field
+    fn list_len(&self) -> usize;
+
+    /// Creates a new instance with the list truncated to the given limit
+    fn truncate_list(self, limit: usize) -> Self;
+}
+
+impl TruncatableList for LsResult {
+    fn list_len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.entries = self.entries.into_iter().take(limit).collect();
+        self
+    }
+}
+
+impl TruncatableList for GlobResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self
+    }
+}
+
+impl TruncatableList for FindResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self
+    }
+}
+
+impl TruncatableList for GrepResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrepResult {
     pub matches: Vec<GrepMatch>,
@@ -896,7 +950,7 @@ pub struct GrepMatch {
     pub after_context: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadResult {
     pub path: String,
     pub content: serde_json::Value,

@@ -114,6 +114,7 @@ interface ChatContextValue {
   stopGeneration: () => void
   clearMessages: () => void
   chatId?: string
+  workspaceId: string
   model: ChatModel
   setModel: (model: ChatModel) => void
   availableModels: ChatModel[]  // Available models from backend
@@ -951,13 +952,13 @@ export function ChatProvider({
 
   const value = React.useMemo(
     () => ({
-      messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId,
+      messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, workspaceId,
       model, setModel, availableModels,
       // Plan Mode
       mode, planFile, pendingQuestionSession, currentQuestion,
       submitAnswer, dismissQuestion, setMode
     }),
-    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, model, setModel, availableModels,
+    [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, workspaceId, model, setModel, availableModels,
      mode, planFile, pendingQuestionSession, currentQuestion, submitAnswer, dismissQuestion, setMode]
   )
 
