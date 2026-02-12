@@ -101,10 +101,11 @@ pub mod rig_tools;
 pub mod sync;
 
 pub use context::{
-    get_old_tool_result_indices, truncate_at_char_boundary, truncate_tool_output,
-    AttachmentManager, AttachmentKey, AttachmentValue, ContextItem, ESTIMATED_CHARS_PER_TOKEN,
-    KEEP_RECENT_TOOL_RESULTS, HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW,
-    PRIORITY_MEDIUM, TRUNCATED_TOOL_RESULT_PREVIEW,
+    build_sorted_context_items, filter_messages_for_context, get_indices_to_truncate,
+    get_old_tool_result_indices, messages_to_context_items, truncate_at_char_boundary,
+    truncate_tool_output, AttachmentManager, AttachmentKey, AttachmentValue, ContextItem,
+    ESTIMATED_CHARS_PER_TOKEN, KEEP_RECENT_TOOL_RESULTS, HistoryManager, PRIORITY_ESSENTIAL,
+    PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM, TRUNCATED_TOOL_RESULT_PREVIEW,
 };
 
 pub use sync::{ChatFrontmatter, YamlFrontmatter};
@@ -972,55 +973,23 @@ impl ChatService {
         messages: &[ChatMessage],
         attachment_manager: &AttachmentManager,
     ) -> crate::models::chat::HistorySection {
-        // Build unified context items (same logic as convert_history_with_attachments)
-        // This ensures truncation decisions match what the AI actually receives
-        let mut items: Vec<ContextItem> = Vec::new();
+        // Use centralized context building from context.rs (single source of truth)
+        // Pass None for render_fn since Context UI doesn't need rendered attachments
+        let items = build_sorted_context_items::<fn(&AttachmentKey, &AttachmentValue) -> String>(
+            messages,
+            Some(attachment_manager),
+            None,
+        );
 
-        // Add messages as context items
-        for msg in messages {
-            items.push(ContextItem::Message {
-                role: msg.role,
-                content: msg.content.clone(),
-                created_at: msg.created_at,
-                metadata: msg.metadata.0.clone(),
-            });
-        }
-
-        // Add attachments as context items
-        for (key, value) in &attachment_manager.map {
-            items.push(ContextItem::Attachment {
-                key: key.clone(),
-                value: value.clone(),
-                rendered: String::new(), // Not needed for truncation logic
-            });
-        }
-
-        // Sort by timestamp (same as AI context)
-        items.sort_by_key(|item| item.timestamp());
-
-        // Identify tool result indices in the SORTED list (matching AI behavior)
-        let sorted_tool_result_indices: Vec<usize> = items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, item)| {
-                if let ContextItem::Message { metadata, .. } = item {
-                    if metadata.message_type.as_deref() == Some("tool_result") {
-                        return Some(i);
-                    }
-                }
-                None
-            })
-            .collect();
-
-        // Get indices to truncate based on sorted position
-        let sorted_indices_to_truncate = get_old_tool_result_indices(&sorted_tool_result_indices);
+        // Use centralized truncation logic
+        let indices_to_truncate = get_indices_to_truncate(&items);
 
         // Map back to message IDs that should be truncated
         let ids_to_truncate: std::collections::HashSet<Uuid> = items
             .iter()
             .enumerate()
             .filter_map(|(i, item)| {
-                if sorted_indices_to_truncate.contains(&i) {
+                if indices_to_truncate.contains(&i) {
                     if let ContextItem::Message { metadata, .. } = item {
                         if metadata.message_type.as_deref() == Some("tool_result") {
                             // Find the original message to get its ID
@@ -1039,8 +1008,9 @@ impl ChatService {
             })
             .collect();
 
-        // Build history messages with truncation applied
-        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = messages
+        // Build history messages with truncation applied (using centralized filtering)
+        let filtered_messages = filter_messages_for_context(messages);
+        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = filtered_messages
             .iter()
             .map(|msg| {
                 let mut content = msg.content.clone();

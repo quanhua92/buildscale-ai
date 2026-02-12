@@ -34,6 +34,45 @@ pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usi
         .collect()
 }
 
+/// Identify tool result indices in a sorted list of context items.
+///
+/// This is used by both AI context building and Context UI to consistently
+/// identify which items are tool results.
+///
+/// # Arguments
+/// * `items` - Slice of context items (should be sorted by timestamp)
+///
+/// # Returns
+/// Vector of indices where tool result messages appear
+pub fn get_tool_result_indices(items: &[ContextItem]) -> Vec<usize> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, item)| {
+            if let ContextItem::Message { metadata, .. } = item {
+                if metadata.message_type.as_deref() == Some("tool_result") {
+                    return Some(i);
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+/// Get indices of context items that should be truncated.
+///
+/// Combines tool result identification with age-based truncation logic.
+///
+/// # Arguments
+/// * `items` - Slice of context items (should be sorted by timestamp)
+///
+/// # Returns
+/// HashSet of indices that should be truncated
+pub fn get_indices_to_truncate(items: &[ContextItem]) -> HashSet<usize> {
+    let tool_result_indices = get_tool_result_indices(items);
+    get_old_tool_result_indices(&tool_result_indices)
+}
+
 /// Truncate a string at a valid UTF-8 character boundary.
 ///
 /// This function ensures we don't slice in the middle of a multi-byte character
@@ -338,6 +377,134 @@ impl AttachmentManager {
         }
 
         output.trim().to_string()
+    }
+}
+
+/// Check if a message should be filtered from AI context.
+///
+/// Messages are filtered if they are only for audit/debug purposes and should
+/// not be sent to the AI or shown in Context UI token counts.
+///
+/// Currently filters:
+/// - `reasoning_complete` messages (thinking/reasoning content for audit only)
+///
+/// # Arguments
+/// * `msg` - The chat message to check
+///
+/// # Returns
+/// `true` if the message should be filtered out, `false` otherwise
+pub fn should_filter_message(msg: &ChatMessage) -> bool {
+    // Filter reasoning_complete messages - they're for audit only
+    if let Some(ref message_type) = msg.metadata.message_type {
+        if message_type == "reasoning_complete" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Filter messages to only include those that should be in AI context.
+///
+/// This is the single source of truth for what messages the AI receives
+/// and what the Context UI displays in token counts.
+///
+/// # Arguments
+/// * `messages` - Slice of chat messages to filter
+///
+/// # Returns
+/// Vector of messages that should be included in AI context
+pub fn filter_messages_for_context(messages: &[ChatMessage]) -> Vec<&ChatMessage> {
+    messages
+        .iter()
+        .filter(|msg| !should_filter_message(msg))
+        .collect()
+}
+
+/// Filter messages and convert to ContextItems for unified processing.
+///
+/// This combines filtering with ContextItem conversion, ensuring both
+/// AI context building and Context UI use the same logic.
+///
+/// # Arguments
+/// * `messages` - Slice of chat messages to process
+///
+/// # Returns
+/// Vector of ContextItems (only non-filtered messages)
+pub fn messages_to_context_items(messages: &[ChatMessage]) -> Vec<ContextItem> {
+    messages
+        .iter()
+        .filter(|msg| !should_filter_message(msg))
+        .map(|msg| ContextItem::Message {
+            role: msg.role,
+            content: msg.content.clone(),
+            created_at: msg.created_at,
+            metadata: msg.metadata.0.clone(),
+        })
+        .collect()
+}
+
+/// Build sorted context items from messages and optional attachments.
+///
+/// This is the single source of truth for context building, used by both:
+/// - AI context (rig_engine.rs) - what the AI receives
+/// - Context UI (mod.rs) - what the UI displays in token counts
+///
+/// # Arguments
+/// * `messages` - Slice of chat messages to process
+/// * `attachments` - Optional attachment manager with file attachments
+/// * `render_attachment` - Optional function to render attachments as strings
+///
+/// # Returns
+/// Vector of ContextItems sorted by timestamp (oldest first)
+pub fn build_sorted_context_items<F>(
+    messages: &[ChatMessage],
+    attachments: Option<&AttachmentManager>,
+    render_attachment: Option<F>,
+) -> Vec<ContextItem>
+where
+    F: Fn(&AttachmentKey, &AttachmentValue) -> String,
+{
+    let mut items = messages_to_context_items(messages);
+
+    // Add attachments as context items (if provided)
+    if let Some(att_manager) = attachments {
+        for (key, value) in &att_manager.map {
+            let rendered = render_attachment
+                .as_ref()
+                .map(|f| f(key, value))
+                .unwrap_or_default();
+            items.push(ContextItem::Attachment {
+                key: key.clone(),
+                value: value.clone(),
+                rendered,
+            });
+        }
+    }
+
+    // Sort by timestamp (oldest first = better caching)
+    items.sort_by_key(|item| item.timestamp());
+
+    items
+}
+
+/// Render an attachment as XML for the AI context.
+///
+/// # Arguments
+/// * `key` - The attachment key identifying the type
+/// * `value` - The attachment value with content
+///
+/// # Returns
+/// Rendered string for the AI context
+pub fn render_attachment_for_ai(key: &AttachmentKey, value: &AttachmentValue) -> String {
+    match key {
+        AttachmentKey::WorkspaceFile(_) => {
+            format!("<file_context>\n{}\n</file_context>", value.content)
+        }
+        AttachmentKey::SystemPersona
+        | AttachmentKey::ActiveSkill(_)
+        | AttachmentKey::Environment
+        | AttachmentKey::ChatHistory
+        | AttachmentKey::UserRequest => value.content.clone(),
     }
 }
 

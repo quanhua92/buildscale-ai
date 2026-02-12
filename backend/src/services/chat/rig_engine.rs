@@ -5,7 +5,8 @@ use crate::services::chat::rig_tools::{
     RigAskUserTool, RigExitPlanModeTool,
 };
 use crate::services::chat::context::{
-    get_old_tool_result_indices, truncate_tool_output, AttachmentKey, AttachmentManager, ContextItem,
+    build_sorted_context_items, get_indices_to_truncate, render_attachment_for_ai,
+    truncate_tool_output, AttachmentManager, ContextItem,
 };
 use crate::services::storage::FileStorageService;
 use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
@@ -596,52 +597,11 @@ impl RigService {
         messages: &[ChatMessage],
         attachments: Option<&AttachmentManager>,
     ) -> Vec<Message> {
-        // Build unified list of context items
-        let mut items: Vec<ContextItem> = Vec::new();
+        // Use centralized context building from context.rs (single source of truth)
+        let items = build_sorted_context_items(messages, attachments, Some(render_attachment_for_ai));
 
-        // Add messages as context items
-        for msg in messages {
-            if !Self::should_filter_message(msg) {
-                items.push(ContextItem::Message {
-                    role: msg.role,
-                    content: msg.content.clone(),
-                    created_at: msg.created_at,
-                    metadata: msg.metadata.0.clone(),
-                });
-            }
-        }
-
-        // Add attachments as context items (if provided)
-        if let Some(att_manager) = attachments {
-            for (key, value) in &att_manager.map {
-                let rendered = Self::render_attachment(key, value);
-                items.push(ContextItem::Attachment {
-                    key: key.clone(),
-                    value: value.clone(),
-                    rendered,
-                });
-            }
-        }
-
-        // Sort by timestamp (oldest first = better caching)
-        items.sort_by_key(|item| item.timestamp());
-
-        // Identify tool result indices for age-based truncation
-        let tool_result_indices: Vec<usize> = items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, item)| {
-                if let ContextItem::Message { metadata, .. } = item {
-                    if metadata.message_type.as_deref() == Some("tool_result") {
-                        return Some(i);
-                    }
-                }
-                None
-            })
-            .collect();
-
-        // Use shared function to get indices to truncate
-        let indices_to_truncate = get_old_tool_result_indices(&tool_result_indices);
+        // Use centralized truncation logic
+        let indices_to_truncate = get_indices_to_truncate(&items);
 
         // Convert to Rig Messages
         let mut result = Vec::new();
@@ -668,41 +628,6 @@ impl RigService {
         }
 
         result
-    }
-
-    /// Check if a message should be filtered from AI context
-    fn should_filter_message(msg: &ChatMessage) -> bool {
-        // Filter reasoning_complete messages - they're for audit only
-        if let Some(ref message_type) = msg.metadata.message_type {
-            if message_type == "reasoning_complete" {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Render an attachment as XML for the AI context
-    fn render_attachment(key: &AttachmentKey, value: &crate::services::chat::AttachmentValue) -> String {
-        match key {
-            AttachmentKey::WorkspaceFile(_) => {
-                format!("<file_context>\n{}\n</file_context>", value.content)
-            }
-            AttachmentKey::ActiveSkill(_) => {
-                value.content.clone()
-            }
-            AttachmentKey::SystemPersona => {
-                value.content.clone()
-            }
-            AttachmentKey::Environment => {
-                value.content.clone()
-            }
-            AttachmentKey::ChatHistory => {
-                value.content.clone()
-            }
-            AttachmentKey::UserRequest => {
-                value.content.clone()
-            }
-        }
     }
 
     /// Convert a single message to Rig Message format
