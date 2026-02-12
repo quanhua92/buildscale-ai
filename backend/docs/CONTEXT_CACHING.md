@@ -73,15 +73,15 @@ Tool results can be very large (file contents, directory listings, grep output).
 ### Implementation
 
 ```rust
-// Constants in rig_engine.rs
+// Constants in context.rs
 const KEEP_RECENT_TOOL_RESULTS: usize = 5;
-const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 100;
+const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
 
 // Truncate old tool results
 if is_old_tool_result {
     metadata.tool_output = Some(format!(
-        "{}... [truncated - re-run tool for fresh data]",
-        &tool_output[..100]
+        "{}…[re-run]",
+        &tool_output[..50]
     ));
 }
 ```

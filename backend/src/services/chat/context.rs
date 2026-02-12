@@ -34,6 +34,29 @@ pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usi
         .collect()
 }
 
+/// Truncate a string at a valid UTF-8 character boundary.
+///
+/// This function ensures we don't slice in the middle of a multi-byte character
+/// (e.g., emoji like ✅ which is 3 bytes).
+///
+/// # Arguments
+/// * `s` - The string to potentially truncate
+/// * `max_bytes` - Maximum byte length (not character length)
+///
+/// # Returns
+/// The byte index where truncation should occur (always at a char boundary)
+pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
+    if s.len() <= max_bytes {
+        return s.len();
+    }
+
+    s.char_indices()
+        .take_while(|(idx, _)| *idx < max_bytes)
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0)
+}
+
 /// Truncate a tool result output if it's too long.
 ///
 /// # Arguments
@@ -43,18 +66,8 @@ pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usi
 /// Truncated string with hint to re-run tool
 pub fn truncate_tool_output(output: &str) -> String {
     if output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
-        // Use char_indices to find a valid UTF-8 boundary
-        let truncate_at = output
-            .char_indices()
-            .take_while(|(idx, _)| *idx < TRUNCATED_TOOL_RESULT_PREVIEW)
-            .last()
-            .map(|(idx, c)| idx + c.len_utf8())
-            .unwrap_or(0);
-
-        format!(
-            "{}…[re-run]",
-            &output[..truncate_at]
-        )
+        let truncate_at = truncate_at_char_boundary(output, TRUNCATED_TOOL_RESULT_PREVIEW);
+        format!("{}…[re-run]", &output[..truncate_at])
     } else {
         output.to_string()
     }

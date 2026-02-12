@@ -101,10 +101,10 @@ pub mod rig_tools;
 pub mod sync;
 
 pub use context::{
-    get_old_tool_result_indices, truncate_tool_output, AttachmentManager, AttachmentKey,
-    AttachmentValue, ContextItem, ESTIMATED_CHARS_PER_TOKEN, KEEP_RECENT_TOOL_RESULTS,
-    HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM,
-    TRUNCATED_TOOL_RESULT_PREVIEW,
+    get_old_tool_result_indices, truncate_at_char_boundary, truncate_tool_output,
+    AttachmentManager, AttachmentKey, AttachmentValue, ContextItem, ESTIMATED_CHARS_PER_TOKEN,
+    KEEP_RECENT_TOOL_RESULTS, HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW,
+    PRIORITY_MEDIUM, TRUNCATED_TOOL_RESULT_PREVIEW,
 };
 
 pub use sync::{ChatFrontmatter, YamlFrontmatter};
@@ -926,7 +926,7 @@ impl ChatService {
 
         // 4. Build each section
         let system_prompt = Self::build_system_prompt_section(&context.persona, &agent_config.mode);
-        let history = Self::build_history_section(&context.history.messages);
+        let history = Self::build_history_section(&context.history.messages, &context.attachment_manager);
         let tools = Self::build_tools_section();
         let attachments = Self::build_attachments_section(&context.attachment_manager);
 
@@ -968,58 +968,111 @@ impl ChatService {
         }
     }
 
-    fn build_history_section(messages: &[ChatMessage]) -> crate::models::chat::HistorySection {
-        // Identify tool result indices for age-based truncation
-        let tool_result_indices: Vec<usize> = messages
+    fn build_history_section(
+        messages: &[ChatMessage],
+        attachment_manager: &AttachmentManager,
+    ) -> crate::models::chat::HistorySection {
+        // Build unified context items (same logic as convert_history_with_attachments)
+        // This ensures truncation decisions match what the AI actually receives
+        let mut items: Vec<ContextItem> = Vec::new();
+
+        // Add messages as context items
+        for msg in messages {
+            items.push(ContextItem::Message {
+                role: msg.role,
+                content: msg.content.clone(),
+                created_at: msg.created_at,
+                metadata: msg.metadata.0.clone(),
+            });
+        }
+
+        // Add attachments as context items
+        for (key, value) in &attachment_manager.map {
+            items.push(ContextItem::Attachment {
+                key: key.clone(),
+                value: value.clone(),
+                rendered: String::new(), // Not needed for truncation logic
+            });
+        }
+
+        // Sort by timestamp (same as AI context)
+        items.sort_by_key(|item| item.timestamp());
+
+        // Identify tool result indices in the SORTED list (matching AI behavior)
+        let sorted_tool_result_indices: Vec<usize> = items
             .iter()
             .enumerate()
-            .filter_map(|(i, msg)| {
-                if msg.metadata.message_type.as_deref() == Some("tool_result") {
-                    Some(i)
-                } else {
-                    None
+            .filter_map(|(i, item)| {
+                if let ContextItem::Message { metadata, .. } = item {
+                    if metadata.message_type.as_deref() == Some("tool_result") {
+                        return Some(i);
+                    }
                 }
+                None
             })
             .collect();
 
-        let indices_to_truncate = get_old_tool_result_indices(&tool_result_indices);
+        // Get indices to truncate based on sorted position
+        let sorted_indices_to_truncate = get_old_tool_result_indices(&sorted_tool_result_indices);
 
-        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = messages.iter().enumerate().map(|(idx, msg)| {
-            let mut content = msg.content.clone();
-            let original_length = msg.content.len();
+        // Map back to message IDs that should be truncated
+        let ids_to_truncate: std::collections::HashSet<Uuid> = items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                if sorted_indices_to_truncate.contains(&i) {
+                    if let ContextItem::Message { metadata, .. } = item {
+                        if metadata.message_type.as_deref() == Some("tool_result") {
+                            // Find the original message to get its ID
+                            return messages
+                                .iter()
+                                .find(|msg| msg.metadata.message_type.as_deref() == Some("tool_result")
+                                    && msg.content == match item {
+                                        ContextItem::Message { content, .. } => content,
+                                        _ => "",
+                                    })
+                                .map(|msg| msg.id);
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
 
-            // Truncate old tool results using shared function
-            if indices_to_truncate.contains(&idx) {
-                content = truncate_tool_output(&content);
-            }
+        // Build history messages with truncation applied
+        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = messages
+            .iter()
+            .map(|msg| {
+                let mut content = msg.content.clone();
+                let original_length = msg.content.len();
 
-            let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
-                // UTF-8-safe truncation: find valid character boundary
-                let truncate_at = content
-                    .char_indices()
-                    .take_while(|(idx, _)| *idx < Self::CONTENT_PREVIEW_LENGTH)
-                    .last()
-                    .map(|(idx, c)| idx + c.len_utf8())
-                    .unwrap_or(0);
-                format!("{}...", &content[..truncate_at])
-            } else {
-                content
-            };
+                // Truncate old tool results using shared function
+                if ids_to_truncate.contains(&msg.id) {
+                    content = truncate_tool_output(&content);
+                }
 
-            crate::models::chat::HistoryMessageInfo {
-                role: msg.role.to_string().to_lowercase(),
-                content_preview: preview,
-                content_length: original_length,
-                token_count: original_length / ESTIMATED_CHARS_PER_TOKEN,
-                metadata: Some(crate::models::chat::HistoryMessageMetadata {
-                    message_type: msg.metadata.message_type.clone(),
-                    reasoning_id: msg.metadata.reasoning_id.clone(),
-                    tool_name: msg.metadata.tool_name.clone(),
-                    model: msg.metadata.model.clone(),
-                }),
-                created_at: msg.created_at,
-            }
-        }).collect();
+                let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
+                    let truncate_at = truncate_at_char_boundary(&content, Self::CONTENT_PREVIEW_LENGTH);
+                    format!("{}...", &content[..truncate_at])
+                } else {
+                    content
+                };
+
+                crate::models::chat::HistoryMessageInfo {
+                    role: msg.role.to_string().to_lowercase(),
+                    content_preview: preview,
+                    content_length: original_length,
+                    token_count: original_length / ESTIMATED_CHARS_PER_TOKEN,
+                    metadata: Some(crate::models::chat::HistoryMessageMetadata {
+                        message_type: msg.metadata.message_type.clone(),
+                        reasoning_id: msg.metadata.reasoning_id.clone(),
+                        tool_name: msg.metadata.tool_name.clone(),
+                        model: msg.metadata.model.clone(),
+                    }),
+                    created_at: msg.created_at,
+                }
+            })
+            .collect();
 
         crate::models::chat::HistorySection {
             message_count: history_messages.len(),
