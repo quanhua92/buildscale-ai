@@ -183,14 +183,11 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Searches for a regex pattern across all document files in a workspace using ripgrep or grep. Pattern is required. Optional path_pattern filters results (supports * wildcards). Set case_sensitive to false (default) for case-insensitive search.
+        r#"Searches regex pattern in files using ripgrep. Case-insensitive by default.
 
-CONTEXT PARAMETERS (optional):
-- before_context: Number of lines to show before each match
-- after_context: Number of lines to show after each match
-- context: Shorthand for both before and after context (e.g., context=3 shows 3 lines before and after)
+PARAMETERS: pattern (required), path_pattern (wildcards), case_sensitive, before_context/after_context/context (lines around matches).
 
-Returns matching file paths with line numbers and context lines. Use for discovering code patterns or finding specific content."#
+EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
     }
 
     fn definition(&self) -> Value {

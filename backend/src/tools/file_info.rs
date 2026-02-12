@@ -19,22 +19,9 @@ impl Tool for FileInfoTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Gets file metadata efficiently. For text files, reads content to calculate line_count. Returns path, file_type, size, line_count (for text files), created_at, updated_at, and content hash.
+        r#"Gets file metadata without reading full content. Returns size, line_count, timestamps, hash.
 
-USE CASES:
-- Check file size before reading large files
-- Verify file existence without fetching full content
-- Quick file statistics for decision-making
-- Get file timestamps for sorting/filtering
-
-COMPARISON:
-- file_info: Returns metadata only (fast, token-efficient)
-- read: Returns full content (use when you need the file data)
-
-EXAMPLES:
-- Check size: {"path": "/large-file.log"}
-- Verify exists: {"path": "/config.json"}
-- Get timestamps: {"path": "/README.md"}"#
+EXAMPLE: {"path":"/file.txt"}"#
     }
 
     fn definition(&self) -> Value {
