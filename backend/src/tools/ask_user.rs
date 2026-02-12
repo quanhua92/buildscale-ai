@@ -18,67 +18,15 @@ impl Tool for AskUserTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Request input or confirmation from the user. Supports multiple questions in one call. Questions are ephemeral (SSE-only, not persisted).
+        r#"Requests user input. Returns question_pending status.
 
-=== WHEN TO USE ===
-1. **Clarification Needed**: User's request is ambiguous or incomplete
-2. **Multiple Valid Approaches**: Several options exist and user preference matters
-3. **Confirmation Required**: Action is significant or irreversible (deletion, major changes)
-4. **Missing Information**: You need specific details to proceed
-5. **Design Decisions**: User's input affects the outcome
+SCHEMAS:
+- String enum: Radio buttons (add "buttons" field)
+- Array type: Checkboxes (NO buttons field)
 
-=== BUTTONS VS CHECKBOXES ===
-
-**Single-Select Questions** (Use buttons):
-- Schema: {"type": "string", "enum": ["A", "B", "C"]}
-- Add buttons field for better UX
-- Example:
-```json
-{
-  "name": "choice",
-  "question": "Which approach do you prefer?",
-  "schema": {"type":"string","enum":["Option A","Option B","Option C"]},
-  "buttons": [
-    {"label": "Option A", "value": "A"},
-    {"label": "Option B", "value": "B"},
-    {"label": "Option C", "value": "C"}
-  ]
-}
-```
-
-**Multi-Select Questions** (NO buttons!):
-- Schema: {"type": "array", "items": {"type": "string", "enum": ["A", "B", "C"]}}
-- DO NOT add buttons field - frontend will render checkboxes automatically
-- Example:
-```json
-{
-  "name": "choices",
-  "question": "Select all that apply:",
-  "schema": {"type":"array","items":{"type":"string","enum":["A","B","C"]},"minItems":1}
-  // NO buttons field! Frontend handles this.
-}
-```
-
-=== COMMON SCHEMAS ===
-
-String with enum (radio buttons):
-  {"type":"string","enum":["Yes","No","Cancel"]}
-
-String with pattern (text input):
-  {"type":"string","pattern":"^[a-z0-9]+$","minLength":3}
-
-Number with range:
-  {"type":"number","minimum":1,"maximum":100}
-
-Array/checkbox (multi-select):
-  {"type":"array","items":{"type":"string","enum":["A","B","C"]},"minItems":1}
-
-=== CRITICAL RULES ===
-- NEVER provide `buttons` for array-type questions (type: "array")
-- ALWAYS provide `buttons` for string enum questions (better UX)
-- Make questions specific and concise
-- Provide context in the question text
-- Use "Select one" or "choose all that apply" suffix to indicate selection type"#
+EXAMPLES:
+Radio: {"name":"c","question":"Pick:","schema":"{\"type\":\"string\",\"enum\":[\"A\",\"B\"]}","buttons":[{"label":"A","value":"A"}]}
+Multi: {"name":"items","question":"Select:","schema":"{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"A\",\"B\"]}}"}}"#
     }
 
     fn definition(&self) -> Value {

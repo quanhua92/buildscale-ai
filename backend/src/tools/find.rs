@@ -32,35 +32,11 @@ impl Tool for FindTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Finds files by metadata (name, path, type, size, date). Uses Unix find command for filesystem discovery, then enriches with database metadata. Complements grep which searches by content.
+        r#"Finds files by metadata using Unix find.
 
-SEARCH PARAMETERS:
-- name: Filename pattern (supports find wildcards: *, ?, [])
-- path: Directory to search (default: workspace root)
-- file_type: Filter by type (document, folder, canvas)
-- min_size: Minimum file size (e.g., 1048576 for 1MB)
-- max_size: Maximum file size
-- recursive: Search subdirectories (default: true)
+PARAMETERS: name (wildcards), path, file_type (document/folder/canvas), min_size/max_size (bytes), recursive (default true).
 
-DIFFERENCES FROM OTHER TOOLS:
-- find: Searches by metadata (name, type, size, date)
-- grep: Searches by content (text within files)
-- glob: Pattern matching for filenames only
-- ls: Lists directory contents
-
-USE CASES:
-- Find all files larger than 1MB
-- Find all folders in a directory
-- Find all canvas files
-- Find files modified recently
-
-EXAMPLES:
-{"name": "*.txt", "recursive": true} - All text files
-{"path": "/src", "name": "*.rs"} - Rust files under src
-{"file_type": "folder"} - All folders
-{"min_size": 1048576} - Files larger than 1MB
-
-REQUIREMENTS: Requires Unix find command to be installed on the system."#
+EXAMPLES: {"name":"*.txt"} or {"file_type":"folder"} or {"min_size":1048576}"#
     }
 
     fn definition(&self) -> Value {

@@ -1,11 +1,11 @@
 /// Test that verifies the fix for AI confusion with boolean parameters in tool calls.
 ///
 /// This test verifies that:
-/// 1. Core tools have full descriptions with usage examples
-/// 2. Boolean parameters have explicit type hints in schemas
+/// 1. Core tools have compact descriptions (for token efficiency)
+/// 2. Boolean parameters have explicit type hints in schemas (for AI guidance)
 #[cfg(test)]
 mod tests {
-    /// Test that ls tool description includes usage examples
+    /// Test that ls tool description is compact and includes key functionality
     #[test]
     fn test_ls_tool_description_includes_examples() {
         use buildscale::tools::ls::LsTool;
@@ -16,12 +16,10 @@ mod tests {
 
         println!("LS tool description:\n{}", description);
 
-        // Verify the description includes usage examples with proper boolean format
-        assert!(description.contains("USAGE EXAMPLES"), "Description should include usage examples");
-        // The JSON example format shows boolean as true (not "true" string)
-        assert!(description.contains("\"recursive\": true") || description.contains("recursive: true"),
-                "Description should show boolean true format");
-        assert!(description.contains("Lists files and folders"), "Description should describe functionality");
+        // Verify the description is compact and describes core functionality
+        // (Descriptions are now compacted for token efficiency - examples are in schemas)
+        assert!(description.contains("Lists directory contents"), "Description should describe functionality");
+        assert!(description.len() < 300, "Description should be compact (under 300 chars)");
     }
 
     /// Test that ls tool schema has explicit boolean type hints
