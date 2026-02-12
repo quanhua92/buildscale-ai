@@ -761,12 +761,12 @@ pub struct ReadMultipleFilesArgs {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadMultipleFilesResult {
     pub files: Vec<ReadFileResult>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadFileResult {
     pub path: String,
     pub success: bool,
@@ -795,12 +795,12 @@ pub struct FindArgs {
     pub recursive: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindResult {
     pub matches: Vec<FindMatch>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindMatch {
     pub path: String,
     pub name: String,
@@ -833,13 +833,13 @@ pub struct CatArgs {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatResult {
     pub content: String,
     pub files: Vec<CatFileEntry>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatFileEntry {
     pub path: String,
     pub content: String,
@@ -896,7 +896,7 @@ pub struct GrepMatch {
     pub after_context: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadResult {
     pub path: String,
     pub content: serde_json::Value,

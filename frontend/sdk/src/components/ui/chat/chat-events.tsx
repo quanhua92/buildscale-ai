@@ -1,6 +1,7 @@
 import * as React from "react"
-import { Terminal, CheckCircle2, CircleX, Loader2, ChevronDown } from "lucide-react"
+import { Terminal, CheckCircle2, CircleX, Loader2, ChevronDown, Maximize2 } from "lucide-react"
 import { cn } from "src/utils"
+import { ChatToolCallDialog } from "./chat-tool-call-dialog"
 
 export interface ChatEventsProps extends React.HTMLAttributes<HTMLDivElement> {
   call: { tool: string; args: any; id: string }
@@ -113,6 +114,7 @@ function formatToolArgs(tool: string, args: any) {
 const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
   ({ className, call, observation, ...props }, ref) => {
     const [isOpen, setIsOpen] = React.useState(false)
+    const [dialogOpen, setDialogOpen] = React.useState(false)
     const isPending = !observation
     const isSuccess = observation?.success
 
@@ -122,16 +124,20 @@ const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
         className={cn("w-full space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300", className)}
         {...props}
       >
-        <div className={cn(
-          "flex items-start gap-3 text-[11px] font-mono bg-muted/20 border rounded-lg px-2.5 py-2 text-muted-foreground group transition-all shadow-sm",
-          isPending ? "border-primary/20 animate-pulse" : isSuccess ? "border-muted/50 hover:border-primary/30" : "border-destructive/30 bg-destructive/5"
-        )}>
+        <div
+          className={cn(
+            "flex items-start gap-3 text-[11px] font-mono bg-muted/20 border rounded-lg px-2.5 py-2 text-muted-foreground group transition-all shadow-sm",
+            isPending ? "border-primary/20 animate-pulse" : "cursor-pointer hover:border-primary/30 hover:bg-muted/30",
+            !isPending && !isSuccess && "border-destructive/30 bg-destructive/5"
+          )}
+          onClick={() => !isPending && setDialogOpen(true)}
+        >
           {isPending ? (
             <Loader2 className="size-3.5 shrink-0 text-primary animate-spin mt-0.5" />
           ) : (
             <Terminal className={cn("size-3.5 shrink-0 mt-0.5", isSuccess ? "text-primary opacity-70" : "text-destructive")} />
           )}
-          
+
           <div className="flex flex-col gap-0.5 flex-1 min-w-0">
             <span className={cn(
               "font-bold uppercase tracking-tighter text-[9px] opacity-80 leading-none mb-0.5",
@@ -146,6 +152,11 @@ const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
               </div>
             </div>
           </div>
+
+          {/* Expand icon for completed calls */}
+          {!isPending && (
+            <Maximize2 className="size-3.5 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity mt-0.5" />
+          )}
         </div>
 
         {observation && (
@@ -178,6 +189,14 @@ const ChatEvents = React.forwardRef<HTMLDivElement, ChatEventsProps>(
             )}
           </div>
         )}
+
+        {/* Tool Call Details Dialog */}
+        <ChatToolCallDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          call={call}
+          observation={observation}
+        />
       </div>
     )
   }

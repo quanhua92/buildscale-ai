@@ -12,6 +12,7 @@ import { ChatSchemaForm } from "./chat-schema-form"
 import { ChatModeIndicator } from "./chat-mode-indicator"
 import { ChatModeToggle } from "./chat-mode-toggle"
 import { ChatContextDialog } from "./chat-context-dialog"
+import { ChatToolCallDialog } from "./chat-tool-call-dialog"
 
 export const Chat = Object.assign(ChatRoot, {
   Provider: ChatProvider,
@@ -27,6 +28,7 @@ export const Chat = Object.assign(ChatRoot, {
   ModeIndicator: ChatModeIndicator,
   ModeToggle: ChatModeToggle,
   ContextDialog: ChatContextDialog,
+  ToolCallDialog: ChatToolCallDialog,
 })
 
 export {
@@ -38,4 +40,5 @@ export {
   ChatModeIndicator,
   ChatModeToggle,
   ChatContextDialog,
+  ChatToolCallDialog,
 }
