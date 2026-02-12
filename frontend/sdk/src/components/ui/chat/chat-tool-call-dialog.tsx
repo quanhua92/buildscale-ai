@@ -145,8 +145,50 @@ function ToolPreview({
     )
   }
 
-  // Read/cat tools: show output content (extract from JSON if needed)
-  if ((tool === "read" || tool === "read_multiple_files" || tool === "cat") && output) {
+  // Read tool: show output content (extract from JSON if needed)
+  if (tool === "read" && output) {
+    let content = output
+    try {
+      const parsed = typeof output === 'string' ? JSON.parse(output) : output
+      if (parsed?.content) content = String(parsed.content)
+    } catch { /* not JSON */ }
+    return (
+      <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">
+        {content}
+      </pre>
+    )
+  }
+
+  // Read multiple files: show each file's content with path headers
+  if (tool === "read_multiple_files" && output) {
+    try {
+      const parsed = typeof output === 'string' ? JSON.parse(output) : output
+      if (parsed?.files && Array.isArray(parsed.files)) {
+        return (
+          <div className="divide-y">
+            {parsed.files.map((file: any, i: number) => (
+              <div key={i}>
+                <div className="px-4 py-2 text-xs font-mono text-muted-foreground bg-muted/30 border-b">
+                  {file.path || `file ${i + 1}`}
+                </div>
+                <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">
+                  {file.content || file.error || 'No content'}
+                </pre>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    } catch { /* not JSON, fall through */ }
+    return (
+      <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">
+        {output}
+      </pre>
+    )
+  }
+
+  // Cat tool: show output content (extract from JSON if needed)
+  if (tool === "cat" && output) {
     let content = output
     try {
       const parsed = typeof output === 'string' ? JSON.parse(output) : output

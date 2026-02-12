@@ -134,12 +134,8 @@ const MAX_EDIT_DIFF_LENGTH: usize = 500;
 const LS_PREVIEW_ITEMS: usize = 50;
 /// Number of matches to preview for 'grep' tool
 const GREP_PREVIEW_MATCHES: usize = 20;
-/// Number of lines to preview for 'read' tool
-const READ_PREVIEW_LINES: usize = 5;
-/// Number of words to preview for 'write' tool content argument
-const WRITE_ARG_PREVIEW_WORDS: usize = 20;
-/// Number of words to preview for 'edit' tool diff arguments
-const EDIT_ARG_PREVIEW_WORDS: usize = 10;
+/// Number of lines to preview for content truncation
+const CONTENT_PREVIEW_LINES: usize = 20;
 
 /// Structured context for AI chat sessions.
 ///
@@ -266,10 +262,13 @@ impl ChatService {
                 // Truncate 'content' field (can be very large)
                 if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
                     if content.len() > MAX_WRITE_CONTENT_LENGTH {
-                        let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
+                        // Use line-based preview for better readability (like read tool)
+                        let lines: Vec<&str> = content.lines().collect();
+                        let preview_lines: Vec<&str> = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect();
+                        let preview = preview_lines.join("\n");
                         obj.insert(
                             "content".to_string(),
-                            serde_json::json!(format!("{}... [truncated, size={}]", preview, content.len())),
+                            serde_json::json!(format!("{}\n... [truncated, {} lines total]", preview, lines.len())),
                         );
                     }
                 }
@@ -279,10 +278,13 @@ impl ChatService {
                 for field in ["old_string", "new_string", "insert_content"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
                         if val.len() > MAX_EDIT_DIFF_LENGTH {
-                            let preview = Self::extract_string_preview(val, EDIT_ARG_PREVIEW_WORDS);
+                            // Use line-based preview for better readability
+                            let lines: Vec<&str> = val.lines().collect();
+                            let preview_lines: Vec<&str> = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect();
+                            let preview = preview_lines.join("\n");
                             obj.insert(
                                 field.to_string(),
-                                serde_json::json!(format!("{}... [truncated]", preview)),
+                                serde_json::json!(format!("{}\n... [truncated, {} lines]", preview, lines.len())),
                             );
                         }
                     }
@@ -438,16 +440,6 @@ impl ChatService {
     ///
     /// # Returns
     /// String preview with "..." appended if truncated
-    fn extract_string_preview(s: &str, word_count: usize) -> String {
-        let words: Vec<&str> = s.split_whitespace().take(word_count).collect();
-        let preview = words.join(" ");
-        if s.split_whitespace().count() > word_count {
-            format!("{}...", preview)
-        } else {
-            preview
-        }
-    }
-
     /// Smart truncation for grep results: Parse → Truncate at match boundaries → Re-serialize
     /// Preserves JSON structure and complete match records with context.
     fn truncate_grep_result(output: &str) -> String {
@@ -463,13 +455,9 @@ impl ChatService {
                         .collect(),
                 };
 
-                // Re-serialize as compact JSON (single line per match for readability)
+                // Return valid JSON only - don't append text outside JSON
                 if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more matches truncated)",
-                        compact,
-                        total_matches - GREP_PREVIEW_MATCHES
-                    );
+                    return compact;
                 }
             }
 
@@ -507,11 +495,7 @@ impl ChatService {
                 };
 
                 if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more matches truncated)",
-                        compact,
-                        total_matches - LS_PREVIEW_ITEMS
-                    );
+                    return compact;
                 }
             }
 
@@ -546,11 +530,7 @@ impl ChatService {
                 };
 
                 if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more matches truncated)",
-                        compact,
-                        total_matches - LS_PREVIEW_ITEMS
-                    );
+                    return compact;
                 }
             }
 
@@ -584,12 +564,9 @@ impl ChatService {
                         .collect(),
                 };
 
+                // Return valid JSON only - don't append text outside JSON
                 if let Ok(compact) = serde_json::to_string(&truncated) {
-                    return format!(
-                        "{}\n... ({} more entries truncated)",
-                        compact,
-                        total_entries - LS_PREVIEW_ITEMS
-                    );
+                    return compact;
                 }
             }
 
@@ -616,12 +593,12 @@ impl ChatService {
         if let Ok(mut parsed) = serde_json::from_str::<ReadResult>(output) {
             if let Some(content_str) = parsed.content.as_str() {
                 if content_str.len() > MAX_TOOL_OUTPUT_LENGTH {
-                    let preview_lines: Vec<&str> = content_str.lines().take(READ_PREVIEW_LINES).collect();
+                    let preview_lines: Vec<&str> = content_str.lines().take(CONTENT_PREVIEW_LINES).collect();
                     let preview = preview_lines.join("\n");
                     let line_count = content_str.lines().count();
                     parsed.content = serde_json::json!(
                         format!("[{} lines total, showing first {}]\n{}\n... [content truncated]",
-                            line_count, READ_PREVIEW_LINES, preview)
+                            line_count, CONTENT_PREVIEW_LINES, preview)
                     );
                     if let Ok(truncated) = serde_json::to_string(&parsed) {
                         return truncated;
@@ -636,9 +613,9 @@ impl ChatService {
                 "Failed to parse read result as JSON, falling back to line-based truncation"
             );
             let lines: Vec<&str> = output.lines().collect();
-            if lines.len() > READ_PREVIEW_LINES {
-                let preview = lines.iter().take(READ_PREVIEW_LINES).cloned().collect::<Vec<_>>().join("\n");
-                format!("{}\n... ({} more lines)", preview, lines.len() - READ_PREVIEW_LINES)
+            if lines.len() > CONTENT_PREVIEW_LINES {
+                let preview = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect::<Vec<_>>().join("\n");
+                format!("{}\n... ({} more lines)", preview, lines.len() - CONTENT_PREVIEW_LINES)
             } else {
                 output.to_string()
             }
@@ -650,12 +627,12 @@ impl ChatService {
         use crate::models::requests::CatResult;
         if let Ok(mut parsed) = serde_json::from_str::<CatResult>(output) {
             if parsed.content.len() > MAX_TOOL_OUTPUT_LENGTH {
-                let preview_lines: Vec<&str> = parsed.content.lines().take(READ_PREVIEW_LINES).collect();
+                let preview_lines: Vec<&str> = parsed.content.lines().take(CONTENT_PREVIEW_LINES).collect();
                 let preview = preview_lines.join("\n");
                 let line_count = parsed.content.lines().count();
                 parsed.content = format!(
                     "[{} lines total, showing first {}]\n{}\n... [content truncated]",
-                    line_count, READ_PREVIEW_LINES, preview
+                    line_count, CONTENT_PREVIEW_LINES, preview
                 );
                 if let Ok(truncated) = serde_json::to_string(&parsed) {
                     return truncated;
@@ -669,9 +646,9 @@ impl ChatService {
                 "Failed to parse cat result as JSON, falling back to line-based truncation"
             );
             let lines: Vec<&str> = output.lines().collect();
-            if lines.len() > READ_PREVIEW_LINES {
-                let preview = lines.iter().take(READ_PREVIEW_LINES).cloned().collect::<Vec<_>>().join("\n");
-                format!("{}\n... ({} more lines)", preview, lines.len() - READ_PREVIEW_LINES)
+            if lines.len() > CONTENT_PREVIEW_LINES {
+                let preview = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect::<Vec<_>>().join("\n");
+                format!("{}\n... ({} more lines)", preview, lines.len() - CONTENT_PREVIEW_LINES)
             } else {
                 output.to_string()
             }
@@ -686,12 +663,12 @@ impl ChatService {
             for file in &mut parsed.files {
                 if let Some(content_str) = file.content.as_ref().and_then(|c| c.as_str()) {
                     if content_str.len() > MAX_TOOL_OUTPUT_LENGTH / 2 {
-                        let preview_lines: Vec<&str> = content_str.lines().take(READ_PREVIEW_LINES).collect();
+                        let preview_lines: Vec<&str> = content_str.lines().take(CONTENT_PREVIEW_LINES).collect();
                         let preview = preview_lines.join("\n");
                         let line_count = content_str.lines().count();
                         file.content = Some(serde_json::json!(
                             format!("[{} lines, showing first {}]\n{}\n... [truncated]",
-                                line_count, READ_PREVIEW_LINES, preview)
+                                line_count, CONTENT_PREVIEW_LINES, preview)
                         ));
                         any_truncated = true;
                     }
