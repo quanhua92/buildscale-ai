@@ -1,6 +1,7 @@
 import * as React from "react"
 import { toast } from "sonner"
 import { useAuth } from "../../../context/AuthContext"
+import { sortFileEntries } from "../../../utils"
 import { Button } from "../button"
 import {
   Dialog,
@@ -62,11 +63,7 @@ export function ChatFileSelectDialog({
       const result = await callTool<LsResult>('ls', { path })
       if (result) {
         // Sort: Folders first, then files
-        const sorted = result.entries.sort((a, b) => {
-          if (a.file_type === 'folder' && b.file_type !== 'folder') return -1
-          if (a.file_type !== 'folder' && b.file_type === 'folder') return 1
-          return a.name.localeCompare(b.name)
-        })
+        const sorted = result.entries.sort(sortFileEntries)
         setEntries(sorted)
       }
     } finally {

@@ -49,7 +49,7 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     const handleFileSelect = (path: string) => {
       // Append path to existing content with space separator
-      const newContent = content.trim() ? `${content} ${path}` : path
+      const newContent = content.trim() ? `${content.trim()} ${path}` : path
       setContent(newContent)
       // Focus textarea after selection
       textareaRef.current?.focus()

@@ -2,7 +2,7 @@ import * as React from "react"
 import { useAuth } from "../../context/AuthContext"
 import { Input } from "./input"
 import { X } from "lucide-react"
-import { cn, debounce } from "../../utils"
+import { cn, debounce, sortFileEntries } from "../../utils"
 import type { FindMatch, FindResult } from "../../api/types"
 
 interface FileSearchInputProps {
@@ -40,11 +40,7 @@ export function FileSearchInput({
       })
       if (result.success && result.data) {
         // Sort: folders first, then by name
-        const sorted = result.data.matches.sort((a, b) => {
-          if (a.file_type === 'folder' && b.file_type !== 'folder') return -1
-          if (a.file_type !== 'folder' && b.file_type === 'folder') return 1
-          return a.name.localeCompare(b.name)
-        })
+        const sorted = result.data.matches.sort(sortFileEntries)
         onResults(sorted)
       } else {
         onResults([])

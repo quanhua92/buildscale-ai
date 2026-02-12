@@ -182,5 +182,5 @@ export type {
 export { ApiError, TokenTheftError } from './api/errors'
 
 // Utils
-export { cn, formatDate, formatDateTime, formatTime, debounce } from './utils'
+export { cn, formatDate, formatDateTime, formatTime, debounce, sortFileEntries } from './utils'
 
