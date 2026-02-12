@@ -242,27 +242,70 @@ mod tests {
     /// even though only ~50 characters were actually used after truncation.
     #[test]
     fn test_token_count_uses_truncated_content_not_original() {
-        // Create a large tool result that will be truncated (>50 chars triggers truncation)
-        let original_content = "x".repeat(12000); // 12,000 characters = ~3,000 tokens
-        assert!(original_content.len() > 50, "Content should exceed truncation threshold");
+        use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
+        use crate::services::chat::context::KEEP_RECENT_TOOL_RESULTS;
+        use crate::services::chat::ChatService;
 
-        // Apply truncation (simulates what build_history_section does)
+        // 1. Create a long tool result message that will be truncated.
+        let original_content = "x".repeat(12000);
+        let file_id = Uuid::now_v7();
+        let workspace_id = Uuid::now_v7();
+        let long_tool_msg = ChatMessage {
+            id: Uuid::now_v7(),
+            file_id,
+            workspace_id,
+            role: ChatMessageRole::Tool,
+            content: original_content.clone(),
+            metadata: sqlx::types::Json(ChatMessageMetadata {
+                message_type: Some("tool_result".to_string()),
+                ..Default::default()
+            }),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        // 2. Create enough recent tool results to push the long one into truncation territory.
+        let mut messages = vec![long_tool_msg.clone()];
+        for i in 0..KEEP_RECENT_TOOL_RESULTS {
+            messages.push(ChatMessage {
+                id: Uuid::now_v7(),
+                file_id: long_tool_msg.file_id,
+                workspace_id: long_tool_msg.workspace_id,
+                role: ChatMessageRole::Tool,
+                content: format!("short result {}", i),
+                metadata: sqlx::types::Json(ChatMessageMetadata {
+                    message_type: Some("tool_result".to_string()),
+                    ..Default::default()
+                }),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                deleted_at: None,
+            });
+        }
+
+        // 3. Call the function under test.
+        let attachment_manager = AttachmentManager::new();
+        let history_section = ChatService::build_history_section(&messages, &attachment_manager);
+
+        // 4. Find our message in the result and assert on its token count.
+        let info = history_section
+            .messages
+            .iter()
+            .find(|m| m.content_length == original_content.len())
+            .expect("Long message not found in history section");
+
         let truncated_content = truncate_tool_output(&original_content);
+        let correct_token_count = truncated_content.len() / ESTIMATED_CHARS_PER_TOKEN;
 
-        // Verify truncation happened
-        assert!(truncated_content.len() < original_content.len(),
-            "Content should be truncated: {} -> {}",
-            original_content.len(), truncated_content.len());
-
-        // Calculate token counts
-        let wrong_token_count = original_content.len() / ESTIMATED_CHARS_PER_TOKEN; // BUG: uses original
-        let correct_token_count = truncated_content.len() / ESTIMATED_CHARS_PER_TOKEN; // FIX: uses truncated
-
-        // Verify the difference is significant
-        assert_eq!(wrong_token_count, 3000, "Original would show 3000 tokens");
-        assert!(correct_token_count < 50, "Truncated should show <50 tokens, got {}", correct_token_count);
-
-        // The fix ensures we use truncated length, not original length
-        // This test would fail if the bug is reintroduced (using original_length)
+        assert_eq!(
+            info.token_count, correct_token_count,
+            "Token count should be based on truncated content"
+        );
+        assert_eq!(
+            info.content_length,
+            original_content.len(),
+            "Content length should be the original length"
+        );
     }
 }
