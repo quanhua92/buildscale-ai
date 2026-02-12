@@ -1,8 +1,15 @@
 import * as React from "react"
-import { Send, Paperclip, StopCircle } from "lucide-react"
+import { Send, Paperclip, StopCircle, FileText, Upload } from "lucide-react"
 import { cn } from "src/utils"
 import { Button } from "../button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../dropdown-menu"
 import { useChat } from "./chat-context"
+import { ChatFileSelectDialog } from "./chat-file-select-dialog"
 
 export interface ChatInputProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   onSend?: (content: string) => void
@@ -10,8 +17,9 @@ export interface ChatInputProps extends React.TextareaHTMLAttributes<HTMLTextAre
 
 const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
   ({ className, onSend, ...props }, ref) => {
-    const { sendMessage, isStreaming, stopGeneration } = useChat()
+    const { sendMessage, isStreaming, stopGeneration, workspaceId } = useChat()
     const [content, setContent] = React.useState("")
+    const [isFileSelectOpen, setIsFileSelectOpen] = React.useState(false)
     const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -39,6 +47,14 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       }
     }
 
+    const handleFileSelect = (path: string) => {
+      // Append path to existing content with space separator
+      const newContent = content.trim() ? `${content} ${path}` : path
+      setContent(newContent)
+      // Focus textarea after selection
+      textareaRef.current?.focus()
+    }
+
     return (
       <div className="relative flex flex-col w-full gap-2 bg-background p-2 rounded-2xl border shadow-sm focus-within:ring-1 focus-within:ring-primary/20 transition-all mb-[env(safe-area-inset-bottom)]">
         <textarea
@@ -62,9 +78,23 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         
         <div className="flex items-center justify-between px-2 pb-1">
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="size-8 rounded-full text-muted-foreground">
-              <Paperclip className="size-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8 rounded-full text-muted-foreground">
+                  <Paperclip className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => setIsFileSelectOpen(true)}>
+                  <FileText className="size-4 mr-2" />
+                  Select from workspace
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled>
+                  <Upload className="size-4 mr-2" />
+                  Upload file
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {isStreaming ? (
@@ -91,6 +121,13 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
             </Button>
           )}
         </div>
+
+        <ChatFileSelectDialog
+          open={isFileSelectOpen}
+          onOpenChange={setIsFileSelectOpen}
+          onSelect={handleFileSelect}
+          workspaceId={workspaceId}
+        />
       </div>
     )
   }
