@@ -812,6 +812,10 @@ impl ChatService {
     }
 
     /// Builds the structured context for a chat session.
+    ///
+    /// # Arguments
+    /// * `exclude_last_message` - If true, excludes the last message (used for AI context where
+    ///   last message is the user's prompt). If false, includes all messages (used for Context UI).
     pub async fn build_context(
         conn: &mut DbConn,
         storage: &crate::services::storage::FileStorageService,
@@ -819,6 +823,7 @@ impl ChatService {
         chat_file_id: Uuid,
         default_persona: &str,
         default_context_token_limit: usize,
+        exclude_last_message: bool,
     ) -> Result<BuiltContext> {
         // 1. Load Session Identity & History
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
@@ -826,11 +831,13 @@ impl ChatService {
         // 2. Hydrate Persona
         let persona = default_persona.to_string();
 
-        // 3. Extract history (exclude current/last message which is the prompt)
-        let history_messages = if messages.len() > 1 {
+        // 3. Extract history (optionally exclude last message which is the prompt for AI context)
+        let history_messages = if exclude_last_message && messages.len() > 1 {
             messages[..messages.len() - 1].to_vec()
-        } else {
+        } else if exclude_last_message {
             Vec::new()
+        } else {
+            messages.clone()
         };
         let history = HistoryManager::new(history_messages);
 
@@ -920,9 +927,10 @@ impl ChatService {
             .await
             .unwrap_or(fallback_token_limit);
 
-        // 3. Build context using existing method
+        // 3. Build context - include ALL messages for Context UI (no exclusion)
         let context = Self::build_context(
-            conn, storage, workspace_id, chat_file_id, default_persona, token_limit
+            conn, storage, workspace_id, chat_file_id, default_persona, token_limit,
+            false, // exclude_last_message=false for Context UI to show all messages
         ).await?;
 
         // 4. Build each section

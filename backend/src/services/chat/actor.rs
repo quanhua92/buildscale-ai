@@ -259,6 +259,7 @@ impl ChatActor {
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         // 1. Build structured context with persona, history, and attachments
+        // Exclude last message (user's prompt) from history since we're responding to it
         let context = ChatService::build_context(
             &mut conn,
             &self.storage,
@@ -266,6 +267,7 @@ impl ChatActor {
             self.chat_id,
             &self.default_persona,
             self.default_context_token_limit,
+            true, // exclude_last_message for AI context
         ).await?;
         tracing::debug!(
             chat_id = %self.chat_id,

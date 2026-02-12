@@ -44,7 +44,7 @@ async fn test_build_context_with_persona() {
         .await
         .expect("Failed to create chat file");
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
@@ -107,7 +107,7 @@ async fn test_build_context_with_history() {
     .await
     .expect("Failed to insert message");
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
@@ -188,7 +188,7 @@ async fn test_build_context_with_file_attachments() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
@@ -276,7 +276,7 @@ async fn test_build_context_workspace_isolation() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace1.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace1.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
@@ -311,7 +311,7 @@ async fn test_build_context_empty_chat() {
         .await
         .expect("Failed to create chat file");
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
@@ -412,7 +412,7 @@ async fn test_build_context_token_limit_optimization() {
         .expect("Failed to insert message with attachment");
     }
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
@@ -520,7 +520,7 @@ async fn test_build_context_fragment_ordering() {
     .await
     .expect("Failed to insert message with attachment");
 
-    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000)
+    let context = ChatService::build_context(&mut conn, &storage, workspace.id, chat.file.id, "You are BuildScale AI, a professional software engineering assistant.", 4000, true)
         .await
         .expect("Failed to build context");
 
