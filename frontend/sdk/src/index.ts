@@ -73,6 +73,7 @@ export { Button } from './components/ui/button'
 export { Input } from './components/ui/input'
 export { Label } from './components/ui/label'
 export { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
+export { FileSearchInput } from './components/ui/file-search-input'
 export { ThemeToggle } from './components/ui/theme-toggle'
 export { Toaster } from './components/ui/sonner'
 export { toast } from 'sonner'
@@ -181,5 +182,5 @@ export type {
 export { ApiError, TokenTheftError } from './api/errors'
 
 // Utils
-export { cn, formatDate, formatDateTime, formatTime } from './utils'
+export { cn, formatDate, formatDateTime, formatTime, debounce } from './utils'
 

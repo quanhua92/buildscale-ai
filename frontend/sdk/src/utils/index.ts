@@ -3,6 +3,7 @@
  */
 
 export { cn } from './cn'
+export { debounce } from './debounce'
 export type { TokenCallbacks, StorageCallbacks, FullStorageCallbacks } from './storage'
 export { BrowserStorage } from './storage'
 export { STORAGE_KEYS, STORAGE_PREFIX } from './constants'
