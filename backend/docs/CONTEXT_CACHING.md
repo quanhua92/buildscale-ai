@@ -79,12 +79,13 @@ const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
 
 // Truncate old tool results
 if is_old_tool_result {
-    metadata.tool_output = Some(format!(
-        "{}…[re-run]",
-        &tool_output[..50]
-    ));
+    // Safe truncation using the shared helper function
+    let truncated = truncate_tool_output(&tool_output);
+    metadata.tool_output = Some(truncated);
 }
 ```
+
+**Note:** The actual implementation uses `truncate_at_char_boundary()` to safely handle multi-byte UTF-8 characters. Never slice strings directly with `&str[..n]` as it can panic on short strings or create invalid UTF-8.
 
 ### Example
 
@@ -104,7 +105,7 @@ After optimization:
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `KEEP_RECENT_TOOL_RESULTS` | 5 | Number of recent tool results to keep full |
-| `TRUNCATED_TOOL_RESULT_PREVIEW` | 50 | Characters to show before `…` |
+| `TRUNCATED_TOOL_RESULT_PREVIEW` | 50 | Approximate character preview length (UTF-8 safe) |
 
 ### Key Implementation Files
 

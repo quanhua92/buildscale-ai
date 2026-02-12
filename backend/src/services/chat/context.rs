@@ -12,7 +12,8 @@ use uuid::Uuid;
 /// Older tool results are truncated to reduce context size since the AI can re-run tools.
 pub const KEEP_RECENT_TOOL_RESULTS: usize = 5;
 
-/// Maximum characters for truncated old tool results
+/// Maximum byte length for truncated old tool results (approximately 50 ASCII characters).
+/// Truncation is UTF-8 safe - will not split multi-byte characters.
 pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
 
 /// Identify which tool result indices should be truncated based on age.
@@ -98,11 +99,15 @@ pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
 
 /// Truncate a tool result output if it's too long.
 ///
+/// Uses byte-based truncation with UTF-8 boundary safety for efficiency.
+/// For ASCII text, this truncates to ~50 characters. For multi-byte UTF-8,
+/// the result may be slightly fewer characters but never splits a character.
+///
 /// # Arguments
 /// * `output` - The tool output string
 ///
 /// # Returns
-/// Truncated string with hint to re-run tool
+/// Truncated string with hint to re-run tool, or original if under limit
 pub fn truncate_tool_output(output: &str) -> String {
     if output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
         let truncate_at = truncate_at_char_boundary(output, TRUNCATED_TOOL_RESULT_PREVIEW);

@@ -480,18 +480,21 @@ impl RigService {
 
     /// Reconstruct a ToolCall message from metadata.
     ///
-    /// This helper extracts tool call information from a ChatMessage's metadata
+    /// This helper extracts tool call information from metadata
     /// and reconstructs it as a Rig ToolCall message. Used by convert_history
     /// to avoid duplicating this logic across multiple match arms.
-    fn reconstruct_tool_call(&self, msg: &ChatMessage) -> Option<Message> {
+    fn reconstruct_tool_call_from_metadata(
+        &self,
+        metadata: &crate::models::chat::ChatMessageMetadata,
+    ) -> Option<Message> {
         use rig::completion::AssistantContent;
         use rig::message::{ToolCall, ToolFunction};
 
-        let tool_id = msg.metadata.reasoning_id.clone()
+        let tool_id = metadata.reasoning_id.clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
         if let (Some(tool_name), Some(tool_args)) =
-            (&msg.metadata.tool_name, &msg.metadata.tool_arguments)
+            (&metadata.tool_name, &metadata.tool_arguments)
         {
             Some(Message::Assistant {
                 id: None,
@@ -515,17 +518,21 @@ impl RigService {
 
     /// Reconstruct a ToolResult message from metadata.
     ///
-    /// This helper extracts tool result information from a ChatMessage's metadata
+    /// This helper extracts tool result information from metadata
     /// and reconstructs it as a Rig ToolResult message. Used by convert_history
     /// to avoid duplicating this logic across multiple match arms.
-    fn reconstruct_tool_result(&self, msg: &ChatMessage, include_note: bool) -> Option<Message> {
+    fn reconstruct_tool_result_from_metadata(
+        &self,
+        metadata: &crate::models::chat::ChatMessageMetadata,
+        include_note: bool,
+    ) -> Option<Message> {
         use rig::message::{UserContent, ToolResult, ToolResultContent};
         use rig::message::Text;
 
-        let tool_id = msg.metadata.reasoning_id.clone()
+        let tool_id = metadata.reasoning_id.clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        let tool_output = if let Some(ref output) = msg.metadata.tool_output {
+        let tool_output = if let Some(ref output) = metadata.tool_output {
             if include_note {
                 format!("{}\n[Note: This is a summarized tool result, not the full output]",
                     output)
@@ -643,19 +650,8 @@ impl RigService {
                 if let Some(ref message_type) = metadata.message_type {
                     match message_type.as_str() {
                         "tool_result" => {
-                            // Reconstruct ToolResult - need to create a temporary ChatMessage
-                            let temp_msg = ChatMessage {
-                                id: Uuid::nil(),
-                                file_id: Uuid::nil(),
-                                workspace_id: Uuid::nil(),
-                                role: ChatMessageRole::User,
-                                content: content.clone(),
-                                metadata: sqlx::types::Json(metadata),
-                                created_at: chrono::Utc::now(),
-                                updated_at: chrono::Utc::now(),
-                                deleted_at: None,
-                            };
-                            service.reconstruct_tool_result(&temp_msg, true)
+                            // Reconstruct ToolResult directly from metadata (no temp allocation)
+                            service.reconstruct_tool_result_from_metadata(&metadata, true)
                         }
                         _ => {
                             // Regular user text message
@@ -672,18 +668,8 @@ impl RigService {
                 if let Some(ref message_type) = metadata.message_type {
                     match message_type.as_str() {
                         "tool_call" => {
-                            let temp_msg = ChatMessage {
-                                id: Uuid::nil(),
-                                file_id: Uuid::nil(),
-                                workspace_id: Uuid::nil(),
-                                role: ChatMessageRole::Assistant,
-                                content: content.clone(),
-                                metadata: sqlx::types::Json(metadata),
-                                created_at: chrono::Utc::now(),
-                                updated_at: chrono::Utc::now(),
-                                deleted_at: None,
-                            };
-                            service.reconstruct_tool_call(&temp_msg)
+                            // Reconstruct ToolCall directly from metadata (no temp allocation)
+                            service.reconstruct_tool_call_from_metadata(&metadata)
                                 .or_else(|| Some(Message::assistant(content)))
                         }
                         _ => {
@@ -705,32 +691,10 @@ impl RigService {
                 if let Some(ref message_type) = metadata.message_type {
                     match message_type.as_str() {
                         "tool_call" => {
-                            let temp_msg = ChatMessage {
-                                id: Uuid::nil(),
-                                file_id: Uuid::nil(),
-                                workspace_id: Uuid::nil(),
-                                role: ChatMessageRole::Tool,
-                                content: content.clone(),
-                                metadata: sqlx::types::Json(metadata),
-                                created_at: chrono::Utc::now(),
-                                updated_at: chrono::Utc::now(),
-                                deleted_at: None,
-                            };
-                            service.reconstruct_tool_call(&temp_msg)
+                            service.reconstruct_tool_call_from_metadata(&metadata)
                         }
                         "tool_result" => {
-                            let temp_msg = ChatMessage {
-                                id: Uuid::nil(),
-                                file_id: Uuid::nil(),
-                                workspace_id: Uuid::nil(),
-                                role: ChatMessageRole::Tool,
-                                content: content.clone(),
-                                metadata: sqlx::types::Json(metadata),
-                                created_at: chrono::Utc::now(),
-                                updated_at: chrono::Utc::now(),
-                                deleted_at: None,
-                            };
-                            service.reconstruct_tool_result(&temp_msg, false)
+                            service.reconstruct_tool_result_from_metadata(&metadata, false)
                         }
                         unknown_type => {
                             tracing::error!(
