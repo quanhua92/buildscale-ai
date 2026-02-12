@@ -1,4 +1,5 @@
 import * as React from "react"
+import { toast } from "sonner"
 import { useAuth } from "../../context/AuthContext"
 import { Input } from "./input"
 import { X } from "lucide-react"
@@ -44,6 +45,9 @@ export function FileSearchInput({
         onResults(sorted)
       } else {
         onResults([])
+        if (result.error) {
+          toast.error(result.error.message || 'Search failed')
+        }
       }
     } catch (error) {
       console.error('Search failed:', error)
