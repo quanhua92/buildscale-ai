@@ -19,38 +19,7 @@ impl Tool for ReadMultipleFilesTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Reads multiple files in a single tool call. Reduces round-trips when scanning multiple files. Returns per-file success/error status.
-
-USE CASES:
-- Batch file analysis across multiple files
-- Cross-referencing content in different files
-- Collecting data from logs, configs, or documentation
-- Comparing files side-by-side
-
-FEATURES:
-- Single tool call for multiple files (reduced network round-trips)
-- Partial success handling (some files can fail while others succeed)
-- Per-file limit parameter (applied to all files)
-- Returns file content, hash, and error status for each file
-
-COMPARISON:
-- read_multiple_files: Batch reads, single tool call
-- read: Single file, sequential calls
-
-EXAMPLE:
-{
-  "paths": ["/config.json", "/README.md", "/src/main.rs"],
-  "limit": 100  // Optional: limit per file (default: 500)
-}
-
-RETURNS:
-Array of results, one per file, with:
-- success: true/false
-- path: file path
-- content: file content (if success)
-- hash: content hash (if success)
-- error: error message (if failed)
-- total_lines, truncated, offset: metadata (if success)"#
+        "Reads multiple files (max 50). Parameters: paths (array), limit (default 500). Returns per-file content, hash, error."
     }
 
     fn definition(&self) -> Value {

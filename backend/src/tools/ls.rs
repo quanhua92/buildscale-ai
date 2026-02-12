@@ -35,28 +35,7 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Lists files and folders in a workspace directory. All parameters are optional. Returns entries sorted with folders first.
-
-DISCOVERY STRATEGY:
-- Hybrid approach: Database entries + filesystem scan for external files
-- Database entries have full metadata (id, display_name, is_virtual, etc.)
-- External files (created via SSH, migrations, etc.) have minimal metadata
-- Files moved via mv tool are now visible (bugfix consistency)
-
-Parameters:
-- path (string, optional): workspace directory path. Default: '/' for workspace root.
-- recursive (boolean, optional): list all subdirectories recursively. Default: false.
-
-USAGE EXAMPLES:
-- Good (list root): {}
-- Good (list specific folder): {\"path\": \"/src\"}
-- Good (recursive listing): {\"path\": \"/src\", \"recursive\": true}
-- Good (explicit nulls): {\"path\": null, \"recursive\": null}
-
-BAD EXAMPLES (will fail):
-- Bad (string instead of object): \"/src\"
-- Bad (array instead of object): [\"/src\"]
-- Bad (extra properties): {\"path\": \"/src\", \"invalid\": true}"
+        "Lists directory contents. Folders first. Parameters: path (default '/'), recursive (default false). Hybrid DB + filesystem discovery."
     }
 
     fn definition(&self) -> Value {

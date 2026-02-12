@@ -438,3 +438,92 @@ export interface JSONSchema {
   items?: JSONSchema
   required?: string[]
 }
+
+// ============================================================================
+// Context API Response Types
+// ============================================================================
+
+export interface ChatContextResponse {
+  system_prompt: SystemPromptSection
+  history: HistorySection
+  tools: ToolsSection
+  attachments: AttachmentsSection
+  summary: ContextSummary
+}
+
+export interface SystemPromptSection {
+  content: string
+  char_count: number
+  token_count: number
+  persona_type: string
+  mode: string
+}
+
+export interface HistorySection {
+  messages: HistoryMessageInfo[]
+  message_count: number
+  total_tokens: number
+}
+
+export interface HistoryMessageInfo {
+  role: string
+  content_preview: string
+  content_length: number
+  token_count: number
+  metadata: HistoryMessageMetadata | null
+  created_at: string
+}
+
+export interface HistoryMessageMetadata {
+  message_type?: string
+  reasoning_id?: string
+  tool_name?: string
+  model?: string
+}
+
+export interface ToolsSection {
+  tools: ToolDefinition[]
+  tool_count: number
+  estimated_schema_tokens: number
+}
+
+export interface ToolDefinition {
+  name: string
+  description: string
+  parameters: Record<string, any>
+}
+
+export interface AttachmentsSection {
+  attachments: AttachmentInfo[]
+  attachment_count: number
+  total_tokens: number
+}
+
+export interface AttachmentInfo {
+  attachment_type: string
+  id: string
+  content_preview: string
+  content_length: number
+  token_count: number
+  priority: number
+  is_essential: boolean
+  // When the attachment was added to the context
+  created_at: string
+  // When the source content was last modified
+  updated_at: string | null
+}
+
+export interface ContextSummary {
+  total_tokens: number
+  utilization_percent: number
+  model: string
+  token_limit: number
+  breakdown: TokenBreakdown
+}
+
+export interface TokenBreakdown {
+  system_prompt_tokens: number
+  history_tokens: number
+  tools_tokens: number
+  attachments_tokens: number
+}

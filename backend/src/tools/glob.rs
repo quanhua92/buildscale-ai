@@ -31,32 +31,10 @@ impl Tool for GlobTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Finds files matching glob patterns. Uses ripgrep for efficient pattern matching. Returns matches with metadata (path, file_type, is_virtual, updated_at).
+        r#"Finds files matching glob patterns. Requires ripgrep.
 
-SUPPORTED PATTERNS:
-- *.rs - matches all .rs files anywhere in workspace
-- **/*.md - matches all .md files recursively
-- /src/**/*.rs - matches all .rs files under src/
-- test_* - matches files/folders starting with test_
-- */file.txt - matches file.txt in any immediate subdirectory
-
-DIFFERENCES FROM LS:
-- glob: Pattern matching (e.g., '*.rs' finds all Rust files)
-- ls: Directory listing (e.g., '/src' lists contents of /src folder)
-
-USE GLOB WHEN:
-- Searching files by extension (*.rs, *.md)
-- Finding files matching naming patterns (test_*, config.*)
-- Quick filtering without reading file contents
-
-USE LS WHEN:
-- Browsing directory contents
-- Need recursive listing of all files
-- Exploring folder structure
-
-PERFORMANCE: Glob uses ripgrep's optimized file discovery and reduces token usage vs ls + manual filtering.
-
-REQUIREMENTS: Requires ripgrep (rg) to be installed on the system."#
+PATTERNS: *.rs, **/*.md, /src/**/*.rs
+PARAMETERS: pattern (required), path (default '/')"#
     }
 
     fn definition(&self) -> Value {

@@ -364,35 +364,10 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Edits files with two operations: REPLACE (original) and INSERT (new).
+        r#"Edits files via REPLACE or INSERT. Read file first for last_read_hash.
 
-REPLACE OPERATION (original behavior):
-⚠️ MANDATORY WORKFLOW:
-1. READ the file FIRST → get exact content AND last_read_hash
-2. COPY exact text from read as old_string (character-perfect match)
-3. EDIT with old_string, new_string, AND last_read_hash
-
-CRITICAL FOR REPLACE:
-• old_string MUST be non-empty and match file content EXACTLY
-• old_string must be UNIQUE (appears exactly once)
-• This is a REPLACE operation - old_string is completely removed
-• To preserve original content, you MUST include it in new_string
-
-INSERT OPERATION (new - cleaner for adding content):
-• insert_line: Line number where content is added (0-indexed)
-• insert_content: Content to insert at that line
-• Simpler than replace - no need to match existing text
-• Specify exact line position for adding content
-
-COMMON TO BOTH OPERATIONS:
-• Always include last_read_hash from most recent read (prevents edit conflicts)
-• Re-read file if edit fails (content may have changed)
-
-REPLACE EXAMPLE:
-{"path": "/file.txt", "old_string": "old line", "new_string": "new line", "last_read_hash": "abc123"}
-
-INSERT EXAMPLE:
-{"path": "/file.txt", "insert_line": 5, "insert_content": "new line to add", "last_read_hash": "abc123"}"#
+REPLACE: {"path":"/f","old_string":"exact","new_string":"new","last_read_hash":"x"} - old_string must be unique.
+INSERT: {"path":"/f","insert_line":5,"insert_content":"line","last_read_hash":"x"} - line is 0-indexed."#
     }
 
     fn definition(&self) -> Value {

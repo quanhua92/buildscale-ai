@@ -72,21 +72,12 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Reads up to 500 lines by default. Use offset to control position (positive=from start, negative=from end). Example: offset=-100 reads last 100 lines. Use limit to control max lines.
+        r#"Reads file content (500 lines default). Use offset for position.
 
-SCROLL MODE (for navigating large files):
-- Set cursor to enable scroll mode (e.g., cursor=100 starts at line 100)
-- offset becomes relative to cursor (e.g., cursor=100, offset=-50 reads lines 50-100)
-- Positive offset scrolls down, negative offset scrolls up
-- Returns cursor field showing position at end of read for next scroll operation
+OFFSET: Positive=from start (100=line 100+), Negative=from end (-100=last 100 lines).
+SCROLL MODE: Set cursor for relative navigation.
 
-EXAMPLES:
-- Read first 500 lines: {"path": "/file.txt"}
-- Read last 100 lines: {"path": "/file.txt", "offset": -100, "limit": 100}
-- Scroll mode - start at line 1000, read 100 lines: {"path": "/file.txt", "cursor": 1000, "offset": 0, "limit": 100}
-- Scroll up 50 lines from cursor 200: {"path": "/file.txt", "cursor": 200, "offset": -50, "limit": 50}
-
-Returns content, hash for change detection, and metadata (total_lines, truncated flag, cursor position)."#
+EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
     }
 
     fn definition(&self) -> Value {

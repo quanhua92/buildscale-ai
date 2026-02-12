@@ -27,7 +27,7 @@ pub use handlers::{
     files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
     files::semantic_search,
     tools::execute_tool,
-    chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat,
+    chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat, chat::get_chat_context,
     providers::get_providers, providers::get_workspace_providers,
 };
 pub use middleware::auth::AuthenticatedUser;
@@ -396,6 +396,14 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/chats/{chat_id}/events",
             get(chat_handlers::get_chat_events)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        .route(
+            "/{id}/chats/{chat_id}/context",
+            get(chat_handlers::get_chat_context)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

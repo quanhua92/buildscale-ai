@@ -138,48 +138,11 @@ impl Tool for CatTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Concatenates and displays multiple files with Unix-style formatting options.
+        r#"Concatenates files with formatting. Returns content + per-file metadata.
 
-SPECIAL CHARACTERS OPTIONS:
-- show_ends: Display $ at end of each line (reveals trailing whitespace)
-- show_tabs: Display tabs as ^I (distinguish tabs from spaces)
-- squeeze_blank: Suppress repeated empty lines (squeeze multiple \n into one)
+OPTIONS: show_ends ($ at line end), show_tabs (^I), number_lines, squeeze_blank, offset/limit.
 
-LINE RANGE FILTERING:
-- offset: Starting line position (positive=from start, negative=from end)
-- limit: Maximum number of lines to read per file
-- Line numbers reflect actual file position when using offset
-
-NUMBERING OPTIONS:
-- number_lines: Number all lines (smart numbering with offset)
-
-DISPLAY OPTIONS:
-- show_headers: Add filename headers before each file
-
-FEATURES:
-- Concatenates multiple files in a single operation
-- Special character display for debugging (tabs, whitespace)
-- Line range filtering for targeted debugging
-- Smart line numbering reflects actual file position
-- Squeezes excessive blank lines for readability
-- Returns aggregated content with per-file metadata
-
-COMPARISON:
-- cat: Multiple files, special character display, line range filtering, formatting options
-- read: Single file, pagination, scroll mode, cursor navigation
-
-EXAMPLES:
-{"paths": ["/config.json", "/.env"]} - Basic concatenation
-{"paths": ["/file.txt"], "show_ends": true} - Show trailing whitespace
-{"paths": ["/code.rs"], "show_tabs": true} - Reveal tab characters
-{"paths": ["/log.txt"], "offset": -100, "limit": 50} - Last 100 lines, max 50
-{"paths": ["/data.txt"], "offset": 100, "limit": 50, "show_ends": true} - Lines 100-149 with trailing whitespace shown
-{"paths": ["/file.txt"], "offset": 100, "limit": 50, "number_lines": true, "show_tabs": true} - Lines 101-150 numbered, tabs shown
-
-RETURNS:
-- content: Concatenated and formatted content of all files
-- files: Array of per-file entries with path, content, line_count, offset, limit, total_lines
-- Errors for individual files are shown in their entries"#
+EXAMPLE: {"paths":["/a.txt","/b.txt"],"show_ends":true,"offset":-100,"limit":50}"#
     }
 
     fn definition(&self) -> Value {

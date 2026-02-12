@@ -259,6 +259,7 @@ impl ChatActor {
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         // 1. Build structured context with persona, history, and attachments
+        // Exclude last message (user's prompt) from history since we're responding to it
         let context = ChatService::build_context(
             &mut conn,
             &self.storage,
@@ -266,6 +267,7 @@ impl ChatActor {
             self.chat_id,
             &self.default_persona,
             self.default_context_token_limit,
+            true, // exclude_last_message for AI context
         ).await?;
         tracing::debug!(
             chat_id = %self.chat_id,
@@ -284,21 +286,14 @@ impl ChatActor {
             .last()
             .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
 
-        // 3. Format file attachments from ContextManager
-        // The ContextManager has already optimized and sorted attachments by priority
-        let attachments_context = if !context.attachment_manager.map.is_empty() {
-            context.attachment_manager.render()
-        } else {
-            String::new()
-        };
-
-        // 4. Build full prompt with attachments
-        let prompt = format!("{}{}", last_message.content, attachments_context);
-
-        // 5. Convert history to Rig format (exclude last/current message)
+        // 3. Convert history to Rig format with cache-optimized attachment interleaving
+        // Attachments are now interleaved chronologically with messages for better caching
         let history = self
             .rig_service
-            .convert_history(&context.history.messages);
+            .convert_history_with_attachments(&context.history.messages, Some(&context.attachment_manager));
+
+        // 4. Build prompt - just the user's message (attachments are now in history)
+        let prompt = last_message.content.clone();
 
         // 6. Hydrate session model
         let file = queries::files::get_file_by_id(&mut conn, self.chat_id).await?;

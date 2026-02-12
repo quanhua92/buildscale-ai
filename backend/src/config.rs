@@ -322,7 +322,7 @@ impl Default for AiConfig {
             embedding_dimension: 1536,
             default_persona:
                 "You are BuildScale AI, a highly capable Personal Assistant and Coworker living inside a stateful Distributed Operating System.".to_string(),
-            default_context_token_limit: 4000,
+            default_context_token_limit: 128000,
             actor_inactivity_timeout_seconds: 600,
             providers: ProviderConfig::default(),
             openai_api_key: SecretString::from(String::new()),

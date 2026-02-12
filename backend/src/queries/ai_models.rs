@@ -5,6 +5,7 @@ use crate::models::ai_models::{
     UpdateWorkspaceAiModel,
 };
 use crate::error::Result;
+use crate::DbConn;
 use sqlx::{PgPool, Postgres, Row};
 use uuid::Uuid;
 
@@ -83,6 +84,30 @@ pub async fn get_model_by_provider_and_name(
     .bind(provider)
     .bind(model_name)
     .fetch_optional(pool)
+    .await?;
+
+    Ok(model)
+}
+
+/// Get a specific model by provider and model name (using connection)
+pub async fn get_model_by_provider_and_name_conn(
+    conn: &mut DbConn,
+    provider: &str,
+    model_name: &str,
+) -> Result<Option<AiModel>> {
+    let model = sqlx::query_as!(
+        AiModel,
+        r#"
+        SELECT id, provider, model_name, display_name,
+               description, context_window, is_enabled, is_free,
+               created_at, updated_at
+        FROM ai_models
+        WHERE provider = $1 AND model_name = $2
+        "#,
+        provider,
+        model_name
+    )
+    .fetch_optional(conn)
     .await?;
 
     Ok(model)

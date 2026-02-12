@@ -1,8 +1,121 @@
-use crate::models::chat::{ChatMessage, ChatMessageRole};
+use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
+
+// --- Tool Result Truncation Constants ---
+
+/// Number of recent tool results to keep full outputs for.
+/// Older tool results are truncated to reduce context size since the AI can re-run tools.
+pub const KEEP_RECENT_TOOL_RESULTS: usize = 5;
+
+/// Maximum byte length for truncated old tool results (approximately 50 ASCII characters).
+/// Truncation is UTF-8 safe - will not split multi-byte characters.
+pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
+
+/// Identify which tool result indices should be truncated based on age.
+///
+/// Returns a HashSet of indices that are tool results and should be truncated
+/// because they are older than KEEP_RECENT_TOOL_RESULTS.
+///
+/// # Arguments
+/// * `tool_result_indices` - Slice of indices (in chronological order) that are tool results
+///
+/// # Returns
+/// HashSet of indices to truncate
+pub fn get_old_tool_result_indices(tool_result_indices: &[usize]) -> HashSet<usize> {
+    let truncate_from_index = tool_result_indices.len().saturating_sub(KEEP_RECENT_TOOL_RESULTS);
+    tool_result_indices
+        .iter()
+        .take(truncate_from_index)
+        .copied()
+        .collect()
+}
+
+/// Identify tool result indices in a sorted list of context items.
+///
+/// This is used by both AI context building and Context UI to consistently
+/// identify which items are tool results.
+///
+/// # Arguments
+/// * `items` - Slice of context items (should be sorted by timestamp)
+///
+/// # Returns
+/// Vector of indices where tool result messages appear
+pub fn get_tool_result_indices(items: &[ContextItem]) -> Vec<usize> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, item)| {
+            if let ContextItem::Message { metadata, .. } = item {
+                if metadata.message_type.as_deref() == Some("tool_result") {
+                    return Some(i);
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+/// Get indices of context items that should be truncated.
+///
+/// Combines tool result identification with age-based truncation logic.
+///
+/// # Arguments
+/// * `items` - Slice of context items (should be sorted by timestamp)
+///
+/// # Returns
+/// HashSet of indices that should be truncated
+pub fn get_indices_to_truncate(items: &[ContextItem]) -> HashSet<usize> {
+    let tool_result_indices = get_tool_result_indices(items);
+    get_old_tool_result_indices(&tool_result_indices)
+}
+
+/// Truncate a string at a valid UTF-8 character boundary.
+///
+/// This function ensures we don't slice in the middle of a multi-byte character
+/// (e.g., emoji like ✅ which is 3 bytes).
+///
+/// # Arguments
+/// * `s` - The string to potentially truncate
+/// * `max_bytes` - Maximum byte length (not character length)
+///
+/// # Returns
+/// The byte index where truncation should occur (always at a char boundary)
+pub fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
+    if s.len() <= max_bytes {
+        return s.len();
+    }
+
+    s.char_indices()
+        .take_while(|(idx, _)| *idx < max_bytes)
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0)
+}
+
+/// Truncate a tool result output if it's too long.
+///
+/// Uses byte-based truncation with UTF-8 boundary safety for efficiency.
+/// For ASCII text, this truncates to ~50 characters. For multi-byte UTF-8,
+/// the result may be slightly fewer characters but never splits a character.
+///
+/// # Arguments
+/// * `output` - The tool output string
+///
+/// # Returns
+/// Truncated string with hint to re-run tool, or original if under limit
+pub fn truncate_tool_output(output: &str) -> String {
+    if output.len() > TRUNCATED_TOOL_RESULT_PREVIEW {
+        let truncate_at = truncate_at_char_boundary(output, TRUNCATED_TOOL_RESULT_PREVIEW);
+        format!("{}…[re-run]", &output[..truncate_at])
+    } else {
+        output.to_string()
+    }
+}
 
 /// Attachment key types for identifying different attachment sources.
 ///
@@ -26,6 +139,41 @@ pub struct AttachmentValue {
     pub priority: i32,
     pub tokens: usize,
     pub is_essential: bool,
+    /// When the attachment was added to the context
+    pub created_at: DateTime<Utc>,
+    /// When the source content was last modified (e.g., file updated_at)
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+/// Unified context item for chronological sorting of messages and attachments.
+///
+/// This enables cache-optimized context construction where older content
+/// (both messages and attachments) becomes part of a stable, cacheable prefix.
+#[derive(Debug, Clone)]
+pub enum ContextItem {
+    /// A chat message from the conversation history
+    Message {
+        role: ChatMessageRole,
+        content: String,
+        created_at: DateTime<Utc>,
+        metadata: ChatMessageMetadata,
+    },
+    /// An attachment (file, skill, etc.) with rendered XML content
+    Attachment {
+        key: AttachmentKey,
+        value: AttachmentValue,
+        rendered: String,
+    },
+}
+
+impl ContextItem {
+    /// Get the timestamp for chronological sorting
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        match self {
+            ContextItem::Message { created_at, .. } => *created_at,
+            ContextItem::Attachment { value, .. } => value.created_at,
+        }
+    }
 }
 
 pub type AttachmentMap = IndexMap<AttachmentKey, AttachmentValue>;
@@ -234,6 +382,134 @@ impl AttachmentManager {
         }
 
         output.trim().to_string()
+    }
+}
+
+/// Check if a message should be filtered from AI context.
+///
+/// Messages are filtered if they are only for audit/debug purposes and should
+/// not be sent to the AI or shown in Context UI token counts.
+///
+/// Currently filters:
+/// - `reasoning_complete` messages (thinking/reasoning content for audit only)
+///
+/// # Arguments
+/// * `msg` - The chat message to check
+///
+/// # Returns
+/// `true` if the message should be filtered out, `false` otherwise
+pub fn should_filter_message(msg: &ChatMessage) -> bool {
+    // Filter reasoning_complete messages - they're for audit only
+    if let Some(ref message_type) = msg.metadata.message_type {
+        if message_type == "reasoning_complete" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Filter messages to only include those that should be in AI context.
+///
+/// This is the single source of truth for what messages the AI receives
+/// and what the Context UI displays in token counts.
+///
+/// # Arguments
+/// * `messages` - Slice of chat messages to filter
+///
+/// # Returns
+/// Vector of messages that should be included in AI context
+pub fn filter_messages_for_context(messages: &[ChatMessage]) -> Vec<&ChatMessage> {
+    messages
+        .iter()
+        .filter(|msg| !should_filter_message(msg))
+        .collect()
+}
+
+/// Filter messages and convert to ContextItems for unified processing.
+///
+/// This combines filtering with ContextItem conversion, ensuring both
+/// AI context building and Context UI use the same logic.
+///
+/// # Arguments
+/// * `messages` - Slice of chat messages to process
+///
+/// # Returns
+/// Vector of ContextItems (only non-filtered messages)
+pub fn messages_to_context_items(messages: &[ChatMessage]) -> Vec<ContextItem> {
+    messages
+        .iter()
+        .filter(|msg| !should_filter_message(msg))
+        .map(|msg| ContextItem::Message {
+            role: msg.role,
+            content: msg.content.clone(),
+            created_at: msg.created_at,
+            metadata: msg.metadata.0.clone(),
+        })
+        .collect()
+}
+
+/// Build sorted context items from messages and optional attachments.
+///
+/// This is the single source of truth for context building, used by both:
+/// - AI context (rig_engine.rs) - what the AI receives
+/// - Context UI (mod.rs) - what the UI displays in token counts
+///
+/// # Arguments
+/// * `messages` - Slice of chat messages to process
+/// * `attachments` - Optional attachment manager with file attachments
+/// * `render_attachment` - Optional function to render attachments as strings
+///
+/// # Returns
+/// Vector of ContextItems sorted by timestamp (oldest first)
+pub fn build_sorted_context_items<F>(
+    messages: &[ChatMessage],
+    attachments: Option<&AttachmentManager>,
+    render_attachment: Option<F>,
+) -> Vec<ContextItem>
+where
+    F: Fn(&AttachmentKey, &AttachmentValue) -> String,
+{
+    let mut items = messages_to_context_items(messages);
+
+    // Add attachments as context items (if provided)
+    if let Some(att_manager) = attachments {
+        for (key, value) in &att_manager.map {
+            let rendered = render_attachment
+                .as_ref()
+                .map(|f| f(key, value))
+                .unwrap_or_default();
+            items.push(ContextItem::Attachment {
+                key: key.clone(),
+                value: value.clone(),
+                rendered,
+            });
+        }
+    }
+
+    // Sort by timestamp (oldest first = better caching)
+    items.sort_by_key(|item| item.timestamp());
+
+    items
+}
+
+/// Render an attachment as XML for the AI context.
+///
+/// # Arguments
+/// * `key` - The attachment key identifying the type
+/// * `value` - The attachment value with content
+///
+/// # Returns
+/// Rendered string for the AI context
+pub fn render_attachment_for_ai(key: &AttachmentKey, value: &AttachmentValue) -> String {
+    match key {
+        AttachmentKey::WorkspaceFile(_) => {
+            format!("<file_context>\n{}\n</file_context>", value.content)
+        }
+        AttachmentKey::SystemPersona
+        | AttachmentKey::ActiveSkill(_)
+        | AttachmentKey::Environment
+        | AttachmentKey::ChatHistory
+        | AttachmentKey::UserRequest => value.content.clone(),
     }
 }
 

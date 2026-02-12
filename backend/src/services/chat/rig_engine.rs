@@ -4,6 +4,10 @@ use crate::services::chat::rig_tools::{
     RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
     RigAskUserTool, RigExitPlanModeTool,
 };
+use crate::services::chat::context::{
+    build_sorted_context_items, get_indices_to_truncate, render_attachment_for_ai,
+    truncate_tool_output, AttachmentManager, ContextItem,
+};
 use crate::services::storage::FileStorageService;
 use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
 use crate::config::AiConfig;
@@ -476,18 +480,21 @@ impl RigService {
 
     /// Reconstruct a ToolCall message from metadata.
     ///
-    /// This helper extracts tool call information from a ChatMessage's metadata
+    /// This helper extracts tool call information from metadata
     /// and reconstructs it as a Rig ToolCall message. Used by convert_history
     /// to avoid duplicating this logic across multiple match arms.
-    fn reconstruct_tool_call(&self, msg: &ChatMessage) -> Option<Message> {
+    fn reconstruct_tool_call_from_metadata(
+        &self,
+        metadata: &crate::models::chat::ChatMessageMetadata,
+    ) -> Option<Message> {
         use rig::completion::AssistantContent;
         use rig::message::{ToolCall, ToolFunction};
 
-        let tool_id = msg.metadata.reasoning_id.clone()
+        let tool_id = metadata.reasoning_id.clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
         if let (Some(tool_name), Some(tool_args)) =
-            (&msg.metadata.tool_name, &msg.metadata.tool_arguments)
+            (&metadata.tool_name, &metadata.tool_arguments)
         {
             Some(Message::Assistant {
                 id: None,
@@ -511,17 +518,21 @@ impl RigService {
 
     /// Reconstruct a ToolResult message from metadata.
     ///
-    /// This helper extracts tool result information from a ChatMessage's metadata
+    /// This helper extracts tool result information from metadata
     /// and reconstructs it as a Rig ToolResult message. Used by convert_history
     /// to avoid duplicating this logic across multiple match arms.
-    fn reconstruct_tool_result(&self, msg: &ChatMessage, include_note: bool) -> Option<Message> {
+    fn reconstruct_tool_result_from_metadata(
+        &self,
+        metadata: &crate::models::chat::ChatMessageMetadata,
+        include_note: bool,
+    ) -> Option<Message> {
         use rig::message::{UserContent, ToolResult, ToolResultContent};
         use rig::message::Text;
 
-        let tool_id = msg.metadata.reasoning_id.clone()
+        let tool_id = metadata.reasoning_id.clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        let tool_output = if let Some(ref output) = msg.metadata.tool_output {
+        let tool_output = if let Some(ref output) = metadata.tool_output {
             if include_note {
                 format!("{}\n[Note: This is a summarized tool result, not the full output]",
                     output)
@@ -551,90 +562,155 @@ impl RigService {
     /// IMPORTANT: Tool results are summarized in the database (not full outputs).
     /// We include these summaries with a note that they are truncated.
     pub fn convert_history(&self, messages: &[ChatMessage]) -> Vec<Message> {
-        messages
-            .iter()
-            .filter_map(|msg| {
-                match &msg.role {
-                    ChatMessageRole::User => {
-                        // Check if this is a tool result (message_type: "tool_result")
-                        if let Some(ref message_type) = msg.metadata.message_type {
-                            match message_type.as_str() {
-                                "tool_result" => {
-                                    // Reconstruct ToolResult for User message
-                                    self.reconstruct_tool_result(msg, true)
-                                }
-                                "reasoning_complete" => {
-                                    // Filter out reasoning/thinking messages - they're for audit only
-                                    None
-                                }
-                                _ => {
-                                    // Regular user text message
-                                    Some(Message::user(msg.content.clone()))
-                                }
-                            }
-                        } else {
-                            // Regular user text message (no metadata)
-                            Some(Message::user(msg.content.clone()))
+        self.convert_history_with_attachments(messages, None)
+    }
+
+    /// Converts BuildScale chat history to Rig messages with cache-optimized attachment interleaving.
+    ///
+    /// This method interleaves attachments chronologically with messages to create a stable
+    /// cacheable prefix. Older content (both messages and attachments) becomes part of the
+    /// stable prefix, while newer content varies only at the end.
+    ///
+    /// # Cache Optimization
+    ///
+    /// Before (current - bad for caching):
+    /// ```text
+    /// [System Prompt] → [History] → [Last Message] → [Attachments]
+    ///                                      ↑                    ↑
+    ///                                   varies              varies
+    /// ```
+    ///
+    /// After (cache-optimized):
+    /// ```text
+    /// [System Prompt] → [Interleaved History + Attachments] → [Last Message]
+    ///                              ↑                              ↑
+    ///                         cacheable                      varies only
+    /// ```
+    ///
+    /// # Tool Result Optimization
+    ///
+    /// Tool results can be very large. To reduce context size, we truncate outputs for
+    /// tool results that are older than `KEEP_RECENT_TOOL_RESULTS` turns. The AI can
+    /// re-run tools if it needs fresh data.
+    ///
+    /// # Arguments
+    /// * `messages` - Chat message history (excluding current message)
+    /// * `attachments` - Optional attachment manager with file contents
+    ///
+    /// # Returns
+    /// Vector of Rig messages ready for the AI, with attachments interleaved chronologically
+    pub fn convert_history_with_attachments(
+        &self,
+        messages: &[ChatMessage],
+        attachments: Option<&AttachmentManager>,
+    ) -> Vec<Message> {
+        // Use centralized context building from context.rs (single source of truth)
+        let items = build_sorted_context_items(messages, attachments, Some(render_attachment_for_ai));
+
+        // Use centralized truncation logic
+        let indices_to_truncate = get_indices_to_truncate(&items);
+
+        // Convert to Rig Messages
+        let mut result = Vec::new();
+        for (idx, item) in items.into_iter().enumerate() {
+            match item {
+                ContextItem::Message { role, content, mut metadata, .. } => {
+                    // Truncate tool output for old tool results using shared function
+                    if indices_to_truncate.contains(&idx) {
+                        if let Some(ref tool_output) = metadata.tool_output {
+                            metadata.tool_output = Some(truncate_tool_output(tool_output));
                         }
                     }
-                    ChatMessageRole::Assistant => {
-                        // Check if this is a tool call (message_type: "tool_call")
-                        if let Some(ref message_type) = msg.metadata.message_type {
-                            match message_type.as_str() {
-                                "tool_call" => {
-                                    // Reconstruct ToolCall for Assistant message
-                                    self.reconstruct_tool_call(msg)
-                                        .or_else(|| Some(Message::assistant(msg.content.clone())))
-                                }
-                                "reasoning_complete" => {
-                                    // Filter out reasoning/thinking messages - they're for audit only
-                                    None
-                                }
-                                _ => {
-                                    // Regular assistant text message
-                                    Some(Message::assistant(msg.content.clone()))
-                                }
-                            }
-                        } else {
-                            // Regular assistant text message (no metadata)
-                            Some(Message::assistant(msg.content.clone()))
-                        }
-                    }
-                    ChatMessageRole::System => {
-                        // System messages typically not sent in chat history
-                        None
-                    }
-                    ChatMessageRole::Tool => {
-                        // Convert Tool role messages to Rig format
-                        // This enables multi-turn conversations with tool history
-                        if let Some(ref message_type) = msg.metadata.message_type {
-                            match message_type.as_str() {
-                                "tool_call" => {
-                                    // Reconstruct ToolCall from metadata
-                                    self.reconstruct_tool_call(msg)
-                                }
-                                "tool_result" => {
-                                    // Reconstruct ToolResult from metadata
-                                    self.reconstruct_tool_result(msg, false)
-                                }
-                                unknown_type => {
-                                    // ERROR-level: Unknown message_type gets filtered = data loss
-                                    tracing::error!(
-                                        message_type = %unknown_type,
-                                        "Unknown message_type '{}' in Tool role, filtered from AI context. \
-                                         This may cause DATA LOSS. Add explicit handling if this is a valid message type.",
-                                        unknown_type
-                                    );
-                                    None
-                                }
-                            }
-                        } else {
-                            None  // Tool role without message_type metadata
-                        }
+                    // Reuse existing message conversion logic
+                    if let Some(msg) = Self::convert_single_message(role, content, metadata, self) {
+                        result.push(msg);
                     }
                 }
-            })
-            .collect()
+                ContextItem::Attachment { rendered, .. } => {
+                    // Attachments become user messages (context) in the history
+                    // Using user message as Rig doesn't have system messages in history
+                    result.push(Message::user(format!("[Context]\n{}", rendered)));
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Convert a single message to Rig Message format
+    fn convert_single_message(
+        role: ChatMessageRole,
+        content: String,
+        metadata: crate::models::chat::ChatMessageMetadata,
+        service: &RigService,
+    ) -> Option<Message> {
+        match role {
+            ChatMessageRole::User => {
+                // Check if this is a tool result (message_type: "tool_result")
+                if let Some(ref message_type) = metadata.message_type {
+                    match message_type.as_str() {
+                        "tool_result" => {
+                            // Reconstruct ToolResult directly from metadata (no temp allocation)
+                            service.reconstruct_tool_result_from_metadata(&metadata, true)
+                        }
+                        _ => {
+                            // Regular user text message
+                            Some(Message::user(content))
+                        }
+                    }
+                } else {
+                    // Regular user text message (no metadata)
+                    Some(Message::user(content))
+                }
+            }
+            ChatMessageRole::Assistant => {
+                // Check if this is a tool call (message_type: "tool_call")
+                if let Some(ref message_type) = metadata.message_type {
+                    match message_type.as_str() {
+                        "tool_call" => {
+                            // Reconstruct ToolCall directly from metadata (no temp allocation)
+                            service.reconstruct_tool_call_from_metadata(&metadata)
+                                .or_else(|| Some(Message::assistant(content)))
+                        }
+                        _ => {
+                            // Regular assistant text message
+                            Some(Message::assistant(content))
+                        }
+                    }
+                } else {
+                    // Regular assistant text message (no metadata)
+                    Some(Message::assistant(content))
+                }
+            }
+            ChatMessageRole::System => {
+                // System messages typically not sent in chat history
+                None
+            }
+            ChatMessageRole::Tool => {
+                // Convert Tool role messages to Rig format
+                if let Some(ref message_type) = metadata.message_type {
+                    match message_type.as_str() {
+                        "tool_call" => {
+                            service.reconstruct_tool_call_from_metadata(&metadata)
+                        }
+                        "tool_result" => {
+                            service.reconstruct_tool_result_from_metadata(&metadata, false)
+                        }
+                        unknown_type => {
+                            tracing::error!(
+                                message_type = %unknown_type,
+                                "Unknown message_type '{}' in Tool role, filtered from AI context. \
+                                 This may cause DATA LOSS. Add explicit handling if this is a valid message type.",
+                                unknown_type
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None  // Tool role without message_type metadata
+                }
+            }
+        }
     }
 }
 

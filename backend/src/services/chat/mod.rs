@@ -101,8 +101,11 @@ pub mod rig_tools;
 pub mod sync;
 
 pub use context::{
-    AttachmentManager, AttachmentKey, AttachmentValue, ESTIMATED_CHARS_PER_TOKEN,
-    HistoryManager, PRIORITY_ESSENTIAL, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM,
+    build_sorted_context_items, filter_messages_for_context, get_indices_to_truncate,
+    get_old_tool_result_indices, messages_to_context_items, truncate_at_char_boundary,
+    truncate_tool_output, AttachmentManager, AttachmentKey, AttachmentValue, ContextItem,
+    ESTIMATED_CHARS_PER_TOKEN, KEEP_RECENT_TOOL_RESULTS, HistoryManager, PRIORITY_ESSENTIAL,
+    PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM, TRUNCATED_TOOL_RESULT_PREVIEW,
 };
 
 pub use sync::{ChatFrontmatter, YamlFrontmatter};
@@ -118,8 +121,8 @@ use crate::{
 };
 use uuid::Uuid;
 
-/// Default token limit for the context window in the MVP.
-pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 4000;
+/// Default token limit for the context window (128k for modern models).
+pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 128000;
 
 /// Max length for tool output before truncation (2KB)
 const MAX_TOOL_OUTPUT_LENGTH: usize = 2048;
@@ -809,6 +812,10 @@ impl ChatService {
     }
 
     /// Builds the structured context for a chat session.
+    ///
+    /// # Arguments
+    /// * `exclude_last_message` - If true, excludes the last message (used for AI context where
+    ///   last message is the user's prompt). If false, includes all messages (used for Context UI).
     pub async fn build_context(
         conn: &mut DbConn,
         storage: &crate::services::storage::FileStorageService,
@@ -816,6 +823,7 @@ impl ChatService {
         chat_file_id: Uuid,
         default_persona: &str,
         default_context_token_limit: usize,
+        exclude_last_message: bool,
     ) -> Result<BuiltContext> {
         // 1. Load Session Identity & History
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
@@ -823,11 +831,13 @@ impl ChatService {
         // 2. Hydrate Persona
         let persona = default_persona.to_string();
 
-        // 3. Extract history (exclude current/last message which is the prompt)
-        let history_messages = if messages.len() > 1 {
+        // 3. Extract history (optionally exclude last message which is the prompt for AI context)
+        let history_messages = if exclude_last_message && messages.len() > 1 {
             messages[..messages.len() - 1].to_vec()
-        } else {
+        } else if exclude_last_message {
             Vec::new()
+        } else {
+            messages.clone()
         };
         let history = HistoryManager::new(history_messages);
 
@@ -848,6 +858,9 @@ impl ChatService {
                         // Estimate tokens (rough approximation: 4 chars per token)
                         let estimated_tokens = content.len() / ESTIMATED_CHARS_PER_TOKEN;
 
+                        // Get the file's updated_at timestamp for cache optimization
+                        let source_modified_at = Some(file_with_content.file.updated_at);
+
                         // Add to attachment manager with workspace file key
                         // Use MEDIUM priority for user-attached files
                         attachment_manager.add_fragment(
@@ -857,6 +870,8 @@ impl ChatService {
                                 priority: PRIORITY_MEDIUM,
                                 tokens: estimated_tokens,
                                 is_essential: false,
+                                created_at: chrono::Utc::now(),
+                                updated_at: source_modified_at,
                             },
                         );
                     }
@@ -875,6 +890,254 @@ impl ChatService {
             history,
             attachment_manager,
         })
+    }
+
+    // ========================================================================
+    // Context API Methods
+    // ========================================================================
+
+    /// Content preview length for context API responses
+    const CONTENT_PREVIEW_LENGTH: usize = 200;
+
+    /// Get detailed context information for debugging/inspection.
+    ///
+    /// Returns structured information about everything sent to the AI,
+    /// including system prompt, history, tools, and attachments with
+    /// character counts, token estimates, and helpful statistics.
+    pub async fn get_context_info(
+        conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
+        workspace_id: Uuid,
+        chat_file_id: Uuid,
+        default_persona: &str,
+        fallback_token_limit: usize,
+    ) -> Result<crate::models::chat::ChatContextResponse> {
+        // 1. Get session for model/mode info first (needed to determine token limit)
+        let _file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+        let agent_config: crate::models::chat::AgentConfig = match queries::files::get_latest_version(conn, chat_file_id).await {
+            Ok(version) => serde_json::from_value(version.app_data)?,
+            Err(_) => {
+                return Err(Error::NotFound("Chat has no configuration".into()));
+            }
+        };
+
+        // 2. Look up model's context window from database
+        let token_limit = Self::get_model_context_window(conn, &agent_config.model)
+            .await
+            .unwrap_or(fallback_token_limit);
+
+        // 3. Build context - include ALL messages for Context UI (no exclusion)
+        let context = Self::build_context(
+            conn, storage, workspace_id, chat_file_id, default_persona, token_limit,
+            false, // exclude_last_message=false for Context UI to show all messages
+        ).await?;
+
+        // 4. Build each section
+        let system_prompt = Self::build_system_prompt_section(&context.persona, &agent_config.mode);
+        let history = Self::build_history_section(&context.history.messages, &context.attachment_manager);
+        let tools = Self::build_tools_section();
+        let attachments = Self::build_attachments_section(&context.attachment_manager);
+
+        // 5. Build summary
+        let summary = Self::build_context_summary(
+            &system_prompt, &history, &tools, &attachments, &agent_config.model, token_limit
+        );
+
+        Ok(crate::models::chat::ChatContextResponse {
+            system_prompt,
+            history,
+            tools,
+            attachments,
+            summary,
+        })
+    }
+
+    /// Get the context window for a model from the database.
+    /// Model string format: "provider:model_name" (e.g., "openai:gpt-4o")
+    async fn get_model_context_window(conn: &mut DbConn, model: &str) -> Option<usize> {
+        let (provider, model_name) = model.split_once(':')?;
+        let ai_model = queries::ai_models::get_model_by_provider_and_name_conn(
+            conn, provider, model_name
+        ).await.ok()??;
+        ai_model.context_window.map(|cw| cw as usize)
+    }
+
+    fn build_system_prompt_section(persona: &str, mode: &str) -> crate::models::chat::SystemPromptSection {
+        let persona_type = if persona.contains("Planner") { "planner" }
+            else if persona.contains("Builder") { "builder" }
+            else { "assistant" };
+
+        crate::models::chat::SystemPromptSection {
+            content: persona.to_string(),
+            char_count: persona.len(),
+            token_count: persona.len() / ESTIMATED_CHARS_PER_TOKEN,
+            persona_type: persona_type.to_string(),
+            mode: mode.to_string(),
+        }
+    }
+
+    fn build_history_section(
+        messages: &[ChatMessage],
+        attachment_manager: &AttachmentManager,
+    ) -> crate::models::chat::HistorySection {
+        // Use centralized context building from context.rs (single source of truth)
+        // Pass None for render_fn since Context UI doesn't need rendered attachments
+        let items = build_sorted_context_items::<fn(&AttachmentKey, &AttachmentValue) -> String>(
+            messages,
+            Some(attachment_manager),
+            None,
+        );
+
+        // Use centralized truncation logic
+        let indices_to_truncate = get_indices_to_truncate(&items);
+
+        // Map back to message IDs that should be truncated
+        let ids_to_truncate: std::collections::HashSet<Uuid> = items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                if indices_to_truncate.contains(&i) {
+                    if let ContextItem::Message { metadata, .. } = item {
+                        if metadata.message_type.as_deref() == Some("tool_result") {
+                            // Find the original message to get its ID
+                            return messages
+                                .iter()
+                                .find(|msg| msg.metadata.message_type.as_deref() == Some("tool_result")
+                                    && msg.content == match item {
+                                        ContextItem::Message { content, .. } => content,
+                                        _ => "",
+                                    })
+                                .map(|msg| msg.id);
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
+
+        // Build history messages with truncation applied (using centralized filtering)
+        let filtered_messages = filter_messages_for_context(messages);
+        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = filtered_messages
+            .iter()
+            .map(|msg| {
+                let mut content = msg.content.clone();
+                let original_length = msg.content.len();
+
+                // Truncate old tool results using shared function
+                if ids_to_truncate.contains(&msg.id) {
+                    content = truncate_tool_output(&content);
+                }
+
+                let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
+                    let truncate_at = truncate_at_char_boundary(&content, Self::CONTENT_PREVIEW_LENGTH);
+                    format!("{}...", &content[..truncate_at])
+                } else {
+                    content
+                };
+
+                crate::models::chat::HistoryMessageInfo {
+                    role: msg.role.to_string().to_lowercase(),
+                    content_preview: preview,
+                    content_length: original_length,
+                    token_count: original_length / ESTIMATED_CHARS_PER_TOKEN,
+                    metadata: Some(crate::models::chat::HistoryMessageMetadata {
+                        message_type: msg.metadata.message_type.clone(),
+                        reasoning_id: msg.metadata.reasoning_id.clone(),
+                        tool_name: msg.metadata.tool_name.clone(),
+                        model: msg.metadata.model.clone(),
+                    }),
+                    created_at: msg.created_at,
+                }
+            })
+            .collect();
+
+        crate::models::chat::HistorySection {
+            message_count: history_messages.len(),
+            total_tokens: history_messages.iter().map(|m| m.token_count).sum(),
+            messages: history_messages,
+        }
+    }
+
+    fn build_tools_section() -> crate::models::chat::ToolsSection {
+        // Get all tool definitions
+        let tools = crate::tools::get_all_tool_definitions();
+        let schema_json = serde_json::to_string(&tools).unwrap_or_default();
+        let tool_count = tools.len();
+
+        crate::models::chat::ToolsSection {
+            tools,
+            tool_count,
+            estimated_schema_tokens: schema_json.len() / ESTIMATED_CHARS_PER_TOKEN,
+        }
+    }
+
+    fn build_attachments_section(manager: &AttachmentManager) -> crate::models::chat::AttachmentsSection {
+        let attachments: Vec<crate::models::chat::AttachmentInfo> = manager.map.iter().map(|(key, value)| {
+            let (attachment_type, id) = match key {
+                AttachmentKey::WorkspaceFile(fid) => ("workspace_file", *fid),
+                AttachmentKey::ActiveSkill(sid) => ("skill", *sid),
+                AttachmentKey::SystemPersona => ("system_persona", Uuid::nil()),
+                AttachmentKey::Environment => ("environment", Uuid::nil()),
+                AttachmentKey::ChatHistory => ("chat_history", Uuid::nil()),
+                AttachmentKey::UserRequest => ("user_request", Uuid::nil()),
+            };
+
+            let preview = if value.content.len() > Self::CONTENT_PREVIEW_LENGTH {
+                format!("{}...", &value.content[..Self::CONTENT_PREVIEW_LENGTH])
+            } else {
+                value.content.clone()
+            };
+
+            crate::models::chat::AttachmentInfo {
+                attachment_type: attachment_type.to_string(),
+                id,
+                content_preview: preview,
+                content_length: value.content.len(),
+                token_count: value.tokens,
+                priority: value.priority,
+                is_essential: value.is_essential,
+                created_at: value.created_at,
+                updated_at: value.updated_at,
+            }
+        }).collect();
+
+        crate::models::chat::AttachmentsSection {
+            attachment_count: attachments.len(),
+            total_tokens: attachments.iter().map(|a| a.token_count).sum(),
+            attachments,
+        }
+    }
+
+    fn build_context_summary(
+        system_prompt: &crate::models::chat::SystemPromptSection,
+        history: &crate::models::chat::HistorySection,
+        tools: &crate::models::chat::ToolsSection,
+        attachments: &crate::models::chat::AttachmentsSection,
+        model: &str,
+        token_limit: usize,
+    ) -> crate::models::chat::ContextSummary {
+        let breakdown = crate::models::chat::TokenBreakdown {
+            system_prompt_tokens: system_prompt.token_count,
+            history_tokens: history.total_tokens,
+            tools_tokens: tools.estimated_schema_tokens,
+            attachments_tokens: attachments.total_tokens,
+        };
+
+        let total = breakdown.system_prompt_tokens + breakdown.history_tokens
+            + breakdown.tools_tokens + breakdown.attachments_tokens;
+
+        let utilization = if token_limit > 0 {
+            (total as f64 / token_limit as f64) * 100.0
+        } else { 0.0 };
+
+        crate::models::chat::ContextSummary {
+            total_tokens: total,
+            utilization_percent: utilization,
+            model: model.to_string(),
+            token_limit,
+            breakdown,
+        }
     }
 }
 
