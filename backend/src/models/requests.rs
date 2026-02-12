@@ -878,6 +878,60 @@ pub struct LsEntry {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Trait for result types that contain a truncatable list.
+/// Used by the chat service to smartly truncate large results while preserving JSON structure.
+pub trait TruncatableList: serde::Serialize + Sized {
+    /// Returns the length of the list field
+    fn list_len(&self) -> usize;
+
+    /// Creates a new instance with the list truncated to the given limit
+    fn truncate_list(self, limit: usize) -> Self;
+}
+
+impl TruncatableList for LsResult {
+    fn list_len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.entries = self.entries.into_iter().take(limit).collect();
+        self
+    }
+}
+
+impl TruncatableList for GlobResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self
+    }
+}
+
+impl TruncatableList for FindResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self
+    }
+}
+
+impl TruncatableList for GrepResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrepResult {
     pub matches: Vec<GrepMatch>,

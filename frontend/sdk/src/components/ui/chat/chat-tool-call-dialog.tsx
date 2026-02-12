@@ -15,7 +15,7 @@ import { cn } from "@/utils"
  * Formats JSON with proper indentation
  */
 function formatJson(value: unknown): string {
-  if (!value) return ""
+  if (value === null || value === undefined) return ""
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value)

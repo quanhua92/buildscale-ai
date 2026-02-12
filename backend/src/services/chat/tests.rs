@@ -159,7 +159,7 @@ mod tests {
     fn test_tool_output_summarization_read() {
         use crate::services::chat::ChatService;
 
-        // Generate 1000 real lines
+        // Generate 1000 real lines as plain text (simulating non-JSON fallback case)
         let mut long_content = String::new();
         for i in 1..=1000 {
             long_content.push_str(&format!("This is line number {}\n", i));
@@ -170,26 +170,25 @@ mod tests {
 
         let summarized = ChatService::summarize_tool_outputs("read", &long_content);
 
-        // Verify it contains the total stats
-        assert!(summarized.contains("[Read"));
-        assert!(summarized.contains("1000 lines"));
+        // When non-JSON is passed, fallback_line_truncation is used
+        // Format: "{preview}\n... ({N} more lines)"
+        // Verify it contains the truncation indicator
+        assert!(summarized.contains("... ("));
+        assert!(summarized.contains("more lines)"));
 
-        // Verify it contains exactly the first 5 lines in the preview
+        // Verify it contains the first 20 lines (CONTENT_PREVIEW_LINES) in the preview
         assert!(summarized.contains("This is line number 1"));
-        assert!(summarized.contains("This is line number 5"));
+        assert!(summarized.contains("This is line number 20"));
 
-        // Verify it does NOT contain the 6th line in the preview
-        assert!(!summarized.contains("This is line number 6\n"));
-
-        // Verify the truncation marker
-        assert!(summarized.contains("... [truncated]"));
+        // Verify it does NOT contain the 21st line in the preview
+        assert!(!summarized.contains("This is line number 21\n"));
     }
 
     #[test]
     fn test_tool_input_summarization_write() {
         use crate::services::chat::ChatService;
 
-        // Use content with many words (lines) to ensure word-based truncation triggers
+        // Use content with many lines to ensure truncation triggers
         let mut long_content = String::new();
         for i in 1..=1000 {
             long_content.push_str(&format!("This is line number {}\n", i));
@@ -203,8 +202,9 @@ mod tests {
         let summarized = ChatService::summarize_tool_inputs("write", &args);
         let content = summarized.get("content").unwrap().as_str().unwrap();
 
-        // Should contain a preview and the truncation stats
-        assert!(content.contains("... [truncated, size="));
+        // Should contain a preview and the truncation stats with line count
+        assert!(content.contains("... [truncated,"));
+        assert!(content.contains("lines total]"));
         // The original is roughly 25,000 chars, summarized should be much smaller
         assert!(content.len() < 1000);
     }
@@ -213,10 +213,10 @@ mod tests {
     fn test_tool_input_summarization_edit() {
         use crate::services::chat::ChatService;
 
-        // Use content with many words
+        // Use content with many lines (line-based truncation is used now)
         let mut long_string = String::new();
         for i in 1..=100 {
-            long_string.push_str(&format!("word{} ", i));
+            long_string.push_str(&format!("word{}\n", i));
         }
 
         let args = serde_json::json!({
@@ -229,7 +229,9 @@ mod tests {
         let old_string = summarized.get("old_string").unwrap().as_str().unwrap();
         let new_string = summarized.get("new_string").unwrap().as_str().unwrap();
 
-        assert!(old_string.contains("... [truncated]"));
+        // New format includes line count
+        assert!(old_string.contains("... [truncated,"));
+        assert!(old_string.contains("lines]"));
         assert_eq!(new_string, "short");
     }
 
