@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Send, Paperclip, StopCircle, FileText, Upload } from "lucide-react"
+import { Send, Paperclip, StopCircle, FileText, Upload, AtSign } from "lucide-react"
 import { cn } from "src/utils"
 import { Button } from "../button"
 import {
@@ -78,6 +78,15 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         
         <div className="flex items-center justify-between px-2 pb-1">
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-full text-muted-foreground"
+              onClick={() => setIsFileSelectOpen(true)}
+              title="Add file from workspace"
+            >
+              <AtSign className="size-4" />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8 rounded-full text-muted-foreground">
