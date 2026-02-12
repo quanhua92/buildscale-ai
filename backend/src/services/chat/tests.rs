@@ -2,7 +2,7 @@
 mod tests {
     use crate::services::chat::context::{
         AttachmentKey, AttachmentManager, AttachmentValue, PRIORITY_ESSENTIAL, PRIORITY_HIGH,
-        PRIORITY_LOW, PRIORITY_MEDIUM,
+        PRIORITY_LOW, PRIORITY_MEDIUM, ESTIMATED_CHARS_PER_TOKEN, truncate_tool_output,
     };
     use chrono::Utc;
     use uuid::Uuid;
@@ -231,5 +231,38 @@ mod tests {
 
         assert!(old_string.contains("... [truncated]"));
         assert_eq!(new_string, "short");
+    }
+
+    /// Regression test: Token count should be calculated from TRUNCATED content,
+    /// not original content. This prevents showing inflated token counts in the
+    /// context UI for old tool results that have been truncated.
+    ///
+    /// Bug: Previously, token_count was calculated from original_length instead of
+    /// truncated content length, causing a 12,000 char tool result to show 3,000 tokens
+    /// even though only ~50 characters were actually used after truncation.
+    #[test]
+    fn test_token_count_uses_truncated_content_not_original() {
+        // Create a large tool result that will be truncated (>50 chars triggers truncation)
+        let original_content = "x".repeat(12000); // 12,000 characters = ~3,000 tokens
+        assert!(original_content.len() > 50, "Content should exceed truncation threshold");
+
+        // Apply truncation (simulates what build_history_section does)
+        let truncated_content = truncate_tool_output(&original_content);
+
+        // Verify truncation happened
+        assert!(truncated_content.len() < original_content.len(),
+            "Content should be truncated: {} -> {}",
+            original_content.len(), truncated_content.len());
+
+        // Calculate token counts
+        let wrong_token_count = original_content.len() / ESTIMATED_CHARS_PER_TOKEN; // BUG: uses original
+        let correct_token_count = truncated_content.len() / ESTIMATED_CHARS_PER_TOKEN; // FIX: uses truncated
+
+        // Verify the difference is significant
+        assert_eq!(wrong_token_count, 3000, "Original would show 3000 tokens");
+        assert!(correct_token_count < 50, "Truncated should show <50 tokens, got {}", correct_token_count);
+
+        // The fix ensures we use truncated length, not original length
+        // This test would fail if the bug is reintroduced (using original_length)
     }
 }

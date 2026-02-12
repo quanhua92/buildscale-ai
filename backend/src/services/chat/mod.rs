@@ -1029,6 +1029,9 @@ impl ChatService {
                     content = truncate_tool_output(&content);
                 }
 
+                // Calculate token count from truncated content (not original)
+                let truncated_length = content.len();
+
                 let preview = if content.len() > Self::CONTENT_PREVIEW_LENGTH {
                     let truncate_at = truncate_at_char_boundary(&content, Self::CONTENT_PREVIEW_LENGTH);
                     format!("{}...", &content[..truncate_at])
@@ -1040,7 +1043,7 @@ impl ChatService {
                     role: msg.role.to_string().to_lowercase(),
                     content_preview: preview,
                     content_length: original_length,
-                    token_count: original_length / ESTIMATED_CHARS_PER_TOKEN,
+                    token_count: truncated_length / ESTIMATED_CHARS_PER_TOKEN,
                     metadata: Some(crate::models::chat::HistoryMessageMetadata {
                         message_type: msg.metadata.message_type.clone(),
                         reasoning_id: msg.metadata.reasoning_id.clone(),

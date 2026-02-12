@@ -2,7 +2,6 @@
 
 use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
 use crate::tools::common::{execute_tool, write_file};
-use std::path::Path;
 
 #[tokio::test]
 async fn test_ls_root_directory() {
