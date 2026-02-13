@@ -88,9 +88,44 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
                 normalized
             }
         } else {
-            // Auto-generate name
-            let name = generate_plan_name();
-            format!("/plans/{}.plan", name)
+            // Auto-generate name with collision retry (max 5 attempts)
+            let mut attempts = 0;
+            let max_attempts = 5;
+            let mut chosen_path: Option<String> = None;
+
+            while attempts < max_attempts {
+                let name = generate_plan_name();
+                let candidate_path = format!("/plans/{}.plan", name);
+                let candidate_path = super::normalize_path(&candidate_path);
+
+                // Check if file already exists
+                let existing = file_queries::get_file_by_path(conn, workspace_id, &candidate_path).await?;
+                if existing.is_none() {
+                    // Path is available, use it
+                    chosen_path = Some(candidate_path);
+                    break;
+                }
+
+                attempts += 1;
+                tracing::debug!(
+                    attempt = attempts,
+                    candidate = %candidate_path,
+                    "Generated plan name collision, retrying"
+                );
+            }
+
+            match chosen_path {
+                Some(p) => p,
+                None => {
+                    return Err(Error::Validation(ValidationErrors::Single {
+                        field: "path".to_string(),
+                        message: format!(
+                            "Failed to generate unique plan name after {} attempts. Please provide a custom path.",
+                            max_attempts
+                        ),
+                    }));
+                }
+            }
         };
 
         let path = super::normalize_path(&path);
