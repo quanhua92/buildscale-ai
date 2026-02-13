@@ -8,16 +8,145 @@ async fn test_ls_root_directory() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "LS Test").await;
-    
+
     write_file(&app, &workspace_id, &token, "/file1.md", serde_json::json!({"text": "content1"})).await;
     write_file(&app, &workspace_id, &token, "/file2.md", serde_json::json!({"text": "content2"})).await;
-    
+
     let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({})).await;
     assert_eq!(response.status(), 200);
-    
+
     let body: serde_json::Value = response.json().await.unwrap();
     assert!(body["success"].as_bool().unwrap());
     assert_eq!(body["result"]["entries"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn test_ls_with_limit_parameter() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "LS Limit Test").await;
+
+    // Create 5 files
+    for i in 1..=5 {
+        write_file(&app, &workspace_id, &token, &format!("/file{}.md", i), serde_json::json!({"text": format!("content{}", i)})).await;
+    }
+
+    // Test with limit = 2
+    let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({
+        "limit": 2
+    })).await;
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+    assert_eq!(body["result"]["entries"].as_array().unwrap().len(), 2, "Should return exactly 2 entries with limit=2");
+}
+
+#[tokio::test]
+async fn test_ls_with_limit_smaller_than_total() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "LS Limit Smaller Test").await;
+
+    // Create 3 files
+    write_file(&app, &workspace_id, &token, "/file1.md", serde_json::json!({"text": "content1"})).await;
+    write_file(&app, &workspace_id, &token, "/file2.md", serde_json::json!({"text": "content2"})).await;
+    write_file(&app, &workspace_id, &token, "/file3.md", serde_json::json!({"text": "content3"})).await;
+
+    // Test with limit = 2 (smaller than total)
+    let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({
+        "limit": 2
+    })).await;
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    let entries = body["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "Should return exactly 2 entries");
+}
+
+#[tokio::test]
+async fn test_ls_with_limit_larger_than_total() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "LS Limit Larger Test").await;
+
+    // Create 2 files
+    write_file(&app, &workspace_id, &token, "/file1.md", serde_json::json!({"text": "content1"})).await;
+    write_file(&app, &workspace_id, &token, "/file2.md", serde_json::json!({"text": "content2"})).await;
+
+    // Test with limit = 10 (larger than total)
+    let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({
+        "limit": 10
+    })).await;
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    let entries = body["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "Should return all 2 entries (limit larger than total)");
+}
+
+#[tokio::test]
+async fn test_ls_with_limit_zero_unlimited() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "LS Limit Zero Test").await;
+
+    // Create 5 files
+    for i in 1..=5 {
+        write_file(&app, &workspace_id, &token, &format!("/file{}.md", i), serde_json::json!({"text": format!("content{}", i)})).await;
+    }
+
+    // Test with limit = 0 (unlimited)
+    let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({
+        "limit": 0
+    })).await;
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    let entries = body["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 5, "Should return all 5 entries with limit=0 (unlimited)");
+}
+
+#[tokio::test]
+async fn test_ls_default_limit_behavior() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "LS Default Limit Test").await;
+
+    // Create 3 files (less than default 500)
+    write_file(&app, &workspace_id, &token, "/file1.md", serde_json::json!({"text": "content1"})).await;
+    write_file(&app, &workspace_id, &token, "/file2.md", serde_json::json!({"text": "content2"})).await;
+    write_file(&app, &workspace_id, &token, "/file3.md", serde_json::json!({"text": "content3"})).await;
+
+    // Test without limit parameter (should use default 500)
+    let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({})).await;
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    let entries = body["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 3, "Should return all 3 entries (default limit 500 applies, but we only have 3)");
+}
+
+#[tokio::test]
+async fn test_ls_limit_with_string_value() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "LS Limit String Test").await;
+
+    // Create 3 files
+    write_file(&app, &workspace_id, &token, "/file1.md", serde_json::json!({"text": "content1"})).await;
+    write_file(&app, &workspace_id, &token, "/file2.md", serde_json::json!({"text": "content2"})).await;
+    write_file(&app, &workspace_id, &token, "/file3.md", serde_json::json!({"text": "content3"})).await;
+
+    // Test with limit as string "2"
+    let response = execute_tool(&app, &workspace_id, &token, "ls", serde_json::json!({
+        "limit": "2"
+    })).await;
+    assert_eq!(response.status(), 200);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    let entries = body["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "Should accept limit as string and return 2 entries");
 }
 
 #[tokio::test]

@@ -1,7 +1,6 @@
 import * as React from "react"
-import { toast } from "sonner"
-import { useAuth } from "../../../context/AuthContext"
 import { sortFileEntries } from "../../../utils"
+import { useTools } from "../../../hooks/useTools"
 import { Button } from "../button"
 import {
   Dialog,
@@ -20,7 +19,7 @@ import {
 } from "../breadcrumb"
 import { FileSearchInput } from "../file-search-input"
 import { Loader2, FolderIcon, FileText, ChevronRight, Home } from "lucide-react"
-import type { LsEntry, LsResult, FindMatch } from "../../../api/types"
+import type { LsEntry, FindMatch } from "../../../api/types"
 
 interface ChatFileSelectDialogProps {
   open: boolean
@@ -35,7 +34,7 @@ export function ChatFileSelectDialog({
   onSelect,
   workspaceId,
 }: ChatFileSelectDialogProps) {
-  const { executeTool } = useAuth()
+  const { ls } = useTools(workspaceId)
   const [browsingPath, setBrowsingPath] = React.useState("/")
   const [entries, setEntries] = React.useState<LsEntry[]>([])
   const [isLoading, setIsLoading] = React.useState(false)
@@ -47,29 +46,20 @@ export function ChatFileSelectDialog({
 
   const isSearchMode = searchQuery.trim().length > 0
 
-  // API Helper
-  const callTool = React.useCallback(async <T,>(tool: string, args: any): Promise<T | null> => {
-    const result = await executeTool<T>(workspaceId, tool, args)
-    if (!result.success) {
-      toast.error(result.error?.message || 'Tool execution failed')
-      return null
-    }
-    return result.data || null
-  }, [executeTool, workspaceId])
-
   const fetchEntries = React.useCallback(async (path: string) => {
     setIsLoading(true)
     try {
-      const result = await callTool<LsResult>('ls', { path })
+      // Use limit: 0 to get all entries for file select dialog
+      const result = await ls(path, { limit: 0 })
       if (result) {
         // Sort: Folders first, then files
-        const sorted = result.entries.sort(sortFileEntries)
+        const sorted = (result.entries as LsEntry[]).sort(sortFileEntries)
         setEntries(sorted)
       }
     } finally {
       setIsLoading(false)
     }
-  }, [callTool])
+  }, [ls])
 
   // Fetch when dialog opens
   React.useEffect(() => {

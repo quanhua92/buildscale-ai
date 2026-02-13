@@ -574,6 +574,8 @@ pub struct LsArgs {
     pub path: Option<String>,
     #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub recursive: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

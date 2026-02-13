@@ -254,14 +254,15 @@ Authorization: Bearer <access_token>
 
 ### ls - List Directory Contents
 
-Lists files and folders in a directory within a workspace. Supports both single-level and recursive listing.
+Lists files and folders in a directory within a workspace. Supports both single-level and recursive listing with optional result limiting.
 
 #### Arguments
 
 ```json
 {
   "path": "/folder",
-  "recursive": false
+  "recursive": false,
+  "limit": 500
 }
 ```
 
@@ -269,6 +270,7 @@ Lists files and folders in a directory within a workspace. Supports both single-
 |-------|------|----------|---------|-------------|
 | `path` | string | No | `/` | Directory path to list |
 | `recursive` | boolean | No | `false` | Recursively list all descendants |
+| `limit` | integer | No | `500` | Maximum entries to return. Use `0` for unlimited |
 
 #### Request Example
 
@@ -280,7 +282,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "ls",
     "args": {
       "path": "/documents",
-      "recursive": false
+      "recursive": false,
+      "limit": 100
     }
   }'
 ```
@@ -330,12 +333,17 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Non-recursive mode** (default): Returns immediate children only
 - **Recursive mode**: Returns all descendants with paths matching the prefix
+- **Limit behavior**:
+  - Default limit is 500 entries when not specified
+  - `limit: 0` returns unlimited entries (useful for UI components that need all entries)
+  - Limit is applied after merging database and filesystem entries, and after sorting (folders first)
 - **Directory Validation**: Returns `400 Bad Request` if the target path is a file
 - **Path resolution**: Uses `get_file_by_path()` to resolve the directory
-- **Sorting**: Entries sorted by path in ascending order
+- **Sorting**: Folders first, then sorted by path in ascending order
 
 **CRITICAL USAGE NOTES:**
 - Use `recursive: true` for discovering all files in a directory tree
+- Use `limit: 0` when you need all entries (e.g., file explorer dialogs)
 - Returns `path` as "/" when listing root directory
 - Folders are returned first in the entries list for better readability
 - Check `is_virtual` field to identify system-managed files that cannot be edited directly
