@@ -262,7 +262,7 @@ Lists files and folders in a directory within a workspace. Supports both single-
 {
   "path": "/folder",
   "recursive": false,
-  "limit": 500
+  "limit": 50
 }
 ```
 
@@ -270,7 +270,7 @@ Lists files and folders in a directory within a workspace. Supports both single-
 |-------|------|----------|---------|-------------|
 | `path` | string | No | `/` | Directory path to list |
 | `recursive` | boolean | No | `false` | Recursively list all descendants |
-| `limit` | integer | No | `500` | Maximum entries to return. Use `0` for unlimited |
+| `limit` | integer | No | `50` | Maximum entries to return. Use `0` for unlimited |
 
 #### Request Example
 
@@ -963,7 +963,8 @@ Searches for a regex pattern in all document files within the workspace. This to
 {
   "pattern": "fn \\w+\\(",
   "path_pattern": "%.rs",
-  "case_sensitive": false
+  "case_sensitive": false,
+  "limit": 50
 }
 ```
 
@@ -972,6 +973,7 @@ Searches for a regex pattern in all document files within the workspace. This to
 | `pattern` | string | Yes | Regex pattern to search for (Postgres regex syntax) |
 | `path_pattern` | string | No | Optional SQL LIKE pattern to filter file paths (e.g., `%.rs`, `/src/%`) |
 | `case_sensitive` | boolean | No | Whether the search should be case-sensitive. Default: `false`. |
+| `limit` | integer | No | Maximum matches to return. Default: `50`. Use `0` for unlimited. |
 
 #### Request Example
 
@@ -1012,7 +1014,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Fuzzy Path Matching**: The `path_pattern` is case-insensitive and automatically normalized. You can use `*` as a wildcard (e.g., `src/*` or `*.rs`). If no wildcards are provided, it assumes a fuzzy "contains" match on the path.
 - **Performance**: Searches across the latest versions of all text-searchable files in the database.
 - **Virtual Files**: Supports searching system-managed files (e.g., Chats) by automatically expanding their JSON content into a readable text format.
-- **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
+- **Results Limit**: Results are limited to the first 50 matches by default (configurable via `limit` parameter). Use `limit: 0` for unlimited.
 - **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
 
 **CRITICAL USAGE NOTES:**
@@ -1377,7 +1379,8 @@ Finds files by metadata criteria using Unix find command for filesystem discover
   "file_type": "folder",
   "min_size": 1048576,
   "max_size": 10485760,
-  "recursive": true
+  "recursive": true,
+  "limit": 50
 }
 ```
 
@@ -1389,6 +1392,7 @@ Finds files by metadata criteria using Unix find command for filesystem discover
 | `min_size` | integer | No | Minimum file size in bytes |
 | `max_size` | integer | No | Maximum file size in bytes |
 | `recursive` | boolean | No | Search subdirectories (default: `true`) |
+| `limit` | integer | No | Maximum matches to return. Default: `50`. Use `0` for unlimited. |
 
 #### Request Example
 

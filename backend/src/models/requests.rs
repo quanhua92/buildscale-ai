@@ -667,6 +667,9 @@ pub struct GrepArgs {
     /// Number of lines to show before and after each match (shorthand for before_context + after_context)
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
     pub context: Option<usize>,
+    /// Maximum number of matches to return. Default: 50. Use 0 for unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -795,6 +798,9 @@ pub struct FindArgs {
     pub max_size: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_bool_option")]
     pub recursive: Option<bool>,
+    /// Maximum number of matches to return. Default: 50. Use 0 for unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

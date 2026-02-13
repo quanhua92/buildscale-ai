@@ -185,7 +185,7 @@ impl Tool for GrepTool {
     fn description(&self) -> &'static str {
         r#"Searches regex pattern in files using ripgrep. Case-insensitive by default.
 
-PARAMETERS: pattern (required), path_pattern (wildcards), case_sensitive, before_context/after_context/context (lines around matches).
+PARAMETERS: pattern (required), path_pattern (wildcards), case_sensitive, before_context/after_context/context (lines around matches), limit (default 50).
 
 EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
     }
@@ -211,6 +211,10 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
                 "context": {
                     "type": ["integer", "string", "null"],
                     "description": "Shorthand for before_context and after_context combined. Accepts integer or string (e.g., 3 or '3')"
+                },
+                "limit": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum matches to return. Default: 50. Use 0 for unlimited. Accepts integer or string."
                 }
             },
             "required": ["pattern"],
@@ -308,8 +312,9 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
         let stdout = String::from_utf8_lossy(&output.stdout);
         tracing::debug!("Grep stdout length: {} bytes", stdout.len());
 
+        // Get limit from args (default: 50, 0 means unlimited)
+        let limit = grep_args.limit.unwrap_or(50);
         let mut matches = Vec::new();
-        const MAX_MATCHES: usize = 1000;
 
         // Get normalized path_pattern for filtering (needed for grep fallback)
         let path_pattern_filter = grep_args.path_pattern.as_deref();
@@ -320,7 +325,8 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
             let mut file_path_cache = HashMap::new();
             let mut context_tracker = ContextTracker::new();
             for line in stdout.lines() {
-                if matches.len() >= MAX_MATCHES {
+                // limit: 0 means unlimited, otherwise stop at limit
+                if limit > 0 && matches.len() >= limit {
                     break;
                 }
 
@@ -336,7 +342,8 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
             // Use plain text parser for grep
             tracing::debug!("Parsing grep plain text output");
             for line in stdout.lines() {
-                if matches.len() >= MAX_MATCHES {
+                // limit: 0 means unlimited, otherwise stop at limit
+                if limit > 0 && matches.len() >= limit {
                     break;
                 }
 

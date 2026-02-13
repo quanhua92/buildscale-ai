@@ -34,7 +34,7 @@ impl Tool for FindTool {
     fn description(&self) -> &'static str {
         r#"Finds files by metadata using Unix find.
 
-PARAMETERS: name (wildcards), path, file_type (document/folder/canvas), min_size/max_size (bytes), recursive (default true).
+PARAMETERS: name (wildcards), path, file_type (document/folder/canvas), min_size/max_size (bytes), recursive (default true), limit (default 50).
 
 EXAMPLES: {"name":"*.txt"} or {"file_type":"folder"} or {"min_size":1048576}"#
     }
@@ -66,6 +66,10 @@ EXAMPLES: {"name":"*.txt"} or {"file_type":"folder"} or {"min_size":1048576}"#
                 "recursive": {
                     "type": ["boolean", "string", "null"],
                     "description": "Search subdirectories (default: true). Accepts boolean or string (e.g., true or 'true')."
+                },
+                "limit": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum matches to return. Default: 50. Use 0 for unlimited. Accepts integer or string."
                 }
             },
             "required": [],
@@ -243,6 +247,12 @@ EXAMPLES: {"name":"*.txt"} or {"file_type":"folder"} or {"min_size":1048576}"#
 
         // Sort matches by path for deterministic output
         matches.sort_by(|a, b| a.path.cmp(&b.path));
+
+        // Apply limit (default: 50, 0 means unlimited)
+        let limit = args.limit.unwrap_or(50);
+        if limit > 0 && matches.len() > limit {
+            matches.truncate(limit);
+        }
 
         let result = FindResult {
             matches,
