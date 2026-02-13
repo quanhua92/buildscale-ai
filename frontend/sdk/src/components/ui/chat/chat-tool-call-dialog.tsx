@@ -395,10 +395,10 @@ function ToolPreview({
                   </div>
                   <span className={cn(
                     "px-2 py-0.5 text-xs rounded-full",
-                    parsed.metadata.status === "draft" && "bg-gray-100 text-gray-700",
-                    parsed.metadata.status === "approved" && "bg-green-100 text-green-700",
-                    parsed.metadata.status === "implemented" && "bg-blue-100 text-blue-700",
-                    parsed.metadata.status === "archived" && "bg-yellow-100 text-yellow-700"
+                    parsed.metadata.status === "draft" && "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                    parsed.metadata.status === "approved" && "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+                    parsed.metadata.status === "implemented" && "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                    parsed.metadata.status === "archived" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
                   )}>
                     {parsed.metadata.status}
                   </span>
@@ -493,10 +493,10 @@ function ToolPreview({
                   {plan.metadata?.status && (
                     <span className={cn(
                       "px-2 py-0.5 text-xs rounded-full",
-                      plan.metadata.status === "draft" && "bg-gray-100 text-gray-700",
-                      plan.metadata.status === "approved" && "bg-green-100 text-green-700",
-                      plan.metadata.status === "implemented" && "bg-blue-100 text-blue-700",
-                      plan.metadata.status === "archived" && "bg-yellow-100 text-yellow-700"
+                      plan.metadata.status === "draft" && "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                      plan.metadata.status === "approved" && "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+                      plan.metadata.status === "implemented" && "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                      plan.metadata.status === "archived" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
                     )}>
                       {plan.metadata.status}
                     </span>

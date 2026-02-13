@@ -2044,7 +2044,7 @@ Edits a plan file while preserving YAML frontmatter.
 | `insert_content` | string | No* | For INSERT: content to insert |
 | `last_read_hash` | string | No | Hash from latest read (prevents conflicts) |
 
-*Either (old_string + new_string) OR (insert_line + insert_content) is required.
+*Either (`old_string` and `new_string`) OR (`insert_line` and `insert_content`) is required.
 
 #### Request Example
 

@@ -81,8 +81,8 @@ Edits a plan file while preserving YAML frontmatter.
 
 **Arguments:**
 - `path` (required): Path to plan file
-- `old_string` + `new_string`: For replace operation
-- `insert_line` + `insert_content`: For insert operation
+- `old_string` and `new_string`: For replace operation
+- `insert_line` and `insert_content`: For insert operation
 - `last_read_hash` (optional): Hash from latest read (prevents conflicts)
 
 **Example:**
