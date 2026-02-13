@@ -3,6 +3,7 @@ use crate::models::requests::{
     EditArgs, GrepArgs, GlobArgs, LsArgs, FileInfoArgs, MkdirArgs, MvArgs, ReadArgs, ReadMultipleFilesArgs, RmArgs, TouchArgs, WriteArgs,
     FindArgs, CatArgs,
     AskUserArgs, ExitPlanModeArgs,
+    PlanWriteArgs, PlanReadArgs, PlanEditArgs, PlanListArgs,
 };
 use crate::services::storage::FileStorageService;
 use crate::tools;
@@ -319,4 +320,32 @@ define_rig_tool!(
     "cat"
 );
 
+// Plan management tools
+define_rig_tool!(
+    RigPlanWriteTool,
+    tools::plan_write::PlanWriteTool,
+    PlanWriteArgs,
+    "plan_write"
+);
+
+define_rig_tool!(
+    RigPlanReadTool,
+    tools::plan_read::PlanReadTool,
+    PlanReadArgs,
+    "plan_read"
+);
+
+define_rig_tool!(
+    RigPlanEditTool,
+    tools::plan_edit::PlanEditTool,
+    PlanEditArgs,
+    "plan_edit"
+);
+
+define_rig_tool!(
+    RigPlanListTool,
+    tools::plan_list::PlanListTool,
+    PlanListArgs,
+    "plan_list"
+);
 

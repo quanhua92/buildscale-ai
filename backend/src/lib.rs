@@ -11,6 +11,7 @@ pub mod queries;
 pub mod services;
 pub mod state;
 pub mod tools;
+pub mod utils;
 pub mod validation;
 pub mod workers;
 

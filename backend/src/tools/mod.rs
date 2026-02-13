@@ -20,6 +20,10 @@ pub mod file_info;
 pub mod read_multiple_files;
 pub mod find;
 pub mod cat;
+pub mod plan_write;
+pub mod plan_read;
+pub mod plan_edit;
+pub mod plan_list;
 
 pub mod helpers;
 
@@ -150,6 +154,10 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "read_multiple_files" => Ok(ToolExecutor::ReadMultipleFiles),
         "find" => Ok(ToolExecutor::Find),
         "cat" => Ok(ToolExecutor::Cat),
+        "plan_write" => Ok(ToolExecutor::PlanWrite),
+        "plan_read" => Ok(ToolExecutor::PlanRead),
+        "plan_edit" => Ok(ToolExecutor::PlanEdit),
+        "plan_list" => Ok(ToolExecutor::PlanList),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -199,6 +207,10 @@ pub enum ToolExecutor {
     ReadMultipleFiles,
     Find,
     Cat,
+    PlanWrite,
+    PlanRead,
+    PlanEdit,
+    PlanList,
 }
 
 impl ToolExecutor {
@@ -228,6 +240,10 @@ impl ToolExecutor {
             ToolExecutor::ReadMultipleFiles => "read_multiple_files",
             ToolExecutor::Find => "find",
             ToolExecutor::Cat => "cat",
+            ToolExecutor::PlanWrite => "plan_write",
+            ToolExecutor::PlanRead => "plan_read",
+            ToolExecutor::PlanEdit => "plan_edit",
+            ToolExecutor::PlanList => "plan_list",
         };
 
         let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
@@ -252,6 +268,10 @@ impl ToolExecutor {
             ToolExecutor::ReadMultipleFiles => read_multiple_files::ReadMultipleFilesTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::Find => find::FindTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::Cat => cat::CatTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanWrite => plan_write::PlanWriteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanRead => plan_read::PlanReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanEdit => plan_edit::PlanEditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanList => plan_list::PlanListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {
@@ -361,6 +381,26 @@ pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
             name: "exit_plan_mode".into(),
             description: exit_plan_mode::ExitPlanModeTool.description().into(),
             parameters: exit_plan_mode::ExitPlanModeTool.definition(),
+        },
+        ToolDefinition {
+            name: "plan_write".into(),
+            description: plan_write::PlanWriteTool.description().into(),
+            parameters: plan_write::PlanWriteTool.definition(),
+        },
+        ToolDefinition {
+            name: "plan_read".into(),
+            description: plan_read::PlanReadTool.description().into(),
+            parameters: plan_read::PlanReadTool.definition(),
+        },
+        ToolDefinition {
+            name: "plan_edit".into(),
+            description: plan_edit::PlanEditTool.description().into(),
+            parameters: plan_edit::PlanEditTool.definition(),
+        },
+        ToolDefinition {
+            name: "plan_list".into(),
+            description: plan_list::PlanListTool.description().into(),
+            parameters: plan_list::PlanListTool.definition(),
         },
     ]
 }

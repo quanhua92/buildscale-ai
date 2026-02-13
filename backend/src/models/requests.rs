@@ -1023,3 +1023,115 @@ pub struct ExitPlanModeResult {
     pub mode: String,
     pub plan_file: String,
 }
+
+// ============================================================================
+// PLAN TOOLS: plan_write, plan_read, plan_edit, plan_list
+// ============================================================================
+
+/// Arguments for plan_write tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanWriteArgs {
+    /// Title of the plan (used in frontmatter)
+    pub title: String,
+    /// Plan content (markdown)
+    pub content: String,
+    /// Optional path - if not provided, auto-generates name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Status of the plan (default: draft)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+/// Arguments for plan_read tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanReadArgs {
+    /// Path to the plan file
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Name of the plan (without .plan extension, searches /plans/)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Read parameters (passed through to read tool)
+    #[serde(default, deserialize_with = "deserialize_flexible_isize_option")]
+    pub offset: Option<isize>,
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
+    pub cursor: Option<usize>,
+}
+
+/// Arguments for plan_edit tool (same as edit, but plan-specific)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanEditArgs {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_string: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_string: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option", skip_serializing_if = "Option::is_none")]
+    pub insert_line: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insert_content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_hash: Option<String>,
+}
+
+/// Arguments for plan_list tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanListArgs {
+    /// Filter by status
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Maximum number of results
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option", skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// Result for plan_write tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanWriteResult {
+    pub path: String,
+    pub file_id: Uuid,
+    pub version_id: Uuid,
+    pub hash: String,
+    pub metadata: crate::utils::frontmatter::PlanMetadata,
+}
+
+/// Result for plan_read tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanReadResult {
+    pub path: String,
+    pub metadata: Option<crate::utils::frontmatter::PlanMetadata>,
+    pub content: String,
+    pub hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_lines: Option<usize>,
+}
+
+/// Single plan item in plan_list result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanListItem {
+    pub path: String,
+    pub name: String,
+    pub metadata: Option<crate::utils::frontmatter::PlanMetadata>,
+}
+
+/// Result for plan_list tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanListResult {
+    pub plans: Vec<PlanListItem>,
+    pub total: usize,
+}
+
+impl TruncatableList for PlanListResult {
+    fn list_len(&self) -> usize {
+        self.plans.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.plans = self.plans.into_iter().take(limit).collect();
+        self.total = self.plans.len();
+        self
+    }
+}
