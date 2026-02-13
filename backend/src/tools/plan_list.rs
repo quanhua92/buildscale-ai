@@ -114,10 +114,8 @@ Optionally filter by status."#
                 name,
                 metadata,
             });
-
-            if plans.len() >= limit {
-                break;
-            }
+            // NOTE: Do NOT break early - must collect all plans before sorting
+            // to ensure we return the most recent N plans, not an arbitrary subset
         }
 
         // Sort by created_at descending (newest first)
@@ -127,7 +125,12 @@ Optionally filter by status."#
             b_time.cmp(&a_time)
         });
 
+        // Apply limit AFTER sorting to get most recent plans
         let total = plans.len();
+        if plans.len() > limit {
+            plans.truncate(limit);
+        }
+
         let result = PlanListResult { plans, total };
 
         Ok(ToolResponse {
