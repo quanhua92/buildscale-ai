@@ -293,3 +293,35 @@ if __name__ == "__main__":
         assert!(path.starts_with("/scripts/"), "All matches should be in /scripts/ directory, got: {}", path);
     }
 }
+
+#[tokio::test]
+async fn test_grep_specific_file_path() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Grep Specific File Test").await;
+
+    // Create multiple files with the same search term
+    write_file(&app, &workspace_id, &token, "/tests/tool-validation/grep_test.txt",
+        serde_json::json!("Test file with unique string: MATCH_ME_PLEASE\nAlso has common words: the and and")).await;
+    write_file(&app, &workspace_id, &token, "/tests/other.txt",
+        serde_json::json!("This also has MATCH_ME_PLEASE but should not be found")).await;
+    write_file(&app, &workspace_id, &token, "/src/main.rs",
+        serde_json::json!("// MATCH_ME_PLEASE in rust file")).await;
+
+    // Search for pattern in a specific file path (not wildcard or directory)
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "MATCH_ME_PLEASE",
+        "path_pattern": "/tests/tool-validation/grep_test.txt"
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    let matches = body["result"]["matches"].as_array().unwrap();
+
+    // Should only find matches in the specific file, not in other files
+    assert_eq!(matches.len(), 1, "Should find exactly 1 match in the specific file");
+    assert_eq!(matches[0]["path"], "/tests/tool-validation/grep_test.txt");
+    assert!(matches[0]["line_text"].as_str().unwrap().contains("MATCH_ME_PLEASE"));
+}

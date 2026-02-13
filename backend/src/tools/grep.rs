@@ -430,16 +430,26 @@ fn build_ripgrep_command(
     if let Some(path_pattern) = path_pattern {
         let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
 
-        // Fix: If pattern looks like a directory (no wildcards), append ** to match files inside
-        // Example: "scripts" -> "scripts/**" to match all files under scripts/
-        // Example: "*.py" -> "*.py" (already a file pattern, keep as-is)
-        // Example: "scripts/**/*.py" -> "scripts/**/*.py" (already has wildcard, keep as-is)
-        let glob_pattern = if !normalized_pattern.contains('*') {
-            // Directory-like pattern without wildcards - append /**
-            format!("{}/**", normalized_pattern)
-        } else {
-            // Already contains wildcards - use as-is
+        // Determine if pattern is a file path or directory
+        // - Has wildcards (* or ?): use as-is
+        // - Exists as directory: append /** to match files inside
+        // - Exists as file or doesn't exist: use as-is
+        let glob_pattern = if normalized_pattern.contains('*') || normalized_pattern.contains('?') {
+            // Already has wildcards - use as-is
             normalized_pattern.to_string()
+        } else {
+            // Check filesystem to determine if it's a directory
+            let full_path = workspace_path.join(normalized_pattern);
+            match std::fs::metadata(&full_path) {
+                Ok(metadata) if metadata.is_dir() => {
+                    // It's a directory - append /** to match files inside
+                    format!("{}/**", normalized_pattern)
+                }
+                _ => {
+                    // It's a file or doesn't exist - use as-is
+                    normalized_pattern.to_string()
+                }
+            }
         };
 
         cmd.arg("--glob").arg(glob_pattern);
