@@ -35,7 +35,7 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Lists directory contents. Folders first. Parameters: path (default '/'), recursive (default false), limit (default 500). Hybrid DB + filesystem discovery."
+        "Lists directory contents. Folders first. Parameters: path (default '/'), recursive (default false), limit (default 50). Hybrid DB + filesystem discovery."
     }
 
     fn definition(&self) -> Value {
@@ -49,7 +49,7 @@ impl Tool for LsTool {
                 },
                 "limit": {
                     "type": ["integer", "string", "null"],
-                    "description": "Maximum entries to return. Default: 500. Use 0 for unlimited. Accepts integer or string."
+                    "description": "Maximum entries to return. Default: 50. Use 0 for unlimited. Accepts integer or string."
                 }
             },
             "additionalProperties": false
@@ -68,7 +68,7 @@ impl Tool for LsTool {
         let ls_args: LsArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&ls_args.path.unwrap_or_else(|| "/".to_string()));
         let recursive = ls_args.recursive.unwrap_or(false);
-        let limit = ls_args.limit.unwrap_or(500);
+        let limit = ls_args.limit.unwrap_or(50);
 
         let parent_id = if path == "/" {
             None
