@@ -18,11 +18,13 @@ impl Tool for ExitPlanModeTool {
     }
 
     fn description(&self) -> &'static str {
-        r#"Exits Plan Mode to Build Mode. REQUIRES button click approval.
+        r##"Exits Plan Mode to Build Mode. REQUIRES button click approval.
 
 WORKFLOW: Create plan (file_type="plan") → ask_user Accept/Reject → if Accept, call this tool.
 
-SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must have .plan extension."#
+⚠️ AFTER TRANSITION: The Builder Agent MUST start executing the plan IMMEDIATELY. No questions, no waiting. Execute step 1 right away.
+
+SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must have .plan extension."##
     }
 
     fn definition(&self) -> Value {

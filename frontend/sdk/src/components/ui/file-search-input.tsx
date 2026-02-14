@@ -1,10 +1,9 @@
 import * as React from "react"
-import { toast } from "sonner"
-import { useAuth } from "../../context/AuthContext"
+import { useTools } from "../../hooks/useTools"
 import { Input } from "./input"
 import { X } from "lucide-react"
 import { cn, debounce, sortFileEntries } from "../../utils"
-import type { FindMatch, FindResult } from "../../api/types"
+import type { FindMatch } from "../../api/types"
 
 interface FileSearchInputProps {
   workspaceId: string
@@ -25,7 +24,7 @@ export function FileSearchInput({
   debounceMs = 300,
   className,
 }: FileSearchInputProps) {
-  const { executeTool } = useAuth()
+  const { find } = useTools(workspaceId)
   const [query, setQuery] = React.useState("")
 
   const searchFiles = React.useCallback(async (searchQuery: string) => {
@@ -35,19 +34,13 @@ export function FileSearchInput({
     }
     onSearchingChange?.(true)
     try {
-      const result = await executeTool<FindResult>(workspaceId, 'find', {
-        name: `*${searchQuery}*`,
-        path: '/'
-      })
-      if (result.success && result.data) {
+      const result = await find(`*${searchQuery}*`)
+      if (result) {
         // Sort: folders first, then by name
-        const sorted = result.data.matches.sort(sortFileEntries)
+        const sorted = (result.matches as FindMatch[]).sort(sortFileEntries)
         onResults(sorted)
       } else {
         onResults([])
-        if (result.error) {
-          toast.error(result.error.message || 'Search failed')
-        }
       }
     } catch (error) {
       console.error('Search failed:', error)
@@ -55,7 +48,7 @@ export function FileSearchInput({
     } finally {
       onSearchingChange?.(false)
     }
-  }, [workspaceId, executeTool, onResults, onSearchingChange])
+  }, [find, onResults, onSearchingChange])
 
   const debouncedSearch = React.useMemo(
     () => debounce(searchFiles, debounceMs),

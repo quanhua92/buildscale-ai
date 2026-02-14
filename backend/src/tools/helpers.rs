@@ -293,6 +293,12 @@ pub async fn delete_file_from_disk(
     // Note: workspace_path already includes /latest, don't add it again
     let file_path = workspace_path.join(relative_path);
 
-    tokio::fs::remove_file(&file_path).await?;
+    // Check if path is a directory or file and use appropriate removal method
+    let metadata = tokio::fs::metadata(&file_path).await?;
+    if metadata.is_dir() {
+        tokio::fs::remove_dir(&file_path).await?;
+    } else {
+        tokio::fs::remove_file(&file_path).await?;
+    }
     Ok(())
 }

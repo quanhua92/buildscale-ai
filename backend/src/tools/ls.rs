@@ -35,7 +35,7 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Lists directory contents. Folders first. Parameters: path (default '/'), recursive (default false). Hybrid DB + filesystem discovery."
+        "Lists directory contents. Folders first. Parameters: path (default '/'), recursive (default false), limit (default 50). Hybrid DB + filesystem discovery."
     }
 
     fn definition(&self) -> Value {
@@ -46,6 +46,10 @@ impl Tool for LsTool {
                 "recursive": {
                     "type": ["boolean", "string", "null"],
                     "description": "Accepts JSON boolean (true/false) or string representations ('true', 'True', 'false', 'False', 'TRUE', 'FALSE'). Defaults to false if not provided."
+                },
+                "limit": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum entries to return. Default: 50. Use 0 for unlimited. Accepts integer or string."
                 }
             },
             "additionalProperties": false
@@ -64,6 +68,7 @@ impl Tool for LsTool {
         let ls_args: LsArgs = serde_json::from_value(args)?;
         let path = super::normalize_path(&ls_args.path.unwrap_or_else(|| "/".to_string()));
         let recursive = ls_args.recursive.unwrap_or(false);
+        let limit = ls_args.limit.unwrap_or(50);
 
         let parent_id = if path == "/" {
             None
@@ -95,7 +100,13 @@ impl Tool for LsTool {
 
         // Phase 3: Merge database + filesystem entries
         // Database entries take precedence, filesystem-only entries added as fallback
-        let merged_entries = Self::merge_entries(db_files, fs_entries, &workspace_path).await?;
+        let mut merged_entries = Self::merge_entries(db_files, fs_entries, &workspace_path).await?;
+
+        // Apply limit after merging (folders first is already sorted)
+        // limit: 0 means unlimited (return all entries)
+        if limit > 0 && merged_entries.len() > limit {
+            merged_entries.truncate(limit);
+        }
 
         let result = LsResult { path, entries: merged_entries };
 

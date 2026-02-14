@@ -25,6 +25,10 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [cat - Concatenate Files with Formatting](#cat---concatenate-files-with-formatting)
   - [ask_user - Request User Input](#ask_user---request-user-input)
   - [exit_plan_mode - Transition to Build Mode](#exit_plan_mode---transition-to-build-mode)
+  - [plan_write - Create Plan File](#plan_write---create-plan-file)
+  - [plan_read - Read Plan File](#plan_read---read-plan-file)
+  - [plan_edit - Edit Plan File](#plan_edit---edit-plan-file)
+  - [plan_list - List Plan Files](#plan_list---list-plan-files)
   - [Path Normalization](#path-normalization)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
@@ -56,6 +60,10 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `read_multiple_files` | Read multiple files in single call | `paths[]`, `limit?` | `files[]` with per-file `synced` status |
 | `ask_user` | Request input or confirmation from user | `questions[]` | `question_id`, `questions[]` |
 | `exit_plan_mode` | Transition from Plan to Build Mode | `allowedPrompts?`, `pushToRemote?`, `remoteSessionId?`, `remoteSessionUrl?`, `remoteSessionTitle?` | `mode`, `plan_file` |
+| `plan_write` | Create plan file with auto-naming and frontmatter | `title`, `content`, `path?`, `status?` | `path`, `file_id`, `version_id`, `hash`, `metadata` |
+| `plan_read` | Read plan file with parsed frontmatter | `path?`, `name?`, `offset?`, `limit?` | `path`, `metadata`, `content`, `hash` |
+| `plan_edit` | Edit plan file preserving frontmatter | `path`, `old_string?`, `new_string?`, `insert_line?`, `insert_content?` | `path`, `file_id`, `version_id`, `hash` |
+| `plan_list` | List plan files with metadata | `status?`, `limit?` | `plans[]`, `total` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -246,14 +254,15 @@ Authorization: Bearer <access_token>
 
 ### ls - List Directory Contents
 
-Lists files and folders in a directory within a workspace. Supports both single-level and recursive listing.
+Lists files and folders in a directory within a workspace. Supports both single-level and recursive listing with optional result limiting.
 
 #### Arguments
 
 ```json
 {
   "path": "/folder",
-  "recursive": false
+  "recursive": false,
+  "limit": 50
 }
 ```
 
@@ -261,6 +270,7 @@ Lists files and folders in a directory within a workspace. Supports both single-
 |-------|------|----------|---------|-------------|
 | `path` | string | No | `/` | Directory path to list |
 | `recursive` | boolean | No | `false` | Recursively list all descendants |
+| `limit` | integer | No | `50` | Maximum entries to return. Use `0` for unlimited |
 
 #### Request Example
 
@@ -272,7 +282,8 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "tool": "ls",
     "args": {
       "path": "/documents",
-      "recursive": false
+      "recursive": false,
+      "limit": 100
     }
   }'
 ```
@@ -322,12 +333,17 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 
 - **Non-recursive mode** (default): Returns immediate children only
 - **Recursive mode**: Returns all descendants with paths matching the prefix
+- **Limit behavior**:
+  - Default limit is 50 entries when not specified
+  - `limit: 0` returns unlimited entries (useful for UI components that need all entries)
+  - Limit is applied after merging database and filesystem entries, and after sorting (folders first)
 - **Directory Validation**: Returns `400 Bad Request` if the target path is a file
 - **Path resolution**: Uses `get_file_by_path()` to resolve the directory
-- **Sorting**: Entries sorted by path in ascending order
+- **Sorting**: Folders first, then sorted by path in ascending order
 
 **CRITICAL USAGE NOTES:**
 - Use `recursive: true` for discovering all files in a directory tree
+- Use `limit: 0` when you need all entries (e.g., file explorer dialogs)
 - Returns `path` as "/" when listing root directory
 - Folders are returned first in the entries list for better readability
 - Check `is_virtual` field to identify system-managed files that cannot be edited directly
@@ -947,7 +963,8 @@ Searches for a regex pattern in all document files within the workspace. This to
 {
   "pattern": "fn \\w+\\(",
   "path_pattern": "%.rs",
-  "case_sensitive": false
+  "case_sensitive": false,
+  "limit": 50
 }
 ```
 
@@ -956,6 +973,7 @@ Searches for a regex pattern in all document files within the workspace. This to
 | `pattern` | string | Yes | Regex pattern to search for (Postgres regex syntax) |
 | `path_pattern` | string | No | Optional SQL LIKE pattern to filter file paths (e.g., `%.rs`, `/src/%`) |
 | `case_sensitive` | boolean | No | Whether the search should be case-sensitive. Default: `false`. |
+| `limit` | integer | No | Maximum matches to return. Default: `50`. Use `0` for unlimited. |
 
 #### Request Example
 
@@ -996,7 +1014,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Fuzzy Path Matching**: The `path_pattern` is case-insensitive and automatically normalized. You can use `*` as a wildcard (e.g., `src/*` or `*.rs`). If no wildcards are provided, it assumes a fuzzy "contains" match on the path.
 - **Performance**: Searches across the latest versions of all text-searchable files in the database.
 - **Virtual Files**: Supports searching system-managed files (e.g., Chats) by automatically expanding their JSON content into a readable text format.
-- **Results Limit**: Results are limited to the first 1000 matches to prevent large payloads.
+- **Results Limit**: Results are limited to the first 50 matches by default (configurable via `limit` parameter). Use `limit: 0` for unlimited.
 - **Line Numbers**: Line numbers are 1-based and calculated dynamically from the stored content.
 
 **CRITICAL USAGE NOTES:**
@@ -1361,7 +1379,8 @@ Finds files by metadata criteria using Unix find command for filesystem discover
   "file_type": "folder",
   "min_size": 1048576,
   "max_size": 10485760,
-  "recursive": true
+  "recursive": true,
+  "limit": 50
 }
 ```
 
@@ -1373,6 +1392,7 @@ Finds files by metadata criteria using Unix find command for filesystem discover
 | `min_size` | integer | No | Minimum file size in bytes |
 | `max_size` | integer | No | Maximum file size in bytes |
 | `recursive` | boolean | No | Search subdirectories (default: `true`) |
+| `limit` | integer | No | Maximum matches to return. Default: `50`. Use `0` for unlimited. |
 
 #### Request Example
 
@@ -1897,6 +1917,233 @@ A chat message is **NOT a button click** when:
 - **No Chat Approval**: Natural language approval is NOT sufficient (must use button)
 - **Create → Ask → Exit**: Always follow the 3-step workflow (create plan, ask user, exit plan mode)
 - **Unique Names**: Use random 3-word hyphenated names for plan files
+
+---
+
+### plan_write - Create Plan File
+
+Creates or updates a plan file with auto-generated name and YAML frontmatter.
+
+**Features:**
+- Auto-generates unique 3-word hyphenated names if path not provided
+- Automatically adds YAML frontmatter with title, status, and created_at
+- Sets file_type to "plan" automatically
+- Works in both Build Mode and Plan Mode
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | Yes | Title of the plan (shown in frontmatter) |
+| `content` | string | Yes | Plan content in markdown |
+| `path` | string | No | Custom path. If omitted, auto-generates name like `/plans/word-word-word.plan` |
+| `status` | string | No | Plan status: `draft` (default), `approved`, `implemented`, `archived` |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "plan_write",
+    "args": {
+      "title": "Feature Implementation Plan",
+      "content": "# Overview\n\n## Goals\n- Goal 1\n- Goal 2",
+      "status": "draft"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/plans/gleeful-tangerine-expedition.plan",
+    "file_id": "550e8400-e29b-41d4-a716-446655440000",
+    "version_id": "660e8400-e29b-41d4-a716-446655440000",
+    "hash": "abc123def456",
+    "metadata": {
+      "title": "Feature Implementation Plan",
+      "status": "draft",
+      "created_at": "2025-01-15T10:30:00Z"
+    }
+  },
+  "error": null
+}
+```
+
+---
+
+### plan_read - Read Plan File
+
+Reads a plan file with parsed frontmatter.
+
+**Features:**
+- Parses YAML frontmatter and returns metadata separately
+- Supports lookup by path or name (searches /plans/ directory)
+- Returns content without frontmatter for cleaner display
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | No* | Full path to plan file |
+| `name` | string | No* | Plan name (without `.plan`), searches `/plans/` directory |
+| `offset` | integer | No | Starting line position |
+| `limit` | integer | No | Maximum lines to read (default: 500) |
+| `cursor` | integer | No | Cursor position for scroll mode |
+
+*Either `path` or `name` is required.
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "plan_read",
+    "args": {
+      "name": "gleeful-tangerine-expedition"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/plans/gleeful-tangerine-expedition.plan",
+    "metadata": {
+      "title": "Feature Implementation Plan",
+      "status": "draft",
+      "created_at": "2025-01-15T10:30:00Z"
+    },
+    "content": "# Overview\n\n## Goals\n- Goal 1\n- Goal 2",
+    "hash": "abc123def456",
+    "total_lines": 5
+  },
+  "error": null
+}
+```
+
+**Note:** Legacy plans without frontmatter return `metadata: null` with content as-is.
+
+---
+
+### plan_edit - Edit Plan File
+
+Edits a plan file while preserving YAML frontmatter.
+
+**Features:**
+- Preserves frontmatter during edits (status, title, created_at)
+- Supports both replace and insert operations
+- Only works on `.plan` files
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Path to plan file (must end with `.plan`) |
+| `old_string` | string | No* | For REPLACE: text to find (must be unique) |
+| `new_string` | string | No* | For REPLACE: replacement text |
+| `insert_line` | integer | No* | For INSERT: line number (0-indexed) |
+| `insert_content` | string | No* | For INSERT: content to insert |
+| `last_read_hash` | string | No | Hash from latest read (prevents conflicts) |
+
+*Either (`old_string` and `new_string`) OR (`insert_line` and `insert_content`) is required.
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "plan_edit",
+    "args": {
+      "path": "/plans/gleeful-tangerine-expedition.plan",
+      "old_string": "- Goal 1",
+      "new_string": "- Goal 1 (completed)"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/plans/gleeful-tangerine-expedition.plan",
+    "file_id": "550e8400-e29b-41d4-a716-446655440000",
+    "version_id": "770e8400-e29b-41d4-a716-446655440000",
+    "hash": "def789ghi012"
+  },
+  "error": null
+}
+```
+
+---
+
+### plan_list - List Plan Files
+
+Lists all plan files with metadata and optional status filtering.
+
+**Features:**
+- Returns title, status, and created_at for each plan
+- Optionally filter by status
+- Sorted by created_at descending (newest first)
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string | No | Filter by status: `draft`, `approved`, `implemented`, `archived` |
+| `limit` | integer | No | Maximum number of plans to return (default: 50) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "plan_list",
+    "args": {
+      "status": "approved",
+      "limit": 10
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "plans": [
+      {
+        "path": "/plans/gleeful-tangerine-expedition.plan",
+        "name": "gleeful-tangerine-expedition",
+        "metadata": {
+          "title": "Feature Implementation Plan",
+          "status": "approved",
+          "created_at": "2025-01-15T10:30:00Z"
+        }
+      }
+    ],
+    "total": 1
+  },
+  "error": null
+}
+```
 
 ---
 

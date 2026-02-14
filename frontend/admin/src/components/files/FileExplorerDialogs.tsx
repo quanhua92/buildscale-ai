@@ -23,6 +23,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  useTools,
 } from "@buildscale/sdk"
 import { Loader2, FolderIcon, ChevronRight, Home } from "lucide-react"
 import { getContentAsString } from './utils'
@@ -351,7 +352,8 @@ function DeleteDialog() {
 }
 
 function MoveDialog() {
-  const { isMoveOpen, setMoveOpen, activeFile, moveItems, selectedEntries, callTool } = useFileExplorer()
+  const { isMoveOpen, setMoveOpen, activeFile, moveItems, selectedEntries, workspaceId } = useFileExplorer()
+  const { ls } = useTools(workspaceId)
   const [browsingPath, setBrowsingPath] = useState('/')
   const [folders, setFolders] = useState<LsResult | null>(null)
   const [isLoadingFolders, setIsLoadingFolders] = useState(false)
@@ -364,19 +366,20 @@ function MoveDialog() {
   const fetchFolders = React.useCallback(async (path: string) => {
     setIsLoadingFolders(true)
     try {
-      const result = await callTool<LsResult>('ls', { path })
+      // Use limit: 0 to get all entries for move dialog
+      const result = await ls(path, { limit: 0 })
       if (result) {
         // Filter only folders
         const filtered: LsResult = {
           ...result,
-          entries: result.entries.filter((e: LsEntry) => e.file_type === 'folder')
+          entries: (result.entries as LsEntry[]).filter((e: LsEntry) => e.file_type === 'folder')
         }
         setFolders(filtered)
       }
     } finally {
       setIsLoadingFolders(false)
     }
-  }, [callTool])
+  }, [ls])
 
   useEffect(() => {
     if (isMoveOpen) {

@@ -325,6 +325,191 @@ function ToolPreview({
     )
   }
 
+  // Plan tools previews
+  if (tool === "plan_write") {
+    const hasPath = args?.path
+    return (
+      <div>
+        <div className="px-4 py-2 text-xs font-mono text-muted-foreground bg-muted/30 border-b">
+          {hasPath ? args.path : "Auto-generated: /plans/word-word-word.plan"}
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-blue-500/70 mb-1 font-medium">
+              Title
+            </div>
+            <div className="text-sm font-medium">{args?.title || "Untitled"}</div>
+          </div>
+          {args?.status && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+                Status
+              </div>
+              <span className={cn(
+                "px-2 py-0.5 text-xs rounded-full",
+                args.status === "draft" && "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                args.status === "approved" && "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+                args.status === "implemented" && "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                args.status === "archived" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+              )}>
+                {args.status}
+              </span>
+            </div>
+          )}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+              Content Preview
+            </div>
+            <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-muted/50 rounded-lg">
+              {args?.content || "No content"}
+            </pre>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (tool === "plan_read" && output) {
+    try {
+      const parsed = typeof output === 'string' ? JSON.parse(output) : output
+      if (parsed?.metadata) {
+        return (
+          <div className="p-4 space-y-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+                Path
+              </div>
+              <div className="font-mono text-sm">{parsed.path}</div>
+            </div>
+            {parsed.metadata && (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+                    Title
+                  </div>
+                  <div className="text-sm">{parsed.metadata.title}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+                    Status
+                  </div>
+                  <span className={cn(
+                    "px-2 py-0.5 text-xs rounded-full",
+                    parsed.metadata.status === "draft" && "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                    parsed.metadata.status === "approved" && "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+                    parsed.metadata.status === "implemented" && "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                    parsed.metadata.status === "archived" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                  )}>
+                    {parsed.metadata.status}
+                  </span>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+                    Created
+                  </div>
+                  <div className="text-xs">{new Date(parsed.metadata.created_at).toLocaleDateString()}</div>
+                </div>
+              </div>
+            )}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-medium">
+                Content
+              </div>
+              <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-muted/50 rounded-lg max-h-60 overflow-auto">
+                {parsed.content || "No content"}
+              </pre>
+            </div>
+          </div>
+        )
+      }
+    } catch { /* fall through */ }
+  }
+
+  if (tool === "plan_edit") {
+    return (
+      <div>
+        <div className="px-4 py-2 text-xs font-mono text-muted-foreground bg-muted/30 border-b">
+          {args?.path || "unknown"}
+        </div>
+        <div className="p-4 space-y-3">
+          {args?.old_string && args?.new_string && (
+            <>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-red-500/70 mb-1 font-medium">
+                  Old String
+                </div>
+                <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-red-500/5 border border-red-500/20 rounded-lg text-red-900 dark:text-red-100">
+                  {args.old_string}
+                </pre>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-green-500/70 mb-1 font-medium">
+                  New String
+                </div>
+                <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-green-500/5 border border-green-500/20 rounded-lg text-green-900 dark:text-green-100">
+                  {args.new_string}
+                </pre>
+              </div>
+            </>
+          )}
+          {args?.insert_content && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-blue-500/70 mb-1 font-medium">
+                Insert at line {args?.insert_line}
+              </div>
+              <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-blue-500/5 border border-blue-500/20 rounded-lg text-blue-900 dark:text-blue-100">
+                {args.insert_content}
+              </pre>
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground italic">
+            Preserves YAML frontmatter during edit
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (tool === "plan_list" && output) {
+    try {
+      const parsed = typeof output === 'string' ? JSON.parse(output) : output
+      if (parsed?.plans && Array.isArray(parsed.plans)) {
+        return (
+          <div className="p-4">
+            <div className="text-sm text-muted-foreground mb-3">
+              {parsed.total} plan{parsed.total !== 1 ? 's' : ''} found
+            </div>
+            <div className="space-y-2">
+              {parsed.plans.map((plan: any, i: number) => (
+                <div key={i} className="p-3 bg-muted/30 rounded-lg flex items-center justify-between">
+                  <div>
+                    <div className="font-mono text-sm">{plan.name || plan.path}</div>
+                    {plan.metadata && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {plan.metadata.title}
+                      </div>
+                    )}
+                  </div>
+                  {plan.metadata?.status && (
+                    <span className={cn(
+                      "px-2 py-0.5 text-xs rounded-full",
+                      plan.metadata.status === "draft" && "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                      plan.metadata.status === "approved" && "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+                      plan.metadata.status === "implemented" && "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                      plan.metadata.status === "archived" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                    )}>
+                      {plan.metadata.status}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }
+    } catch { /* fall through */ }
+  }
+
   // Default: show output if available (extract content from JSON if possible)
   if (output) {
     let content = output

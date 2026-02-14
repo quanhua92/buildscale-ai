@@ -185,7 +185,7 @@ impl Tool for GrepTool {
     fn description(&self) -> &'static str {
         r#"Searches regex pattern in files using ripgrep. Case-insensitive by default.
 
-PARAMETERS: pattern (required), path_pattern (wildcards), case_sensitive, before_context/after_context/context (lines around matches).
+PARAMETERS: pattern (required), path_pattern (wildcards), case_sensitive, before_context/after_context/context (lines around matches), limit (default 50).
 
 EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
     }
@@ -211,6 +211,10 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
                 "context": {
                     "type": ["integer", "string", "null"],
                     "description": "Shorthand for before_context and after_context combined. Accepts integer or string (e.g., 3 or '3')"
+                },
+                "limit": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum matches to return. Default: 50. Use 0 for unlimited. Accepts integer or string."
                 }
             },
             "required": ["pattern"],
@@ -308,8 +312,9 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
         let stdout = String::from_utf8_lossy(&output.stdout);
         tracing::debug!("Grep stdout length: {} bytes", stdout.len());
 
+        // Get limit from args (default: 50, 0 means unlimited)
+        let limit = grep_args.limit.unwrap_or(50);
         let mut matches = Vec::new();
-        const MAX_MATCHES: usize = 1000;
 
         // Get normalized path_pattern for filtering (needed for grep fallback)
         let path_pattern_filter = grep_args.path_pattern.as_deref();
@@ -320,7 +325,8 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
             let mut file_path_cache = HashMap::new();
             let mut context_tracker = ContextTracker::new();
             for line in stdout.lines() {
-                if matches.len() >= MAX_MATCHES {
+                // limit: 0 means unlimited, otherwise stop at limit
+                if limit > 0 && matches.len() >= limit {
                     break;
                 }
 
@@ -336,7 +342,8 @@ EXAMPLE: {"pattern":"fn main","path_pattern":"*.rs","context":3}"#
             // Use plain text parser for grep
             tracing::debug!("Parsing grep plain text output");
             for line in stdout.lines() {
-                if matches.len() >= MAX_MATCHES {
+                // limit: 0 means unlimited, otherwise stop at limit
+                if limit > 0 && matches.len() >= limit {
                     break;
                 }
 
@@ -430,16 +437,26 @@ fn build_ripgrep_command(
     if let Some(path_pattern) = path_pattern {
         let normalized_pattern = path_pattern.strip_prefix('/').unwrap_or(path_pattern);
 
-        // Fix: If pattern looks like a directory (no wildcards), append ** to match files inside
-        // Example: "scripts" -> "scripts/**" to match all files under scripts/
-        // Example: "*.py" -> "*.py" (already a file pattern, keep as-is)
-        // Example: "scripts/**/*.py" -> "scripts/**/*.py" (already has wildcard, keep as-is)
-        let glob_pattern = if !normalized_pattern.contains('*') {
-            // Directory-like pattern without wildcards - append /**
-            format!("{}/**", normalized_pattern)
-        } else {
-            // Already contains wildcards - use as-is
+        // Determine if pattern is a file path or directory
+        // - Has wildcards (* or ?): use as-is
+        // - Exists as directory: append /** to match files inside
+        // - Exists as file or doesn't exist: use as-is
+        let glob_pattern = if normalized_pattern.contains('*') || normalized_pattern.contains('?') {
+            // Already has wildcards - use as-is
             normalized_pattern.to_string()
+        } else {
+            // Check filesystem to determine if it's a directory
+            let full_path = workspace_path.join(normalized_pattern);
+            match std::fs::metadata(&full_path) {
+                Ok(metadata) if metadata.is_dir() => {
+                    // It's a directory - append /** to match files inside
+                    format!("{}/**", normalized_pattern)
+                }
+                _ => {
+                    // It's a file or doesn't exist - use as-is
+                    normalized_pattern.to_string()
+                }
+            }
         };
 
         cmd.arg("--glob").arg(glob_pattern);

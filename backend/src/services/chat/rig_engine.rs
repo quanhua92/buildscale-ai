@@ -3,6 +3,7 @@ use crate::services::chat::rig_tools::{
     RigEditTool, RigGrepTool, RigGlobTool, RigFileInfoTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
     RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
     RigAskUserTool, RigExitPlanModeTool,
+    RigPlanWriteTool, RigPlanReadTool, RigPlanEditTool, RigPlanListTool,
 };
 use crate::services::chat::context::{
     build_sorted_context_items, get_indices_to_truncate, render_attachment_for_ai,
@@ -158,6 +159,38 @@ where
             tool_config: tool_config.clone(),
         })
         .tool(RigCatTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigPlanWriteTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigPlanReadTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigPlanEditTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigPlanListTool {
             pool: pool.clone(),
             storage: storage.clone(),
             workspace_id,

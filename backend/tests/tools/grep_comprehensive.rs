@@ -288,7 +288,7 @@ async fn test_grep_large_result_truncation() {
             serde_json::json!(format!("Pattern on line {}", i))).await;
     }
 
-    // Search should truncate at 1000 matches
+    // Search should truncate at default limit (50)
     let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
         "pattern": "Pattern"
     })).await;
@@ -298,5 +298,23 @@ async fn test_grep_large_result_truncation() {
     assert!(body["success"].as_bool().unwrap());
 
     let matches = body["result"]["matches"].as_array().unwrap();
-    assert_eq!(matches.len(), 1000, "Should truncate at 1000 matches max");
+    assert_eq!(matches.len(), 50, "Should truncate at default limit of 50 matches");
+
+    // Test with explicit limit: 0 (unlimited)
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "Pattern",
+        "limit": 0
+    })).await;
+    let body: serde_json::Value = response.json().await.unwrap();
+    let matches = body["result"]["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1050, "Should return all 1050 matches with limit: 0");
+
+    // Test with explicit higher limit
+    let response = execute_tool(&app, &workspace_id, &token, "grep", serde_json::json!({
+        "pattern": "Pattern",
+        "limit": 100
+    })).await;
+    let body: serde_json::Value = response.json().await.unwrap();
+    let matches = body["result"]["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 100, "Should return 100 matches with limit: 100");
 }
