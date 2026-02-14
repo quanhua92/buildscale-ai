@@ -89,10 +89,9 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
         if matches!(memory_args.scope, MemoryScope::User) {
             let expected_prefix = format!("/users/{}/memories/", user_id);
             if !file.path.starts_with(&expected_prefix) {
-                return Err(Error::NotFound(format!(
-                    "Memory not found: {}/{}/{}",
-                    memory_args.scope, memory_args.category, memory_args.key
-                )));
+                return Err(Error::Forbidden(
+                    "Cannot access another user's memory".to_string()
+                ));
             }
         }
 

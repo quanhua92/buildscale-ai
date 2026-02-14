@@ -1239,6 +1239,7 @@ pub struct MemoryMatch {
     pub line_number: usize,
     pub line_text: String,
     pub tags: Vec<String>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Result for memory_search tool

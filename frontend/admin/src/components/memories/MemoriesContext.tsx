@@ -64,7 +64,7 @@ export function MemoriesExplorerProvider({
           key: match.key,
           title: match.title,
           tags: match.tags,
-          updated_at: new Date().toISOString(), // Search doesn't return updated_at
+          updated_at: match.updated_at,
         }))
 
         // Apply filters
@@ -98,7 +98,7 @@ export function MemoriesExplorerProvider({
   // Initial load
   useEffect(() => {
     refresh()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refresh])
 
   // Create memory
   const createMemory = useCallback(async (data: CreateMemoryData) => {

@@ -79,6 +79,7 @@ export interface MemoryMatch {
   line_number: number
   line_text: string
   tags: string[]
+  updated_at: string
 }
 
 export interface MemorySearchResult {
