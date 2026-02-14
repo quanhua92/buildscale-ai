@@ -89,6 +89,7 @@ This is HOW you know the user clicked a button. When you see "[Answered: "Accept
 - `memory_set` - Store project context and decisions for Build Mode
 - `memory_get` - Retrieve stored preferences or context
 - `memory_search` - Search memories for relevant project information
+- `memory_delete` - Delete a memory (soft delete, recoverable from trash)
 
 ### PLAN FILE CREATION WITH plan_write (RECOMMENDED)
 Use the `plan_write` tool for creating plan files. It automatically:

@@ -1,9 +1,10 @@
-//! Tests for memory tools (memory_set, memory_get, memory_search)
+//! Tests for memory tools (memory_set, memory_get, memory_search, memory_delete)
 //!
 //! Tests cover:
 //! - User-scoped memory creation and retrieval
 //! - Global-scoped memory creation and retrieval
 //! - Memory search with filtering
+//! - Memory deletion
 //! - User isolation (users cannot access other users' memories)
 //! - Memory updates
 
@@ -89,6 +90,31 @@ async fn search_memories(
     }
 
     let response = execute_tool(app, workspace_id, token, "memory_search", args).await;
+    assert_eq!(response.status(), 200);
+    response.json().await.unwrap()
+}
+
+/// Helper to delete a memory
+async fn delete_memory(
+    app: &TestApp,
+    workspace_id: &str,
+    token: &str,
+    scope: &str,
+    category: &str,
+    key: &str,
+) -> serde_json::Value {
+    let response = execute_tool(
+        app,
+        workspace_id,
+        token,
+        "memory_delete",
+        serde_json::json!({
+            "scope": scope,
+            "category": category,
+            "key": key
+        }),
+    )
+    .await;
     assert_eq!(response.status(), 200);
     response.json().await.unwrap()
 }
@@ -608,4 +634,166 @@ async fn test_memory_set_missing_fields() {
 
     // Should return error
     assert_ne!(response.status(), 200);
+}
+
+// ============================================================================
+// Delete Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_memory_delete_user_scope() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory Delete User Test").await;
+
+    // Create a memory first
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "test",
+        "to-delete",
+        "To Delete",
+        "This memory will be deleted.",
+        None,
+    )
+    .await;
+
+    // Delete the memory
+    let result = delete_memory(&app, &workspace_id, &token, "user", "test", "to-delete").await;
+
+    assert!(result["success"].as_bool().unwrap());
+    assert!(result["result"]["file_id"].as_str().unwrap().len() > 0);
+    assert_eq!(result["result"]["scope"].as_str().unwrap(), "user");
+    assert_eq!(result["result"]["category"].as_str().unwrap(), "test");
+    assert_eq!(result["result"]["key"].as_str().unwrap(), "to-delete");
+
+    // Verify memory is no longer accessible
+    let response = execute_tool(
+        &app,
+        &workspace_id,
+        &token,
+        "memory_get",
+        serde_json::json!({
+            "scope": "user",
+            "category": "test",
+            "key": "to-delete"
+        }),
+    )
+    .await;
+
+    // Should return 404 Not Found
+    assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn test_memory_delete_global_scope() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory Delete Global Test").await;
+
+    // Create a global memory
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "global",
+        "team",
+        "guidelines",
+        "Team Guidelines",
+        "Team coding guidelines.",
+        None,
+    )
+    .await;
+
+    // Delete the memory
+    let result = delete_memory(&app, &workspace_id, &token, "global", "team", "guidelines").await;
+
+    assert!(result["success"].as_bool().unwrap());
+    assert_eq!(result["result"]["scope"].as_str().unwrap(), "global");
+
+    // Verify memory is no longer accessible
+    let response = execute_tool(
+        &app,
+        &workspace_id,
+        &token,
+        "memory_get",
+        serde_json::json!({
+            "scope": "global",
+            "category": "team",
+            "key": "guidelines"
+        }),
+    )
+    .await;
+
+    // Should return 404 Not Found
+    assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn test_memory_delete_not_found() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory Delete Not Found Test").await;
+
+    // Try to delete a memory that doesn't exist
+    let response = execute_tool(
+        &app,
+        &workspace_id,
+        &token,
+        "memory_delete",
+        serde_json::json!({
+            "scope": "user",
+            "category": "nonexistent",
+            "key": "key"
+        }),
+    )
+    .await;
+
+    // Should return 404 Not Found
+    assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn test_memory_delete_user_isolation() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+
+    // Create two users
+    let token1 = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token1, "Delete Isolation Test").await;
+
+    let token2 = register_and_login(&app).await;
+
+    // User 1 creates a user-scoped memory
+    set_memory(
+        &app,
+        &workspace_id,
+        &token1,
+        "user",
+        "private",
+        "secret",
+        "Secret",
+        "User 1's secret content.",
+        None,
+    )
+    .await;
+
+    // User 2 tries to delete User 1's memory - should fail
+    let response = execute_tool(
+        &app,
+        &workspace_id,
+        &token2,
+        "memory_delete",
+        serde_json::json!({
+            "scope": "user",
+            "category": "private",
+            "key": "secret"
+        }),
+    )
+    .await;
+
+    // Should return 403 or 404 (user2 can't access user1's memory)
+    assert!(response.status() == 403 || response.status() == 404,
+        "Expected 403 or 404, got {}", response.status());
 }

@@ -27,6 +27,7 @@ pub mod plan_list;
 pub mod memory_set;
 pub mod memory_get;
 pub mod memory_search;
+pub mod memory_delete;
 
 pub mod helpers;
 
@@ -164,6 +165,7 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "memory_set" => Ok(ToolExecutor::MemorySet),
         "memory_get" => Ok(ToolExecutor::MemoryGet),
         "memory_search" => Ok(ToolExecutor::MemorySearch),
+        "memory_delete" => Ok(ToolExecutor::MemoryDelete),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -220,6 +222,7 @@ pub enum ToolExecutor {
     MemorySet,
     MemoryGet,
     MemorySearch,
+    MemoryDelete,
 }
 
 impl ToolExecutor {
@@ -256,6 +259,7 @@ impl ToolExecutor {
             ToolExecutor::MemorySet => "memory_set",
             ToolExecutor::MemoryGet => "memory_get",
             ToolExecutor::MemorySearch => "memory_search",
+            ToolExecutor::MemoryDelete => "memory_delete",
         };
 
         let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
@@ -287,6 +291,7 @@ impl ToolExecutor {
             ToolExecutor::MemorySet => memory_set::MemorySetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::MemoryGet => memory_get::MemoryGetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::MemorySearch => memory_search::MemorySearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemoryDelete => memory_delete::MemoryDeleteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {
@@ -431,6 +436,11 @@ pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
             name: "memory_search".into(),
             description: memory_search::MemorySearchTool.description().into(),
             parameters: memory_search::MemorySearchTool.definition(),
+        },
+        ToolDefinition {
+            name: "memory_delete".into(),
+            description: memory_delete::MemoryDeleteTool.description().into(),
+            parameters: memory_delete::MemoryDeleteTool.definition(),
         },
     ]
 }

@@ -1145,7 +1145,7 @@ impl TruncatableList for PlanListResult {
 }
 
 // ============================================================================
-// MEMORY TOOLS: memory_set, memory_get, memory_search
+// MEMORY TOOLS: memory_set, memory_get, memory_search, memory_delete
 // ============================================================================
 
 /// Re-export MemoryScope from utils for convenience
@@ -1258,4 +1258,25 @@ impl TruncatableList for MemorySearchResult {
         self.total = self.matches.len();
         self
     }
+}
+
+/// Arguments for memory_delete tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryDeleteArgs {
+    /// Scope of the memory (user or global)
+    pub scope: MemoryScope,
+    /// Category the memory belongs to
+    pub category: String,
+    /// Unique key for the memory
+    pub key: String,
+}
+
+/// Result for memory_delete tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryDeleteResult {
+    pub path: String,
+    pub file_id: Option<Uuid>,
+    pub scope: MemoryScope,
+    pub category: String,
+    pub key: String,
 }

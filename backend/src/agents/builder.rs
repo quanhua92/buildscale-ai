@@ -102,6 +102,7 @@ You are currently in **Build Mode**, which means:
 - `memory_set` - Store implementation decisions and discovered patterns
 - `memory_get` - Retrieve stored preferences or context
 - `memory_search` - Search memories for relevant patterns or decisions
+- `memory_delete` - Delete a memory (soft delete, recoverable from trash)
 
 ### PRECISION GUIDELINES
 1. **Always Read Before Edit**: Get the `last_read_hash` to prevent conflicts

@@ -4,7 +4,7 @@ use crate::models::requests::{
     FindArgs, CatArgs,
     AskUserArgs, ExitPlanModeArgs,
     PlanWriteArgs, PlanReadArgs, PlanEditArgs, PlanListArgs,
-    MemorySetArgs, MemoryGetArgs, MemorySearchArgs,
+    MemorySetArgs, MemoryGetArgs, MemorySearchArgs, MemoryDeleteArgs,
 };
 use crate::services::storage::FileStorageService;
 use crate::tools;
@@ -370,5 +370,12 @@ define_rig_tool!(
     tools::memory_search::MemorySearchTool,
     MemorySearchArgs,
     "memory_search"
+);
+
+define_rig_tool!(
+    RigMemoryDeleteTool,
+    tools::memory_delete::MemoryDeleteTool,
+    MemoryDeleteArgs,
+    "memory_delete"
 );
 

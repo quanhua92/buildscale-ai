@@ -136,6 +136,7 @@ You have access to a persistent memory system for storing and retrieving informa
 - `memory_set` - Store information for later recall (user preferences, decisions, context)
 - `memory_get` - Retrieve a specific memory by category and key
 - `memory_search` - Search across all memories by pattern, tags, or category
+- `memory_delete` - Delete a memory (soft delete, recoverable from trash)
 
 **Memory Scopes:**
 - `user` scope: Private to the current user (default for personal preferences)

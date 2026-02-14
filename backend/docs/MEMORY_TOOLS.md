@@ -182,6 +182,45 @@ Searches across all memories with filtering capabilities.
 
 ---
 
+### memory_delete
+
+Deletes a specific memory by scope, category, and key. This performs a soft delete - the memory can be recovered from the deleted files view.
+
+**Arguments:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope` | string | Yes | `user` or `global` |
+| `category` | string | Yes | Category the memory belongs to |
+| `key` | string | Yes | Unique key for the memory |
+
+**Example:**
+
+```json
+{
+  "scope": "user",
+  "category": "preferences",
+  "key": "coding-style"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/users/{uuid}/memories/preferences/coding-style.md",
+    "file_id": "uuid",
+    "scope": "user",
+    "category": "preferences",
+    "key": "coding-style"
+  }
+}
+```
+
+---
+
 ## Usage Patterns
 
 ### Storing User Preferences
@@ -333,7 +372,7 @@ Content-Type: application/json
 
 | Error | Description |
 |-------|-------------|
-| 404 Not Found | Memory does not exist (memory_get) |
+| 404 Not Found | Memory does not exist (memory_get, memory_delete) |
 | 403 Forbidden | Access denied to another user's memory |
 | 400 Validation Error | Invalid arguments (empty category, key, etc.) |
 | 500 Internal Error | Database or filesystem error |
@@ -377,6 +416,13 @@ await memory_set({
   title: "React Coding Style (Updated)",
   content: "- Use functional components\n- Server Components by default\n- Use Tailwind for styling",
   tags: ["react", "typescript", "frontend", "tailwind"]
+});
+
+// 5. Delete the memory when no longer needed
+await memory_delete({
+  scope: "user",
+  category: "preferences",
+  key: "react-style"
 });
 ```
 
