@@ -814,11 +814,9 @@ impl ChatActor {
                         // Determine tool success by parsing the response
                         // Tools return ToolResponse {success, result, error} format
                         // Define error detection heuristic once to avoid duplication
+                        // Only check for "ToolCallError" to avoid false positives from tool result content
                         let has_error_heuristic = |s: &str| {
-                            s.starts_with("Error:")
-                                || s.starts_with("error:")
-                                || s.contains("ToolCallError")
-                                || (s.contains("Tool error") && s.contains("failed"))
+                            s.contains("ToolCallError")
                         };
 
                         let (success, normalized_output) = if let Ok(result_json) = serde_json::from_str::<serde_json::Value>(&output) {
