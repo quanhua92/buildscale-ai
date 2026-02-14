@@ -133,7 +133,13 @@ Retrieves a specific memory by scope, category, and key.
 
 ### memory_search
 
-Searches across all memories with filtering capabilities.
+Searches across all memories with filtering capabilities. Uses grep (ripgrep or standard grep) for efficient pattern matching, then filters results by metadata (scope, category, tags) in memory.
+
+**Implementation Notes:**
+- Uses ripgrep (`rg`) if available, falls back to standard `grep`
+- Grep performs pattern matching on filesystem for efficiency
+- Results are filtered by scope, category, and tags after grep
+- Only files matching the pattern are read and parsed for metadata
 
 **Arguments:**
 
@@ -173,7 +179,8 @@ Searches across all memories with filtering capabilities.
         "title": "Coding Style Preferences",
         "line_number": 1,
         "line_text": "User prefers TypeScript with strict mode.",
-        "tags": ["coding", "typescript", "formatting"]
+        "tags": ["coding", "typescript", "formatting"],
+        "updated_at": "2025-01-15T10:30:00Z"
       }
     ]
   }
