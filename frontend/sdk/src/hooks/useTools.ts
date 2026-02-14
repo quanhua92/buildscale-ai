@@ -76,8 +76,8 @@ export interface MemoryMatch {
   category: string
   key: string
   title: string
-  line_number: number
-  line_text: string
+  /** Truncated content preview (first ~100 words) */
+  content_preview: string
   tags: string[]
   updated_at: string
 }

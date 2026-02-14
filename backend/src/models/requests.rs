@@ -1229,6 +1229,7 @@ pub struct MemorySearchArgs {
 }
 
 /// Single match in memory_search result
+/// Each match represents one unique memory file (deduplicated).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryMatch {
     pub path: String,
@@ -1236,8 +1237,8 @@ pub struct MemoryMatch {
     pub category: String,
     pub key: String,
     pub title: String,
-    pub line_number: usize,
-    pub line_text: String,
+    /// Truncated content preview (first ~100 words)
+    pub content_preview: String,
     pub tags: Vec<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

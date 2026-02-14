@@ -140,6 +140,8 @@ Searches across all memories with filtering capabilities. Uses grep (ripgrep or 
 - Grep performs pattern matching on filesystem for efficiency
 - Results are filtered by scope, category, and tags after grep
 - Only files matching the pattern are read and parsed for metadata
+- Returns one match per unique memory file (deduplicated)
+- Includes a truncated content preview (first ~100 words)
 
 **Arguments:**
 
@@ -177,8 +179,7 @@ Searches across all memories with filtering capabilities. Uses grep (ripgrep or 
         "category": "preferences",
         "key": "coding-style",
         "title": "Coding Style Preferences",
-        "line_number": 1,
-        "line_text": "User prefers TypeScript with strict mode.",
+        "content_preview": "User prefers TypeScript with strict mode enabled. Always use 2-space indentation...",
         "tags": ["coding", "typescript", "formatting"],
         "updated_at": "2025-01-15T10:30:00Z"
       }

@@ -1,6 +1,7 @@
 //! Memory search tool - searches memory files with scope, category, and tag filtering.
 //!
 //! Uses pure grep for efficient pattern matching, then filters results based on memory metadata.
+//! Returns one match per unique memory file with a content preview.
 
 use crate::error::{Error, Result};
 use crate::models::requests::{
@@ -12,13 +13,16 @@ use crate::utils::{parse_memory_frontmatter, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
 use tokio::process::Command as TokioCommand;
 use uuid::Uuid;
 
 /// Default maximum number of search results
 const DEFAULT_SEARCH_LIMIT: usize = 50;
+
+/// Maximum words to include in content preview
+const CONTENT_PREVIEW_WORDS: usize = 100;
 
 pub struct MemorySearchTool;
 
@@ -31,7 +35,7 @@ impl Tool for MemorySearchTool {
     fn description(&self) -> &'static str {
         r#"Searches stored memories by pattern with optional filtering.
 
-Supports filtering by scope, category, and tags. Returns matching lines with metadata.
+Supports filtering by scope, category, and tags. Returns unique memory files with content preview.
 
 Examples:
 - Search all memories: {"pattern": "API key"}
@@ -95,8 +99,8 @@ Examples:
         // Build grep patterns based on scope filter
         let grep_patterns = build_grep_patterns(&search_args.scope, user_id);
 
-        // Use grep to find files matching the pattern
-        let grep_matches = run_grep_for_memories(
+        // Use grep to find files matching the pattern (returns file paths only)
+        let matching_files = run_grep_for_memories(
             &search_args.pattern,
             &grep_patterns,
             case_sensitive,
@@ -104,7 +108,7 @@ Examples:
         ).await?;
 
         // If no matches from grep, return early
-        if grep_matches.is_empty() {
+        if matching_files.is_empty() {
             return Ok(ToolResponse {
                 success: true,
                 result: serde_json::to_value(MemorySearchResult {
@@ -116,9 +120,15 @@ Examples:
         }
 
         let mut all_matches: Vec<MemoryMatch> = Vec::new();
+        let mut seen_files: HashSet<String> = HashSet::new();
 
-        // Process each file that matched grep
-        for (file_path, grep_lines) in &grep_matches {
+        // Process each file that matched grep (deduplicated)
+        for file_path in &matching_files {
+            // Skip if already processed (shouldn't happen but safety check)
+            if !seen_files.insert(file_path.clone()) {
+                continue;
+            }
+
             // Stop if we've reached the limit
             if limit > 0 && all_matches.len() >= limit {
                 break;
@@ -152,7 +162,7 @@ Examples:
                 }
             }
 
-            // Read file content for frontmatter (to get tags)
+            // Read file content for frontmatter and body
             let full_path = workspace_path.join(file_path.trim_start_matches('/'));
             let content = match tokio::fs::read_to_string(&full_path).await {
                 Ok(c) => c,
@@ -162,8 +172,8 @@ Examples:
                 }
             };
 
-            // Parse frontmatter to get metadata
-            let (metadata, _body_content) = parse_memory_frontmatter(&content);
+            // Parse frontmatter to get metadata and body content
+            let (metadata, body_content) = parse_memory_frontmatter(&content);
 
             // Apply tags filter
             if let Some(ref filter_tags) = search_args.tags {
@@ -190,7 +200,7 @@ Examples:
                 Err(_) => chrono::Utc::now(),
             };
 
-            // Build metadata for matches
+            // Build metadata for match
             let mem_metadata = metadata.clone().unwrap_or_else(|| crate::utils::MemoryMetadata {
                 title: key.clone(),
                 tags: vec![],
@@ -200,29 +210,25 @@ Examples:
                 scope: scope.clone(),
             });
 
-            // Create matches from grep lines
-            for (line_number, line_text) in grep_lines {
-                if limit > 0 && all_matches.len() >= limit {
-                    break;
-                }
+            // Extract content preview from body
+            let content_preview = extract_content_preview(&body_content, CONTENT_PREVIEW_WORDS);
 
-                all_matches.push(MemoryMatch {
-                    path: file_path.clone(),
-                    scope: scope.clone(),
-                    category: category.clone(),
-                    key: key.clone(),
-                    title: mem_metadata.title.clone(),
-                    line_number: *line_number,
-                    line_text: line_text.clone(),
-                    tags: mem_metadata.tags.clone(),
-                    updated_at,
-                });
-            }
+            // Create single match per file
+            all_matches.push(MemoryMatch {
+                path: file_path.clone(),
+                scope,
+                category,
+                key,
+                title: mem_metadata.title,
+                content_preview,
+                tags: mem_metadata.tags,
+                updated_at,
+            });
         }
 
-        // Sort by path, then line number
+        // Sort by updated_at descending (most recent first)
         all_matches.sort_by(|a, b| {
-            a.path.cmp(&b.path).then_with(|| a.line_number.cmp(&b.line_number))
+            b.updated_at.cmp(&a.updated_at)
         });
 
         let result = MemorySearchResult {
@@ -262,30 +268,49 @@ fn build_grep_patterns(
     }
 }
 
-/// Run grep on memory directories and return matches grouped by file path
+/// Run grep on memory directories and return deduplicated file paths
 async fn run_grep_for_memories(
     pattern: &str,
     glob_patterns: &[String],
     case_sensitive: bool,
     workspace_path: &Path,
-) -> Result<HashMap<String, Vec<(usize, String)>>> {
-    let mut all_matches: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+) -> Result<Vec<String>> {
+    let mut all_files: HashSet<String> = HashSet::new();
 
     for glob_pattern in glob_patterns {
         // Try ripgrep first, then fall back to standard grep
-        let matches = run_ripgrep_glob(pattern, glob_pattern, case_sensitive, workspace_path).await;
-        let matches = match matches {
-            Ok(m) => m,
+        let files = run_ripgrep_glob(pattern, glob_pattern, case_sensitive, workspace_path).await;
+        let files = match files {
+            Ok(f) => f,
             Err(_) => run_standard_grep_glob(pattern, glob_pattern, case_sensitive, workspace_path).await?,
         };
 
-        // Merge matches into result
-        for (file_path, lines) in matches {
-            all_matches.entry(file_path).or_insert_with(Vec::new).extend(lines);
-        }
+        // Merge file paths into result
+        all_files.extend(files);
     }
 
-    Ok(all_matches)
+    // Convert to sorted vector for consistent ordering
+    let mut result: Vec<String> = all_files.into_iter().collect();
+    result.sort();
+    Ok(result)
+}
+
+/// Extract content preview from body text (first N words)
+fn extract_content_preview(body: &str, max_words: usize) -> String {
+    let words: Vec<&str> = body
+        .split_whitespace()
+        .take(max_words)
+        .collect();
+
+    let preview = words.join(" ");
+
+    // Add ellipsis if truncated
+    let word_count = body.split_whitespace().count();
+    if word_count > max_words {
+        format!("{}...", preview)
+    } else {
+        preview
+    }
 }
 
 /// Run ripgrep with glob pattern
@@ -294,7 +319,7 @@ async fn run_ripgrep_glob(
     glob_pattern: &str,
     case_sensitive: bool,
     workspace_path: &Path,
-) -> Result<HashMap<String, Vec<(usize, String)>>> {
+) -> Result<Vec<String>> {
     // Extract directory from glob pattern for the search path
     // e.g., "users/123/memories/**/*.md" -> search in "users/123/memories"
     // e.g., "memories/**/*.md" -> search in "memories"
@@ -309,13 +334,12 @@ async fn run_ripgrep_glob(
     // Skip if directory doesn't exist
     if !search_path.exists() {
         tracing::debug!("Search directory does not exist: {:?}", search_path);
-        return Ok(HashMap::new());
+        return Ok(Vec::new());
     }
 
     let mut cmd = TokioCommand::new("rg");
     cmd.current_dir(&search_path);
-    cmd.arg("--json");
-    cmd.arg("--line-number");
+    cmd.arg("--files-with-matches");  // Only return file paths, not line content
     cmd.arg("--glob");
     cmd.arg("*.md");
 
@@ -336,12 +360,6 @@ async fn run_ripgrep_glob(
     })?;
 
     tracing::debug!("ripgrep exit code: {:?}", output.status.code());
-    let stdout_len = String::from_utf8_lossy(&output.stdout).len();
-    tracing::debug!("ripgrep stdout length: {}", stdout_len);
-    if !output.stderr.is_empty() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::debug!("ripgrep stderr: {}", stderr);
-    }
 
     // Exit code 1 means no matches, which is fine
     if !output.status.success() && output.status.code() != Some(1) {
@@ -350,44 +368,33 @@ async fn run_ripgrep_glob(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_ripgrep_json_output_with_prefix(&stdout, &search_dir)
+    parse_ripgrep_files_output(&stdout, &search_dir)
 }
 
-/// Parse ripgrep JSON output with a prefix directory (for when searching in subdirectories)
-fn parse_ripgrep_json_output_with_prefix(
+/// Parse ripgrep --files-with-matches output into workspace-relative paths
+fn parse_ripgrep_files_output(
     output: &str,
     search_dir: &str,
-) -> Result<HashMap<String, Vec<(usize, String)>>> {
-    let mut matches: HashMap<String, Vec<(usize, String)>> = HashMap::new();
-    let mut current_file: Option<String> = None;
+) -> Result<Vec<String>> {
+    let mut files: Vec<String> = Vec::new();
 
     for line in output.lines() {
-        if let Ok(event) = serde_json::from_str::<RipgrepEvent>(line) {
-            match event {
-                RipgrepEvent::Begin { data } => {
-                    let path = &data.path.text;
-                    // Convert relative path from search_dir to workspace-relative path
-                    // path is relative to search_dir, so we prepend search_dir
-                    let workspace_relative = if search_dir.is_empty() {
-                        format!("/{}", path.trim_start_matches("./"))
-                    } else {
-                        format!("/{}/{}", search_dir.trim_end_matches('/'), path.trim_start_matches("./"))
-                    };
-                    current_file = Some(workspace_relative);
-                }
-                RipgrepEvent::Match { data } => {
-                    if let Some(ref file_path) = current_file {
-                        let line_number = data.line_number.unwrap_or(0) as usize;
-                        let line_text = data.lines.text.trim_end().to_string();
-                        matches.entry(file_path.clone()).or_default().push((line_number, line_text));
-                    }
-                }
-                _ => {}
-            }
+        let path = line.trim();
+        if path.is_empty() {
+            continue;
         }
+
+        // Convert relative path to workspace-relative path
+        let workspace_relative = if search_dir.is_empty() {
+            format!("/{}", path.trim_start_matches("./"))
+        } else {
+            format!("/{}/{}", search_dir.trim_end_matches('/'), path.trim_start_matches("./"))
+        };
+
+        files.push(workspace_relative);
     }
 
-    Ok(matches)
+    Ok(files)
 }
 
 /// Run standard grep with glob pattern (directory-based)
@@ -396,7 +403,7 @@ async fn run_standard_grep_glob(
     glob_pattern: &str,
     case_sensitive: bool,
     workspace_path: &Path,
-) -> Result<HashMap<String, Vec<(usize, String)>>> {
+) -> Result<Vec<String>> {
     // Extract directory from glob pattern
     // e.g., "users/123/memories/**/*.md" -> "users/123/memories"
     let search_dir = glob_pattern
@@ -409,14 +416,13 @@ async fn run_standard_grep_glob(
 
     // Skip if directory doesn't exist
     if !search_path.exists() {
-        return Ok(HashMap::new());
+        return Ok(Vec::new());
     }
 
     let mut cmd = TokioCommand::new("grep");
     cmd.current_dir(&search_path);
     cmd.arg("-R");
-    cmd.arg("-n");
-    cmd.arg("-H");
+    cmd.arg("-l");  // Only return file paths, not line content
     cmd.arg("--include=*.md");
 
     if !case_sensitive {
@@ -437,36 +443,35 @@ async fn run_standard_grep_glob(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_grep_output(&stdout, &search_dir)
+    parse_grep_files_output(&stdout, &search_dir)
 }
 
-/// Parse standard grep output and convert to workspace-relative paths
-fn parse_grep_output(
+/// Parse standard grep -l output into workspace-relative paths
+fn parse_grep_files_output(
     output: &str,
     search_dir: &str,
-) -> Result<HashMap<String, Vec<(usize, String)>>> {
-    let mut matches: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+) -> Result<Vec<String>> {
+    let mut files: Vec<String> = Vec::new();
 
     for line in output.lines() {
-        // Format: path:line_number:content
-        let parts: Vec<&str> = line.splitn(3, ':').collect();
-        if parts.len() >= 3 {
-            let relative_path = parts[0].trim_start_matches("./");
-            let line_number: usize = parts[1].parse().unwrap_or(0);
-            let line_text = parts[2].to_string();
-
-            // Build workspace-relative path
-            let workspace_relative = if search_dir.is_empty() {
-                format!("/{}", relative_path)
-            } else {
-                format!("/{}/{}", search_dir.trim_end_matches('/'), relative_path)
-            };
-
-            matches.entry(workspace_relative).or_default().push((line_number, line_text));
+        let path = line.trim();
+        if path.is_empty() {
+            continue;
         }
+
+        let relative_path = path.trim_start_matches("./");
+
+        // Build workspace-relative path
+        let workspace_relative = if search_dir.is_empty() {
+            format!("/{}", relative_path)
+        } else {
+            format!("/{}/{}", search_dir.trim_end_matches('/'), relative_path)
+        };
+
+        files.push(workspace_relative);
     }
 
-    Ok(matches)
+    Ok(files)
 }
 
 /// Parse scope, category, and key from memory path
@@ -489,65 +494,6 @@ fn parse_memory_path(path: &str) -> Option<(MemoryScope, String, String)> {
     } else {
         None
     }
-}
-
-/// Ripgrep JSON event types
-#[derive(Debug, serde::Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum RipgrepEvent {
-    Begin { data: BeginData },
-    Match { data: MatchData },
-    #[allow(dead_code)]
-    Context { data: ContextData },
-    #[allow(dead_code)]
-    End { data: EndData },
-    #[allow(dead_code)]
-    Summary { data: SummaryData },
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct BeginData {
-    path: PathField,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct MatchData {
-    #[allow(dead_code)]
-    path: PathField,
-    lines: LinesField,
-    line_number: Option<u64>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ContextData {
-    #[allow(dead_code)]
-    path: PathField,
-    #[allow(dead_code)]
-    lines: LinesField,
-    #[allow(dead_code)]
-    line_number: u64,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct EndData {
-    #[allow(dead_code)]
-    path: PathField,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct SummaryData {
-    #[allow(dead_code)]
-    elapsed_total: Option<serde_json::Value>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct PathField {
-    text: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct LinesField {
-    text: String,
 }
 
 #[cfg(test)]
@@ -580,5 +526,29 @@ mod tests {
     fn test_parse_memory_path_invalid() {
         assert!(parse_memory_path("/invalid/path").is_none());
         assert!(parse_memory_path("/memories/only-category").is_none());
+    }
+
+    #[test]
+    fn test_extract_content_preview_short() {
+        let body = "This is a short text.";
+        let preview = extract_content_preview(body, 100);
+        assert_eq!(preview, "This is a short text.");
+    }
+
+    #[test]
+    fn test_extract_content_preview_truncated() {
+        let body = "word ".repeat(150);
+        let preview = extract_content_preview(&body, 100);
+        assert!(preview.ends_with("..."));
+        // Should have 100 words + "..."
+        let word_count = preview.trim_end_matches('.').split_whitespace().count();
+        assert_eq!(word_count, 100);
+    }
+
+    #[test]
+    fn test_extract_content_preview_exact() {
+        let body = "word ".repeat(100);
+        let preview = extract_content_preview(&body.trim(), 100);
+        assert!(!preview.ends_with("..."));
     }
 }
