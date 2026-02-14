@@ -29,6 +29,16 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
   )
 }
 
+// Form field wrapper - responsive label/input layout
+function FormField({ label, htmlFor, children }: { label: string; htmlFor: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+      <Label htmlFor={htmlFor} className="sm:text-right">{label}</Label>
+      <div className="sm:col-span-3">{children}</div>
+    </div>
+  )
+}
+
 // Memory Editor Dialog
 export function MemoryEditorDialog() {
   const {
@@ -97,7 +107,7 @@ export function MemoryEditorDialog() {
 
   return (
     <Dialog open={isEditorOpen} onOpenChange={setEditorOpen}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit Memory' : 'New Memory'}</DialogTitle>
           <DialogDescription>
@@ -109,10 +119,9 @@ export function MemoryEditorDialog() {
 
         <div className="grid gap-4 py-4">
           {/* Scope */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="scope" className="text-right">Scope</Label>
+          <FormField label="Scope" htmlFor="scope">
             <Select value={scope} onValueChange={(v: 'user' | 'global') => setScope(v)}>
-              <SelectTrigger className="col-span-3">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -120,37 +129,42 @@ export function MemoryEditorDialog() {
                 <SelectItem value="global">Global (Shared)</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </FormField>
 
           {/* Category */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="category" className="text-right">Category</Label>
+          <FormField label="Category" htmlFor="category">
             {isNewCategory ? (
-              <div className="col-span-3 flex gap-2">
+              <div className="flex gap-2">
                 <Input
                   id="category"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  placeholder="e.g., preferences, project, decisions"
+                  placeholder="e.g., preferences, project"
+                  className="flex-1"
                 />
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setIsNewCategory(false)}
+                  className="shrink-0"
                 >
                   Select
                 </Button>
               </div>
             ) : (
-              <div className="col-span-3 flex gap-2">
+              <div className="flex gap-2">
                 <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
+                    {categories.length > 0 ? (
+                      categories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="_none" disabled>No categories yet - click New</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <Button
@@ -160,68 +174,65 @@ export function MemoryEditorDialog() {
                     setCategory('')
                     setIsNewCategory(true)
                   }}
+                  className="shrink-0"
                 >
                   New
                 </Button>
               </div>
             )}
-          </div>
+          </FormField>
 
           {/* Key */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="key" className="text-right">Key</Label>
+          <FormField label="Key" htmlFor="key">
             <Input
               id="key"
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="e.g., coding-style, api-endpoints"
-              className="col-span-3"
               disabled={isEditing}
             />
-          </div>
+          </FormField>
 
           {/* Title */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="title" className="text-right">Title</Label>
+          <FormField label="Title" htmlFor="title">
             <Input
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Human-readable title"
-              className="col-span-3"
             />
-          </div>
+          </FormField>
 
           {/* Content */}
-          <div className="grid grid-cols-4 items-start gap-4">
-            <Label htmlFor="content" className="text-right pt-2">Content</Label>
-            <Textarea
-              id="content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Memory content in markdown..."
-              className="col-span-3 min-h-[200px]"
-            />
+          <div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+            <Label htmlFor="content" className="sm:text-right sm:pt-2">Content</Label>
+            <div className="sm:col-span-3">
+              <Textarea
+                id="content"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Memory content in markdown..."
+                className="min-h-[150px] sm:min-h-[200px]"
+              />
+            </div>
           </div>
 
           {/* Tags */}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="tags" className="text-right">Tags</Label>
+          <FormField label="Tags" htmlFor="tags">
             <Input
               id="tags"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              placeholder="Comma-separated tags (optional)"
-              className="col-span-3"
+              placeholder="Comma-separated (optional)"
             />
-          </div>
+          </FormField>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setEditorOpen(false)}>
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <Button variant="outline" onClick={() => setEditorOpen(false)} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!category || !key || !title || !content}>
+          <Button onClick={handleSubmit} disabled={!category || !key || !title || !content} className="w-full sm:w-auto">
             {isEditing ? 'Update' : 'Create'}
           </Button>
         </DialogFooter>
@@ -277,9 +288,9 @@ export function MemoryViewerDialog() {
 
   return (
     <Dialog open={isViewerOpen} onOpenChange={setViewerOpen}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{activeMemory.title}</DialogTitle>
+          <DialogTitle className="pr-8">{activeMemory.title}</DialogTitle>
           <DialogDescription>
             <span className="font-mono text-xs">
               {activeMemory.scope}/{activeMemory.category}/{activeMemory.key}
@@ -289,20 +300,20 @@ export function MemoryViewerDialog() {
 
         <div className="py-4">
           {isLoading ? (
-            <div className="text-muted-foreground">Loading...</div>
+            <div className="text-muted-foreground text-center py-8">Loading...</div>
           ) : (
-            <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-auto max-h-[400px]">
+            <pre className="whitespace-pre-wrap text-sm bg-muted p-3 sm:p-4 rounded-md overflow-auto max-h-[50vh]">
               {content}
             </pre>
           )}
 
           {activeMemory.tags.length > 0 && (
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="text-sm text-muted-foreground">Tags:</span>
               {activeMemory.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center px-2 py-1 text-xs bg-muted rounded"
+                  className="inline-flex items-center px-2 py-0.5 text-xs bg-muted rounded"
                 >
                   {tag}
                 </span>
@@ -311,11 +322,11 @@ export function MemoryViewerDialog() {
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleDelete} className="text-destructive">
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <Button variant="outline" onClick={handleDelete} className="w-full sm:w-auto text-destructive hover:text-destructive">
             Delete
           </Button>
-          <Button onClick={handleEdit}>
+          <Button onClick={handleEdit} className="w-full sm:w-auto">
             Edit
           </Button>
         </DialogFooter>
@@ -362,11 +373,11 @@ export function MemoryDeleteDialog() {
           </p>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <Button variant="outline" onClick={() => setDeleteOpen(false)} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button variant="destructive" onClick={handleDelete}>
+          <Button variant="destructive" onClick={handleDelete} className="w-full sm:w-auto">
             Delete
           </Button>
         </DialogFooter>
