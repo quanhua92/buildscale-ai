@@ -1,7 +1,7 @@
 import { Link, useMatches } from '@tanstack/react-router'
 
 import { useState } from 'react'
-import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2 } from 'lucide-react'
+import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2, Brain } from 'lucide-react'
 import { NavigationMenu, ThemeToggle, useAuth } from '@buildscale/sdk'
 import tanstackLogo from '/tanstack-word-logo-white.svg'
 
@@ -48,15 +48,22 @@ export default function Header() {
                     >
                       Chat
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      to="/workspaces/$workspaceId/files" 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/files"
                       params={{ workspaceId }}
                       icon={<File size={20} />}
                     >
                       Files
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      disabled 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/memories"
+                      params={{ workspaceId }}
+                      icon={<Brain size={20} />}
+                    >
+                      Memories
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item
+                      disabled
                       icon={<Images size={20} />}
                     >
                       Images
