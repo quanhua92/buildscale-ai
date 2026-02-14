@@ -24,6 +24,9 @@ pub mod plan_write;
 pub mod plan_read;
 pub mod plan_edit;
 pub mod plan_list;
+pub mod memory_set;
+pub mod memory_get;
+pub mod memory_search;
 
 pub mod helpers;
 
@@ -158,6 +161,9 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "plan_read" => Ok(ToolExecutor::PlanRead),
         "plan_edit" => Ok(ToolExecutor::PlanEdit),
         "plan_list" => Ok(ToolExecutor::PlanList),
+        "memory_set" => Ok(ToolExecutor::MemorySet),
+        "memory_get" => Ok(ToolExecutor::MemoryGet),
+        "memory_search" => Ok(ToolExecutor::MemorySearch),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -211,6 +217,9 @@ pub enum ToolExecutor {
     PlanRead,
     PlanEdit,
     PlanList,
+    MemorySet,
+    MemoryGet,
+    MemorySearch,
 }
 
 impl ToolExecutor {
@@ -244,6 +253,9 @@ impl ToolExecutor {
             ToolExecutor::PlanRead => "plan_read",
             ToolExecutor::PlanEdit => "plan_edit",
             ToolExecutor::PlanList => "plan_list",
+            ToolExecutor::MemorySet => "memory_set",
+            ToolExecutor::MemoryGet => "memory_get",
+            ToolExecutor::MemorySearch => "memory_search",
         };
 
         let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
@@ -272,6 +284,9 @@ impl ToolExecutor {
             ToolExecutor::PlanRead => plan_read::PlanReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::PlanEdit => plan_edit::PlanEditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::PlanList => plan_list::PlanListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemorySet => memory_set::MemorySetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemoryGet => memory_get::MemoryGetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemorySearch => memory_search::MemorySearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {
@@ -401,6 +416,21 @@ pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
             name: "plan_list".into(),
             description: plan_list::PlanListTool.description().into(),
             parameters: plan_list::PlanListTool.definition(),
+        },
+        ToolDefinition {
+            name: "memory_set".into(),
+            description: memory_set::MemorySetTool.description().into(),
+            parameters: memory_set::MemorySetTool.definition(),
+        },
+        ToolDefinition {
+            name: "memory_get".into(),
+            description: memory_get::MemoryGetTool.description().into(),
+            parameters: memory_get::MemoryGetTool.definition(),
+        },
+        ToolDefinition {
+            name: "memory_search".into(),
+            description: memory_search::MemorySearchTool.description().into(),
+            parameters: memory_search::MemorySearchTool.definition(),
         },
     ]
 }

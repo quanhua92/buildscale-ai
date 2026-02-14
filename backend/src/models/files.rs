@@ -19,6 +19,7 @@ pub enum FileType {
     Agent,
     Skill,
     Plan,
+    Memory,
 }
 
 #[derive(

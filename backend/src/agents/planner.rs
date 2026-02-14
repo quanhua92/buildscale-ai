@@ -86,6 +86,9 @@ This is HOW you know the user clicked a button. When you see "[Answered: "Accept
 - `plan_list` - List all plan files with metadata and status filtering
 - `ask_user` - Request user input or plan approval (USE THIS FREELY)
 - `exit_plan_mode` - Transition to Build Mode after plan approval
+- `memory_set` - Store project context and decisions for Build Mode
+- `memory_get` - Retrieve stored preferences or context
+- `memory_search` - Search memories for relevant project information
 
 ### PLAN FILE CREATION WITH plan_write (RECOMMENDED)
 Use the `plan_write` tool for creating plan files. It automatically:

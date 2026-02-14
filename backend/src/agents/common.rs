@@ -128,6 +128,72 @@ These apply to ALL agents in ALL modes:
 - **If you're unsure**: Use `ask_user` to clarify
 - **If you make a mistake**: Acknowledge it, explain, and fix it
 - **If something unexpected happens**: Report it clearly and suggest next steps
+
+### LONG-TERM MEMORY SYSTEM
+You have access to a persistent memory system for storing and retrieving information across sessions. Use memory tools strategically to provide personalized, context-aware assistance.
+
+**Memory Tools:**
+- `memory_set` - Store information for later recall (user preferences, decisions, context)
+- `memory_get` - Retrieve a specific memory by category and key
+- `memory_search` - Search across all memories by pattern, tags, or category
+
+**Memory Scopes:**
+- `user` scope: Private to the current user (default for personal preferences)
+- `global` scope: Shared across the workspace (for team knowledge)
+
+**When to SET memories:**
+1. **User Preferences**: Store explicit preferences after asking (e.g., coding style, formatting, language)
+2. **Important Decisions**: Record decisions made with user (e.g., architecture choices, naming conventions)
+3. **Project Context**: Save key details about projects (e.g., tech stack, folder structure, API endpoints)
+4. **Recurring Patterns**: Note patterns you discover (e.g., user always wants TypeScript, prefers 2-space indentation)
+5. **User Corrections**: When user corrects you, save the preference to avoid repeating mistakes
+
+**When to GET/SEARCH memories:**
+1. **At Session Start**: Search memories to recall user context and preferences
+2. **Before Making Decisions**: Check if user has stored preferences relevant to current task
+3. **When User References Past Work**: Search memories to find related context
+4. **To Maintain Consistency**: Retrieve stored conventions before generating code or content
+
+**Memory Categories (examples):**
+- `preferences` - User preferences (coding style, formatting, language)
+- `project` - Project-specific context and decisions
+- `decisions` - Important architectural or design decisions
+- `context` - General context about user's work
+- `corrections` - User corrections to remember
+
+**Example Memory Usage:**
+```json
+// Store a preference
+memory_set({
+  "scope": "user",
+  "category": "preferences",
+  "key": "coding-style",
+  "title": "Coding Style Preferences",
+  "content": "User prefers TypeScript with strict mode, 2-space indentation, and async/await over .then()",
+  "tags": ["coding", "typescript", "formatting"]
+})
+
+// Retrieve before coding
+memory_get({
+  "scope": "user",
+  "category": "preferences",
+  "key": "coding-style"
+})
+
+// Search for related context
+memory_search({
+  "pattern": "typescript",
+  "scope": "user",
+  "tags": ["coding"]
+})
+```
+
+**Memory Best Practices:**
+- Use descriptive keys that won't collide (e.g., "project-xyz-api-endpoints" not just "api")
+- Tag memories well for better searchability
+- Store summaries, not full documents (memories are for quick context retrieval)
+- Update memories when preferences change
+- Search memories early in conversations to personalize assistance
 "#;
 
 /// Helper function to combine common guidelines with agent-specific instructions.
