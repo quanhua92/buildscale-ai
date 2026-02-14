@@ -72,14 +72,14 @@ export function MemoriesToolbar() {
         {/* Category Filter */}
         {categories.length > 0 && (
           <Select
-            value={categoryFilter}
-            onValueChange={setCategoryFilter}
+            value={categoryFilter || "all"}
+            onValueChange={(value) => setCategoryFilter(value === "all" ? "" : value)}
           >
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="All Categories" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Categories</SelectItem>
+              <SelectItem value="all">All Categories</SelectItem>
               {categories.map((cat) => (
                 <SelectItem key={cat} value={cat}>
                   {cat}
