@@ -334,7 +334,7 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
 - **Non-recursive mode** (default): Returns immediate children only
 - **Recursive mode**: Returns all descendants with paths matching the prefix
 - **Limit behavior**:
-  - Default limit is 500 entries when not specified
+  - Default limit is 50 entries when not specified
   - `limit: 0` returns unlimited entries (useful for UI components that need all entries)
   - Limit is applied after merging database and filesystem entries, and after sorting (folders first)
 - **Directory Validation**: Returns `400 Bad Request` if the target path is a file
