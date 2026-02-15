@@ -1,6 +1,8 @@
+use crate::models::agent_session::AgentType;
 use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::queries;
+use crate::services::agent_sessions;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
@@ -11,6 +13,7 @@ use futures::StreamExt;
 use rig::streaming::StreamingChat;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -107,6 +110,7 @@ impl Default for ChatActorState {
 pub struct ChatActor {
     chat_id: Uuid,
     workspace_id: Uuid,
+    user_id: Uuid,
     pool: DbPool,
     rig_service: Arc<RigService>,
     storage: Arc<FileStorageService>,
@@ -116,6 +120,10 @@ pub struct ChatActor {
     default_persona: String,
     default_context_token_limit: usize,
     inactivity_timeout: std::time::Duration,
+    /// Agent session ID for tracking this actor in the database
+    session_id: Option<Uuid>,
+    /// Handle for the heartbeat task
+    heartbeat_handle: Option<JoinHandle<()>>,
     /// Consolidated state - single lock for all actor state
     /// Reduces lock contention and eliminates deadlock risk
     state: Arc<Mutex<ChatActorState>>,
@@ -124,6 +132,7 @@ pub struct ChatActor {
 pub struct ChatActorArgs {
     pub chat_id: Uuid,
     pub workspace_id: Uuid,
+    pub user_id: Uuid,
     pub pool: DbPool,
     pub rig_service: Arc<RigService>,
     pub storage: Arc<FileStorageService>,
@@ -145,18 +154,28 @@ impl ChatActor {
         let (command_tx, command_rx) = mpsc::channel(32);
         let event_tx = args.event_tx.clone();
 
+        // Determine agent type from mode (could be passed directly if needed)
+        let agent_type = match args.default_persona.as_str() {
+            "planner" => AgentType::Planner,
+            "builder" => AgentType::Builder,
+            _ => AgentType::Assistant,
+        };
+
         let actor = Self {
             chat_id: args.chat_id,
             workspace_id: args.workspace_id,
-            pool: args.pool,
+            user_id: args.user_id,
+            pool: args.pool.clone(),
             rig_service: args.rig_service,
             storage: args.storage,
             registry: args.registry,
             command_rx,
-            event_tx: args.event_tx,
+            event_tx: args.event_tx.clone(),
             default_persona: args.default_persona,
             default_context_token_limit: args.default_context_token_limit,
             inactivity_timeout: args.inactivity_timeout,
+            session_id: None,
+            heartbeat_handle: None,
             state: Arc::new(Mutex::new(ChatActorState::default())),
         };
 
@@ -172,6 +191,20 @@ impl ChatActor {
 
     async fn run(mut self) {
         tracing::info!("[ChatActor] Started for chat {}", self.chat_id);
+
+        // Create agent session in database
+        let session_result = self.create_session().await;
+        if let Err(e) = &session_result {
+            tracing::warn!("[ChatActor] Failed to create session: {}", e);
+        } else {
+            tracing::info!("[ChatActor] Created session for chat {}", self.chat_id);
+        }
+
+        // Start heartbeat task if session was created
+        if let Ok(session_id) = session_result {
+            self.session_id = Some(session_id);
+            self.heartbeat_handle = Some(self.start_heartbeat_task(session_id));
+        }
 
         // Periodic heartbeat ping (every 10 seconds)
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
@@ -197,7 +230,24 @@ impl ChatActor {
 
                         match cmd {
                             AgentCommand::ProcessInteraction { user_id } => {
-                                if let Err(e) = self.process_interaction(user_id).await {
+                                // Update session status to running
+                                if let Some(session_id) = self.session_id {
+                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Running).await;
+                                }
+
+                                let result = self.process_interaction(user_id).await;
+
+                                // Update session status based on result
+                                if let Some(session_id) = self.session_id {
+                                    let status = if result.is_err() {
+                                        crate::models::agent_session::SessionStatus::Error
+                                    } else {
+                                        crate::models::agent_session::SessionStatus::Idle
+                                    };
+                                    let _ = self.update_session_status(session_id, status).await;
+                                }
+
+                                if let Err(e) = result {
 
                                     tracing::error!(
                                         "[ChatActor] Error processing interaction for chat {}: {:?}",
@@ -246,6 +296,15 @@ impl ChatActor {
                     }
                 }
             }
+        }
+
+        // Cleanup: stop heartbeat and mark session as completed
+        if let Some(handle) = self.heartbeat_handle {
+            handle.abort();
+        }
+
+        if let Some(session_id) = self.session_id {
+            let _ = self.mark_session_completed(session_id).await;
         }
     }
 
@@ -1231,5 +1290,93 @@ impl ChatActor {
 
             Ok(agent)
         }
+    }
+
+    // ========================================================================
+    // SESSION TRACKING METHODS
+    // ========================================================================
+
+    /// Creates a new agent session in the database.
+    async fn create_session(&self) -> Result<Uuid, crate::error::Error> {
+        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+        // Determine agent type from mode
+        let agent_type = match self.default_persona.as_str() {
+            "planner" => AgentType::Planner,
+            "builder" => AgentType::Builder,
+            _ => AgentType::Assistant,
+        };
+
+        // Determine mode from persona
+        let mode = match self.default_persona.as_str() {
+            "planner" => "plan",
+            "builder" => "build",
+            _ => "chat",
+        };
+
+        let session = agent_sessions::create_session(
+            &mut conn,
+            self.workspace_id,
+            self.chat_id,
+            self.user_id,
+            agent_type,
+            DEFAULT_CHAT_MODEL.to_string(),
+            mode.to_string(),
+        )
+        .await?;
+
+        Ok(session.id)
+    }
+
+    /// Updates the session status in the database.
+    async fn update_session_status(
+        &self,
+        session_id: Uuid,
+        status: crate::models::agent_session::SessionStatus,
+    ) -> Result<(), crate::error::Error> {
+        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+        let _ = agent_sessions::update_session_status(&mut conn, session_id, status, self.user_id).await?;
+
+        Ok(())
+    }
+
+    /// Marks the session as completed in the database.
+    async fn mark_session_completed(&self, session_id: Uuid) -> Result<(), crate::error::Error> {
+        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+        let _ = agent_sessions::update_session_status(
+            &mut conn,
+            session_id,
+            crate::models::agent_session::SessionStatus::Completed,
+            self.user_id,
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Starts a background task that sends periodic heartbeats to the database.
+    /// This keeps the session alive and indicates the agent is actively running.
+    fn start_heartbeat_task(&self, session_id: Uuid) -> JoinHandle<()> {
+        let pool = self.pool.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+
+            loop {
+                interval.tick().await;
+
+                let mut conn = match pool.acquire().await {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                // Update heartbeat timestamp
+                if let Err(e) = agent_sessions::update_heartbeat(&mut conn, session_id).await {
+                    tracing::warn!("[ChatActor] Failed to update heartbeat: {}", e);
+                }
+            }
+        })
     }
 }

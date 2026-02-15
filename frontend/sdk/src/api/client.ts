@@ -16,6 +16,11 @@ import type {
   GetMembershipResponse,
   GetChatResponse,
   File,
+  AgentSessionsListResponse,
+  AgentSession,
+  PauseSessionRequest,
+  ResumeSessionRequest,
+  SessionActionResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -366,6 +371,42 @@ class ApiClient {
 
   async purgeFile(workspaceId: string, fileId: string): Promise<void> {
     return this.request<void>(`/workspaces/${workspaceId}/files/${fileId}/purge`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ============================================================================
+  // Agent Sessions API
+  // ============================================================================
+
+  async getWorkspaceAgentSessions(workspaceId: string): Promise<AgentSessionsListResponse> {
+    return this.request<AgentSessionsListResponse>(`/workspaces/${workspaceId}/agent-sessions`, {
+      method: 'GET',
+    })
+  }
+
+  async getAgentSession(sessionId: string): Promise<{ session: AgentSession }> {
+    return this.request<{ session: AgentSession }>(`/agent-sessions/${sessionId}`, {
+      method: 'GET',
+    })
+  }
+
+  async pauseAgentSession(sessionId: string, reason?: string): Promise<SessionActionResponse> {
+    return this.request<SessionActionResponse>(`/agent-sessions/${sessionId}/pause`, {
+      method: 'POST',
+      body: JSON.stringify(reason ? { reason } : {}),
+    })
+  }
+
+  async resumeAgentSession(sessionId: string, task?: string): Promise<SessionActionResponse> {
+    return this.request<SessionActionResponse>(`/agent-sessions/${sessionId}/resume`, {
+      method: 'POST',
+      body: JSON.stringify(task ? { task } : {}),
+    })
+  }
+
+  async cancelAgentSession(sessionId: string): Promise<SessionActionResponse> {
+    return this.request<SessionActionResponse>(`/agent-sessions/${sessionId}`, {
       method: 'DELETE',
     })
   }

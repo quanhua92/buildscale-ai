@@ -1,3 +1,4 @@
+pub mod agent_sessions;
 pub mod ai_models;
 pub mod chat;
 pub mod files;

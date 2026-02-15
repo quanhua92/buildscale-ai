@@ -20,6 +20,7 @@ pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use error::{Error, Result, ValidationErrors};
 pub use handlers::{
+    agent_sessions::{list_workspace_sessions, get_session, pause_session, resume_session, cancel_session},
     auth::login, auth::logout, auth::me, auth::register, auth::refresh,
     health::health_check, health::health_cache,
     members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
@@ -173,6 +174,11 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
                 .route("/health/cache", get(health_cache))
                 .route("/auth/me", get(me))
                 .route("/providers", get(get_providers))
+                // Agent session routes - global (scoped by session ownership)
+                .route("/agent-sessions/:id", get(crate::handlers::get_session))
+                .route("/agent-sessions/:id/pause", post(crate::handlers::pause_session))
+                .route("/agent-sessions/:id/resume", post(crate::handlers::resume_session))
+                .route("/agent-sessions/:id", delete(crate::handlers::cancel_session))
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     jwt_auth_middleware,
@@ -202,6 +208,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::files as file_handlers;
     use crate::handlers::chat as chat_handlers;
     use crate::handlers::tools as tool_handlers;
+    use crate::handlers::agent_sessions as agent_session_handlers;
     use crate::middleware::workspace_access::workspace_access_middleware;
 
     Router::new()
@@ -405,6 +412,15 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/chats/{chat_id}/context",
             get(chat_handlers::get_chat_context)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        // Agent session routes - workspace scoped
+        .route(
+            "/{id}/agent-sessions",
+            get(agent_session_handlers::list_workspace_sessions)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

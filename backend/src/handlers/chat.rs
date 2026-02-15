@@ -120,6 +120,7 @@ pub async fn create_chat(
     let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
         chat_id: chat_file.id,
         workspace_id,
+        user_id: user.id,
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
@@ -161,6 +162,7 @@ pub async fn get_chat_events(
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
+            user_id: _user.id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
@@ -285,6 +287,7 @@ pub async fn post_chat_message(
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
+            user_id: user.id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),

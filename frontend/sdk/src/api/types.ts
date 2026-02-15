@@ -527,3 +527,45 @@ export interface TokenBreakdown {
   tools_tokens: number
   attachments_tokens: number
 }
+
+// ============================================================================
+// Agent Session Types
+// ============================================================================
+
+export type AgentType = 'assistant' | 'planner' | 'builder'
+
+export type SessionStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error'
+
+export interface AgentSession {
+  id: string
+  workspace_id: string
+  chat_id: string
+  user_id: string
+  agent_type: AgentType
+  status: SessionStatus
+  model: string
+  mode: string
+  current_task: string | null
+  created_at: string
+  updated_at: string
+  last_heartbeat: string
+  completed_at: string | null
+}
+
+export interface AgentSessionsListResponse {
+  sessions: AgentSession[]
+  total: number
+}
+
+export interface PauseSessionRequest {
+  reason?: string
+}
+
+export interface ResumeSessionRequest {
+  task?: string
+}
+
+export interface SessionActionResponse {
+  session: AgentSession
+  message: string
+}

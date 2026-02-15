@@ -197,6 +197,13 @@ export type {
   File,
   FileType,
   FileStatus,
+  AgentType,
+  AgentSession,
+  SessionStatus,
+  AgentSessionsListResponse,
+  PauseSessionRequest,
+  ResumeSessionRequest,
+  SessionActionResponse,
 } from './api/types'
 
 // Errors
