@@ -29,6 +29,8 @@ pub mod memory_get;
 pub mod memory_search;
 pub mod memory_delete;
 pub mod memory_list;
+pub mod web_fetch;
+pub mod web_search;
 
 pub mod helpers;
 
@@ -168,6 +170,8 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "memory_search" => Ok(ToolExecutor::MemorySearch),
         "memory_delete" => Ok(ToolExecutor::MemoryDelete),
         "memory_list" => Ok(ToolExecutor::MemoryList),
+        "web_fetch" => Ok(ToolExecutor::WebFetch),
+        "web_search" => Ok(ToolExecutor::WebSearch),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
 }
@@ -226,6 +230,8 @@ pub enum ToolExecutor {
     MemorySearch,
     MemoryDelete,
     MemoryList,
+    WebFetch,
+    WebSearch,
 }
 
 impl ToolExecutor {
@@ -264,6 +270,8 @@ impl ToolExecutor {
             ToolExecutor::MemorySearch => "memory_search",
             ToolExecutor::MemoryDelete => "memory_delete",
             ToolExecutor::MemoryList => "memory_list",
+            ToolExecutor::WebFetch => "web_fetch",
+            ToolExecutor::WebSearch => "web_search",
         };
 
         let span = tracing::info_span!("tool_execute", tool = name, workspace_id = %workspace_id, user_id = %user_id);
@@ -297,6 +305,8 @@ impl ToolExecutor {
             ToolExecutor::MemorySearch => memory_search::MemorySearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::MemoryDelete => memory_delete::MemoryDeleteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
             ToolExecutor::MemoryList => memory_list::MemoryListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::WebFetch => web_fetch::WebFetchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::WebSearch => web_search::WebSearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {
@@ -451,6 +461,16 @@ pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
             name: "memory_list".into(),
             description: memory_list::MemoryListTool.description().into(),
             parameters: memory_list::MemoryListTool.definition(),
+        },
+        ToolDefinition {
+            name: "web_fetch".into(),
+            description: web_fetch::WebFetchTool.description().into(),
+            parameters: web_fetch::WebFetchTool.definition(),
+        },
+        ToolDefinition {
+            name: "web_search".into(),
+            description: web_search::WebSearchTool.description().into(),
+            parameters: web_search::WebSearchTool.definition(),
         },
     ]
 }

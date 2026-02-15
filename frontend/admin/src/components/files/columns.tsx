@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { LsEntry } from "./types"
-import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor, Move, CheckCircle, CloudOff } from "lucide-react"
+import { FolderIcon, FileTextIcon, MoreHorizontal, Pencil, Trash, Eye, Presentation, MessageSquare, Monitor, Move, CheckCircle, CloudOff, Download } from "lucide-react"
 import { formatDateTime, Button } from "@buildscale/sdk"
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ declare module '@tanstack/react-table' {
     onDelete?: (file: TData) => void
     onView?: (file: TData) => void
     onMove?: (file: TData) => void
+    onDownload?: (file: TData) => void
   }
 }
 
@@ -123,6 +124,15 @@ export const columns: ColumnDef<LsEntry>[] = [
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {entry.file_type !== 'folder' && (
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation()
+                meta?.onDownload?.(entry)
+              }}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={(e) => {
               e.stopPropagation()
               meta?.onView?.(entry)

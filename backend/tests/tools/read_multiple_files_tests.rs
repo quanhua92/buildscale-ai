@@ -155,3 +155,32 @@ async fn test_read_multiple_files_cannot_read_folder() {
     assert!(!files[0]["success"].as_bool().unwrap());
     assert!(files[0]["error"].as_str().unwrap().contains("Cannot read a folder"));
 }
+
+#[tokio::test]
+async fn test_read_multiple_files_zero_limit_means_unlimited() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Read Multiple Zero Limit Test").await;
+
+    // Create a file with 10 lines
+    let content: String = (0..10).map(|i| format!("Line {}", i)).collect::<Vec<_>>().join("\n");
+    write_file(&app, &workspace_id, &token, "/file.txt", serde_json::json!(content.clone())).await;
+
+    let response = execute_tool(&app, &workspace_id, &token, "read_multiple_files", serde_json::json!({
+        "paths": ["/file.txt"],
+        "limit": 0
+    })).await;
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["success"].as_bool().unwrap());
+
+    let files = body["result"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+
+    // limit: 0 means "unlimited" - should return all content
+    let file_content = files[0]["content"].as_str().unwrap();
+    assert_eq!(file_content, content);
+    assert_eq!(files[0]["total_lines"], 10);
+    assert_eq!(files[0]["truncated"], false);
+}

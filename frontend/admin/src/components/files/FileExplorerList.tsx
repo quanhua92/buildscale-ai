@@ -15,6 +15,8 @@ import {
   TableRow,
   Button,
   cn,
+  useTools,
+  isHtmlFile,
 } from "@buildscale/sdk"
 import { Trash2, Move } from "lucide-react"
 import { useFileExplorer } from "./FileExplorerContext"
@@ -22,7 +24,8 @@ import { columns } from "./columns"
 import type { LsEntry } from "./types"
 
 export function FileExplorerList() {
-  const { files, rowSelection, setRowSelection, setEditorOpen, setDeleteOpen, setMoveOpen, setActiveFile, navigate, setViewerOpen } = useFileExplorer()
+  const { files, rowSelection, setRowSelection, setEditorOpen, setDeleteOpen, setMoveOpen, setActiveFile, navigate, setViewerOpen, workspaceId } = useFileExplorer()
+  const { read } = useTools(workspaceId)
   const [sorting, setSorting] = React.useState<SortingState>([])
 
   const handleEdit = (file: LsEntry) => {
@@ -47,6 +50,26 @@ export function FileExplorerList() {
       setActiveFile(file)
       setViewerOpen(true)
     }
+  }
+
+  const handleDownload = async (file: LsEntry) => {
+    if (file.file_type === 'folder') return
+
+    const result = await read(file.path)  // Uses default limit: 0 (unlimited)
+    if (!result) return
+
+    const content = typeof result.content === 'string'
+      ? result.content
+      : JSON.stringify(result.content, null, 2)
+
+    const mimeType = isHtmlFile(file.name) ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8'
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = file.display_name || file.name
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const handleRowClick = (file: LsEntry) => {
@@ -76,6 +99,7 @@ export function FileExplorerList() {
       onDelete: handleDelete,
       onView: handleView,
       onMove: handleMove,
+      onDownload: handleDownload,
     },
   })
 

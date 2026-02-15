@@ -161,7 +161,7 @@ async fn test_read_with_offset_exceeds_file() {
 }
 
 #[tokio::test]
-async fn test_read_with_zero_limit() {
+async fn test_read_with_zero_limit_means_unlimited() {
     let app = TestApp::new_with_options(TestAppOptions::api()).await;
     let token = register_and_login(&app).await;
     let workspace_id = create_workspace(&app, &token, "Read Zero Limit Test").await;
@@ -178,10 +178,10 @@ async fn test_read_with_zero_limit() {
     let body: serde_json::Value = response.json().await.unwrap();
     assert!(body["success"].as_bool().unwrap());
 
-    // Should return empty content
-    assert_eq!(body["result"]["content"].as_str().unwrap(), "");
+    // limit: 0 means "unlimited" - should return all content
+    assert_eq!(body["result"]["content"].as_str().unwrap(), content);
     assert_eq!(body["result"]["total_lines"], 3);
-    assert_eq!(body["result"]["truncated"], true); // More lines exist
+    assert_eq!(body["result"]["truncated"], false); // All lines returned
 }
 
 #[tokio::test]

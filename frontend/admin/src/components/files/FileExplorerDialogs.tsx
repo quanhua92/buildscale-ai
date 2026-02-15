@@ -24,8 +24,10 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
   useTools,
+  HtmlPreview,
+  isHtmlFile,
 } from "@buildscale/sdk"
-import { Loader2, FolderIcon, ChevronRight, Home } from "lucide-react"
+import { Loader2, FolderIcon, ChevronRight, Home, Code, Globe } from "lucide-react"
 import { getContentAsString } from './utils'
 import type { LsResult, LsEntry } from './types'
 
@@ -233,18 +235,24 @@ function FileEditor() {
 }
 
 function FileViewer() {
-  const { isViewerOpen, setViewerOpen, activeFile, readFile, workspaceId } = useFileExplorer()
+  const { isViewerOpen, setViewerOpen, activeFile, workspaceId } = useFileExplorer()
+  const { read } = useTools(workspaceId)
   const [content, setContent] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
+  const [previewMode, setPreviewMode] = useState<'preview' | 'code'>('preview')
   const navigate = useNavigate()
+
+  // Determine if file is HTML
+  const isHtml = activeFile && isHtmlFile(activeFile.name)
 
   useEffect(() => {
     let mounted = true
     const loadContent = async () => {
       if (isViewerOpen && activeFile) {
         setIsLoading(true)
+        setPreviewMode('preview') // Reset to preview mode when opening a new file
         try {
-          const result = await readFile(activeFile.path)
+          const result = await read(activeFile.path)  // Uses default limit: 0 (unlimited)
           if (mounted && result) {
             setContent(getContentAsString(result.content))
           }
@@ -255,26 +263,55 @@ function FileViewer() {
     }
     loadContent()
     return () => { mounted = false }
-  }, [isViewerOpen, activeFile, readFile])
+  }, [isViewerOpen, activeFile, read])
 
   const isChat = activeFile?.file_type === 'chat' || (activeFile?.is_virtual && activeFile?.name.startsWith('chat-'))
 
   return (
     <Dialog open={isViewerOpen} onOpenChange={setViewerOpen}>
-      <DialogContent className="w-[95vw] max-w-5xl max-h-[80vh] flex flex-col p-0 gap-0 sm:p-6 sm:gap-4">
-        <DialogHeader className="p-4 sm:p-0 border-b sm:border-0">
-          <DialogTitle>{activeFile?.name}</DialogTitle>
-          <DialogDescription className="break-all">
-            {activeFile?.path}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 overflow-auto border-0 sm:border rounded-none sm:rounded-md p-4 bg-muted/30 font-mono text-sm whitespace-pre-wrap">
+      <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] h-[90vh] flex flex-col p-0 gap-0 sm:p-6 sm:gap-4">
+        <DialogHeader className="p-4 sm:p-0 border-b sm:border-0 flex flex-row items-center justify-between space-y-0">
+        {isHtml ? (
+          <div className="flex gap-1 mx-auto">
+            <Button
+              size="sm"
+              variant={previewMode === 'preview' ? 'default' : 'outline'}
+              onClick={() => setPreviewMode('preview')}
+            >
+              <Globe className="h-4 w-4 mr-1" />
+              Preview
+            </Button>
+            <Button
+              size="sm"
+              variant={previewMode === 'code' ? 'default' : 'outline'}
+              onClick={() => setPreviewMode('code')}
+            >
+              <Code className="h-4 w-4 mr-1" />
+              Code
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            <DialogTitle className="truncate">{activeFile?.name}</DialogTitle>
+            {activeFile?.path && (
+              <span className="text-xs text-muted-foreground truncate hidden sm:inline" title={activeFile.path}>
+                {activeFile.path}
+              </span>
+            )}
+          </div>
+        )}
+      </DialogHeader>
+        <div className="flex-1 overflow-auto border-0 sm:border rounded-none sm:rounded-md bg-muted/30 font-mono text-sm">
           {isLoading ? (
             <div className="flex items-center justify-center h-40">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
+          ) : isHtml && previewMode === 'preview' ? (
+            <HtmlPreview content={content} className="h-full" />
           ) : (
-            content || <span className="text-muted-foreground italic">Empty file</span>
+            <div className="p-4 whitespace-pre-wrap">
+              {content || <span className="text-muted-foreground italic">Empty file</span>}
+            </div>
           )}
         </div>
         <DialogFooter className="p-4 sm:p-0 border-t sm:border-0 flex flex-col gap-2 sm:flex-col sm:space-x-0">

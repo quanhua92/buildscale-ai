@@ -6,6 +6,9 @@ use serde_json::Value;
 use async_trait::async_trait;
 use super::{Tool, ToolConfig};
 
+/// Default maximum number of lines to read from each file.
+const DEFAULT_READ_LIMIT: usize = 500;
+
 /// Read multiple files tool for parallel bulk reads
 ///
 /// Reads multiple files, returning results for each file.
@@ -146,7 +149,7 @@ async fn read_single_file(
                         }
                     };
 
-                    let effective_limit = limit.unwrap_or(500);
+                    let effective_limit = limit.map(|l| if l == 0 { usize::MAX } else { l }).unwrap_or(DEFAULT_READ_LIMIT);
                     let lines: Vec<&str> = content.lines().collect();
                     let total = lines.len();
                     let was_truncated = total > effective_limit;
@@ -211,7 +214,7 @@ async fn read_single_file(
     // Extract content
     let (content, total_lines, truncated) = match &file_with_content.content {
         Value::String(s) => {
-            let effective_limit = limit.unwrap_or(500);
+            let effective_limit = limit.map(|l| if l == 0 { usize::MAX } else { l }).unwrap_or(DEFAULT_READ_LIMIT);
             let lines: Vec<&str> = s.lines().collect();
             let total = lines.len();
             let was_truncated = total > effective_limit;

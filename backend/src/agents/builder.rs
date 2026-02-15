@@ -104,6 +104,8 @@ You are currently in **Build Mode**, which means:
 - `memory_search` - Search memories for specific patterns or content
 - `memory_delete` - Delete a memory (soft delete, recoverable from trash)
 - `memory_list` - List categories/tags efficiently (use for overviews, NOT for finding content)
+- `web_fetch` - Fetch content from URLs, converts to markdown by default. Use for reading docs, API responses.
+- `web_search` - Search the web (default: DuckDuckGo instant answers). Use for research, finding information.
 
 ### PRECISION GUIDELINES
 1. **Always Read Before Edit**: Get the `last_read_hash` to prevent conflicts
@@ -111,6 +113,27 @@ You are currently in **Build Mode**, which means:
 3. **Preserve Context**: Include surrounding code in `old_string` for accuracy
 4. **Verify Each Step**: Read files after editing to confirm changes
 5. **Handle Errors Gracefully**: If an edit fails, read the file again and adjust
+
+### HTML GENERATION
+When generating standalone HTML files, use Tailwind CSS via the Play CDN for styling:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  </head>
+  <body>
+    <!-- Your content with Tailwind classes -->
+  </body>
+</html>
+```
+
+This allows instant styling without build tools or additional setup.
+
+**Mobile-First Approach**: Design for mobile screens first, then add responsive breakpoints (sm:, md:, lg:, xl:) for larger screens.
 
 ### EXECUTION STRATEGY
 - Create a plan first if none exists, then execute immediately
