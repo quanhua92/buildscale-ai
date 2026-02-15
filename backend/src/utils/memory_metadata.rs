@@ -121,23 +121,27 @@ pub fn prepend_memory_frontmatter(metadata: &MemoryMetadata, content: &str) -> S
 ///
 /// User scope: `/users/{user_id}/memories/{category}/{key}.md`
 /// Global scope: `/memories/{category}/{key}.md`
+///
+/// Returns an error if user scope is specified but user_id is None.
 pub fn generate_memory_path(
     scope: &MemoryScope,
     category: &str,
     key: &str,
     user_id: Option<Uuid>,
-) -> String {
+) -> Result<String, String> {
     // Sanitize category and key for filesystem
     let sanitized_category = sanitize_path_component(category);
     let sanitized_key = sanitize_path_component(key);
 
     match scope {
         MemoryScope::User => {
-            let uid = user_id.expect("user_id is required for user-scoped memories");
-            format!("/users/{}/memories/{}/{}.md", uid, sanitized_category, sanitized_key)
+            match user_id {
+                Some(uid) => Ok(format!("/users/{}/memories/{}/{}.md", uid, sanitized_category, sanitized_key)),
+                None => Err("user_id is required for user-scoped memories".to_string()),
+            }
         },
         MemoryScope::Global => {
-            format!("/memories/{}/{}.md", sanitized_category, sanitized_key)
+            Ok(format!("/memories/{}/{}.md", sanitized_category, sanitized_key))
         }
     }
 }
@@ -275,7 +279,7 @@ Configuration content."#;
             "work",
             "meeting-notes",
             Some(user_id),
-        );
+        ).unwrap();
 
         assert_eq!(
             path,
@@ -290,9 +294,22 @@ Configuration content."#;
             "config",
             "project-settings",
             None,
-        );
+        ).unwrap();
 
         assert_eq!(path, "/memories/config/project-settings.md");
+    }
+
+    #[test]
+    fn test_generate_memory_path_user_without_id() {
+        let result = generate_memory_path(
+            &MemoryScope::User,
+            "work",
+            "meeting-notes",
+            None,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("user_id is required"));
     }
 
     #[test]

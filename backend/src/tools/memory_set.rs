@@ -125,7 +125,10 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
             &memory_args.category,
             &memory_args.key,
             user_id_for_path,
-        );
+        ).map_err(|e| Error::Validation(crate::error::ValidationErrors::Single {
+            field: "scope".to_string(),
+            message: e,
+        }))?;
 
         let path = super::normalize_path(&path);
 
