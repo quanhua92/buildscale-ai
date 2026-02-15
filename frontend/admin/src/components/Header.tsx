@@ -1,7 +1,7 @@
 import { Link, useMatches } from '@tanstack/react-router'
 
 import { useState } from 'react'
-import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2, Brain } from 'lucide-react'
+import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2, Brain, Bot } from 'lucide-react'
 import { NavigationMenu, ThemeToggle, useAuth } from '@buildscale/sdk'
 import tanstackLogo from '/tanstack-word-logo-white.svg'
 
@@ -40,13 +40,20 @@ export default function Header() {
                     >
                       Overview
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      to="/workspaces/$workspaceId/chat" 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/chat"
                       params={{ workspaceId }}
                       search={{}} // Explicitly clear search params to start a new chat
                       icon={<MessageSquare size={20} />}
                     >
                       Chat
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/agents"
+                      params={{ workspaceId }}
+                      icon={<Bot size={20} />}
+                    >
+                      Agents
                     </NavigationMenu.Item>
                     <NavigationMenu.Item
                       to="/workspaces/$workspaceId/files"
