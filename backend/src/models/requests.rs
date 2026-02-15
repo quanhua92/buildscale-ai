@@ -1430,7 +1430,7 @@ pub struct WebFetchArgs {
     #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
     pub extract_links: Option<bool>,
 
-    /// Maximum content size in bytes (default: 100KB, max: 1MB)
+    /// Maximum content size in bytes (default: 1048576/1MB, max: 5242880/5MB)
     #[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
     pub max_content_size: Option<usize>,
 }

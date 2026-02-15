@@ -16,6 +16,7 @@ import {
   Button,
   cn,
   useTools,
+  isHtmlFile,
 } from "@buildscale/sdk"
 import { Trash2, Move } from "lucide-react"
 import { useFileExplorer } from "./FileExplorerContext"
@@ -61,7 +62,8 @@ export function FileExplorerList() {
       ? result.content
       : JSON.stringify(result.content, null, 2)
 
-    const blob = new Blob([content], { type: 'text/plain' })
+    const mimeType = isHtmlFile(file.name) ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8'
+    const blob = new Blob([content], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
