@@ -18,8 +18,6 @@ import type {
   File,
   AgentSessionsListResponse,
   AgentSession,
-  PauseSessionRequest,
-  ResumeSessionRequest,
   SessionActionResponse,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
