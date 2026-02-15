@@ -87,10 +87,10 @@ This is HOW you know the user clicked a button. When you see "[Answered: "Accept
 - `ask_user` - Request user input or plan approval (USE THIS FREELY)
 - `exit_plan_mode` - Transition to Build Mode after plan approval
 - `memory_set` - Store project context and decisions for Build Mode
-- `memory_get` - Retrieve stored preferences or context
-- `memory_search` - Search memories for relevant project information
+- `memory_get` - Retrieve stored preferences or context (when you know the exact key)
+- `memory_search` - Search memories for specific project information
 - `memory_delete` - Delete a memory (soft delete, recoverable from trash)
-- `memory_list` - List categories, tags, or memories efficiently
+- `memory_list` - List categories/tags efficiently (use for overviews, NOT for finding content)
 
 ### PLAN FILE CREATION WITH plan_write (RECOMMENDED)
 Use the `plan_write` tool for creating plan files. It automatically:

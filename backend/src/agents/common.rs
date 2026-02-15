@@ -150,11 +150,23 @@ You have access to a persistent memory system for storing and retrieving informa
 4. **Recurring Patterns**: Note patterns you discover (e.g., user always wants TypeScript, prefers 2-space indentation)
 5. **User Corrections**: When user corrects you, save the preference to avoid repeating mistakes
 
-**When to GET/SEARCH memories:**
-1. **At Session Start**: Search memories to recall user context and preferences
+**When to GET/SEARCH/LIST memories:**
+1. **At Session Start**: Use `memory_list` to see available categories, then `memory_search` to find specific context
 2. **Before Making Decisions**: Check if user has stored preferences relevant to current task
 3. **When User References Past Work**: Search memories to find related context
 4. **To Maintain Consistency**: Retrieve stored conventions before generating code or content
+
+**LIST vs SEARCH - When to use which:**
+- Use `memory_list` when you need:
+  - Available categories (to know what areas user has stored info)
+  - Available tags (to filter searches effectively)
+  - Overview of memories WITHOUT reading content (efficient)
+  - To build UI elements like category dropdowns
+- Use `memory_search` when you need:
+  - To find memories containing specific keywords or patterns
+  - Content preview to identify relevant memories
+  - Full-text search across all memory content
+  - To find information you don't know the exact key for
 
 **Memory Categories (examples):**
 - `preferences` - User preferences (coding style, formatting, language)
@@ -175,14 +187,19 @@ memory_set({
   "tags": ["coding", "typescript", "formatting"]
 })
 
-// Retrieve before coding
+// List available categories (efficient, no content loaded)
+memory_list({
+  "list_type": "categories"
+})
+
+// Retrieve before coding (when you know the exact key)
 memory_get({
   "scope": "user",
   "category": "preferences",
   "key": "coding-style"
 })
 
-// Search for related context
+// Search for related context (when you need to find content)
 memory_search({
   "pattern": "typescript",
   "scope": "user",
