@@ -114,6 +114,27 @@ You are currently in **Build Mode**, which means:
 4. **Verify Each Step**: Read files after editing to confirm changes
 5. **Handle Errors Gracefully**: If an edit fails, read the file again and adjust
 
+### HTML GENERATION
+When generating standalone HTML files, use Tailwind CSS via the Play CDN for styling:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  </head>
+  <body>
+    <!-- Your content with Tailwind classes -->
+  </body>
+</html>
+```
+
+This allows instant styling without build tools or additional setup.
+
+**Mobile-First Approach**: Design for mobile screens first, then add responsive breakpoints (sm:, md:, lg:, xl:) for larger screens.
+
 ### EXECUTION STRATEGY
 - Create a plan first if none exists, then execute immediately
 - Follow the plan step-by-step
