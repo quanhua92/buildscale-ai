@@ -160,6 +160,30 @@ fn sanitize_path_component(s: &str) -> String {
         .to_lowercase()
 }
 
+/// Parse memory path to extract scope, category, and key
+///
+/// User path: `/users/{user_id}/memories/{category}/{key}.md`
+/// Global path: `/memories/{category}/{key}.md`
+///
+/// Returns `(scope, category, key)` if the path matches a memory file pattern.
+pub fn parse_memory_path(path: &str) -> Option<(MemoryScope, String, String)> {
+    let parts: Vec<&str> = path.split('/').collect();
+
+    if parts.len() >= 6 && parts[1] == "users" && parts[3] == "memories" {
+        // User-scoped memory: /users/{uuid}/memories/{category}/{key}.md
+        let category = parts[4].to_string();
+        let key = parts.get(5)?.strip_suffix(".md")?.to_string();
+        Some((MemoryScope::User, category, key))
+    } else if parts.len() >= 4 && parts[1] == "memories" {
+        // Global-scoped memory: /memories/{category}/{key}.md
+        let category = parts[2].to_string();
+        let key = parts.get(3)?.strip_suffix(".md")?.to_string();
+        Some((MemoryScope::Global, category, key))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +307,33 @@ Configuration content."#;
         // Path traversal prevention
         assert_eq!(sanitize_path_component("."), "_");
         assert_eq!(sanitize_path_component(".."), "_");
+    }
+
+    #[test]
+    fn test_parse_memory_path_user() {
+        let path = "/users/00000000-0000-0000-0000-000000000001/memories/work/meeting.md";
+        let result = parse_memory_path(path);
+        assert!(result.is_some());
+        let (scope, category, key) = result.unwrap();
+        assert_eq!(scope, MemoryScope::User);
+        assert_eq!(category, "work");
+        assert_eq!(key, "meeting");
+    }
+
+    #[test]
+    fn test_parse_memory_path_global() {
+        let path = "/memories/config/settings.md";
+        let result = parse_memory_path(path);
+        assert!(result.is_some());
+        let (scope, category, key) = result.unwrap();
+        assert_eq!(scope, MemoryScope::Global);
+        assert_eq!(category, "config");
+        assert_eq!(key, "settings");
+    }
+
+    #[test]
+    fn test_parse_memory_path_invalid() {
+        assert!(parse_memory_path("/invalid/path").is_none());
+        assert!(parse_memory_path("/memories/only-category").is_none());
     }
 }

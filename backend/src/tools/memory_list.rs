@@ -13,7 +13,7 @@ use crate::models::requests::{
 };
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_memory_frontmatter, MemoryScope};
+use crate::utils::{parse_memory_frontmatter, parse_memory_path, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -489,69 +489,22 @@ async fn scan_md_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Resul
     Ok(())
 }
 
-/// Parse scope, category, and key from memory path
-fn parse_memory_path(path: &str) -> Option<(MemoryScope, String, String)> {
-    let parts: Vec<&str> = path.split('/').collect();
-
-    if parts.len() >= 6 && parts[1] == "users" && parts[3] == "memories" {
-        // User-scoped memory: /users/{uuid}/memories/{category}/{key}.md
-        let category = parts[4].to_string();
-        let key = parts.get(5)?.strip_suffix(".md")?.to_string();
-        Some((MemoryScope::User, category, key))
-    } else if parts.len() >= 4 && parts[1] == "memories" {
-        // Global-scoped memory: /memories/{category}/{key}.md
-        let category = parts[2].to_string();
-        let key = parts.get(3)?.strip_suffix(".md")?.to_string();
-        Some((MemoryScope::Global, category, key))
-    } else {
-        None
-    }
-}
-
 /// Apply pagination to a list
 fn apply_pagination<T>(list: &mut Vec<T>, limit: Option<usize>, offset: Option<usize>) {
     let offset_val = offset.unwrap_or(0);
-    let limit_val = limit.unwrap_or(100);
-    let total = list.len();
 
-    if offset_val > 0 && offset_val < total {
-        *list = list.split_off(offset_val);
+    // Handle offset: skip first N items
+    if offset_val > 0 {
+        if offset_val >= list.len() {
+            list.clear();
+        } else {
+            list.drain(..offset_val);
+        }
     }
 
+    // Handle limit: take only first M items
+    let limit_val = limit.unwrap_or(100);
     if limit_val > 0 && list.len() > limit_val {
         list.truncate(limit_val);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_memory_path_user() {
-        let path = "/users/00000000-0000-0000-0000-000000000001/memories/work/meeting.md";
-        let result = parse_memory_path(path);
-        assert!(result.is_some());
-        let (scope, category, key) = result.unwrap();
-        assert_eq!(scope, MemoryScope::User);
-        assert_eq!(category, "work");
-        assert_eq!(key, "meeting");
-    }
-
-    #[test]
-    fn test_parse_memory_path_global() {
-        let path = "/memories/config/settings.md";
-        let result = parse_memory_path(path);
-        assert!(result.is_some());
-        let (scope, category, key) = result.unwrap();
-        assert_eq!(scope, MemoryScope::Global);
-        assert_eq!(category, "config");
-        assert_eq!(key, "settings");
-    }
-
-    #[test]
-    fn test_parse_memory_path_invalid() {
-        assert!(parse_memory_path("/invalid/path").is_none());
-        assert!(parse_memory_path("/memories/only-category").is_none());
     }
 }

@@ -9,7 +9,7 @@ use crate::models::requests::{
 };
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_memory_frontmatter, MemoryScope};
+use crate::utils::{parse_memory_frontmatter, parse_memory_path, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -467,28 +467,6 @@ fn parse_grep_files_output(
     }
 
     Ok(files)
-}
-
-/// Parse scope, category, and key from memory path
-fn parse_memory_path(path: &str) -> Option<(MemoryScope, String, String)> {
-    // User path: /users/{user_id}/memories/{category}/{key}.md
-    // Global path: /memories/{category}/{key}.md
-
-    let parts: Vec<&str> = path.split('/').collect();
-
-    if parts.len() >= 6 && parts[1] == "users" && parts[3] == "memories" {
-        // User-scoped memory: /users/{uuid}/memories/{category}/{key}.md
-        let category = parts[4].to_string();
-        let key = parts.get(5)?.strip_suffix(".md")?.to_string();
-        Some((MemoryScope::User, category, key))
-    } else if parts.len() >= 4 && parts[1] == "memories" {
-        // Global-scoped memory: /memories/{category}/{key}.md
-        let category = parts[2].to_string();
-        let key = parts.get(3)?.strip_suffix(".md")?.to_string();
-        Some((MemoryScope::Global, category, key))
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
