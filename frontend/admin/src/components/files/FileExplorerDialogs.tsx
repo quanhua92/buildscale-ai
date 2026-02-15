@@ -271,16 +271,8 @@ function FileViewer() {
     <Dialog open={isViewerOpen} onOpenChange={setViewerOpen}>
       <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] h-[90vh] flex flex-col p-0 gap-0 sm:p-6 sm:gap-4">
         <DialogHeader className="p-4 sm:p-0 border-b sm:border-0 flex flex-row items-center justify-between space-y-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <DialogTitle className="truncate">{activeFile?.name}</DialogTitle>
-          {activeFile?.path && (
-            <span className="text-xs text-muted-foreground truncate hidden sm:inline" title={activeFile.path}>
-              {activeFile.path}
-            </span>
-          )}
-        </div>
-        {isHtml && (
-          <div className="flex gap-1 shrink-0">
+        {isHtml ? (
+          <div className="flex gap-1 mx-auto">
             <Button
               size="sm"
               variant={previewMode === 'preview' ? 'default' : 'outline'}
@@ -297,6 +289,15 @@ function FileViewer() {
               <Code className="h-4 w-4 mr-1" />
               Code
             </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            <DialogTitle className="truncate">{activeFile?.name}</DialogTitle>
+            {activeFile?.path && (
+              <span className="text-xs text-muted-foreground truncate hidden sm:inline" title={activeFile.path}>
+                {activeFile.path}
+              </span>
+            )}
           </div>
         )}
       </DialogHeader>
