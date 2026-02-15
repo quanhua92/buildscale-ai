@@ -8,6 +8,7 @@ use buildscale::services::chat::actor::{ChatActor, ChatActorArgs};
 use buildscale::services::chat::registry::{AgentCommand, AgentRegistry};
 use buildscale::services::chat::rig_engine::RigService;
 use buildscale::services::files::create_file_with_content;
+use uuid::Uuid;
 use buildscale::services::storage::FileStorageService;
 use buildscale::models::sse::SseEvent;
 use std::sync::Arc;
@@ -42,7 +43,7 @@ async fn test_cancellation_during_streaming() {
 
     let chat_id = chat.file.id;
     let workspace_id = workspace.id;
-    let user_id = user.id;
+let _user_id = user.id;
 
     // Create a user message in the database
     chat::insert_chat_message(
@@ -63,9 +64,11 @@ async fn test_cancellation_during_streaming() {
     let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
@@ -158,7 +161,7 @@ async fn test_cancellation_sends_stopped_event() {
 
     let chat_id = chat.file.id;
     let workspace_id = workspace.id;
-    let user_id = user.id;
+let _user_id = user.id;
 
     // Setup: Create user message and file
     chat::insert_chat_message(
@@ -179,9 +182,11 @@ async fn test_cancellation_sends_stopped_event() {
     let (event_tx, event_rx) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
@@ -266,7 +271,7 @@ async fn test_multiple_cancel_requests() {
 
     let chat_id = chat.file.id;
     let workspace_id = workspace.id;
-    let user_id = user.id;
+let _user_id = user.id;
 
     // Setup
     chat::insert_chat_message(
@@ -287,9 +292,11 @@ async fn test_multiple_cancel_requests() {
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,
@@ -361,7 +368,7 @@ async fn test_cancellation_token_propagation() {
 
     let chat_id = chat.file.id;
     let workspace_id = workspace.id;
-    let user_id = user.id;
+let _user_id = user.id;
 
     // Setup
     chat::insert_chat_message(
@@ -382,9 +389,11 @@ async fn test_cancellation_token_propagation() {
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     let storage = Arc::new(FileStorageService::new(&load_config().unwrap().storage.base_path));
 
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.test_db.pool.clone(),
         rig_service,
         storage,

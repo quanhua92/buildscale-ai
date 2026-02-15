@@ -126,6 +126,12 @@ impl TestDb {
             .execute(pool)
             .await;
 
+        let cleanup_agent_sessions = "DELETE FROM agent_sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)";
+        let _ = sqlx::query(cleanup_agent_sessions)
+            .bind(&pattern)
+            .execute(pool)
+            .await;
+
         let cleanup_sessions = "DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)";
         let _ = sqlx::query(cleanup_sessions)
             .bind(&pattern)

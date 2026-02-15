@@ -11,8 +11,8 @@ use tokio::time::{Duration};
 #[tokio::test]
 async fn test_chat_actor_inactivity_timeout() {
     let app = TestApp::new().await;
-    let chat_id = Uuid::new_v4();
-    let workspace_id = Uuid::new_v4();
+    let chat_id = Uuid::now_v7();
+    let workspace_id = Uuid::now_v7();
     let rig_service = Arc::new(RigService::dummy());
     let registry = Arc::new(AgentRegistry::new());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
@@ -20,9 +20,11 @@ async fn test_chat_actor_inactivity_timeout() {
 
     // Use a short timeout for testing (200ms)
     let timeout = Duration::from_millis(200);
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.pool.clone(),
         rig_service,
         storage,
@@ -46,8 +48,8 @@ async fn test_chat_actor_inactivity_timeout() {
 #[tokio::test]
 async fn test_agent_registry_cleanup() {
     let app = TestApp::new().await;
-    let chat_id = Uuid::new_v4();
-    let workspace_id = Uuid::new_v4();
+    let chat_id = Uuid::now_v7();
+    let workspace_id = Uuid::now_v7();
     let rig_service = Arc::new(RigService::dummy());
     let registry = Arc::new(AgentRegistry::new());
     let event_tx = registry.get_or_create_bus(chat_id).await;
@@ -55,9 +57,11 @@ async fn test_agent_registry_cleanup() {
 
     // Use a short timeout for testing (200ms)
     let timeout = Duration::from_millis(200);
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.pool.clone(),
         rig_service,
         storage,
@@ -83,8 +87,8 @@ async fn test_agent_registry_cleanup() {
 #[tokio::test]
 async fn test_chat_actor_timeout_reset() {
     let app = TestApp::new().await;
-    let chat_id = Uuid::new_v4();
-    let workspace_id = Uuid::new_v4();
+    let chat_id = Uuid::now_v7();
+    let workspace_id = Uuid::now_v7();
     let rig_service = Arc::new(RigService::dummy());
     let registry = Arc::new(AgentRegistry::new());
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
@@ -92,9 +96,11 @@ async fn test_chat_actor_timeout_reset() {
 
     // Use a 500ms timeout
     let timeout = Duration::from_millis(500);
+    let user_id = Uuid::now_v7();
     let handle = ChatActor::spawn(ChatActorArgs {
         chat_id,
         workspace_id,
+        user_id,
         pool: app.pool.clone(),
         rig_service,
         storage,

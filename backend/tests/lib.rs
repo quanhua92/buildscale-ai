@@ -8,3 +8,4 @@ pub mod handlers;
 pub mod tools;
 pub mod services;
 pub mod chat;
+pub mod agent_sessions;

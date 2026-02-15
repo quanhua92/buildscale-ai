@@ -175,10 +175,10 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
                 .route("/auth/me", get(me))
                 .route("/providers", get(get_providers))
                 // Agent session routes - global (scoped by session ownership)
-                .route("/agent-sessions/:id", get(crate::handlers::get_session))
-                .route("/agent-sessions/:id/pause", post(crate::handlers::pause_session))
-                .route("/agent-sessions/:id/resume", post(crate::handlers::resume_session))
-                .route("/agent-sessions/:id", delete(crate::handlers::cancel_session))
+                .route("/agent-sessions/{id}", get(crate::handlers::get_session))
+                .route("/agent-sessions/{id}/pause", post(crate::handlers::pause_session))
+                .route("/agent-sessions/{id}/resume", post(crate::handlers::resume_session))
+                .route("/agent-sessions/{id}", delete(crate::handlers::cancel_session))
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     jwt_auth_middleware,
