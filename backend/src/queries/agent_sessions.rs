@@ -2,7 +2,7 @@ use crate::{
     error::{Error, Result},
     models::agent_session::{AgentSession, AgentType, NewAgentSession, SessionStatus},
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 use crate::DbConn;
@@ -446,16 +446,16 @@ pub async fn get_workspace_session_stats(
     conn: &mut DbConn,
     workspace_id: Uuid,
 ) -> Result<WorkspaceSessionStats> {
-    let stats = sqlx::query_as!(
-        WorkspaceSessionStats,
+    // Use separate counts with CASE instead of FILTER to avoid SQLx type issues
+    let row = sqlx::query!(
         r#"
         SELECT
-            COUNT(*) as total,
-            COUNT(*) FILTER (WHERE status = 'idle') as "idle: i64",
-            COUNT(*) FILTER (WHERE status = 'running') as "running: i64",
-            COUNT(*) FILTER (WHERE status = 'paused') as "paused: i64",
-            COUNT(*) FILTER (WHERE status = 'completed') as "completed: i64",
-            COUNT(*) FILTER (WHERE status = 'error') as "error: i64"
+            COUNT(*) as "total!: i64",
+            SUM(CASE WHEN status = 'idle' THEN 1 ELSE 0 END) as "idle!: i64",
+            SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as "running!: i64",
+            SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END) as "paused!: i64",
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as "completed!: i64",
+            SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as "error!: i64"
         FROM agent_sessions
         WHERE workspace_id = $1
         "#,
@@ -465,7 +465,14 @@ pub async fn get_workspace_session_stats(
     .await
     .map_err(Error::Sqlx)?;
 
-    Ok(stats)
+    Ok(WorkspaceSessionStats {
+        total: row.total,
+        idle: row.idle,
+        running: row.running,
+        paused: row.paused,
+        completed: row.completed,
+        error: row.error,
+    })
 }
 
 /// Session statistics for a workspace

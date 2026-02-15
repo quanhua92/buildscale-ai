@@ -154,13 +154,6 @@ impl ChatActor {
         let (command_tx, command_rx) = mpsc::channel(32);
         let event_tx = args.event_tx.clone();
 
-        // Determine agent type from mode (could be passed directly if needed)
-        let agent_type = match args.default_persona.as_str() {
-            "planner" => AgentType::Planner,
-            "builder" => AgentType::Builder,
-            _ => AgentType::Assistant,
-        };
-
         let actor = Self {
             chat_id: args.chat_id,
             workspace_id: args.workspace_id,
@@ -299,11 +292,14 @@ impl ChatActor {
         }
 
         // Cleanup: stop heartbeat and mark session as completed
-        if let Some(handle) = self.heartbeat_handle {
+        let heartbeat_handle = self.heartbeat_handle.take();
+        let session_id = self.session_id.take();
+
+        if let Some(handle) = heartbeat_handle {
             handle.abort();
         }
 
-        if let Some(session_id) = self.session_id {
+        if let Some(session_id) = session_id {
             let _ = self.mark_session_completed(session_id).await;
         }
     }

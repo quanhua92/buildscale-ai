@@ -111,7 +111,7 @@ pub async fn get_session(
 pub async fn list_workspace_sessions(
     conn: &mut DbConn,
     workspace_id: Uuid,
-    user_id: Uuid,
+    _user_id: Uuid,
 ) -> Result<AgentSessionsListResponse> {
     // TODO: Add workspace membership check when workspace access control is available
     // For now, we'll just get all active sessions
@@ -245,7 +245,7 @@ pub async fn update_heartbeat(conn: &mut DbConn, session_id: Uuid) -> Result<()>
 pub async fn pause_session(
     conn: &mut DbConn,
     session_id: Uuid,
-    request: PauseSessionRequest,
+    _request: PauseSessionRequest,
     user_id: Uuid,
 ) -> Result<SessionActionResponse> {
     let session = get_session(conn, session_id, user_id).await?;
@@ -460,7 +460,13 @@ fn validate_status_transition(
     new_status: SessionStatus,
 ) -> Result<()> {
     match (current_status, new_status) {
-        // Can always transition to running
+        // Completed and Error are terminal states - cannot transition
+        (SessionStatus::Completed | SessionStatus::Error, _) => Err(Error::Conflict(format!(
+            "Cannot transition from {} to {}",
+            current_status, new_status
+        ))),
+
+        // Can always transition to running from any non-terminal state
         (_, SessionStatus::Running) => Ok(()),
 
         // Running can transition to idle, paused, completed, error
@@ -469,20 +475,12 @@ fn validate_status_transition(
         (SessionStatus::Running, SessionStatus::Completed) => Ok(()),
         (SessionStatus::Running, SessionStatus::Error) => Ok(()),
 
-        // Idle can transition to running, paused
-        (SessionStatus::Idle, SessionStatus::Running) => Ok(()),
+        // Idle can transition to paused
         (SessionStatus::Idle, SessionStatus::Paused) => Ok(()),
 
-        // Paused can transition to idle, running, completed
+        // Paused can transition to idle or completed
         (SessionStatus::Paused, SessionStatus::Idle) => Ok(()),
-        (SessionStatus::Paused, SessionStatus::Running) => Ok(()),
         (SessionStatus::Paused, SessionStatus::Completed) => Ok(()),
-
-        // Completed and Error are terminal states
-        (SessionStatus::Completed | SessionStatus::Error, _) => Err(Error::Conflict(format!(
-            "Cannot transition from {} to {}",
-            current_status, new_status
-        ))),
 
         // All other transitions are invalid
         (from, to) => Err(Error::Conflict(format!(
