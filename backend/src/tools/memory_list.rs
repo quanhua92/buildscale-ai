@@ -95,18 +95,17 @@ Examples:
 
         let result = match list_args.list_type {
             MemoryListType::Categories => {
-                let categories = list_categories(
+                let (categories, total) = list_categories(
                     &workspace_path,
                     list_args.scope.as_ref(),
                     user_id,
                     list_args.limit,
                     list_args.offset,
                 ).await?;
-                let total = categories.len();
                 serde_json::to_value(MemoryListCategoriesResult { categories, total })?
             }
             MemoryListType::Tags => {
-                let tags = list_tags(
+                let (tags, total) = list_tags(
                     &workspace_path,
                     list_args.scope.as_ref(),
                     list_args.category.as_deref(),
@@ -114,11 +113,10 @@ Examples:
                     list_args.limit,
                     list_args.offset,
                 ).await?;
-                let total = tags.len();
                 serde_json::to_value(MemoryListTagsResult { tags, total })?
             }
             MemoryListType::Memories => {
-                let memories = list_memories(
+                let (memories, total) = list_memories(
                     &workspace_path,
                     list_args.scope.as_ref(),
                     list_args.category.as_deref(),
@@ -127,7 +125,6 @@ Examples:
                     list_args.limit,
                     list_args.offset,
                 ).await?;
-                let total = memories.len();
                 serde_json::to_value(MemoryListMemoriesResult { memories, total })?
             }
         };
@@ -147,7 +144,7 @@ async fn list_categories(
     user_id: Uuid,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> Result<Vec<CategoryInfo>> {
+) -> Result<(Vec<CategoryInfo>, usize)> {
     let mut category_counts: HashMap<String, usize> = HashMap::new();
 
     // Scan global memories if no scope filter or global scope
@@ -173,10 +170,13 @@ async fn list_categories(
         .collect();
     categories.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
 
+    // Get total before pagination
+    let total = categories.len();
+
     // Apply pagination
     apply_pagination(&mut categories, limit, offset);
 
-    Ok(categories)
+    Ok((categories, total))
 }
 
 /// Scan a directory for category folders and count files
@@ -231,7 +231,7 @@ async fn list_tags(
     user_id: Uuid,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> Result<Vec<TagInfo>> {
+) -> Result<(Vec<TagInfo>, usize)> {
     let mut tag_counts: HashMap<String, usize> = HashMap::new();
 
     // Collect files from global memories
@@ -239,7 +239,7 @@ async fn list_tags(
         let global_memories_path = workspace_path.join("memories");
         let files = collect_memory_files(&global_memories_path, category_filter).await?;
         for file_path in files {
-            if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
+            if let Ok(content) = read_file_head(&file_path).await {
                 let (metadata, _) = parse_memory_frontmatter(&content);
                 if let Some(mem_metadata) = metadata {
                     for tag in mem_metadata.tags {
@@ -255,7 +255,7 @@ async fn list_tags(
         let user_memories_path = workspace_path.join("users").join(user_id.to_string()).join("memories");
         let files = collect_memory_files(&user_memories_path, category_filter).await?;
         for file_path in files {
-            if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
+            if let Ok(content) = read_file_head(&file_path).await {
                 let (metadata, _) = parse_memory_frontmatter(&content);
                 if let Some(mem_metadata) = metadata {
                     for tag in mem_metadata.tags {
@@ -273,10 +273,13 @@ async fn list_tags(
         .collect();
     tags.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
 
+    // Get total before pagination
+    let total = tags.len();
+
     // Apply pagination
     apply_pagination(&mut tags, limit, offset);
 
-    Ok(tags)
+    Ok((tags, total))
 }
 
 /// List memories with metadata (no content)
@@ -288,7 +291,7 @@ async fn list_memories(
     user_id: Uuid,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> Result<Vec<MemoryListItem>> {
+) -> Result<(Vec<MemoryListItem>, usize)> {
     let mut memories: Vec<MemoryListItem> = Vec::new();
 
     // Collect and process files based on scope filter
@@ -340,8 +343,8 @@ async fn list_memories(
                 }
             }
 
-            // Read and parse frontmatter
-            let content = match tokio::fs::read_to_string(&file_path).await {
+            // Read and parse frontmatter (only first 4KB for efficiency)
+            let content = match read_file_head(&file_path).await {
                 Ok(c) => c,
                 Err(_) => continue,
             };
@@ -398,20 +401,42 @@ async fn list_memories(
     // Sort by updated_at descending
     memories.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
-    // Apply pagination
+    // Get total before pagination
     let total = memories.len();
+
+    // Apply pagination
     let offset_val = offset.unwrap_or(0);
     let limit_val = limit.unwrap_or(100);
 
     if offset_val > 0 && offset_val < total {
-        memories = memories.split_off(offset_val);
+        memories = memories.into_iter().skip(offset_val).collect();
     }
 
     if limit_val > 0 && memories.len() > limit_val {
         memories.truncate(limit_val);
     }
 
-    Ok(memories)
+    Ok((memories, total))
+}
+
+/// Read only the beginning of a file for frontmatter parsing (more efficient than reading entire file)
+/// Frontmatter is typically at the start, so 4KB should be sufficient
+async fn read_file_head(path: &Path) -> Result<String> {
+    use tokio::io::{AsyncReadExt, BufReader};
+
+    let file = tokio::fs::File::open(path).await
+        .map_err(|e| Error::Internal(format!("Failed to open file: {}", e)))?;
+
+    let mut reader = BufReader::new(file);
+    let mut buffer = vec![0u8; 4096]; // Read first 4KB
+
+    let bytes_read = reader.read(&mut buffer).await
+        .map_err(|e| Error::Internal(format!("Failed to read file: {}", e)))?;
+
+    buffer.truncate(bytes_read);
+
+    String::from_utf8(buffer)
+        .map_err(|e| Error::Internal(format!("Invalid UTF-8 in file: {}", e)))
 }
 
 /// Collect memory files from a directory (non-recursive for category, recursive for all)

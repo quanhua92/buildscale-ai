@@ -334,7 +334,7 @@ async fn run_ripgrep_glob(
     cmd.current_dir(&search_path);
     cmd.arg("--files-with-matches");  // Only return file paths, not line content
     cmd.arg("--glob");
-    cmd.arg("*.md");
+    cmd.arg("**/*.md");  // Recursive glob to match files in all subdirectories
 
     if case_sensitive {
         cmd.arg("--case-sensitive");
