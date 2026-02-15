@@ -1376,3 +1376,130 @@ pub struct MemoryListMemoriesResult {
     pub memories: Vec<MemoryListItem>,
     pub total: usize,
 }
+
+// ============================================================================
+// WEB TOOLS: web_fetch, web_search
+// ============================================================================
+
+/// Output format for web_fetch tool
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum WebFetchFormat {
+    /// Clean markdown (default, most token-efficient)
+    #[default]
+    Markdown,
+    /// Raw HTML
+    Html,
+    /// Plain text only
+    Text,
+    /// For API responses (preserves JSON structure)
+    Json,
+}
+
+/// Arguments for web_fetch tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebFetchArgs {
+    /// URL to fetch (required)
+    pub url: String,
+
+    /// Output format: "markdown" (default), "html", "text", "json"
+    #[serde(default)]
+    pub format: Option<WebFetchFormat>,
+
+    /// HTTP method: "GET" (default), "POST", "PUT", etc.
+    #[serde(default)]
+    pub method: Option<String>,
+
+    /// Request body (for POST/PUT)
+    #[serde(default)]
+    pub body: Option<String>,
+
+    /// Custom headers
+    #[serde(default)]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+
+    /// Timeout in seconds (default: 30)
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
+    pub timeout: Option<usize>,
+
+    /// Follow redirects (default: true)
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub follow_redirects: Option<bool>,
+
+    /// Extract links from content (default: false)
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub extract_links: Option<bool>,
+}
+
+/// A link extracted from web content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebLink {
+    /// Link text (anchor text)
+    pub text: String,
+    /// Link URL
+    pub url: String,
+}
+
+/// Result for web_fetch tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebFetchResult {
+    /// Final URL (after redirects)
+    pub url: String,
+    /// HTTP status code
+    pub status_code: u16,
+    /// Content-Type header value
+    pub content_type: Option<String>,
+    /// Content in requested format
+    pub content: String,
+    /// Size in bytes
+    pub content_size: usize,
+    /// Request duration in milliseconds
+    pub elapsed_ms: u64,
+    /// Extracted links (if extract_links=true)
+    pub links: Option<Vec<WebLink>>,
+    /// True if content was truncated (>100KB)
+    pub truncated: bool,
+}
+
+/// Arguments for web_search tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSearchArgs {
+    /// Search query (required)
+    pub query: String,
+
+    /// Maximum results (default: 10)
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
+    pub max_results: Option<usize>,
+
+    /// Result offset for pagination
+    #[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
+    pub offset: Option<usize>,
+}
+
+/// A single search result item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResultItem {
+    /// Result title
+    pub title: String,
+    /// Result URL
+    pub url: String,
+    /// Result snippet/summary
+    pub snippet: String,
+    /// Publication date (if available)
+    pub published_date: Option<String>,
+}
+
+/// Result for web_search tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSearchResult {
+    /// Original search query
+    pub query: String,
+    /// Provider used
+    pub provider: String,
+    /// Total results available
+    pub total: usize,
+    /// Search results
+    pub results: Vec<SearchResultItem>,
+    /// Instant answer (if available)
+    pub answer: Option<String>,
+}

@@ -45,7 +45,12 @@ uuid = { version = "1.19.0", features = ["serde", "v7"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Web tools dependencies
+reqwest = { version = "0.13", default-features = false, features = ["json", "cookies", "stream", "rustls"] }
+scraper = "0.22"
+html2md = "0.2"
+url = "2.5"
+
 [dev-dependencies]
 nanoid = "0.4.0"
 tokio-test = "0.4.5"
-reqwest = { version = "0.13", default-features = false, features = ["json", "cookies", "stream", "rustls"] }

@@ -104,6 +104,8 @@ You are currently in **Build Mode**, which means:
 - `memory_search` - Search memories for specific patterns or content
 - `memory_delete` - Delete a memory (soft delete, recoverable from trash)
 - `memory_list` - List categories/tags efficiently (use for overviews, NOT for finding content)
+- `web_fetch` - Fetch content from URLs, converts to markdown by default. Use for reading docs, API responses.
+- `web_search` - Search the web (default: DuckDuckGo instant answers). Use for research, finding information.
 
 ### PRECISION GUIDELINES
 1. **Always Read Before Edit**: Get the `last_read_hash` to prevent conflicts

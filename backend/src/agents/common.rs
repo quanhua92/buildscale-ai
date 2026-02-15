@@ -227,6 +227,54 @@ memory_search({
 - Store summaries, not full documents (memories are for quick context retrieval)
 - Update memories when preferences change
 - Search memories early in conversations to personalize assistance
+
+### WEB TOOLS
+You have access to web tools for fetching and searching web content.
+
+**Available Tools:**
+- `web_fetch` - Fetch content from URLs, converts to markdown by default
+- `web_search` - Search the web using DuckDuckGo
+
+**When to use:**
+- **Research tasks** → Use `web_search` to find relevant sources, then `web_fetch` for detailed content
+- **Reading documentation** → Use `web_fetch` with format="markdown" (default) for clean output
+- **API testing** → Use `web_fetch` with method, headers, and body parameters
+
+**web_fetch Parameters:**
+- `url` (required): URL to fetch
+- `format`: "markdown" (default), "html", "text", "json"
+- `method`: HTTP method (default: "GET")
+- `headers`: Custom headers as key-value pairs
+- `body`: Request body for POST/PUT
+- `timeout`: Timeout in seconds (default: 30)
+- `extract_links`: Set to true to extract links from content
+
+**web_search Parameters:**
+- `query` (required): Search query
+- `max_results`: Maximum results (default: 10)
+- `offset`: Result offset for pagination
+
+**Example Usage:**
+```json
+// Search for information
+web_search({
+  "query": "rust async best practices",
+  "max_results": 5
+})
+
+// Fetch documentation
+web_fetch({
+  "url": "https://docs.rs/tokio",
+  "format": "markdown"
+})
+
+// Fetch with custom headers (API access)
+web_fetch({
+  "url": "https://api.example.com/data",
+  "headers": {"Authorization": "Bearer token"},
+  "format": "json"
+})
+```
 "#;
 
 /// Helper function to combine common guidelines with agent-specific instructions.

@@ -5,6 +5,7 @@ use crate::models::requests::{
     AskUserArgs, ExitPlanModeArgs,
     PlanWriteArgs, PlanReadArgs, PlanEditArgs, PlanListArgs,
     MemorySetArgs, MemoryGetArgs, MemorySearchArgs, MemoryDeleteArgs, MemoryListArgs,
+    WebFetchArgs, WebSearchArgs,
 };
 use crate::services::storage::FileStorageService;
 use crate::tools;
@@ -384,5 +385,20 @@ define_rig_tool!(
     tools::memory_list::MemoryListTool,
     MemoryListArgs,
     "memory_list"
+);
+
+// Web tools
+define_rig_tool!(
+    RigWebFetchTool,
+    tools::web_fetch::WebFetchTool,
+    WebFetchArgs,
+    "web_fetch"
+);
+
+define_rig_tool!(
+    RigWebSearchTool,
+    tools::web_search::WebSearchTool,
+    WebSearchArgs,
+    "web_search"
 );
 

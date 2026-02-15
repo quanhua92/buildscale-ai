@@ -34,6 +34,8 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [memory_search - Search Memories](#memory_search---search-memories)
   - [memory_delete - Delete a Memory](#memory_delete---delete-a-memory)
   - [memory_list - List Categories, Tags, or Memories](#memory_list---list-categories-tags-or-memories)
+  - [web_fetch - Fetch Web Content](#web_fetch---fetch-web-content)
+  - [web_search - Search the Web](#web_search---search-the-web)
   - [Path Normalization](#path-normalization)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
@@ -74,6 +76,8 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `memory_search` | Search memories by pattern with filters | `pattern`, `scope?`, `category?`, `tags?`, `case_sensitive?`, `limit?` | `matches[]`, `total` |
 | `memory_delete` | Delete a memory (soft delete) | `scope`, `category`, `key` | `path`, `file_id`, `scope`, `category`, `key` |
 | `memory_list` | List categories, tags, or memories | `list_type`, `scope?`, `category?`, `tags?`, `limit?`, `offset?` | `categories[]`/`tags[]`/`memories[]`, `total` |
+| `web_fetch` | Fetch and convert web content to AI-friendly formats | `url`, `format?`, `method?`, `body?`, `headers?`, `timeout?`, `follow_redirects?`, `extract_links?` | `url`, `status_code`, `content_type`, `content`, `content_size`, `elapsed_ms`, `links?`, `truncated` |
+| `web_search` | Search the web using DuckDuckGo | `query`, `max_results?`, `offset?` | `query`, `provider`, `total`, `results[]`, `answer?` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -2506,6 +2510,240 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
         "updated_at": "2025-01-15T10:30:00Z"
       }
     ]
+  },
+  "error": null
+}
+```
+
+---
+
+### web_fetch - Fetch Web Content
+
+Fetches content from URLs and converts to AI-friendly formats. Supports markdown (default, most token-efficient), HTML, text, and JSON output formats.
+
+**Features:**
+- Multiple output formats: `markdown` (default), `html`, `text`, `json`
+- Custom HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD)
+- Custom headers for API access
+- Configurable timeout and redirect behavior
+- Link extraction from HTML content
+- Automatic content truncation at 100KB
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | Yes | URL to fetch (http or https only) |
+| `format` | string | No | Output format: `markdown` (default), `html`, `text`, `json` |
+| `method` | string | No | HTTP method (default: `GET`) |
+| `body` | string | No | Request body (for POST/PUT) |
+| `headers` | object | No | Custom headers as key-value pairs |
+| `timeout` | integer/string | No | Timeout in seconds (default: 30) |
+| `follow_redirects` | boolean/string | No | Follow redirects (default: true) |
+| `extract_links` | boolean/string | No | Extract links from content (default: false) |
+
+#### Request Examples
+
+```bash
+# Fetch URL as markdown (default, most token-efficient)
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_fetch",
+    "args": {
+      "url": "https://docs.rs/tokio"
+    }
+  }'
+
+# Fetch with custom format
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_fetch",
+    "args": {
+      "url": "https://api.example.com/data",
+      "format": "json"
+    }
+  }'
+
+# Fetch with custom headers (API access)
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_fetch",
+    "args": {
+      "url": "https://api.example.com/data",
+      "headers": {"Authorization": "Bearer token"},
+      "format": "json"
+    }
+  }'
+
+# Extract links from content
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_fetch",
+    "args": {
+      "url": "https://example.com/page",
+      "extract_links": true
+    }
+  }'
+```
+
+#### Response Examples
+
+**Success:**
+```json
+{
+  "success": true,
+  "result": {
+    "url": "https://docs.rs/tokio",
+    "status_code": 200,
+    "content_type": "text/html",
+    "content": "# tokio\n\nA runtime for writing reliable...",
+    "content_size": 45000,
+    "elapsed_ms": 850,
+    "links": null,
+    "truncated": false
+  },
+  "error": null
+}
+```
+
+**With links extracted:**
+```json
+{
+  "success": true,
+  "result": {
+    "url": "https://example.com/page",
+    "status_code": 200,
+    "content_type": "text/html",
+    "content": "# Example Page\n\n...",
+    "content_size": 12000,
+    "elapsed_ms": 420,
+    "links": [
+      {"text": "Documentation", "url": "https://example.com/docs"},
+      {"text": "API Reference", "url": "https://example.com/api"}
+    ],
+    "truncated": false
+  },
+  "error": null
+}
+```
+
+**Error (invalid URL scheme):**
+```json
+{
+  "success": false,
+  "result": null,
+  "error": "URL scheme 'ftp' not allowed. Only http and https are supported."
+}
+```
+
+---
+
+### web_search - Search the Web
+
+Searches the web using DuckDuckGo. Returns search results with titles, URLs, and snippets.
+
+**Features:**
+- Free search with no API key required
+- Full web search (not just instant answers)
+- Pagination support with offset
+- Returns title, URL, and snippet for each result
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | Yes | Search query |
+| `max_results` | integer/string | No | Maximum results to return (default: 10) |
+| `offset` | integer/string | No | Result offset for pagination (default: 0) |
+
+#### Request Examples
+
+```bash
+# Simple search
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_search",
+    "args": {
+      "query": "rust async best practices"
+    }
+  }'
+
+# Search with more results
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_search",
+    "args": {
+      "query": "tokio async runtime",
+      "max_results": 20
+    }
+  }'
+
+# Paginated search
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_search",
+    "args": {
+      "query": "python async await",
+      "max_results": 10,
+      "offset": 10
+    }
+  }'
+```
+
+#### Response Examples
+
+**Success:**
+```json
+{
+  "success": true,
+  "result": {
+    "query": "rust async best practices",
+    "provider": "duckduckgo",
+    "total": 25,
+    "results": [
+      {
+        "title": "Async Programming in Rust",
+        "url": "https://rust-lang.github.io/async-book/",
+        "snippet": "A comprehensive guide to asynchronous programming in Rust...",
+        "published_date": null
+      },
+      {
+        "title": "Tokio Tutorial",
+        "url": "https://tokio.rs/tokio/tutorial",
+        "snippet": "Learn how to use Tokio for async runtime...",
+        "published_date": null
+      }
+    ],
+    "answer": null
+  },
+  "error": null
+}
+```
+
+**No results:**
+```json
+{
+  "success": true,
+  "result": {
+    "query": "zzzzzzzzzzzzzzzzzz",
+    "provider": "duckduckgo",
+    "total": 0,
+    "results": [],
+    "answer": null
   },
   "error": null
 }

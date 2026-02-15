@@ -91,6 +91,8 @@ This is HOW you know the user clicked a button. When you see "[Answered: "Accept
 - `memory_search` - Search memories for specific project information
 - `memory_delete` - Delete a memory (soft delete, recoverable from trash)
 - `memory_list` - List categories/tags efficiently (use for overviews, NOT for finding content)
+- `web_fetch` - Fetch content from URLs, converts to markdown by default. Use for reading docs, API responses.
+- `web_search` - Search the web (default: DuckDuckGo instant answers). Use for research, finding information.
 
 ### PLAN FILE CREATION WITH plan_write (RECOMMENDED)
 Use the `plan_write` tool for creating plan files. It automatically:
