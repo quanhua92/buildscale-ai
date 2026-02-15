@@ -18,6 +18,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Logout](#user-logout)
 - [Workspaces API](#workspaces-api)
 - [Workspace Members API](#workspace-members-api)
+- [Agent Sessions API](#agent-sessions-api)
 - [Files & AI](#files-and-ai)
 - [Tools API](#tools-api)
 - [Agentic Chat API](#agentic-chat-api)
@@ -71,10 +72,169 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/chats/:cid` | PATCH | Update chat metadata (mode, plan_file) | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/stop` | POST | Stop AI generation | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/agent-sessions` | GET | List active agent sessions | Yes (JWT + Member) |
+| `/api/v1/agent-sessions/:sid` | GET | Get agent session details | Yes (JWT + Owner) |
+| `/api/v1/agent-sessions/:sid/pause` | POST | Pause agent session | Yes (JWT + Owner) |
+| `/api/v1/agent-sessions/:sid/resume` | POST | Resume agent session | Yes (JWT + Owner) |
+| `/api/v1/agent-sessions/:sid` | DELETE | Cancel/stop agent session | Yes (JWT + Owner) |
 
 **Base URL**: `http://localhost:3000` (default)
 
 **API Version**: `v1` (all endpoints are prefixed with `/api/v1`)
+
+---
+
+## Agent Sessions API
+
+Manage active AI agent sessions for monitoring and controlling background agent processes.
+
+### List Workspace Agent Sessions
+
+List all active agent sessions in a workspace.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/agent-sessions`
+
+**Authentication**: Required (JWT access token + Workspace Member)
+
+#### Query Parameters
+- `status` (optional): Filter by status (`idle`, `running`, `paused`, `completed`, `error`)
+- `agent_type` (optional): Filter by agent type (`assistant`, `planner`, `builder`)
+
+#### Response
+```json
+{
+  "sessions": [
+    {
+      "id": "uuid-v7",
+      "workspace_id": "uuid-v7",
+      "chat_id": "uuid-v7",
+      "user_id": "uuid-v7",
+      "agent_type": "assistant",
+      "status": "running",
+      "model": "gpt-4o",
+      "mode": "chat",
+      "current_task": "Writing code for user story",
+      "created_at": "2026-02-15T10:30:00Z",
+      "updated_at": "2026-02-15T10:35:00Z",
+      "last_heartbeat": "2026-02-15T10:34:55Z",
+      "completed_at": null
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### Get Agent Session Details
+
+Get detailed information about a specific agent session.
+
+**Endpoint**: `GET /api/v1/agent-sessions/:id`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "workspace_id": "uuid-v7",
+    "chat_id": "uuid-v7",
+    "user_id": "uuid-v7",
+    "agent_type": "planner",
+    "status": "running",
+    "model": "claude-3-5-sonnet",
+    "mode": "plan",
+    "current_task": "Creating implementation plan",
+    "created_at": "2026-02-15T10:30:00Z",
+    "updated_at": "2026-02-15T10:35:00Z",
+    "last_heartbeat": "2026-02-15T10:34:55Z",
+    "completed_at": null
+  }
+}
+```
+
+---
+
+### Pause Agent Session
+
+Pause a running agent session.
+
+**Endpoint**: `POST /api/v1/agent-sessions/:id/pause`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Request
+```json
+{
+  "reason": "User requested pause"
+}
+```
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "status": "paused",
+    ...
+  },
+  "message": "Session paused successfully"
+}
+```
+
+---
+
+### Resume Agent Session
+
+Resume a paused agent session.
+
+**Endpoint**: `POST /api/v1/agent-sessions/:id/resume`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Request
+```json
+{
+  "task": "Continue with the implementation"
+}
+```
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "status": "running",
+    ...
+  },
+  "message": "Session resumed successfully"
+}
+```
+
+---
+
+### Cancel Agent Session
+
+Cancel/stop a running or paused agent session.
+
+**Endpoint**: `DELETE /api/v1/agent-sessions/:id`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "status": "completed",
+    "completed_at": "2026-02-15T10:36:00Z",
+    ...
+  },
+  "message": "Session cancelled successfully"
+}
+```
 
 ---
 
