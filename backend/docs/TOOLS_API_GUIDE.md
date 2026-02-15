@@ -29,6 +29,11 @@ HTTP REST API for the BuildScale extensible tool execution system.
   - [plan_read - Read Plan File](#plan_read---read-plan-file)
   - [plan_edit - Edit Plan File](#plan_edit---edit-plan-file)
   - [plan_list - List Plan Files](#plan_list---list-plan-files)
+  - [memory_set - Store a Memory](#memory_set---store-a-memory)
+  - [memory_get - Retrieve a Memory](#memory_get---retrieve-a-memory)
+  - [memory_search - Search Memories](#memory_search---search-memories)
+  - [memory_delete - Delete a Memory](#memory_delete---delete-a-memory)
+  - [memory_list - List Categories, Tags, or Memories](#memory_list---list-categories-tags-or-memories)
   - [Path Normalization](#path-normalization)
 - [Authentication & Authorization](#authentication--authorization)
 - [Architecture & Extensibility](#architecture--extensibility)
@@ -64,6 +69,11 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `plan_read` | Read plan file with parsed frontmatter | `path?`, `name?`, `offset?`, `limit?` | `path`, `metadata`, `content`, `hash` |
 | `plan_edit` | Edit plan file preserving frontmatter | `path`, `old_string?`, `new_string?`, `insert_line?`, `insert_content?` | `path`, `file_id`, `version_id`, `hash` |
 | `plan_list` | List plan files with metadata | `status?`, `limit?` | `plans[]`, `total` |
+| `memory_set` | Store or update a memory with metadata | `scope`, `category`, `key`, `title`, `content`, `tags?` | `path`, `file_id`, `version_id`, `hash`, `scope`, `category`, `key`, `title`, `tags` |
+| `memory_get` | Retrieve a memory by scope, category, key | `scope`, `category`, `key` | `path`, `key`, `metadata`, `content`, `hash` |
+| `memory_search` | Search memories by pattern with filters | `pattern`, `scope?`, `category?`, `tags?`, `case_sensitive?`, `limit?` | `matches[]`, `total` |
+| `memory_delete` | Delete a memory (soft delete) | `scope`, `category`, `key` | `path`, `file_id`, `scope`, `category`, `key` |
+| `memory_list` | List categories, tags, or memories | `list_type`, `scope?`, `category?`, `tags?`, `limit?`, `offset?` | `categories[]`/`tags[]`/`memories[]`, `total` |
 
 **Base URL**: `http://localhost:3000` (default)
 
@@ -2140,6 +2150,362 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
       }
     ],
     "total": 1
+  },
+  "error": null
+}
+```
+
+---
+
+### memory_set - Store a Memory
+
+Creates or updates a memory with metadata. Memories are persistent key-value stores for AI agents to remember user preferences, decisions, and context across sessions.
+
+**Features:**
+- Store structured memories with title, content, and tags
+- Two scopes: `user` (private) or `global` (shared across workspace)
+- Upsert behavior: same key = update existing memory
+- Stored as Markdown files with YAML frontmatter
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `scope` | string | Yes | `user` (private) or `global` (shared) |
+| `category` | string | Yes | Organization category (e.g., `preferences`, `project`) |
+| `key` | string | Yes | Unique identifier within category |
+| `title` | string | Yes | Human-readable title |
+| `content` | string | Yes | Memory content in Markdown |
+| `tags` | array | No | Tags for categorization and search |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_set",
+    "args": {
+      "scope": "user",
+      "category": "preferences",
+      "key": "coding-style",
+      "title": "Coding Style Preferences",
+      "content": "User prefers TypeScript with strict mode, 2-space indentation.",
+      "tags": ["coding", "typescript", "formatting"]
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/users/{uuid}/memories/preferences/coding-style.md",
+    "file_id": "550e8400-e29b-41d4-a716-446655440000",
+    "version_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "user",
+    "category": "preferences",
+    "key": "coding-style",
+    "title": "Coding Style Preferences",
+    "tags": ["coding", "typescript", "formatting"]
+  },
+  "error": null
+}
+```
+
+---
+
+### memory_get - Retrieve a Memory
+
+Retrieves a specific memory by scope, category, and key.
+
+**Features:**
+- Returns full content with metadata
+- Verifies user ownership for user-scoped memories
+- Returns parsed frontmatter metadata
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `scope` | string | Yes | `user` or `global` |
+| `category` | string | Yes | Category the memory belongs to |
+| `key` | string | Yes | Unique key for the memory |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_get",
+    "args": {
+      "scope": "user",
+      "category": "preferences",
+      "key": "coding-style"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/users/{uuid}/memories/preferences/coding-style.md",
+    "key": "coding-style",
+    "metadata": {
+      "title": "Coding Style Preferences",
+      "tags": ["coding", "typescript", "formatting"],
+      "category": "preferences",
+      "created_at": "2025-01-15T10:30:00Z",
+      "updated_at": "2025-01-15T10:30:00Z",
+      "scope": "user"
+    },
+    "content": "User prefers TypeScript with strict mode, 2-space indentation.",
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "error": null
+}
+```
+
+---
+
+### memory_search - Search Memories
+
+Searches across all memories with pattern matching and filtering.
+
+**Features:**
+- Regex pattern matching on content
+- Filter by scope, category, and tags
+- Returns truncated content preview (first ~100 words)
+- Sorted by updated_at descending
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | Yes | Search pattern (regex supported) |
+| `scope` | string | No | Filter by scope: `user` or `global` |
+| `category` | string | No | Filter by category |
+| `tags` | array | No | Filter by tags (AND logic - must have ALL tags) |
+| `case_sensitive` | boolean | No | Case-sensitive search (default: false) |
+| `limit` | integer | No | Max results (default: 50, 0 for unlimited) |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_search",
+    "args": {
+      "pattern": "typescript",
+      "scope": "user",
+      "tags": ["coding"],
+      "limit": 10
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "total": 1,
+    "matches": [
+      {
+        "path": "/users/{uuid}/memories/preferences/coding-style.md",
+        "scope": "user",
+        "category": "preferences",
+        "key": "coding-style",
+        "title": "Coding Style Preferences",
+        "content_preview": "User prefers TypeScript with strict mode enabled. Always use 2-space indentation...",
+        "tags": ["coding", "typescript", "formatting"],
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+---
+
+### memory_delete - Delete a Memory
+
+Deletes a specific memory by scope, category, and key. Performs a soft delete - the memory can be recovered from the deleted files view.
+
+**Features:**
+- Soft delete (recoverable)
+- Verifies user ownership for user-scoped memories
+- Returns deleted memory info
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `scope` | string | Yes | `user` or `global` |
+| `category` | string | Yes | Category the memory belongs to |
+| `key` | string | Yes | Unique key for the memory |
+
+#### Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_delete",
+    "args": {
+      "scope": "user",
+      "category": "preferences",
+      "key": "coding-style"
+    }
+  }'
+```
+
+#### Response Example
+
+```json
+{
+  "success": true,
+  "result": {
+    "path": "/users/{uuid}/memories/preferences/coding-style.md",
+    "file_id": "550e8400-e29b-41d4-a716-446655440000",
+    "scope": "user",
+    "category": "preferences",
+    "key": "coding-style"
+  },
+  "error": null
+}
+```
+
+---
+
+### memory_list - List Categories, Tags, or Memories
+
+Efficiently lists categories, tags, or memories without loading full content. Use this for building navigation UI or getting overviews.
+
+**Features:**
+- Three list types: `categories`, `tags`, `memories`
+- Filter by scope, category, and tags
+- Pagination support with limit and offset
+- Returns counts for categories and tags
+- Returns metadata only for memories (no content)
+
+#### Arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `list_type` | string | Yes | Type: `categories`, `tags`, or `memories` |
+| `scope` | string | No | Filter by scope: `user` or `global` |
+| `category` | string | No | Filter by category (for tags/memories) |
+| `tags` | array | No | Filter by tags (for memories, AND logic) |
+| `limit` | integer | No | Max results (default: 100) |
+| `offset` | integer | No | Offset for pagination (default: 0) |
+
+#### Request Examples
+
+```bash
+# List categories
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_list",
+    "args": {
+      "list_type": "categories"
+    }
+  }'
+
+# List tags in user scope
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_list",
+    "args": {
+      "list_type": "tags",
+      "scope": "user"
+    }
+  }'
+
+# List memories in a category
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "memory_list",
+    "args": {
+      "list_type": "memories",
+      "category": "preferences",
+      "limit": 20
+    }
+  }'
+```
+
+#### Response Examples
+
+**Categories:**
+```json
+{
+  "success": true,
+  "result": {
+    "total": 3,
+    "categories": [
+      { "name": "preferences", "count": 5 },
+      { "name": "project", "count": 3 },
+      { "name": "decisions", "count": 2 }
+    ]
+  },
+  "error": null
+}
+```
+
+**Tags:**
+```json
+{
+  "success": true,
+  "result": {
+    "total": 4,
+    "tags": [
+      { "name": "coding", "count": 8 },
+      { "name": "typescript", "count": 5 },
+      { "name": "frontend", "count": 3 },
+      { "name": "api", "count": 2 }
+    ]
+  },
+  "error": null
+}
+```
+
+**Memories:**
+```json
+{
+  "success": true,
+  "result": {
+    "total": 3,
+    "memories": [
+      {
+        "path": "/users/{uuid}/memories/preferences/coding-style.md",
+        "scope": "user",
+        "category": "preferences",
+        "key": "coding-style",
+        "title": "Coding Style Preferences",
+        "tags": ["coding", "typescript"],
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
   },
   "error": null
 }

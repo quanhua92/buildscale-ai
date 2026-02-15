@@ -4,6 +4,7 @@ use crate::models::requests::{
     FindArgs, CatArgs,
     AskUserArgs, ExitPlanModeArgs,
     PlanWriteArgs, PlanReadArgs, PlanEditArgs, PlanListArgs,
+    MemorySetArgs, MemoryGetArgs, MemorySearchArgs, MemoryDeleteArgs, MemoryListArgs,
 };
 use crate::services::storage::FileStorageService;
 use crate::tools;
@@ -347,5 +348,41 @@ define_rig_tool!(
     tools::plan_list::PlanListTool,
     PlanListArgs,
     "plan_list"
+);
+
+// Memory management tools
+define_rig_tool!(
+    RigMemorySetTool,
+    tools::memory_set::MemorySetTool,
+    MemorySetArgs,
+    "memory_set"
+);
+
+define_rig_tool!(
+    RigMemoryGetTool,
+    tools::memory_get::MemoryGetTool,
+    MemoryGetArgs,
+    "memory_get"
+);
+
+define_rig_tool!(
+    RigMemorySearchTool,
+    tools::memory_search::MemorySearchTool,
+    MemorySearchArgs,
+    "memory_search"
+);
+
+define_rig_tool!(
+    RigMemoryDeleteTool,
+    tools::memory_delete::MemoryDeleteTool,
+    MemoryDeleteArgs,
+    "memory_delete"
+);
+
+define_rig_tool!(
+    RigMemoryListTool,
+    tools::memory_list::MemoryListTool,
+    MemoryListArgs,
+    "memory_list"
 );
 

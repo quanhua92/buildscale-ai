@@ -22,6 +22,25 @@ export { StorageProvider, useStorage } from './context/StorageContext'
 // Hooks
 export { useProtectedRoute, useAuthRedirects, useTools } from './hooks'
 
+// Memory types from useTools
+export type {
+  MemoryScope,
+  MemorySetResult,
+  MemoryGetResult,
+  MemorySearchResult,
+  MemoryMatch,
+  MemoryDeleteResult,
+  MemoryMetadata,
+  MemoryListType,
+  CategoryInfo,
+  TagInfo,
+  MemoryListItem,
+  MemoryListCategoriesResult,
+  MemoryListTagsResult,
+  MemoryListMemoriesResult,
+  MemoryListResult,
+} from './hooks/useTools'
+
 // Components
 export { default as Auth } from './components/auth'
 export { NavigationMenu } from './components/NavigationMenu'

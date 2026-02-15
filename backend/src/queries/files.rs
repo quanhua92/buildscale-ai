@@ -1215,3 +1215,45 @@ pub async fn list_all_active_files(conn: &mut DbConn, workspace_id: Uuid) -> Res
 
     Ok(files)
 }
+
+/// Gets all active files of a specific type in a workspace.
+pub async fn get_files_by_type(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    file_type: FileType,
+) -> Result<Vec<File>> {
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            parent_id,
+            author_id,
+            file_type as "file_type: FileType",
+            status as "status: FileStatus",
+            name,
+            slug,
+            path,
+            is_virtual,
+            is_remote,
+            permission,
+            latest_version_id,
+            deleted_at,
+            created_at,
+            updated_at
+        FROM files
+        WHERE workspace_id = $1
+          AND file_type = $2
+          AND deleted_at IS NULL
+        ORDER BY path ASC
+        "#,
+        workspace_id,
+        file_type as FileType
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}

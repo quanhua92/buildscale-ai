@@ -36,6 +36,103 @@ interface MvResult {
   to_path: string
 }
 
+// Memory type definitions
+export type MemoryScope = 'user' | 'global'
+
+export interface MemorySetResult {
+  path: string
+  file_id: string
+  version_id: string
+  hash: string
+  scope: MemoryScope
+  category: string
+  key: string
+  title: string
+  tags: string[]
+}
+
+export interface MemoryMetadata {
+  title: string
+  tags: string[]
+  category: string
+  created_at: string
+  updated_at: string
+  scope: MemoryScope
+}
+
+export interface MemoryGetResult {
+  path: string
+  key: string
+  metadata: MemoryMetadata | null
+  content: string
+  hash: string
+}
+
+export interface MemoryMatch {
+  path: string
+  scope: MemoryScope
+  category: string
+  key: string
+  title: string
+  /** Truncated content preview (first ~100 words) */
+  content_preview: string
+  tags: string[]
+  updated_at: string
+}
+
+export interface MemorySearchResult {
+  matches: MemoryMatch[]
+  total: number
+}
+
+export interface MemoryDeleteResult {
+  path: string
+  file_id: string
+  scope: MemoryScope
+  category: string
+  key: string
+}
+
+// Memory list types
+export type MemoryListType = 'categories' | 'tags' | 'memories'
+
+export interface CategoryInfo {
+  name: string
+  count: number
+}
+
+export interface TagInfo {
+  name: string
+  count: number
+}
+
+export interface MemoryListItem {
+  path: string
+  scope: MemoryScope
+  category: string
+  key: string
+  title: string
+  tags: string[]
+  updated_at: string
+}
+
+export interface MemoryListCategoriesResult {
+  categories: CategoryInfo[]
+  total: number
+}
+
+export interface MemoryListTagsResult {
+  tags: TagInfo[]
+  total: number
+}
+
+export interface MemoryListMemoriesResult {
+  memories: MemoryListItem[]
+  total: number
+}
+
+export type MemoryListResult = MemoryListCategoriesResult | MemoryListTagsResult | MemoryListMemoriesResult
+
 /**
  * Generic hook for calling backend tools with built-in error handling.
  * Replaces duplicate callTool wrappers across components.
@@ -111,5 +208,90 @@ export function useTools(workspaceId: string) {
     return callTool<MvResult>('mv', { source, destination })
   }, [callTool])
 
-  return { callTool, ls, find, read, write, rm, mv }
+  // memorySet - Store a memory with metadata
+  const memorySet = useCallback(async (
+    scope: MemoryScope,
+    category: string,
+    key: string,
+    title: string,
+    content: string,
+    tags?: string[]
+  ): Promise<MemorySetResult | null> => {
+    const args: Record<string, unknown> = { scope, category, key, title, content }
+    if (tags) args.tags = tags
+    return callTool<MemorySetResult>('memory_set', args)
+  }, [callTool])
+
+  // memoryGet - Retrieve a memory by scope, category, and key
+  const memoryGet = useCallback(async (
+    scope: MemoryScope,
+    category: string,
+    key: string
+  ): Promise<MemoryGetResult | null> => {
+    return callTool<MemoryGetResult>('memory_get', { scope, category, key })
+  }, [callTool])
+
+  // memorySearch - Search memories by pattern
+  const memorySearch = useCallback(async (
+    pattern: string,
+    options: {
+      scope?: MemoryScope
+      category?: string
+      tags?: string[]
+      caseSensitive?: boolean
+      limit?: number
+    } = {}
+  ): Promise<MemorySearchResult | null> => {
+    const args: Record<string, unknown> = { pattern }
+    if (options.scope) args.scope = options.scope
+    if (options.category) args.category = options.category
+    if (options.tags) args.tags = options.tags
+    if (options.caseSensitive !== undefined) args.case_sensitive = options.caseSensitive
+    if (options.limit !== undefined) args.limit = options.limit
+    return callTool<MemorySearchResult>('memory_search', args)
+  }, [callTool])
+
+  // memoryDelete - Delete a memory
+  const memoryDelete = useCallback(async (
+    scope: MemoryScope,
+    category: string,
+    key: string
+  ): Promise<MemoryDeleteResult | null> => {
+    return callTool<MemoryDeleteResult>('memory_delete', { scope, category, key })
+  }, [callTool])
+
+  // memoryList - List categories, tags, or memories
+  const memoryList = useCallback(async <T extends MemoryListResult>(
+    listType: MemoryListType,
+    options: {
+      scope?: MemoryScope
+      category?: string
+      tags?: string[]
+      limit?: number
+      offset?: number
+    } = {}
+  ): Promise<T | null> => {
+    const args: Record<string, unknown> = { list_type: listType }
+    if (options.scope) args.scope = options.scope
+    if (options.category) args.category = options.category
+    if (options.tags) args.tags = options.tags
+    if (options.limit !== undefined) args.limit = options.limit
+    if (options.offset !== undefined) args.offset = options.offset
+    return callTool<T>('memory_list', args)
+  }, [callTool])
+
+  return {
+    callTool,
+    ls,
+    find,
+    read,
+    write,
+    rm,
+    mv,
+    memorySet,
+    memoryGet,
+    memorySearch,
+    memoryDelete,
+    memoryList,
+  }
 }

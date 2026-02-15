@@ -1143,3 +1143,236 @@ impl TruncatableList for PlanListResult {
         self
     }
 }
+
+// ============================================================================
+// MEMORY TOOLS: memory_set, memory_get, memory_search, memory_delete
+// ============================================================================
+
+/// Re-export MemoryScope from utils for convenience
+pub use crate::utils::MemoryScope;
+
+/// Arguments for memory_set tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySetArgs {
+    /// Scope of the memory (user or global)
+    pub scope: MemoryScope,
+    /// Category for organization (e.g., "work", "personal", "project")
+    pub category: String,
+    /// Unique key for this memory within its category
+    pub key: String,
+    /// Human-readable title for the memory
+    pub title: String,
+    /// Memory content in markdown
+    pub content: String,
+    /// Optional tags for categorization and search
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+}
+
+/// Result for memory_set tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySetResult {
+    pub path: String,
+    pub file_id: Uuid,
+    pub version_id: Uuid,
+    pub hash: String,
+    pub scope: MemoryScope,
+    pub category: String,
+    pub key: String,
+    pub title: String,
+    pub tags: Vec<String>,
+}
+
+/// Arguments for memory_get tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryGetArgs {
+    /// Scope of the memory (user or global)
+    pub scope: MemoryScope,
+    /// Category the memory belongs to
+    pub category: String,
+    /// Unique key for the memory
+    pub key: String,
+}
+
+/// Result for memory_get tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryGetResult {
+    pub path: String,
+    pub key: String,
+    pub metadata: Option<crate::utils::MemoryMetadata>,
+    pub content: String,
+    pub hash: String,
+}
+
+/// Arguments for memory_search tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySearchArgs {
+    /// Search pattern (regex supported)
+    pub pattern: String,
+    /// Filter by scope (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MemoryScope>,
+    /// Filter by category (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Filter by tags (memories must have ALL specified tags)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// Case-sensitive search (default: false)
+    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+    pub case_sensitive: Option<bool>,
+    /// Maximum number of matches to return (default: 50, 0 for unlimited)
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
+}
+
+/// Single match in memory_search result
+/// Each match represents one unique memory file (deduplicated).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryMatch {
+    pub path: String,
+    pub scope: MemoryScope,
+    pub category: String,
+    pub key: String,
+    pub title: String,
+    /// Truncated content preview (first ~100 words)
+    pub content_preview: String,
+    pub tags: Vec<String>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Result for memory_search tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySearchResult {
+    pub matches: Vec<MemoryMatch>,
+    pub total: usize,
+}
+
+impl TruncatableList for MemorySearchResult {
+    fn list_len(&self) -> usize {
+        self.matches.len()
+    }
+
+    fn truncate_list(mut self, limit: usize) -> Self {
+        self.matches = self.matches.into_iter().take(limit).collect();
+        self.total = self.matches.len();
+        self
+    }
+}
+
+/// Arguments for memory_delete tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryDeleteArgs {
+    /// Scope of the memory (user or global)
+    pub scope: MemoryScope,
+    /// Category the memory belongs to
+    pub category: String,
+    /// Unique key for the memory
+    pub key: String,
+}
+
+/// Result for memory_delete tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryDeleteResult {
+    pub path: String,
+    pub file_id: Uuid,
+    pub scope: MemoryScope,
+    pub category: String,
+    pub key: String,
+}
+
+// ============================================================================
+// MEMORY LIST TOOL: memory_list
+// ============================================================================
+
+/// Type of listing for memory_list tool
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryListType {
+    /// List all unique categories with counts
+    Categories,
+    /// List all unique tags with counts
+    Tags,
+    /// List memories (metadata only, no content)
+    Memories,
+}
+
+/// Arguments for memory_list tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListArgs {
+    /// Type of listing: "categories", "tags", or "memories"
+    pub list_type: MemoryListType,
+    /// Filter by scope (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MemoryScope>,
+    /// Filter by category (optional, for tags/memories listing)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Filter by tags (optional, for memories listing)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// Maximum number of results (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
+    /// Offset for pagination (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub offset: Option<usize>,
+}
+
+/// Category info for memory_list result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryInfo {
+    /// Category name
+    pub name: String,
+    /// Number of memories in this category
+    pub count: usize,
+}
+
+/// Tag info for memory_list result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagInfo {
+    /// Tag name
+    pub name: String,
+    /// Number of memories with this tag
+    pub count: usize,
+}
+
+/// Memory list item (metadata only, no content)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListItem {
+    /// Path to the memory file
+    pub path: String,
+    /// Scope of the memory
+    pub scope: MemoryScope,
+    /// Category of the memory
+    pub category: String,
+    /// Unique key
+    pub key: String,
+    /// Title from frontmatter
+    pub title: String,
+    /// Tags from frontmatter
+    pub tags: Vec<String>,
+    /// Last updated timestamp
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Result for listing categories
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListCategoriesResult {
+    pub categories: Vec<CategoryInfo>,
+    pub total: usize,
+}
+
+/// Result for listing tags
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListTagsResult {
+    pub tags: Vec<TagInfo>,
+    pub total: usize,
+}
+
+/// Result for listing memories
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListMemoriesResult {
+    pub memories: Vec<MemoryListItem>,
+    pub total: usize,
+}

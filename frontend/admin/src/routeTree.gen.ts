@@ -18,6 +18,7 @@ import { Route as AuthWorkspacesNewRouteImport } from './routes/_auth/workspaces
 import { Route as AuthWorkspacesAllRouteImport } from './routes/_auth/workspaces/all'
 import { Route as AuthWorkspacesWorkspaceIdIndexRouteImport } from './routes/_auth/workspaces/$workspaceId/index'
 import { Route as AuthWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_auth/workspaces/$workspaceId/settings'
+import { Route as AuthWorkspacesWorkspaceIdMemoriesRouteImport } from './routes/_auth/workspaces/$workspaceId/memories'
 import { Route as AuthWorkspacesWorkspaceIdFilesRouteImport } from './routes/_auth/workspaces/$workspaceId/files'
 import { Route as AuthWorkspacesWorkspaceIdEditRouteImport } from './routes/_auth/workspaces/$workspaceId/edit'
 import { Route as AuthWorkspacesWorkspaceIdDeletedRouteImport } from './routes/_auth/workspaces/$workspaceId/deleted'
@@ -69,6 +70,12 @@ const AuthWorkspacesWorkspaceIdSettingsRoute =
     path: '/workspaces/$workspaceId/settings',
     getParentRoute: () => AuthRoute,
   } as any)
+const AuthWorkspacesWorkspaceIdMemoriesRoute =
+  AuthWorkspacesWorkspaceIdMemoriesRouteImport.update({
+    id: '/workspaces/$workspaceId/memories',
+    path: '/workspaces/$workspaceId/memories',
+    getParentRoute: () => AuthRoute,
+  } as any)
 const AuthWorkspacesWorkspaceIdFilesRoute =
   AuthWorkspacesWorkspaceIdFilesRouteImport.update({
     id: '/workspaces/$workspaceId/files',
@@ -105,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/workspaces/$workspaceId/deleted': typeof AuthWorkspacesWorkspaceIdDeletedRoute
   '/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
   '/workspaces/$workspaceId/files': typeof AuthWorkspacesWorkspaceIdFilesRoute
+  '/workspaces/$workspaceId/memories': typeof AuthWorkspacesWorkspaceIdMemoriesRoute
   '/workspaces/$workspaceId/settings': typeof AuthWorkspacesWorkspaceIdSettingsRoute
   '/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
@@ -119,6 +127,7 @@ export interface FileRoutesByTo {
   '/workspaces/$workspaceId/deleted': typeof AuthWorkspacesWorkspaceIdDeletedRoute
   '/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
   '/workspaces/$workspaceId/files': typeof AuthWorkspacesWorkspaceIdFilesRoute
+  '/workspaces/$workspaceId/memories': typeof AuthWorkspacesWorkspaceIdMemoriesRoute
   '/workspaces/$workspaceId/settings': typeof AuthWorkspacesWorkspaceIdSettingsRoute
   '/workspaces/$workspaceId': typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
@@ -135,6 +144,7 @@ export interface FileRoutesById {
   '/_auth/workspaces/$workspaceId/deleted': typeof AuthWorkspacesWorkspaceIdDeletedRoute
   '/_auth/workspaces/$workspaceId/edit': typeof AuthWorkspacesWorkspaceIdEditRoute
   '/_auth/workspaces/$workspaceId/files': typeof AuthWorkspacesWorkspaceIdFilesRoute
+  '/_auth/workspaces/$workspaceId/memories': typeof AuthWorkspacesWorkspaceIdMemoriesRoute
   '/_auth/workspaces/$workspaceId/settings': typeof AuthWorkspacesWorkspaceIdSettingsRoute
   '/_auth/workspaces/$workspaceId/': typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/workspaces/$workspaceId/deleted'
     | '/workspaces/$workspaceId/edit'
     | '/workspaces/$workspaceId/files'
+    | '/workspaces/$workspaceId/memories'
     | '/workspaces/$workspaceId/settings'
     | '/workspaces/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/workspaces/$workspaceId/deleted'
     | '/workspaces/$workspaceId/edit'
     | '/workspaces/$workspaceId/files'
+    | '/workspaces/$workspaceId/memories'
     | '/workspaces/$workspaceId/settings'
     | '/workspaces/$workspaceId'
   id:
@@ -180,6 +192,7 @@ export interface FileRouteTypes {
     | '/_auth/workspaces/$workspaceId/deleted'
     | '/_auth/workspaces/$workspaceId/edit'
     | '/_auth/workspaces/$workspaceId/files'
+    | '/_auth/workspaces/$workspaceId/memories'
     | '/_auth/workspaces/$workspaceId/settings'
     | '/_auth/workspaces/$workspaceId/'
   fileRoutesById: FileRoutesById
@@ -256,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthWorkspacesWorkspaceIdSettingsRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/workspaces/$workspaceId/memories': {
+      id: '/_auth/workspaces/$workspaceId/memories'
+      path: '/workspaces/$workspaceId/memories'
+      fullPath: '/workspaces/$workspaceId/memories'
+      preLoaderRoute: typeof AuthWorkspacesWorkspaceIdMemoriesRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/workspaces/$workspaceId/files': {
       id: '/_auth/workspaces/$workspaceId/files'
       path: '/workspaces/$workspaceId/files'
@@ -295,6 +315,7 @@ interface AuthRouteChildren {
   AuthWorkspacesWorkspaceIdDeletedRoute: typeof AuthWorkspacesWorkspaceIdDeletedRoute
   AuthWorkspacesWorkspaceIdEditRoute: typeof AuthWorkspacesWorkspaceIdEditRoute
   AuthWorkspacesWorkspaceIdFilesRoute: typeof AuthWorkspacesWorkspaceIdFilesRoute
+  AuthWorkspacesWorkspaceIdMemoriesRoute: typeof AuthWorkspacesWorkspaceIdMemoriesRoute
   AuthWorkspacesWorkspaceIdSettingsRoute: typeof AuthWorkspacesWorkspaceIdSettingsRoute
   AuthWorkspacesWorkspaceIdIndexRoute: typeof AuthWorkspacesWorkspaceIdIndexRoute
 }
@@ -307,6 +328,8 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthWorkspacesWorkspaceIdDeletedRoute: AuthWorkspacesWorkspaceIdDeletedRoute,
   AuthWorkspacesWorkspaceIdEditRoute: AuthWorkspacesWorkspaceIdEditRoute,
   AuthWorkspacesWorkspaceIdFilesRoute: AuthWorkspacesWorkspaceIdFilesRoute,
+  AuthWorkspacesWorkspaceIdMemoriesRoute:
+    AuthWorkspacesWorkspaceIdMemoriesRoute,
   AuthWorkspacesWorkspaceIdSettingsRoute:
     AuthWorkspacesWorkspaceIdSettingsRoute,
   AuthWorkspacesWorkspaceIdIndexRoute: AuthWorkspacesWorkspaceIdIndexRoute,

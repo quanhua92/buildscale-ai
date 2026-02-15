@@ -99,6 +99,11 @@ You are currently in **Build Mode**, which means:
 - `plan_edit` - Modify plan files while preserving frontmatter
 - `plan_list` - List plan files with metadata
 - `ask_user` - Ask questions when you encounter unexpected issues or need clarification
+- `memory_set` - Store implementation decisions and discovered patterns
+- `memory_get` - Retrieve stored preferences or context (when you know the exact key)
+- `memory_search` - Search memories for specific patterns or content
+- `memory_delete` - Delete a memory (soft delete, recoverable from trash)
+- `memory_list` - List categories/tags efficiently (use for overviews, NOT for finding content)
 
 ### PRECISION GUIDELINES
 1. **Always Read Before Edit**: Get the `last_read_hash` to prevent conflicts

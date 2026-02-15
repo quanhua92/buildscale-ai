@@ -510,6 +510,72 @@ function ToolPreview({
     } catch { /* fall through */ }
   }
 
+  // Memory tools
+  if (["memory_set", "memory_get", "memory_search", "memory_delete", "memory_list"].includes(tool)) {
+    const memoryTool = tool as "memory_set" | "memory_get" | "memory_search" | "memory_delete" | "memory_list";
+    return (
+      <div className="px-4 py-2 space-y-3">
+        <div><span className="text-muted-foreground font-mono text-sm">Tool:</span> <span className="font-medium">{memoryTool}</span></div>
+        {memoryTool === "memory_set" && args?.title && (
+          <div><span className="text-muted-foreground text-sm">Title:</span> <span className="font-medium">{args.title}</span></div>
+        )}
+        {memoryTool === "memory_set" && args?.category && (
+          <div><span className="text-muted-foreground text-sm">Category:</span> <span className="font-medium">{args.category}</span></div>
+        )}
+        {memoryTool === "memory_set" && args?.key && (
+          <div><span className="text-muted-foreground text-sm">Key:</span> <span className="font-medium">{args.key}</span></div>
+        )}
+        {memoryTool === "memory_get" && args?.scope && (
+          <div><span className="text-muted-foreground text-sm">Scope:</span> <span className="font-medium">{args.scope}</span></div>
+        )}
+        {memoryTool === "memory_get" && args?.category && (
+          <div><span className="text-muted-foreground text-sm">Category:</span> <span className="font-medium">{args.category}</span></div>
+        )}
+        {memoryTool === "memory_get" && args?.key && (
+          <div><span className="text-muted-foreground text-sm">Key:</span> <span className="font-medium">{args.key}</span></div>
+        )}
+        {memoryTool === "memory_search" && args?.pattern && (
+          <div><span className="text-muted-foreground text-sm">Pattern:</span> <span className="font-medium">{args.pattern}</span></div>
+        )}
+        {memoryTool === "memory_search" && args?.scope && (
+          <div><span className="text-muted-foreground text-sm">Scope:</span> <span className="font-medium">{args.scope}</span></div>
+        )}
+        {memoryTool === "memory_search" && args?.category && (
+          <div><span className="text-muted-foreground text-sm">Category:</span> <span className="font-medium">{args.category}</span></div>
+        )}
+        {memoryTool === "memory_search" && args?.tags && (
+          <div><span className="text-muted-foreground text-sm">Tags:</span> <span className="font-medium">{Array.isArray(args.tags) ? args.tags.join(", ") : args.tags}</span></div>
+        )}
+        {memoryTool === "memory_search" && args?.limit !== undefined && (
+          <div><span className="text-muted-foreground text-sm">Limit:</span> <span className="font-medium">{args.limit}</span></div>
+        )}
+        {memoryTool === "memory_delete" && args?.scope && (
+          <div><span className="text-muted-foreground text-sm">Scope:</span> <span className="font-medium">{args.scope}</span></div>
+        )}
+        {memoryTool === "memory_delete" && args?.category && (
+          <div><span className="text-muted-foreground text-sm">Category:</span> <span className="font-medium">{args.category}</span></div>
+        )}
+        {memoryTool === "memory_delete" && args?.key && (
+          <div><span className="text-muted-foreground text-sm">Key:</span> <span className="font-medium">{args.key}</span></div>
+        )}
+        {memoryTool === "memory_list" && args?.list_type && (
+          <div><span className="text-muted-foreground text-sm">List Type:</span> <span className="font-medium">{args.list_type}</span></div>
+        )}
+        {memoryTool === "memory_list" && args?.scope && (
+          <div><span className="text-muted-foreground text-sm">Scope:</span> <span className="font-medium">{args.scope}</span></div>
+        )}
+        {memoryTool === "memory_list" && args?.category && (
+          <div><span className="text-muted-foreground text-sm">Category:</span> <span className="font-medium">{args.category}</span></div>
+        )}
+        {output && (
+          <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-muted/50 rounded-lg max-h-60 overflow-auto">
+            {output}
+          </pre>
+        )}
+      </div>
+    )
+  }
+
   // Default: show output if available (extract content from JSON if possible)
   if (output) {
     let content = output
