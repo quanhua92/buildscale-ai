@@ -175,7 +175,7 @@ export function useTools(workspaceId: string) {
     path: string,
     options: { offset?: number; limit?: number } = {}
   ): Promise<ReadResult | null> => {
-    const { offset, limit } = options
+    const { offset, limit = 0 } = options  // Default to 0 (unlimited)
     const args: Record<string, unknown> = { path }
     if (offset !== undefined) args.offset = offset
     if (limit !== undefined) args.limit = limit

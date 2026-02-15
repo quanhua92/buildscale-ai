@@ -233,7 +233,8 @@ function FileEditor() {
 }
 
 function FileViewer() {
-  const { isViewerOpen, setViewerOpen, activeFile, readFile, workspaceId } = useFileExplorer()
+  const { isViewerOpen, setViewerOpen, activeFile, workspaceId } = useFileExplorer()
+  const { read } = useTools(workspaceId)
   const [content, setContent] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
@@ -244,7 +245,7 @@ function FileViewer() {
       if (isViewerOpen && activeFile) {
         setIsLoading(true)
         try {
-          const result = await readFile(activeFile.path)
+          const result = await read(activeFile.path)  // Uses default limit: 0 (unlimited)
           if (mounted && result) {
             setContent(getContentAsString(result.content))
           }
@@ -255,7 +256,7 @@ function FileViewer() {
     }
     loadContent()
     return () => { mounted = false }
-  }, [isViewerOpen, activeFile, readFile])
+  }, [isViewerOpen, activeFile, read])
 
   const isChat = activeFile?.file_type === 'chat' || (activeFile?.is_virtual && activeFile?.name.startsWith('chat-'))
 
