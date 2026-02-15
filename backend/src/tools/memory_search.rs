@@ -24,6 +24,9 @@ const DEFAULT_SEARCH_LIMIT: usize = 50;
 /// Maximum words to include in content preview
 const CONTENT_PREVIEW_WORDS: usize = 100;
 
+/// Bytes to read from file head for frontmatter and preview (8KB)
+const FILE_HEAD_BUFFER_SIZE: usize = 8192;
+
 pub struct MemorySearchTool;
 
 #[async_trait]
@@ -161,9 +164,9 @@ Examples:
                 }
             }
 
-            // Read file content for frontmatter and body
+            // Read file head for frontmatter and body preview (efficient, only first 8KB)
             let full_path = workspace_path.join(file_path.trim_start_matches('/'));
-            let content = match tokio::fs::read_to_string(&full_path).await {
+            let content = match read_file_head(&full_path).await {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(path = %file_path, error = %e, "Failed to read memory file");
@@ -309,11 +312,32 @@ async fn run_grep_for_memories(
     Ok(result)
 }
 
+/// Read only the beginning of a file for frontmatter and preview (more efficient than reading entire file)
+async fn read_file_head(path: &Path) -> Result<String> {
+    use tokio::io::{AsyncReadExt, BufReader};
+
+    let file = tokio::fs::File::open(path).await
+        .map_err(|e| Error::Internal(format!("Failed to open file: {}", e)))?;
+
+    let mut reader = BufReader::new(file);
+    let mut buffer = vec![0u8; FILE_HEAD_BUFFER_SIZE];
+
+    let bytes_read = reader.read(&mut buffer).await
+        .map_err(|e| Error::Internal(format!("Failed to read file: {}", e)))?;
+
+    buffer.truncate(bytes_read);
+
+    String::from_utf8(buffer)
+        .map_err(|e| Error::Internal(format!("Invalid UTF-8 in file: {}", e)))
+}
+
 /// Extract content preview from body text (first N words)
 fn extract_content_preview(body: &str, max_words: usize) -> String {
-    let words: Vec<&str> = body.split_whitespace().collect();
-    if words.len() > max_words {
-        format!("{}...", words[..max_words].join(" "))
+    let words: Vec<&str> = body.split_whitespace().take(max_words).collect();
+    let total_words = body.split_whitespace().count();
+
+    if total_words > max_words {
+        format!("{}...", words.join(" "))
     } else {
         words.join(" ")
     }
