@@ -1461,7 +1461,7 @@ pub struct WebFetchResult {
     pub elapsed_ms: u64,
     /// Extracted links (if extract_links=true)
     pub links: Option<Vec<WebLink>>,
-    /// True if content was truncated (>100KB)
+    /// True if content was truncated because it exceeded max_content_size
     pub truncated: bool,
 }
 
