@@ -166,18 +166,19 @@ fn sanitize_path_component(s: &str) -> String {
 /// Global path: `/memories/{category}/{key}.md`
 ///
 /// Returns `(scope, category, key)` if the path matches a memory file pattern.
+/// Category and key are lowercased to match `generate_memory_path` behavior.
 pub fn parse_memory_path(path: &str) -> Option<(MemoryScope, String, String)> {
     let parts: Vec<&str> = path.split('/').collect();
 
     if parts.len() >= 6 && parts[1] == "users" && parts[3] == "memories" {
         // User-scoped memory: /users/{uuid}/memories/{category}/{key}.md
-        let category = parts[4].to_string();
-        let key = parts.get(5)?.strip_suffix(".md")?.to_string();
+        let category = parts[4].to_lowercase();
+        let key = parts.get(5)?.strip_suffix(".md")?.to_lowercase();
         Some((MemoryScope::User, category, key))
     } else if parts.len() >= 4 && parts[1] == "memories" {
         // Global-scoped memory: /memories/{category}/{key}.md
-        let category = parts[2].to_string();
-        let key = parts.get(3)?.strip_suffix(".md")?.to_string();
+        let category = parts[2].to_lowercase();
+        let key = parts.get(3)?.strip_suffix(".md")?.to_lowercase();
         Some((MemoryScope::Global, category, key))
     } else {
         None

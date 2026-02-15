@@ -96,8 +96,12 @@ Examples:
 
         let workspace_path = storage.get_workspace_path(workspace_id);
 
-        // Build grep patterns based on scope filter
-        let grep_patterns = build_grep_patterns(&search_args.scope, user_id);
+        // Build grep patterns based on scope and category filters
+        let grep_patterns = build_grep_patterns(
+            &search_args.scope,
+            search_args.category.as_deref(),
+            user_id,
+        );
 
         // Use grep to find files matching the pattern (returns file paths only)
         let matching_files = run_grep_for_memories(
@@ -245,25 +249,34 @@ Examples:
     }
 }
 
-/// Build grep glob patterns based on scope filter
+/// Build grep glob patterns based on scope and category filters
 fn build_grep_patterns(
     scope_filter: &Option<MemoryScope>,
+    category_filter: Option<&str>,
     user_id: Uuid,
 ) -> Vec<String> {
+    // Build the path suffix based on category filter
+    // If category is specified, search only that category directory
+    // Otherwise, search all categories with recursive glob
+    let category_suffix = match category_filter {
+        Some(cat) => format!("{}/*.md", cat),  // Specific category, non-recursive
+        None => "**/*.md".to_string(),          // All categories, recursive
+    };
+
     match scope_filter {
         Some(MemoryScope::User) => {
             // Only search user's memory directory
-            vec![format!("users/{}/memories/**/*.md", user_id)]
+            vec![format!("users/{}/memories/{}", user_id, category_suffix)]
         }
         Some(MemoryScope::Global) => {
             // Only search global memory directory
-            vec!["memories/**/*.md".to_string()]
+            vec![format!("memories/{}", category_suffix)]
         }
         None => {
             // Search both user and global directories
             vec![
-                "memories/**/*.md".to_string(),
-                format!("users/{}/memories/**/*.md", user_id),
+                format!("memories/{}", category_suffix),
+                format!("users/{}/memories/{}", user_id, category_suffix),
             ]
         }
     }
