@@ -22,6 +22,7 @@ export function MemoriesExplorerProvider({
 
   const [memories, setMemories] = useState<MemoryEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [allCategories, setAllCategories] = useState<string[]>([])
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -35,11 +36,8 @@ export function MemoriesExplorerProvider({
   const [activeMemory, setActiveMemory] = useState<MemoryEntry | null>(null)
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
 
-  // Derive unique categories from memories
-  const categories = React.useMemo(() => {
-    const cats = new Set(memories.map(m => m.category))
-    return Array.from(cats).sort()
-  }, [memories])
+  // Categories from all memories (for dropdown)
+  const categories = allCategories
 
   // Selected entries derived from rowSelection
   const selectedEntries = React.useMemo(() => {
@@ -49,12 +47,44 @@ export function MemoriesExplorerProvider({
       .filter((m): m is MemoryEntry => !!m)
   }, [rowSelection, memories])
 
-  // Load memories
+  // Fetch all categories (once on mount)
+  const fetchCategories = useCallback(async () => {
+    try {
+      const result = await memorySearch('.', { limit: 0 })
+      if (result) {
+        const cats = new Set(result.matches.map(m => m.category))
+        setAllCategories(Array.from(cats).sort())
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories:', error)
+    }
+  }, [memorySearch])
+
+  // Load memories with backend filtering
   const refresh = useCallback(async () => {
     setIsLoading(true)
     try {
-      // Use a broad search pattern to get all memories
-      const result = await memorySearch('.', { limit: 0 })
+      // Build search options - pass filters to backend
+      const searchOptions: {
+        limit: number
+        scope?: 'user' | 'global'
+        category?: string
+      } = { limit: 0 }
+
+      // Pass scope filter to backend (undefined means 'all')
+      if (scopeFilter !== 'all') {
+        searchOptions.scope = scopeFilter
+      }
+
+      // Pass category filter to backend
+      if (categoryFilter) {
+        searchOptions.category = categoryFilter
+      }
+
+      // Use searchQuery as pattern if provided, otherwise match all
+      const pattern = searchQuery || '.'
+
+      const result = await memorySearch(pattern, searchOptions)
       if (result) {
         const entries: MemoryEntry[] = result.matches.map((match) => ({
           id: `${match.scope}-${match.category}-${match.key}`,
@@ -67,25 +97,7 @@ export function MemoriesExplorerProvider({
           updated_at: match.updated_at,
         }))
 
-        // Apply filters
-        let filtered = entries
-        if (scopeFilter !== 'all') {
-          filtered = filtered.filter(m => m.scope === scopeFilter)
-        }
-        if (categoryFilter) {
-          filtered = filtered.filter(m => m.category === categoryFilter)
-        }
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase()
-          filtered = filtered.filter(m =>
-            m.title.toLowerCase().includes(query) ||
-            m.category.toLowerCase().includes(query) ||
-            m.key.toLowerCase().includes(query) ||
-            m.tags.some(t => t.toLowerCase().includes(query))
-          )
-        }
-
-        setMemories(filtered)
+        setMemories(entries)
       }
     } catch (error) {
       console.error('Failed to load memories:', error)
@@ -94,6 +106,16 @@ export function MemoriesExplorerProvider({
       setIsLoading(false)
     }
   }, [memorySearch, scopeFilter, categoryFilter, searchQuery])
+
+  // Initial load - fetch categories and memories
+  useEffect(() => {
+    fetchCategories()
+  }, [fetchCategories])
+
+  // Refresh memories when filters change
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   // Initial load
   useEffect(() => {

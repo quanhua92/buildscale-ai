@@ -48,7 +48,10 @@ export function MemoryEditorDialog() {
     createMemory,
     updateMemory,
     categories,
+    workspaceId,
   } = useMemoriesExplorer()
+
+  const { memoryGet } = useTools(workspaceId)
 
   const [scope, setScope] = useState<'user' | 'global'>('user')
   const [category, setCategory] = useState('')
@@ -57,6 +60,7 @@ export function MemoryEditorDialog() {
   const [content, setContent] = useState('')
   const [tags, setTags] = useState('')
   const [isNewCategory, setIsNewCategory] = useState(false)
+  const [isLoadingContent, setIsLoadingContent] = useState(false)
 
   const isEditing = !!activeMemory
 
@@ -67,9 +71,18 @@ export function MemoryEditorDialog() {
       setCategory(activeMemory.category)
       setKey(activeMemory.key)
       setTitle(activeMemory.title)
-      setContent('') // Content needs to be fetched separately
       setTags(activeMemory.tags.join(', '))
       setIsNewCategory(false)
+
+      // Fetch content when editing
+      setIsLoadingContent(true)
+      memoryGet(activeMemory.scope, activeMemory.category, activeMemory.key)
+        .then((result) => {
+          if (result) {
+            setContent(result.content)
+          }
+        })
+        .finally(() => setIsLoadingContent(false))
     } else {
       // Reset form for new memory
       setScope('user')
@@ -80,7 +93,7 @@ export function MemoryEditorDialog() {
       setTags('')
       setIsNewCategory(false)
     }
-  }, [activeMemory, isEditorOpen])
+  }, [activeMemory, isEditorOpen, memoryGet])
 
   const handleSubmit = async () => {
     if (!category || !key || !title || !content) {
@@ -207,13 +220,19 @@ export function MemoryEditorDialog() {
           <div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
             <Label htmlFor="content" className="sm:text-right sm:pt-2">Content</Label>
             <div className="sm:col-span-3">
-              <Textarea
-                id="content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Memory content in markdown..."
-                className="min-h-[150px] sm:min-h-[200px]"
-              />
+              {isLoadingContent ? (
+                <div className="min-h-[150px] sm:min-h-[200px] flex items-center justify-center text-muted-foreground border rounded-md">
+                  Loading content...
+                </div>
+              ) : (
+                <Textarea
+                  id="content"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Memory content in markdown..."
+                  className="min-h-[150px] sm:min-h-[200px]"
+                />
+              )}
             </div>
           </div>
 

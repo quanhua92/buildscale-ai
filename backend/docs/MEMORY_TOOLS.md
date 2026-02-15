@@ -112,8 +112,6 @@ Retrieves a specific memory by scope, category, and key.
   "success": true,
   "result": {
     "path": "/users/{uuid}/memories/preferences/coding-style.md",
-    "scope": "user",
-    "category": "preferences",
     "key": "coding-style",
     "metadata": {
       "title": "Coding Style Preferences",
@@ -171,7 +169,7 @@ Searches across all memories with filtering capabilities. Uses grep (ripgrep or 
 {
   "success": true,
   "result": {
-    "total": 2,
+    "total": 1,
     "matches": [
       {
         "path": "/users/{uuid}/memories/preferences/coding-style.md",

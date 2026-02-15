@@ -118,8 +118,6 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
 
         let result = MemoryGetResult {
             path: path.clone(),
-            scope: memory_args.scope,
-            category: memory_args.category,
             key: memory_args.key,
             metadata,
             content: remaining_content.to_string(),

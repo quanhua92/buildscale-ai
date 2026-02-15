@@ -174,7 +174,7 @@ async fn test_memory_get_user_scope() {
     assert!(result["success"].as_bool().unwrap());
     assert!(result["result"]["content"].as_str().unwrap().contains("Important project information"));
     assert_eq!(result["result"]["metadata"]["title"].as_str().unwrap(), "Project Notes");
-    assert_eq!(result["result"]["category"].as_str().unwrap(), "work");
+    assert_eq!(result["result"]["metadata"]["category"].as_str().unwrap(), "work");
     assert_eq!(result["result"]["key"].as_str().unwrap(), "project-notes");
 }
 
@@ -231,7 +231,7 @@ async fn test_memory_get_global_scope() {
 
     assert!(result["success"].as_bool().unwrap());
     assert!(result["result"]["content"].as_str().unwrap().contains("API keys"));
-    assert_eq!(result["result"]["scope"].as_str().unwrap(), "global");
+    assert_eq!(result["result"]["metadata"]["scope"].as_str().unwrap(), "global");
 }
 
 // ============================================================================

@@ -1198,8 +1198,6 @@ pub struct MemoryGetArgs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryGetResult {
     pub path: String,
-    pub scope: MemoryScope,
-    pub category: String,
     pub key: String,
     pub metadata: Option<crate::utils::MemoryMetadata>,
     pub content: String,
@@ -1277,7 +1275,7 @@ pub struct MemoryDeleteArgs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryDeleteResult {
     pub path: String,
-    pub file_id: Option<Uuid>,
+    pub file_id: Uuid,
     pub scope: MemoryScope,
     pub category: String,
     pub key: String,

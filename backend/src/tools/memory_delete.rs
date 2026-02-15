@@ -101,7 +101,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
 
         let result = MemoryDeleteResult {
             path,
-            file_id: Some(file_id),
+            file_id,
             scope: memory_args.scope,
             category: memory_args.category,
             key: memory_args.key,
