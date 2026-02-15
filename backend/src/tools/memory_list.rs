@@ -21,6 +21,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+/// Default maximum number of list results
+const DEFAULT_LIST_LIMIT: usize = 100;
+
+/// Bytes to read from file head for frontmatter parsing (4KB)
+const FILE_HEAD_BUFFER_SIZE: usize = 4096;
+
 pub struct MemoryListTool;
 
 #[async_trait]
@@ -406,7 +412,7 @@ async fn list_memories(
 
     // Apply pagination
     let offset_val = offset.unwrap_or(0);
-    let limit_val = limit.unwrap_or(100);
+    let limit_val = limit.unwrap_or(DEFAULT_LIST_LIMIT);
 
     if offset_val > 0 && offset_val < total {
         memories = memories.into_iter().skip(offset_val).collect();
@@ -428,7 +434,7 @@ async fn read_file_head(path: &Path) -> Result<String> {
         .map_err(|e| Error::Internal(format!("Failed to open file: {}", e)))?;
 
     let mut reader = BufReader::new(file);
-    let mut buffer = vec![0u8; 4096]; // Read first 4KB
+    let mut buffer = vec![0u8; FILE_HEAD_BUFFER_SIZE];
 
     let bytes_read = reader.read(&mut buffer).await
         .map_err(|e| Error::Internal(format!("Failed to read file: {}", e)))?;
@@ -503,7 +509,7 @@ fn apply_pagination<T>(list: &mut Vec<T>, limit: Option<usize>, offset: Option<u
     }
 
     // Handle limit: take only first M items
-    let limit_val = limit.unwrap_or(100);
+    let limit_val = limit.unwrap_or(DEFAULT_LIST_LIMIT);
     if limit_val > 0 && list.len() > limit_val {
         list.truncate(limit_val);
     }
