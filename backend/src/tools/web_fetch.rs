@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use super::{Tool, ToolConfig};
 use std::time::Instant;
 use futures::StreamExt;
+use dom_smoothie::{Readability, Config as ReadabilityConfig};
 
 /// Default timeout for HTTP requests in seconds
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
@@ -228,21 +229,38 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown","max_content_size":5
                         body_str.to_string()
                     }
                 } else {
-                    // Extract structured data from HTML
-                    let structured = extract_structured_json(&body_str);
+                    // Extract clean content first
+                    let clean_content = extract_article_content(&body_str, &final_url);
+                    // Extract structured data from HTML, including clean content
+                    let structured = extract_structured_json(&body_str, clean_content.as_ref());
                     serde_json::to_string_pretty(&structured).unwrap_or_else(|_| body_str.to_string())
                 }
             }
             WebFetchFormat::Html => {
-                body_str.to_string()
+                // Try clean extraction, fallback to raw
+                if let Some((clean_html, _, _)) = extract_article_content(&body_str, &final_url) {
+                    clean_html
+                } else {
+                    body_str.to_string()
+                }
             }
             WebFetchFormat::Text => {
-                // Strip HTML tags for plain text
-                html_to_text(&body_str)
+                // Try clean text extraction, fallback to scraper
+                if let Some((_, clean_text, _)) = extract_article_content(&body_str, &final_url) {
+                    clean_text
+                } else {
+                    html_to_text(&body_str)
+                }
             }
             WebFetchFormat::Markdown => {
-                // Convert HTML to Markdown
-                html_to_markdown(&body_str)
+                // Try clean extraction first
+                if let Some((clean_html, _, title)) = extract_article_content(&body_str, &final_url) {
+                    let md = htmd::convert(&clean_html).unwrap_or_default();
+                    format!("# {}\n\n{}", title, md)
+                } else {
+                    // Fallback: convert raw HTML
+                    htmd::convert(&body_str).unwrap_or_default()
+                }
             }
         };
 
@@ -297,10 +315,20 @@ fn html_to_text(html: &str) -> String {
         .join("\n")
 }
 
-/// Convert HTML to Markdown
-fn html_to_markdown(html: &str) -> String {
-    // Use html2md crate for conversion
-    html2md::parse_html(html)
+/// Extract clean article content using dom_smoothie (Mozilla Readability)
+/// Returns (clean_html, clean_text, title) or None if extraction fails
+fn extract_article_content(html: &str, url: &str) -> Option<(String, String, String)> {
+    let config = ReadabilityConfig::default();
+    let mut readability = Readability::new(html, Some(url), Some(config)).ok()?;
+
+    match readability.parse() {
+        Ok(article) => Some((
+            article.content.to_string(),      // Clean HTML
+            article.text_content.to_string(), // Plain text
+            article.title,
+        )),
+        Err(_) => None,
+    }
 }
 
 /// Extract links from HTML content
@@ -352,19 +380,32 @@ fn extract_links(html: &str, base_url: &str) -> Vec<WebLink> {
 }
 
 /// Extract structured data from HTML as JSON
-/// Includes: JSON-LD, Open Graph tags, Twitter cards, and meta tags
-fn extract_structured_json(html: &str) -> Value {
+/// Includes: clean content (Readability), JSON-LD, Open Graph tags, Twitter cards, and meta tags
+fn extract_structured_json(html: &str, clean_content: Option<&(String, String, String)>) -> Value {
     use scraper::{Html, Selector};
 
     let document = Html::parse_document(html);
     let mut result = serde_json::Map::new();
 
-    // Extract title
-    if let Ok(title_selector) = Selector::parse("title") {
-        if let Some(title_el) = document.select(&title_selector).next() {
-            let title = title_el.text().collect::<String>().trim().to_string();
-            if !title.is_empty() {
-                result.insert("title".to_string(), Value::String(title));
+    // Add clean content if available (from Readability extraction)
+    if let Some((clean_html, clean_text, title)) = clean_content {
+        if !title.is_empty() {
+            result.insert("title".to_string(), Value::String(title.clone()));
+        }
+        if !clean_text.is_empty() {
+            result.insert("content".to_string(), Value::String(clean_text.clone()));
+        }
+        if !clean_html.is_empty() {
+            result.insert("content_html".to_string(), Value::String(clean_html.clone()));
+        }
+    } else {
+        // Fallback: Extract title from HTML if no clean content
+        if let Ok(title_selector) = Selector::parse("title") {
+            if let Some(title_el) = document.select(&title_selector).next() {
+                let title = title_el.text().collect::<String>().trim().to_string();
+                if !title.is_empty() {
+                    result.insert("title".to_string(), Value::String(title));
+                }
             }
         }
     }
