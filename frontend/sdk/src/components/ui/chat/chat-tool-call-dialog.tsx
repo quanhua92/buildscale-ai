@@ -511,8 +511,8 @@ function ToolPreview({
   }
 
   // Memory tools
-  if (["memory_set", "memory_get", "memory_search", "memory_delete"].includes(tool)) {
-    const memoryTool = tool as "memory_set" | "memory_get" | "memory_search" | "memory_delete";
+  if (["memory_set", "memory_get", "memory_search", "memory_delete", "memory_list"].includes(tool)) {
+    const memoryTool = tool as "memory_set" | "memory_get" | "memory_search" | "memory_delete" | "memory_list";
     return (
       <div className="px-4 py-2 space-y-3">
         <div><span className="text-muted-foreground font-mono text-sm">Tool:</span> <span className="font-medium">{memoryTool}</span></div>
@@ -557,6 +557,15 @@ function ToolPreview({
         )}
         {memoryTool === "memory_delete" && args?.key && (
           <div><span className="text-muted-foreground text-sm">Key:</span> <span className="font-medium">{args.key}</span></div>
+        )}
+        {memoryTool === "memory_list" && args?.list_type && (
+          <div><span className="text-muted-foreground text-sm">List Type:</span> <span className="font-medium">{args.list_type}</span></div>
+        )}
+        {memoryTool === "memory_list" && args?.scope && (
+          <div><span className="text-muted-foreground text-sm">Scope:</span> <span className="font-medium">{args.scope}</span></div>
+        )}
+        {memoryTool === "memory_list" && args?.category && (
+          <div><span className="text-muted-foreground text-sm">Category:</span> <span className="font-medium">{args.category}</span></div>
         )}
         {output && (
           <pre className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all bg-muted/50 rounded-lg max-h-60 overflow-auto">
