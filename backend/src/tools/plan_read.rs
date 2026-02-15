@@ -120,6 +120,8 @@ Returns metadata (title, status, created_at) and content."#
         // Apply offset and limit to remaining content
         let offset = plan_args.offset.unwrap_or(0);
         let limit = plan_args.limit.unwrap_or(DEFAULT_READ_LIMIT);
+        // Note: limit = 0 means "unlimited" (read all lines)
+        let effective_limit = if limit == 0 { usize::MAX } else { limit };
 
         // Handle cursor mode if provided
         let actual_offset = if let Some(cursor) = plan_args.cursor {
@@ -144,7 +146,7 @@ Returns metadata (title, status, created_at) and content."#
         // Slice content
         let lines: Vec<&str> = remaining_content.lines().collect();
         let total_lines = lines.len();
-        let end = (actual_offset + limit).min(total_lines);
+        let end = (actual_offset + effective_limit).min(total_lines);
         let sliced_content: String = lines.get(actual_offset..end)
             .unwrap_or(&[])
             .join("\n");

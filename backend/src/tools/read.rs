@@ -116,8 +116,10 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
         let path = super::normalize_path(&read_args.path);
 
         // Apply defaults
+        // Note: limit = 0 means "unlimited" (read all lines)
         let offset = read_args.offset.unwrap_or(0);
         let limit = read_args.limit.unwrap_or(DEFAULT_READ_LIMIT);
+        let effective_limit = if limit == 0 { usize::MAX } else { limit };
         let cursor = read_args.cursor;
 
         // Try database lookup first
@@ -216,14 +218,14 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
             serde_json::Value::String(s) => {
                 let (sliced, total, was_truncated) = if cursor_mode {
                     // Scroll mode: always use positive offset from beginning
-                    slice_content_by_lines(s, calculated_offset, limit)
+                    slice_content_by_lines(s, calculated_offset, effective_limit)
                 } else {
                     // Absolute mode: handle negative offset for reading from end
                     if offset < 0 {
                         let lines_from_end = offset.abs() as usize;
-                        slice_content_from_end(s, lines_from_end, limit)
+                        slice_content_from_end(s, lines_from_end, effective_limit)
                     } else {
-                        slice_content_by_lines(s, calculated_offset, limit)
+                        slice_content_by_lines(s, calculated_offset, effective_limit)
                     }
                 };
                 (serde_json::Value::String(sliced), Some(total), Some(was_truncated))
