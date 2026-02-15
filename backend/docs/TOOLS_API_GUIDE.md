@@ -76,7 +76,7 @@ HTTP REST API for the BuildScale extensible tool execution system.
 | `memory_search` | Search memories by pattern with filters | `pattern`, `scope?`, `category?`, `tags?`, `case_sensitive?`, `limit?` | `matches[]`, `total` |
 | `memory_delete` | Delete a memory (soft delete) | `scope`, `category`, `key` | `path`, `file_id`, `scope`, `category`, `key` |
 | `memory_list` | List categories, tags, or memories | `list_type`, `scope?`, `category?`, `tags?`, `limit?`, `offset?` | `categories[]`/`tags[]`/`memories[]`, `total` |
-| `web_fetch` | Fetch and convert web content to AI-friendly formats | `url`, `format?`, `method?`, `body?`, `headers?`, `timeout?`, `follow_redirects?`, `extract_links?` | `url`, `status_code`, `content_type`, `content`, `content_size`, `elapsed_ms`, `links?`, `truncated` |
+| `web_fetch` | Fetch and convert web content to AI-friendly formats | `url`, `format?`, `method?`, `body?`, `headers?`, `timeout?`, `follow_redirects?`, `extract_links?`, `max_content_size?` | `url`, `status_code`, `content_type`, `content`, `content_size`, `elapsed_ms`, `links?`, `truncated` |
 | `web_search` | Search the web using DuckDuckGo | `query`, `max_results?`, `offset?` | `query`, `provider`, `total`, `results[]`, `answer?` |
 
 **Base URL**: `http://localhost:3000` (default)
@@ -2527,7 +2527,7 @@ Fetches content from URLs and converts to AI-friendly formats. Supports markdown
 - Custom headers for API access
 - Configurable timeout and redirect behavior
 - Link extraction from HTML content
-- Automatic content truncation at 100KB
+- Configurable content size limit (default: 1MB, max: 5MB)
 
 #### Arguments
 
@@ -2541,6 +2541,7 @@ Fetches content from URLs and converts to AI-friendly formats. Supports markdown
 | `timeout` | integer/string | No | Timeout in seconds (default: 30) |
 | `follow_redirects` | boolean/string | No | Follow redirects (default: true) |
 | `extract_links` | boolean/string | No | Extract links from content (default: false) |
+| `max_content_size` | integer/string | No | Maximum content size in bytes (default: 1048576/1MB, max: 5242880/5MB) |
 
 #### Request Examples
 
@@ -2590,6 +2591,18 @@ curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
     "args": {
       "url": "https://example.com/page",
       "extract_links": true
+    }
+  }'
+
+# Fetch with larger content size limit (3MB)
+curl -X POST http://localhost:3000/api/v1/workspaces/{workspace_id}/tools \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "web_fetch",
+    "args": {
+      "url": "https://example.com/large-page",
+      "max_content_size": 3145728
     }
   }'
 ```

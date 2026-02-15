@@ -6,12 +6,16 @@ use serde_json::Value;
 use async_trait::async_trait;
 use super::{Tool, ToolConfig};
 use std::time::Instant;
+use futures::StreamExt;
 
 /// Default timeout for HTTP requests in seconds
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
-/// Maximum content size (100KB)
-const MAX_CONTENT_SIZE: usize = 100 * 1024;
+/// Default maximum content size (1MB)
+const DEFAULT_MAX_CONTENT_SIZE: usize = 1024 * 1024;
+
+/// Hard ceiling for content size (5MB) - prevents abuse
+const MAX_CONTENT_SIZE_CEILING: usize = 5 * 1024 * 1024;
 
 /// Web fetch tool for retrieving and converting web content.
 ///
@@ -47,9 +51,9 @@ impl Tool for WebFetchTool {
 Supports markdown (default, most token-efficient), HTML, text, and JSON formats.
 Can extract links from content and handle custom headers/timeouts.
 
-PARAMETERS: url (required), format ("markdown"/"html"/"text"/"json"), method, body, headers, timeout (seconds), follow_redirects, extract_links
+PARAMETERS: url (required), format ("markdown"/"html"/"text"/"json"), method, body, headers, timeout (seconds), follow_redirects, extract_links, max_content_size (bytes)
 
-EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown"}"#
+EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown","max_content_size":512000}"#
     }
 
     fn definition(&self) -> Value {
@@ -89,6 +93,10 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown"}"#
                 "extract_links": {
                     "type": ["boolean", "string", "null"],
                     "description": "Extract links from content. Default: false. Accepts boolean or string."
+                },
+                "max_content_size": {
+                    "type": ["integer", "string", "null"],
+                    "description": "Maximum content size in bytes. Default: 1048576 (1MB), Max: 5242880 (5MB). Accepts integer or string."
                 }
             },
             "required": ["url"],
@@ -139,20 +147,15 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown"}"#
             .build()
             .map_err(|e| Error::Internal(format!("Failed to create HTTP client: {}", e)))?;
 
-        // Build request
-        let method = fetch_args.method.as_deref()
-            .map(|m| m.to_uppercase())
-            .unwrap_or_else(|| "GET".to_string());
+        // Calculate max content size with ceiling
+        let max_content_size = fetch_args.max_content_size
+            .unwrap_or(DEFAULT_MAX_CONTENT_SIZE)
+            .min(MAX_CONTENT_SIZE_CEILING);
 
-        let method = match method.as_str() {
-            "GET" => reqwest::Method::GET,
-            "POST" => reqwest::Method::POST,
-            "PUT" => reqwest::Method::PUT,
-            "DELETE" => reqwest::Method::DELETE,
-            "PATCH" => reqwest::Method::PATCH,
-            "HEAD" => reqwest::Method::HEAD,
-            _ => reqwest::Method::GET,
-        };
+        // Build request with method parsing
+        let method = fetch_args.method.as_deref()
+            .and_then(|m| m.parse::<reqwest::Method>().ok())
+            .unwrap_or(reqwest::Method::GET);
 
         let mut request_builder = client.request(method, url.as_str());
 
@@ -164,8 +167,8 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown"}"#
         }
 
         // Add body for POST/PUT
-        if let Some(ref body) = fetch_args.body {
-            request_builder = request_builder.body(body.clone());
+        if let Some(body) = fetch_args.body {
+            request_builder = request_builder.body(body);
         }
 
         // Execute request
@@ -182,20 +185,27 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown"}"#
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        // Get response body
-        let body_bytes = response.bytes().await.map_err(|e| {
-            Error::Internal(format!("Failed to read response body: {}", e))
-        })?;
+        // Get response body with streaming to prevent OOM
+        let mut body_bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        let mut truncated = false;
 
-        let truncated = body_bytes.len() > MAX_CONTENT_SIZE;
-        let body_to_process = if truncated {
-            &body_bytes[..MAX_CONTENT_SIZE]
-        } else {
-            &body_bytes[..]
-        };
+        while let Some(item) = stream.next().await {
+            let chunk = item.map_err(|e| Error::Internal(format!("Failed to read response chunk: {}", e)))?;
+            if body_bytes.len() + chunk.len() > max_content_size {
+                // Only take what fits within the limit
+                let remaining = max_content_size.saturating_sub(body_bytes.len());
+                if remaining > 0 {
+                    body_bytes.extend_from_slice(&chunk[..remaining]);
+                }
+                truncated = true;
+                break;
+            }
+            body_bytes.extend_from_slice(&chunk);
+        }
 
         // Convert to string (handle binary content gracefully)
-        let body_str = String::from_utf8_lossy(body_to_process);
+        let body_str = String::from_utf8_lossy(&body_bytes);
 
         // Convert to requested format
         let format = fetch_args.format.unwrap_or_default();
@@ -233,7 +243,7 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown"}"#
             status_code,
             content_type,
             content,
-            content_size: body_to_process.len(),
+            content_size: body_bytes.len(),
             elapsed_ms,
             links,
             truncated,

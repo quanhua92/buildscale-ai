@@ -8,6 +8,10 @@ use serde_json::Value;
 use async_trait::async_trait;
 use super::{Tool, ToolConfig};
 use regex::Regex;
+use std::sync::OnceLock;
+
+// Cache the VQD regex to avoid recompiling on every call
+static VQD_REGEX: OnceLock<Regex> = OnceLock::new();
 
 /// Default maximum number of results
 const DEFAULT_MAX_RESULTS: usize = 10;
@@ -222,11 +226,6 @@ async fn search_with_vqd_strategy(client: &reqwest::Client, query: &str) -> Resu
     Ok(results)
 }
 
-/// Legacy search function for backwards compatibility
-async fn search_duckduckgo(query: &str) -> Result<Vec<SearchResultItem>> {
-    search_with_fallbacks(query).await
-}
-
 /// Get VQD token from DuckDuckGo
 async fn get_vqd(client: &reqwest::Client, query: &str) -> Result<String> {
     let encoded_query = urlencoding::encode(query);
@@ -243,7 +242,9 @@ async fn get_vqd(client: &reqwest::Client, query: &str) -> Result<String> {
         .map_err(|e| Error::Internal(format!("Failed to read VQD response: {}", e)))?;
 
     // Extract VQD from response (looks like vqd='...' or vqd":"...")
-    let vqd_re = Regex::new(r#"vqd\s*[=:'"]+\s*['"]?([a-zA-Z0-9_-]+)['"]?"#).unwrap();
+    let vqd_re = VQD_REGEX.get_or_init(|| {
+        Regex::new(r#"vqd\s*[=:'"]+\s*['"]?([a-zA-Z0-9_-]+)['"]?"#).unwrap()
+    });
 
     vqd_re.captures(&body)
         .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
@@ -458,7 +459,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_popular_topic() {
         // "rust programming language" has knowledge graph entry
-        let results = search_duckduckgo("rust programming language").await.unwrap();
+        let results = search_with_fallbacks("rust programming language").await.unwrap();
         println!("Results for 'rust programming language': {}", results.len());
         for r in &results {
             println!("  - {} -> {}", r.title, r.url);
@@ -470,7 +471,7 @@ mod tests {
     async fn test_search_with_vqd_returns_results() {
         // This test verifies the VQD flow works end-to-end
         // If d.js is blocked, it should fallback to instant answer API
-        let results = search_duckduckgo("python").await.unwrap();
+        let results = search_with_fallbacks("python").await.unwrap();
         println!("Results for 'python': {}", results.len());
         for r in &results {
             println!("  - {} -> {}", r.title, r.url);
@@ -482,7 +483,7 @@ mod tests {
     async fn test_search_technical_query() {
         // Technical queries like "async await" may not have knowledge graph entries
         // This tests that we can still get results from actual web search
-        let results = search_duckduckgo("async await javascript").await.unwrap();
+        let results = search_with_fallbacks("async await javascript").await.unwrap();
         println!("Results for 'async await javascript': {}", results.len());
         for r in &results {
             println!("  - {} -> {}", r.title, r.url);
