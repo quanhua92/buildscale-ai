@@ -93,6 +93,46 @@ export interface MemoryDeleteResult {
   key: string
 }
 
+// Memory list types
+export type MemoryListType = 'categories' | 'tags' | 'memories'
+
+export interface CategoryInfo {
+  name: string
+  count: number
+}
+
+export interface TagInfo {
+  name: string
+  count: number
+}
+
+export interface MemoryListItem {
+  path: string
+  scope: MemoryScope
+  category: string
+  key: string
+  title: string
+  tags: string[]
+  updated_at: string
+}
+
+export interface MemoryListCategoriesResult {
+  categories: CategoryInfo[]
+  total: number
+}
+
+export interface MemoryListTagsResult {
+  tags: TagInfo[]
+  total: number
+}
+
+export interface MemoryListMemoriesResult {
+  memories: MemoryListItem[]
+  total: number
+}
+
+export type MemoryListResult = MemoryListCategoriesResult | MemoryListTagsResult | MemoryListMemoriesResult
+
 /**
  * Generic hook for calling backend tools with built-in error handling.
  * Replaces duplicate callTool wrappers across components.
@@ -220,6 +260,26 @@ export function useTools(workspaceId: string) {
     return callTool<MemoryDeleteResult>('memory_delete', { scope, category, key })
   }, [callTool])
 
+  // memoryList - List categories, tags, or memories
+  const memoryList = useCallback(async <T extends MemoryListResult>(
+    listType: MemoryListType,
+    options: {
+      scope?: MemoryScope
+      category?: string
+      tags?: string[]
+      limit?: number
+      offset?: number
+    } = {}
+  ): Promise<T | null> => {
+    const args: Record<string, unknown> = { list_type: listType }
+    if (options.scope) args.scope = options.scope
+    if (options.category) args.category = options.category
+    if (options.tags) args.tags = options.tags
+    if (options.limit !== undefined) args.limit = options.limit
+    if (options.offset !== undefined) args.offset = options.offset
+    return callTool<T>('memory_list', args)
+  }, [callTool])
+
   return {
     callTool,
     ls,
@@ -232,5 +292,6 @@ export function useTools(workspaceId: string) {
     memoryGet,
     memorySearch,
     memoryDelete,
+    memoryList,
   }
 }

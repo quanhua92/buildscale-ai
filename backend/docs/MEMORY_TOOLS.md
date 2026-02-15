@@ -188,6 +188,109 @@ Searches across all memories with filtering capabilities. Uses grep (ripgrep or 
 
 ---
 
+### memory_list
+
+Efficiently lists categories, tags, or memories without loading full content. Use this tool when you need overview information rather than specific memory content.
+
+**Arguments:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `list_type` | string | Yes | Type of listing: `categories`, `tags`, or `memories` |
+| `scope` | string | No | Filter by scope: `user` or `global` |
+| `category` | string | No | Filter by category (for tags/memories listing) |
+| `tags` | array | No | Filter by tags (for memories listing, AND logic) |
+| `limit` | integer | No | Max results (default: `100`) |
+| `offset` | integer | No | Offset for pagination (default: `0`) |
+
+**List Types:**
+
+| Type | Returns | Use Case |
+|------|---------|----------|
+| `categories` | Category names with memory counts | Build category navigation UI |
+| `tags` | Tag names with usage counts | Build tag cloud or filter |
+| `memories` | Memory metadata (no content) | List view without loading content |
+
+**Examples:**
+
+```json
+// List all categories
+{
+  "list_type": "categories"
+}
+
+// List tags in user scope
+{
+  "list_type": "tags",
+  "scope": "user"
+}
+
+// List memories in a category with tags filter
+{
+  "list_type": "memories",
+  "category": "preferences",
+  "tags": ["coding"],
+  "limit": 20
+}
+```
+
+**Response (categories):**
+
+```json
+{
+  "success": true,
+  "result": {
+    "total": 3,
+    "categories": [
+      { "name": "preferences", "count": 5 },
+      { "name": "project", "count": 3 },
+      { "name": "decisions", "count": 2 }
+    ]
+  }
+}
+```
+
+**Response (tags):**
+
+```json
+{
+  "success": true,
+  "result": {
+    "total": 4,
+    "tags": [
+      { "name": "coding", "count": 8 },
+      { "name": "typescript", "count": 5 },
+      { "name": "frontend", "count": 3 },
+      { "name": "api", "count": 2 }
+    ]
+  }
+}
+```
+
+**Response (memories):**
+
+```json
+{
+  "success": true,
+  "result": {
+    "total": 3,
+    "memories": [
+      {
+        "path": "/users/{uuid}/memories/preferences/coding-style.md",
+        "scope": "user",
+        "category": "preferences",
+        "key": "coding-style",
+        "title": "Coding Style Preferences",
+        "tags": ["coding", "typescript"],
+        "updated_at": "2025-01-15T10:30:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
 ### memory_delete
 
 Deletes a specific memory by scope, category, and key. This performs a soft delete - the memory can be recovered from the deleted files view.

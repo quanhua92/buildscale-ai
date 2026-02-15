@@ -88,7 +88,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
         storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
-        config: ToolConfig,
+        _config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let memory_args: MemorySetArgs = serde_json::from_value(args)?;

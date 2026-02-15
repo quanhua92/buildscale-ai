@@ -4,7 +4,7 @@ use crate::services::chat::rig_tools::{
     RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
     RigAskUserTool, RigExitPlanModeTool,
     RigPlanWriteTool, RigPlanReadTool, RigPlanEditTool, RigPlanListTool,
-    RigMemorySetTool, RigMemoryGetTool, RigMemorySearchTool, RigMemoryDeleteTool,
+    RigMemorySetTool, RigMemoryGetTool, RigMemorySearchTool, RigMemoryDeleteTool, RigMemoryListTool,
 };
 use crate::services::chat::context::{
     build_sorted_context_items, get_indices_to_truncate, render_attachment_for_ai,
@@ -224,6 +224,14 @@ where
             tool_config: tool_config.clone(),
         })
         .tool(RigMemoryDeleteTool {
+            pool: pool.clone(),
+            storage: storage.clone(),
+            workspace_id,
+            chat_id,
+            user_id,
+            tool_config: tool_config.clone(),
+        })
+        .tool(RigMemoryListTool {
             pool: pool.clone(),
             storage: storage.clone(),
             workspace_id,

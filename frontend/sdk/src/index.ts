@@ -31,6 +31,14 @@ export type {
   MemoryMatch,
   MemoryDeleteResult,
   MemoryMetadata,
+  MemoryListType,
+  CategoryInfo,
+  TagInfo,
+  MemoryListItem,
+  MemoryListCategoriesResult,
+  MemoryListTagsResult,
+  MemoryListMemoriesResult,
+  MemoryListResult,
 } from './hooks/useTools'
 
 // Components

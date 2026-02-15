@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useTools, toast } from '@buildscale/sdk'
 import type {
+  MemoryListCategoriesResult,
+} from '@buildscale/sdk'
+import type {
   MemoriesExplorerContextType,
   MemoryEntry,
   CreateMemoryData,
@@ -18,7 +21,7 @@ export function MemoriesExplorerProvider({
   children,
   workspaceId,
 }: MemoriesExplorerProviderProps) {
-  const { memorySet, memorySearch, memoryDelete } = useTools(workspaceId)
+  const { memorySet, memorySearch, memoryDelete, memoryList } = useTools(workspaceId)
 
   const [memories, setMemories] = useState<MemoryEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -48,20 +51,16 @@ export function MemoriesExplorerProvider({
   }, [rowSelection, memories])
 
   // Fetch all categories (once on mount)
-  // TODO: Implement a dedicated backend endpoint to fetch unique categories
-  // instead of fetching all memories just to extract category names.
-  // This will improve performance as the number of memories grows.
   const fetchCategories = useCallback(async () => {
     try {
-      const result = await memorySearch('.', { limit: 0 })
+      const result = await memoryList<MemoryListCategoriesResult>('categories')
       if (result) {
-        const cats = new Set(result.matches.map(m => m.category))
-        setAllCategories(Array.from(cats).sort())
+        setAllCategories(result.categories.map(c => c.name))
       }
     } catch (error) {
       console.error('Failed to fetch categories:', error)
     }
-  }, [memorySearch])
+  }, [memoryList])
 
   // Load memories with backend filtering
   const refresh = useCallback(async () => {

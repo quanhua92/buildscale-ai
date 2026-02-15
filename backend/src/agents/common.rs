@@ -137,6 +137,7 @@ You have access to a persistent memory system for storing and retrieving informa
 - `memory_get` - Retrieve a specific memory by category and key
 - `memory_search` - Search across all memories by pattern, tags, or category
 - `memory_delete` - Delete a memory (soft delete, recoverable from trash)
+- `memory_list` - List categories, tags, or memories efficiently without loading content
 
 **Memory Scopes:**
 - `user` scope: Private to the current user (default for personal preferences)

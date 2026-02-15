@@ -103,6 +103,7 @@ You are currently in **Build Mode**, which means:
 - `memory_get` - Retrieve stored preferences or context
 - `memory_search` - Search memories for relevant patterns or decisions
 - `memory_delete` - Delete a memory (soft delete, recoverable from trash)
+- `memory_list` - List categories, tags, or memories efficiently
 
 ### PRECISION GUIDELINES
 1. **Always Read Before Edit**: Get the `last_read_hash` to prevent conflicts

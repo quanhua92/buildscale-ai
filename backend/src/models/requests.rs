@@ -1280,3 +1280,99 @@ pub struct MemoryDeleteResult {
     pub category: String,
     pub key: String,
 }
+
+// ============================================================================
+// MEMORY LIST TOOL: memory_list
+// ============================================================================
+
+/// Type of listing for memory_list tool
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryListType {
+    /// List all unique categories with counts
+    Categories,
+    /// List all unique tags with counts
+    Tags,
+    /// List memories (metadata only, no content)
+    Memories,
+}
+
+/// Arguments for memory_list tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListArgs {
+    /// Type of listing: "categories", "tags", or "memories"
+    pub list_type: MemoryListType,
+    /// Filter by scope (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MemoryScope>,
+    /// Filter by category (optional, for tags/memories listing)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Filter by tags (optional, for memories listing)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// Maximum number of results (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub limit: Option<usize>,
+    /// Offset for pagination (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
+    pub offset: Option<usize>,
+}
+
+/// Category info for memory_list result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryInfo {
+    /// Category name
+    pub name: String,
+    /// Number of memories in this category
+    pub count: usize,
+}
+
+/// Tag info for memory_list result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagInfo {
+    /// Tag name
+    pub name: String,
+    /// Number of memories with this tag
+    pub count: usize,
+}
+
+/// Memory list item (metadata only, no content)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListItem {
+    /// Path to the memory file
+    pub path: String,
+    /// Scope of the memory
+    pub scope: MemoryScope,
+    /// Category of the memory
+    pub category: String,
+    /// Unique key
+    pub key: String,
+    /// Title from frontmatter
+    pub title: String,
+    /// Tags from frontmatter
+    pub tags: Vec<String>,
+    /// Last updated timestamp
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Result for listing categories
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListCategoriesResult {
+    pub categories: Vec<CategoryInfo>,
+    pub total: usize,
+}
+
+/// Result for listing tags
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListTagsResult {
+    pub tags: Vec<TagInfo>,
+    pub total: usize,
+}
+
+/// Result for listing memories
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryListMemoriesResult {
+    pub memories: Vec<MemoryListItem>,
+    pub total: usize,
+}

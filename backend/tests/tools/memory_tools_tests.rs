@@ -797,3 +797,403 @@ async fn test_memory_delete_user_isolation() {
     assert!(response.status() == 403 || response.status() == 404,
         "Expected 403 or 404, got {}", response.status());
 }
+
+// ============================================================================
+// Memory List Tests
+// ============================================================================
+
+/// Helper to list memories (categories, tags, or memories)
+async fn list_memories(
+    app: &TestApp,
+    workspace_id: &str,
+    token: &str,
+    list_type: &str,
+    scope: Option<&str>,
+    category: Option<&str>,
+    tags: Option<Vec<&str>>,
+    limit: Option<usize>,
+) -> serde_json::Value {
+    let mut args = serde_json::json!({
+        "list_type": list_type
+    });
+
+    if let Some(s) = scope {
+        args["scope"] = serde_json::json!(s);
+    }
+    if let Some(c) = category {
+        args["category"] = serde_json::json!(c);
+    }
+    if let Some(t) = tags {
+        args["tags"] = serde_json::json!(t);
+    }
+    if let Some(l) = limit {
+        args["limit"] = serde_json::json!(l);
+    }
+
+    let response = execute_tool(app, workspace_id, token, "memory_list", args).await;
+    assert_eq!(response.status(), 200);
+    response.json().await.unwrap()
+}
+
+#[tokio::test]
+async fn test_memory_list_categories() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Categories Test").await;
+
+    // Create memories in different categories
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "project-a",
+        "Project A",
+        "Work on project A.",
+        None,
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "project-b",
+        "Project B",
+        "Work on project B.",
+        None,
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "personal",
+        "hobby",
+        "Hobby",
+        "Personal hobby notes.",
+        None,
+    )
+    .await;
+
+    // List categories
+    let result = list_memories(&app, &workspace_id, &token, "categories", None, None, None, None).await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let categories = result["result"]["categories"].as_array().unwrap();
+    assert!(categories.len() >= 2);
+
+    // Verify categories exist
+    let category_names: Vec<&str> = categories
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert!(category_names.contains(&"work"));
+    assert!(category_names.contains(&"personal"));
+}
+
+#[tokio::test]
+async fn test_memory_list_categories_with_scope_filter() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Categories Scope Test").await;
+
+    // Create user and global memories
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "private",
+        "user-note",
+        "User Note",
+        "Private user note.",
+        None,
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "global",
+        "team",
+        "team-note",
+        "Team Note",
+        "Shared team note.",
+        None,
+    )
+    .await;
+
+    // List only user categories
+    let result = list_memories(&app, &workspace_id, &token, "categories", Some("user"), None, None, None).await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let categories = result["result"]["categories"].as_array().unwrap();
+
+    // Should only contain user-scoped categories
+    for cat in categories {
+        assert_eq!(cat["name"].as_str().unwrap(), "private");
+    }
+}
+
+#[tokio::test]
+async fn test_memory_list_tags() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Tags Test").await;
+
+    // Create memories with different tags
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "tagged-a",
+        "Tagged A",
+        "Content with tags.",
+        Some(vec!["frontend", "react"]),
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "tagged-b",
+        "Tagged B",
+        "Content with other tags.",
+        Some(vec!["backend", "rust"]),
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "tagged-c",
+        "Tagged C",
+        "Content with shared tag.",
+        Some(vec!["frontend", "typescript"]),
+    )
+    .await;
+
+    // List tags
+    let result = list_memories(&app, &workspace_id, &token, "tags", None, None, None, None).await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let tags = result["result"]["tags"].as_array().unwrap();
+    assert!(tags.len() >= 3);
+
+    // Verify tags exist and have counts
+    let tag_names: Vec<&str> = tags
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(tag_names.contains(&"frontend"));
+    assert!(tag_names.contains(&"backend"));
+    assert!(tag_names.contains(&"react"));
+}
+
+#[tokio::test]
+async fn test_memory_list_memories() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Memories Test").await;
+
+    // Create memories
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "list-test-1",
+        "List Test 1",
+        "First memory for list test.",
+        Some(vec!["test"]),
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "list-test-2",
+        "List Test 2",
+        "Second memory for list test.",
+        Some(vec!["test"]),
+    )
+    .await;
+
+    // List memories
+    let result = list_memories(&app, &workspace_id, &token, "memories", None, None, None, None).await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let memories = result["result"]["memories"].as_array().unwrap();
+    assert!(memories.len() >= 2);
+
+    // Verify memories have correct structure
+    for mem in memories {
+        assert!(mem["path"].as_str().unwrap().contains("/memories/"));
+        assert!(!mem["key"].as_str().unwrap().is_empty());
+        assert!(!mem["title"].as_str().unwrap().is_empty());
+        assert!(mem["tags"].as_array().unwrap().len() > 0 || mem["tags"].as_array().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_memory_list_memories_with_filters() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Memories Filter Test").await;
+
+    // Create memories in different categories
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "category-a",
+        "mem-filter-1",
+        "Filter Test 1",
+        "Memory in category A.",
+        Some(vec!["filter-test"]),
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "category-b",
+        "mem-filter-2",
+        "Filter Test 2",
+        "Memory in category B.",
+        Some(vec!["filter-test"]),
+    )
+    .await;
+
+    // List memories filtered by category
+    let result = list_memories(
+        &app,
+        &workspace_id,
+        &token,
+        "memories",
+        None,
+        Some("category-a"),
+        None,
+        None,
+    )
+    .await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let memories = result["result"]["memories"].as_array().unwrap();
+
+    // All results should be in category-a
+    for mem in memories {
+        assert_eq!(mem["category"].as_str().unwrap(), "category-a");
+    }
+}
+
+#[tokio::test]
+async fn test_memory_list_memories_with_tags_filter() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Tags Filter Test").await;
+
+    // Create memories with different tag combinations
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "tags-filter-1",
+        "Tags Filter 1",
+        "Memory with frontend and react.",
+        Some(vec!["frontend", "react"]),
+    )
+    .await;
+
+    set_memory(
+        &app,
+        &workspace_id,
+        &token,
+        "user",
+        "work",
+        "tags-filter-2",
+        "Tags Filter 2",
+        "Memory with frontend only.",
+        Some(vec!["frontend"]),
+    )
+    .await;
+
+    // List memories with tags filter (AND logic)
+    let result = list_memories(
+        &app,
+        &workspace_id,
+        &token,
+        "memories",
+        None,
+        None,
+        Some(vec!["frontend", "react"]),
+        None,
+    )
+    .await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let memories = result["result"]["memories"].as_array().unwrap();
+
+    // All results should have both tags
+    for mem in memories {
+        let tags = mem["tags"].as_array().unwrap();
+        let tag_names: Vec<&str> = tags.iter().map(|t| t.as_str().unwrap()).collect();
+        assert!(tag_names.contains(&"frontend"));
+        assert!(tag_names.contains(&"react"));
+    }
+}
+
+#[tokio::test]
+async fn test_memory_list_limit() {
+    let app = TestApp::new_with_options(TestAppOptions::api()).await;
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Memory List Limit Test").await;
+
+    // Create multiple memories
+    for i in 0..10 {
+        set_memory(
+            &app,
+            &workspace_id,
+            &token,
+            "user",
+            "limit-test",
+            &format!("limit-mem-{}", i),
+            &format!("Limit Memory {}", i),
+            &format!("Content {} for limit test.", i),
+            None,
+        )
+        .await;
+    }
+
+    // List with limit
+    let result = list_memories(&app, &workspace_id, &token, "memories", None, Some("limit-test"), None, Some(3)).await;
+
+    assert!(result["success"].as_bool().unwrap());
+    let memories = result["result"]["memories"].as_array().unwrap();
+    assert_eq!(memories.len(), 3);
+}
+
