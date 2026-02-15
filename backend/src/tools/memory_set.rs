@@ -146,10 +146,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
             }
         }
 
-        // Plan Mode Guard: Memory files are always allowed (like plan files)
-        if config.plan_mode {
-            // Memory tools are allowed in plan mode for context persistence
-        }
+        // Memory tools are allowed in plan mode for context persistence
 
         // Virtual File Protection
         if let Some(ref file) = existing_file {

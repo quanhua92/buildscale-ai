@@ -144,6 +144,11 @@ pub fn generate_memory_path(
 
 /// Sanitize a path component for safe filesystem use
 fn sanitize_path_component(s: &str) -> String {
+    // Prevent path traversal attacks
+    if s == "." || s == ".." {
+        return "_".to_string();
+    }
+
     // Replace potentially problematic characters
     s.chars()
         .map(|c| match c {
@@ -271,5 +276,12 @@ Configuration content."#;
         assert_eq!(sanitize_path_component("file.txt"), "file.txt");
         assert_eq!(sanitize_path_component("path/to/file"), "path_to_file");
         assert_eq!(sanitize_path_component("special:chars?here"), "special_chars_here");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_traversal() {
+        // Path traversal prevention
+        assert_eq!(sanitize_path_component("."), "_");
+        assert_eq!(sanitize_path_component(".."), "_");
     }
 }

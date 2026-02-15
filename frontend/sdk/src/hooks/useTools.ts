@@ -62,8 +62,6 @@ export interface MemoryMetadata {
 
 export interface MemoryGetResult {
   path: string
-  scope: MemoryScope
-  category: string
   key: string
   metadata: MemoryMetadata | null
   content: string
@@ -89,7 +87,7 @@ export interface MemorySearchResult {
 
 export interface MemoryDeleteResult {
   path: string
-  file_id: string | null
+  file_id: string
   scope: MemoryScope
   category: string
   key: string

@@ -117,11 +117,6 @@ export function MemoriesExplorerProvider({
     refresh()
   }, [refresh])
 
-  // Initial load
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
   // Create memory
   const createMemory = useCallback(async (data: CreateMemoryData) => {
     try {
