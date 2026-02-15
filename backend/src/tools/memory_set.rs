@@ -15,7 +15,7 @@ use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{
-    generate_memory_path, parse_memory_frontmatter, prepend_memory_frontmatter, MemoryMetadata, MemoryScope,
+    generate_memory_path, prepend_memory_frontmatter, MemoryMetadata, MemoryScope,
 };
 use crate::DbConn;
 use async_trait::async_trait;
@@ -158,15 +158,8 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
             }
         }
 
-        // Preserve original created_at when updating
-        let old_created_at = if let Some(ref file) = existing_file {
-            let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
-            let content_text = file_with_content.content.as_str().unwrap_or("");
-            let (old_metadata, _) = parse_memory_frontmatter(content_text);
-            old_metadata.map(|m| m.created_at)
-        } else {
-            None
-        };
+        // Preserve original created_at from database when updating
+        let old_created_at = existing_file.as_ref().map(|f| f.created_at);
 
         // Create metadata
         let now = Utc::now();

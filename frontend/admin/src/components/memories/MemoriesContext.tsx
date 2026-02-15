@@ -48,6 +48,9 @@ export function MemoriesExplorerProvider({
   }, [rowSelection, memories])
 
   // Fetch all categories (once on mount)
+  // TODO: Implement a dedicated backend endpoint to fetch unique categories
+  // instead of fetching all memories just to extract category names.
+  // This will improve performance as the number of memories grows.
   const fetchCategories = useCallback(async () => {
     try {
       const result = await memorySearch('.', { limit: 0 })

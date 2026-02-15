@@ -129,11 +129,6 @@ Examples:
                 continue;
             }
 
-            // Stop if we've reached the limit
-            if limit > 0 && all_matches.len() >= limit {
-                break;
-            }
-
             // Parse scope, category, key from path
             let (scope, category, key) = match parse_memory_path(file_path) {
                 Some(result) => result,
@@ -190,7 +185,7 @@ Examples:
             }
 
             // Get file updated_at from filesystem
-            let updated_at = match std::fs::metadata(&full_path) {
+            let updated_at = match tokio::fs::metadata(&full_path).await {
                 Ok(meta) => {
                     meta.modified()
                         .ok()
@@ -231,8 +226,14 @@ Examples:
             b.updated_at.cmp(&a.updated_at)
         });
 
+        // Apply limit after sorting to get most recent matches
+        let total = all_matches.len();
+        if limit > 0 && all_matches.len() > limit {
+            all_matches.truncate(limit);
+        }
+
         let result = MemorySearchResult {
-            total: all_matches.len(),
+            total,
             matches: all_matches,
         };
 
@@ -297,19 +298,11 @@ async fn run_grep_for_memories(
 
 /// Extract content preview from body text (first N words)
 fn extract_content_preview(body: &str, max_words: usize) -> String {
-    let words: Vec<&str> = body
-        .split_whitespace()
-        .take(max_words)
-        .collect();
-
-    let preview = words.join(" ");
-
-    // Add ellipsis if truncated
-    let word_count = body.split_whitespace().count();
-    if word_count > max_words {
-        format!("{}...", preview)
+    let words: Vec<&str> = body.split_whitespace().collect();
+    if words.len() > max_words {
+        format!("{}...", words[..max_words].join(" "))
     } else {
-        preview
+        words.join(" ")
     }
 }
 
@@ -349,6 +342,7 @@ async fn run_ripgrep_glob(
         cmd.arg("--ignore-case");
     }
 
+    cmd.arg("--");
     cmd.arg(pattern);
     cmd.arg(".");
 
@@ -429,6 +423,7 @@ async fn run_standard_grep_glob(
         cmd.arg("-i");
     }
 
+    cmd.arg("--");
     cmd.arg(pattern);
     cmd.arg(".");
 
