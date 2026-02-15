@@ -48,10 +48,13 @@ impl Tool for WebFetchTool {
     fn description(&self) -> &'static str {
         r#"Fetches and converts web content to AI-friendly formats.
 
-Supports markdown (default, most token-efficient), HTML, text, and JSON formats.
-Can extract links from content and handle custom headers/timeouts.
+FORMATS:
+- markdown (default): Best for reading web pages, most token-efficient
+- html: Raw HTML content
+- text: Plain text with HTML tags stripped
+- json: Smart extraction - for APIs returns pretty-printed JSON; for HTML extracts structured data (title, JSON-LD, Open Graph, meta tags, headings)
 
-PARAMETERS: url (required), format ("markdown"/"html"/"text"/"json"), method, body, headers, timeout (seconds), follow_redirects, extract_links, max_content_size (bytes)
+PARAMETERS: url (required), format ("markdown"/"html"/"text"/"json"), method, body, headers, timeout (seconds), follow_redirects, extract_links, max_content_size (bytes, default 1MB, max 5MB)
 
 EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown","max_content_size":512000}"#
     }
@@ -211,11 +214,23 @@ EXAMPLE: {"url":"https://docs.rs/serde","format":"markdown","max_content_size":5
         let format = fetch_args.format.unwrap_or_default();
         let content = match format {
             WebFetchFormat::Json => {
-                // For JSON format, try to parse and re-format, or return as-is
-                if let Ok(json_value) = serde_json::from_str::<Value>(&body_str) {
-                    serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| body_str.to_string())
+                // Check if response is actually JSON (API endpoint)
+                let is_json_response = content_type
+                    .as_ref()
+                    .map(|ct| ct.contains("application/json"))
+                    .unwrap_or(false);
+
+                if is_json_response {
+                    // Pretty-print JSON API response
+                    if let Ok(json_value) = serde_json::from_str::<Value>(&body_str) {
+                        serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| body_str.to_string())
+                    } else {
+                        body_str.to_string()
+                    }
                 } else {
-                    body_str.to_string()
+                    // Extract structured data from HTML
+                    let structured = extract_structured_json(&body_str);
+                    serde_json::to_string_pretty(&structured).unwrap_or_else(|_| body_str.to_string())
                 }
             }
             WebFetchFormat::Html => {
@@ -334,4 +349,117 @@ fn extract_links(html: &str, base_url: &str) -> Vec<WebLink> {
     links.retain(|link| seen.insert(link.url.clone()));
 
     links
+}
+
+/// Extract structured data from HTML as JSON
+/// Includes: JSON-LD, Open Graph tags, Twitter cards, and meta tags
+fn extract_structured_json(html: &str) -> Value {
+    use scraper::{Html, Selector};
+
+    let document = Html::parse_document(html);
+    let mut result = serde_json::Map::new();
+
+    // Extract title
+    if let Ok(title_selector) = Selector::parse("title") {
+        if let Some(title_el) = document.select(&title_selector).next() {
+            let title = title_el.text().collect::<String>().trim().to_string();
+            if !title.is_empty() {
+                result.insert("title".to_string(), Value::String(title));
+            }
+        }
+    }
+
+    // Extract JSON-LD data (Schema.org)
+    let mut json_ld_list = Vec::new();
+    if let Ok(ld_selector) = Selector::parse(r#"script[type="application/ld+json"]"#) {
+        for script in document.select(&ld_selector) {
+            let json_text = script.text().collect::<String>();
+            if let Ok(json_value) = serde_json::from_str::<Value>(&json_text) {
+                json_ld_list.push(json_value);
+            }
+        }
+    }
+    if !json_ld_list.is_empty() {
+        result.insert("json_ld".to_string(), Value::Array(json_ld_list));
+    }
+
+    // Extract Open Graph tags
+    let mut og_data = serde_json::Map::new();
+    if let Ok(og_selector) = Selector::parse(r#"meta[property^="og:"]"#) {
+        for meta in document.select(&og_selector) {
+            if let Some(property) = meta.value().attr("property") {
+                if let Some(content) = meta.value().attr("content") {
+                    let key = property.strip_prefix("og:").unwrap_or(property).to_string();
+                    og_data.insert(key, Value::String(content.to_string()));
+                }
+            }
+        }
+    }
+    if !og_data.is_empty() {
+        result.insert("open_graph".to_string(), Value::Object(og_data));
+    }
+
+    // Extract Twitter cards
+    let mut twitter_data = serde_json::Map::new();
+    if let Ok(twitter_selector) = Selector::parse(r#"meta[name^="twitter:"]"#) {
+        for meta in document.select(&twitter_selector) {
+            if let Some(name) = meta.value().attr("name") {
+                if let Some(content) = meta.value().attr("content") {
+                    let key = name.strip_prefix("twitter:").unwrap_or(name).to_string();
+                    twitter_data.insert(key, Value::String(content.to_string()));
+                }
+            }
+        }
+    }
+    if !twitter_data.is_empty() {
+        result.insert("twitter".to_string(), Value::Object(twitter_data));
+    }
+
+    // Extract standard meta tags
+    let mut meta_data = serde_json::Map::new();
+    let meta_names = ["description", "keywords", "author", "viewport", "robots"];
+    for name in meta_names {
+        if let Ok(meta_selector) = Selector::parse(&format!(r#"meta[name="{}"]"#, name)) {
+            if let Some(meta) = document.select(&meta_selector).next() {
+                if let Some(content) = meta.value().attr("content") {
+                    meta_data.insert(name.to_string(), Value::String(content.to_string()));
+                }
+            }
+        }
+    }
+    if !meta_data.is_empty() {
+        result.insert("meta".to_string(), Value::Object(meta_data));
+    }
+
+    // Extract canonical URL
+    if let Ok(canonical_selector) = Selector::parse(r#"link[rel="canonical"]"#) {
+        if let Some(link) = document.select(&canonical_selector).next() {
+            if let Some(href) = link.value().attr("href") {
+                result.insert("canonical_url".to_string(), Value::String(href.to_string()));
+            }
+        }
+    }
+
+    // Extract main headings
+    let mut headings = Vec::new();
+    if let Ok(h_selector) = Selector::parse("h1, h2") {
+        for h in document.select(&h_selector) {
+            let text = h.text().collect::<String>().trim().to_string();
+            if !text.is_empty() && text.len() < 200 {
+                let tag = h.value().name().to_string();
+                let mut heading_map = serde_json::Map::new();
+                heading_map.insert("level".to_string(), Value::String(tag));
+                heading_map.insert("text".to_string(), Value::String(text));
+                headings.push(Value::Object(heading_map));
+            }
+            if headings.len() >= 10 {
+                break;
+            }
+        }
+    }
+    if !headings.is_empty() {
+        result.insert("headings".to_string(), Value::Array(headings));
+    }
+
+    Value::Object(result)
 }

@@ -2523,11 +2523,23 @@ Fetches content from URLs and converts to AI-friendly formats. Supports markdown
 
 **Features:**
 - Multiple output formats: `markdown` (default), `html`, `text`, `json`
+- JSON format is smart: extracts structured data from HTML pages (JSON-LD, Open Graph, meta tags) or pretty-prints JSON APIs
 - Custom HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD)
 - Custom headers for API access
 - Configurable timeout and redirect behavior
 - Link extraction from HTML content
 - Configurable content size limit (default: 1MB, max: 5MB)
+
+**JSON Format Behavior:**
+- For API endpoints (`Content-Type: application/json`): Pretty-prints the JSON response
+- For HTML pages: Extracts structured data including:
+  - `title`: Page title
+  - `json_ld`: Schema.org structured data from `<script type="application/ld+json">`
+  - `open_graph`: Open Graph meta tags (`og:title`, `og:description`, `og:image`, etc.)
+  - `twitter`: Twitter card meta tags
+  - `meta`: Standard meta tags (`description`, `keywords`, `author`, etc.)
+  - `canonical_url`: Canonical URL if present
+  - `headings`: Main headings (h1, h2)
 
 #### Arguments
 
