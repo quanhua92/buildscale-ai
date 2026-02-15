@@ -24,6 +24,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
   useTools,
+  HtmlPreview,
+  isHtmlFile,
 } from "@buildscale/sdk"
 import { Loader2, FolderIcon, ChevronRight, Home, Code, Globe } from "lucide-react"
 import { getContentAsString } from './utils'
@@ -232,12 +234,6 @@ function FileEditor() {
   )
 }
 
-// Detect HTML by file extension only (content detection is too unreliable)
-const isHtmlFile = (filename: string): boolean => {
-  const lower = filename.toLowerCase()
-  return lower.endsWith('.html') || lower.endsWith('.htm')
-}
-
 function FileViewer() {
   const { isViewerOpen, setViewerOpen, activeFile, workspaceId } = useFileExplorer()
   const { read } = useTools(workspaceId)
@@ -310,12 +306,7 @@ function FileViewer() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : isHtml && previewMode === 'preview' ? (
-            <iframe
-              srcDoc={content}
-              sandbox="allow-scripts"
-              className="w-full h-full min-h-[400px] border-0 bg-white"
-              title="HTML Preview"
-            />
+            <HtmlPreview content={content} className="h-full" />
           ) : (
             <div className="p-4 whitespace-pre-wrap">
               {content || <span className="text-muted-foreground italic">Empty file</span>}

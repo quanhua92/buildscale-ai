@@ -166,6 +166,8 @@ export {
   BreadcrumbSeparator,
   BreadcrumbEllipsis,
 } from './components/ui/breadcrumb'
+export { HtmlPreview, isHtmlFile } from './components/ui/html-preview'
+export type { HtmlPreviewProps } from './components/ui/html-preview'
 
 // API client
 export { ApiClient } from './api'
