@@ -99,7 +99,7 @@ export default function Header() {
                   </NavigationMenu.Section>
 
                   {/* Recent Chats Section */}
-                  <NavigationMenu.Section title="Recent Chats" defaultOpen={false}>
+                  <NavigationMenu.Section title="Recent Chats" defaultOpen={true}>
                     <RecentChats workspaceId={workspaceId} />
                   </NavigationMenu.Section>
 

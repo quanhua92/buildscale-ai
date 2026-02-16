@@ -112,6 +112,15 @@ export function RecentChats({ workspaceId, currentChatId }: RecentChatsProps) {
       }
     })
 
+    // Sort each group by updated_at descending (most recent first)
+    Object.values(groups).forEach(groupChats => {
+      groupChats.sort((a, b) => {
+        const dateA = new Date(a.updated_at).getTime()
+        const dateB = new Date(b.updated_at).getTime()
+        return dateB - dateA // Most recent first
+      })
+    })
+
     // Convert to array and filter out empty groups
     return Object.entries(groups)
       .filter(([_, chats]) => chats.length > 0)
