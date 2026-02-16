@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_sessions (\n            workspace_id, chat_id, user_id, agent_type, status, model, mode\n        )\n        VALUES ($1, $2, $3, $4, 'idle', $5, $6)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "95be315874479107496d00c6dd97ca2492632728fad4a2902e710359664081dc"
+}

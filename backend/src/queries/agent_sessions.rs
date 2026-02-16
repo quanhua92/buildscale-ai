@@ -22,27 +22,14 @@ pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> 
         "[AgentSessions] Creating new agent session"
     );
 
-    let session = sqlx::query_as!(
-        AgentSession,
+    // First insert the session
+    let session = sqlx::query!(
         r#"
         INSERT INTO agent_sessions (
             workspace_id, chat_id, user_id, agent_type, status, model, mode
         )
         VALUES ($1, $2, $3, $4, 'idle', $5, $6)
-        RETURNING
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
+        RETURNING id
         "#,
         new_session.workspace_id,
         new_session.chat_id,
@@ -51,7 +38,7 @@ pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> 
         new_session.model,
         new_session.mode,
     )
-    .fetch_one(conn)
+    .fetch_one(&mut *conn)
     .await
     .map_err(|e| {
         let error_msg = e.to_string().to_lowercase();
@@ -79,6 +66,35 @@ pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> 
         }
     })?;
 
+    // Then fetch with chat name
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.id = $1
+        "#,
+        session.id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
     tracing::info!(
         session_id = %session.id,
         chat_id = %session.chat_id,
@@ -101,21 +117,23 @@ pub async fn get_session_by_id(conn: &mut DbConn, id: Uuid) -> Result<Option<Age
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE id = $1
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.id = $1
         "#,
         id,
     )
@@ -142,21 +160,23 @@ pub async fn get_session_by_chat(conn: &mut DbConn, chat_id: Uuid) -> Result<Opt
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE chat_id = $1
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.chat_id = $1
         "#,
         chat_id,
     )
@@ -181,23 +201,25 @@ pub async fn get_active_sessions_by_workspace(
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE workspace_id = $1
-        AND status NOT IN ('completed', 'error')
-        ORDER BY created_at DESC
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.workspace_id = $1
+        AND s.status NOT IN ('completed', 'error')
+        ORDER BY s.created_at DESC
         "#,
         workspace_id,
     )
@@ -220,22 +242,24 @@ pub async fn get_sessions_by_user(conn: &mut DbConn, user_id: Uuid) -> Result<Ve
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE user_id = $1
-        ORDER BY created_at DESC
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.user_id = $1
+        ORDER BY s.created_at DESC
         "#,
         user_id,
     )
@@ -255,23 +279,25 @@ pub async fn get_active_sessions_by_user(
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE user_id = $1
-        AND status NOT IN ('completed', 'error')
-        ORDER BY created_at DESC
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.user_id = $1
+        AND s.status NOT IN ('completed', 'error')
+        ORDER BY s.created_at DESC
         "#,
         user_id,
     )
@@ -299,32 +325,18 @@ pub async fn update_session_status(
         _ => None,
     };
 
-    let session = sqlx::query_as!(
-        AgentSession,
+    // First update the session
+    sqlx::query(
         r#"
         UPDATE agent_sessions
         SET status = $2, updated_at = NOW(), completed_at = $3
         WHERE id = $1
-        RETURNING
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
         "#,
-        session_id,
-        status as SessionStatus,
-        updated_at,
     )
-    .fetch_one(conn)
+    .bind(session_id)
+    .bind(status as SessionStatus)
+    .bind(updated_at)
+    .execute(&mut *conn)
     .await
     .map_err(|e| {
         if e.to_string().to_lowercase().contains("no rows") {
@@ -339,6 +351,41 @@ pub async fn update_session_status(
                 error = %e,
                 "[AgentSessions] Failed to update session status"
             );
+            Error::Sqlx(e)
+        }
+    })?;
+
+    // Then fetch with chat name
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.id = $1
+        "#,
+        session_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(|e| {
+        if e.to_string().to_lowercase().contains("no rows") {
+            Error::NotFound(format!("Session with ID {} not found", session_id))
+        } else {
             Error::Sqlx(e)
         }
     })?;
@@ -368,31 +415,17 @@ pub async fn update_session_task(
         "[AgentSessions] Updating session task"
     );
 
-    let session = sqlx::query_as!(
-        AgentSession,
+    // First update the session
+    sqlx::query(
         r#"
         UPDATE agent_sessions
         SET current_task = $2, updated_at = NOW()
         WHERE id = $1
-        RETURNING
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
         "#,
-        session_id,
-        current_task,
     )
-    .fetch_one(conn)
+    .bind(session_id)
+    .bind(current_task)
+    .execute(&mut *conn)
     .await
     .map_err(|e| {
         if e.to_string().to_lowercase().contains("no rows") {
@@ -407,6 +440,41 @@ pub async fn update_session_task(
                 error = %e,
                 "[AgentSessions] Failed to update session task"
             );
+            Error::Sqlx(e)
+        }
+    })?;
+
+    // Then fetch with chat name
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.id = $1
+        "#,
+        session_id
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(|e| {
+        if e.to_string().to_lowercase().contains("no rows") {
+            Error::NotFound(format!("Session with ID {} not found", session_id))
+        } else {
             Error::Sqlx(e)
         }
     })?;
@@ -491,21 +559,23 @@ pub async fn update_session_metadata(
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE id = $1
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.id = $1
         "#,
         session_id
     )
@@ -658,23 +728,25 @@ pub async fn get_stale_sessions(conn: &mut DbConn) -> Result<Vec<AgentSession>> 
         AgentSession,
         r#"
         SELECT
-            id,
-            workspace_id,
-            chat_id,
-            user_id,
-            agent_type as "agent_type: AgentType",
-            status as "status: SessionStatus",
-            model,
-            mode,
-            current_task,
-            created_at,
-            updated_at,
-            last_heartbeat,
-            completed_at
-        FROM agent_sessions
-        WHERE last_heartbeat < $1
-        AND status NOT IN ('completed', 'error')
-        ORDER BY last_heartbeat ASC
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.last_heartbeat < $1
+        AND s.status NOT IN ('completed', 'error')
+        ORDER BY s.last_heartbeat ASC
         "#,
         threshold,
     )

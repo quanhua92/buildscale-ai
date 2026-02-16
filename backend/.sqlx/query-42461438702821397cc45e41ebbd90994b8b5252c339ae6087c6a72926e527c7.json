@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO agent_sessions (\n            workspace_id, chat_id, user_id, agent_type, status, model, mode\n        )\n        VALUES ($1, $2, $3, $4, 'idle', $5, $6)\n        RETURNING\n            id,\n            workspace_id,\n            chat_id,\n            user_id,\n            agent_type as \"agent_type: AgentType\",\n            status as \"status: SessionStatus\",\n            model,\n            mode,\n            current_task,\n            created_at,\n            updated_at,\n            last_heartbeat,\n            completed_at\n        ",
+  "query": "\n        SELECT\n            s.id,\n            s.workspace_id,\n            s.chat_id,\n            s.user_id,\n            s.agent_type as \"agent_type: AgentType\",\n            s.status as \"status: SessionStatus\",\n            s.model,\n            s.mode,\n            s.current_task,\n            s.created_at,\n            s.updated_at,\n            s.last_heartbeat,\n            s.completed_at,\n            f.name as \"chat_name?\"\n        FROM agent_sessions s\n        LEFT JOIN files f ON s.chat_id = f.id\n        WHERE s.last_heartbeat < $1\n        AND s.status NOT IN ('completed', 'error')\n        ORDER BY s.last_heartbeat ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -67,16 +67,16 @@
         "ordinal": 12,
         "name": "completed_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "chat_name?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Text"
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -92,8 +92,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "2d5870f2ab4deb2c8cd82e24227d80c09a6f0e58d16ce3f151e8b47d0ade28ee"
+  "hash": "42461438702821397cc45e41ebbd90994b8b5252c339ae6087c6a72926e527c7"
 }

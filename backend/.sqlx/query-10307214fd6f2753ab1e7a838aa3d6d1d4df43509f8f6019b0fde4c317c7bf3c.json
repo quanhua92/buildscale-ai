@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE agent_sessions\n        SET current_task = $2, updated_at = NOW()\n        WHERE id = $1\n        RETURNING\n            id,\n            workspace_id,\n            chat_id,\n            user_id,\n            agent_type as \"agent_type: AgentType\",\n            status as \"status: SessionStatus\",\n            model,\n            mode,\n            current_task,\n            created_at,\n            updated_at,\n            last_heartbeat,\n            completed_at\n        ",
+  "query": "\n        SELECT\n            s.id,\n            s.workspace_id,\n            s.chat_id,\n            s.user_id,\n            s.agent_type as \"agent_type: AgentType\",\n            s.status as \"status: SessionStatus\",\n            s.model,\n            s.mode,\n            s.current_task,\n            s.created_at,\n            s.updated_at,\n            s.last_heartbeat,\n            s.completed_at,\n            f.name as \"chat_name?\"\n        FROM agent_sessions s\n        LEFT JOIN files f ON s.chat_id = f.id\n        WHERE s.workspace_id = $1\n        AND s.status NOT IN ('completed', 'error')\n        ORDER BY s.created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -67,12 +67,16 @@
         "ordinal": 12,
         "name": "completed_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "chat_name?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -88,8 +92,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "29a32cd9dbd91d533270a4d8e07483ebade8a3e580dec1781116c2796feecb98"
+  "hash": "10307214fd6f2753ab1e7a838aa3d6d1d4df43509f8f6019b0fde4c317c7bf3c"
 }

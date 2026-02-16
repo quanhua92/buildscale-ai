@@ -550,6 +550,7 @@ export interface AgentSession {
   updated_at: string
   last_heartbeat: string
   completed_at: string | null
+  chat_name: string | null
 }
 
 export interface AgentSessionsListResponse {

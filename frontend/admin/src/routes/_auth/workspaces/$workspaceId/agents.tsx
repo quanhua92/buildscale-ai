@@ -31,7 +31,8 @@ function AgentsContent() {
       !searchQuery ||
       session.agent_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       session.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      session.current_task?.toLowerCase().includes(searchQuery.toLowerCase())
+      session.current_task?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      session.chat_name?.toLowerCase().includes(searchQuery.toLowerCase())
     return matchesStatus && matchesSearch
   })
 
@@ -179,6 +180,13 @@ function AgentsContent() {
                           #{session.chat_id.slice(0, 10)}
                         </span>
                       </div>
+
+                      {/* Chat name */}
+                      {session.chat_name && (
+                        <div className="text-xs text-muted-foreground truncate" title={session.chat_name}>
+                          {session.chat_name}
+                        </div>
+                      )}
 
                       {/* Secondary info: Task or Model */}
                       {session.current_task ? (

@@ -55,6 +55,7 @@ pub struct AgentSession {
     pub updated_at: DateTime<Utc>,
     pub last_heartbeat: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub chat_name: Option<String>,
 }
 
 /// New agent session entity - for creating a new session
@@ -98,6 +99,7 @@ pub struct AgentSessionInfo {
     pub updated_at: DateTime<Utc>,
     pub last_heartbeat: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub chat_name: Option<String>,
 }
 
 impl From<AgentSession> for AgentSessionInfo {
@@ -116,6 +118,7 @@ impl From<AgentSession> for AgentSessionInfo {
             updated_at: session.updated_at,
             last_heartbeat: session.last_heartbeat,
             completed_at: session.completed_at,
+            chat_name: session.chat_name,
         }
     }
 }

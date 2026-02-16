@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            id,\n            workspace_id,\n            chat_id,\n            user_id,\n            agent_type as \"agent_type: AgentType\",\n            status as \"status: SessionStatus\",\n            model,\n            mode,\n            current_task,\n            created_at,\n            updated_at,\n            last_heartbeat,\n            completed_at\n        FROM agent_sessions\n        WHERE user_id = $1\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT\n            s.id,\n            s.workspace_id,\n            s.chat_id,\n            s.user_id,\n            s.agent_type as \"agent_type: AgentType\",\n            s.status as \"status: SessionStatus\",\n            s.model,\n            s.mode,\n            s.current_task,\n            s.created_at,\n            s.updated_at,\n            s.last_heartbeat,\n            s.completed_at,\n            f.name as \"chat_name?\"\n        FROM agent_sessions s\n        LEFT JOIN files f ON s.chat_id = f.id\n        WHERE s.chat_id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -67,6 +67,11 @@
         "ordinal": 12,
         "name": "completed_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "chat_name?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -87,8 +92,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "e71d099f6dd72ead9636ab0957fc5c1924057caf4cb088991e4da99b68f5c6b8"
+  "hash": "92aced2078fed17a5e0fecbceb31e437b40b7d036432a0c7b9ec20ec8d2cbddc"
 }
