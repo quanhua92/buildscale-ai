@@ -45,6 +45,16 @@ pub async fn create_session(
     model: String,
     mode: String,
 ) -> Result<AgentSession> {
+    tracing::info!(
+        workspace_id = %workspace_id,
+        chat_id = %chat_id,
+        user_id = %user_id,
+        agent_type = %agent_type,
+        model = %model,
+        mode = %mode,
+        "[AgentSessions] Service: Creating new agent session"
+    );
+
     // Validate inputs
     validate_model_name(&model)?;
     validate_mode(&mode)?;
@@ -82,12 +92,24 @@ pub async fn get_session(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<AgentSession> {
+    tracing::debug!(
+        session_id = %session_id,
+        user_id = %user_id,
+        "[AgentSessions] Service: Getting session with authorization check"
+    );
+
     let session = agent_sessions::get_session_by_id(conn, session_id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("Session {} not found", session_id)))?;
 
     // Authorization check: user must be the session owner
     if session.user_id != user_id {
+        tracing::warn!(
+            session_id = %session_id,
+            user_id = %user_id,
+            session_owner = %session.user_id,
+            "[AgentSessions] Service: Authorization failed - user does not own this session"
+        );
         return Err(Error::Forbidden(
             "You don't have permission to access this session".to_string(),
         ));
@@ -111,8 +133,14 @@ pub async fn get_session(
 pub async fn list_workspace_sessions(
     conn: &mut DbConn,
     workspace_id: Uuid,
-    _user_id: Uuid,
+    user_id: Uuid,
 ) -> Result<AgentSessionsListResponse> {
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        user_id = %user_id,
+        "[AgentSessions] Service: Listing active sessions for workspace"
+    );
+
     // TODO: Add workspace membership check when workspace access control is available
     // For now, we'll just get all active sessions
 
@@ -122,6 +150,12 @@ pub async fn list_workspace_sessions(
     let total = sessions.len();
     let session_infos: Vec<AgentSessionInfo> =
         sessions.into_iter().map(Into::into).collect();
+
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        total_sessions = total,
+        "[AgentSessions] Service: Retrieved active sessions for workspace"
+    );
 
     Ok(AgentSessionsListResponse {
         sessions: session_infos,
@@ -141,6 +175,11 @@ pub async fn list_user_sessions(
     conn: &mut DbConn,
     user_id: Uuid,
 ) -> Result<AgentSessionsListResponse> {
+    tracing::debug!(
+        user_id = %user_id,
+        "[AgentSessions] Service: Listing active sessions for user"
+    );
+
     let sessions = agent_sessions::get_active_sessions_by_user(conn, user_id).await?;
 
     let total = sessions.len();
@@ -177,8 +216,22 @@ pub async fn update_session_status(
     status: SessionStatus,
     user_id: Uuid,
 ) -> Result<AgentSession> {
+    tracing::info!(
+        session_id = %session_id,
+        new_status = %status,
+        user_id = %user_id,
+        "[AgentSessions] Service: Updating session status"
+    );
+
     // Verify ownership first
     let session = get_session(conn, session_id, user_id).await?;
+
+    tracing::debug!(
+        session_id = %session_id,
+        old_status = %session.status,
+        new_status = %status,
+        "[AgentSessions] Service: Status transition"
+    );
 
     // Validate status transition
     validate_status_transition(session.status, status)?;
@@ -202,6 +255,13 @@ pub async fn update_session_task(
     current_task: Option<String>,
     user_id: Uuid,
 ) -> Result<AgentSession> {
+    tracing::debug!(
+        session_id = %session_id,
+        current_task = ?current_task,
+        user_id = %user_id,
+        "[AgentSessions] Service: Updating session task"
+    );
+
     // Verify ownership first
     get_session(conn, session_id, user_id).await?;
 
@@ -220,6 +280,12 @@ pub async fn update_session_task(
 /// # Errors
 /// * `NotFound` - If session doesn't exist
 pub async fn update_heartbeat(conn: &mut DbConn, session_id: Uuid) -> Result<()> {
+    // Heartbeat updates are very frequent, so use trace level
+    tracing::trace!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Updating heartbeat"
+    );
+
     agent_sessions::update_heartbeat(conn, session_id).await
 }
 
@@ -248,19 +314,38 @@ pub async fn pause_session(
     _request: PauseSessionRequest,
     user_id: Uuid,
 ) -> Result<SessionActionResponse> {
+    tracing::info!(
+        session_id = %session_id,
+        user_id = %user_id,
+        "[AgentSessions] Service: Pausing session"
+    );
+
     let session = get_session(conn, session_id, user_id).await?;
 
     // Check if session can be paused
     match session.status {
         SessionStatus::Running | SessionStatus::Idle => {
-            // Can pause running or idle sessions
+            tracing::debug!(
+                session_id = %session_id,
+                current_status = %session.status,
+                "[AgentSessions] Service: Session can be paused"
+            );
         }
         SessionStatus::Paused => {
+            tracing::warn!(
+                session_id = %session_id,
+                "[AgentSessions] Service: Session is already paused"
+            );
             return Err(Error::Conflict(
                 "Session is already paused".to_string(),
             ));
         }
         SessionStatus::Completed | SessionStatus::Error => {
+            tracing::warn!(
+                session_id = %session_id,
+                status = %session.status,
+                "[AgentSessions] Service: Cannot pause session - terminal state"
+            );
             return Err(Error::Conflict(format!(
                 "Cannot pause session with status: {}",
                 session.status
@@ -270,9 +355,18 @@ pub async fn pause_session(
 
     // TODO: Coordinate with ChatActor to actually pause the agent processing
     // For now, we'll just update the status
+    tracing::debug!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Updating session status to paused"
+    );
 
     let updated_session =
         agent_sessions::update_session_status(conn, session_id, SessionStatus::Paused).await?;
+
+    tracing::info!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Successfully paused session"
+    );
 
     Ok(SessionActionResponse {
         session: updated_session.into(),
@@ -301,10 +395,22 @@ pub async fn resume_session(
     task: Option<String>,
     user_id: Uuid,
 ) -> Result<SessionActionResponse> {
+    tracing::info!(
+        session_id = %session_id,
+        task = ?task,
+        user_id = %user_id,
+        "[AgentSessions] Service: Resuming session"
+    );
+
     let session = get_session(conn, session_id, user_id).await?;
 
     // Check if session is paused
     if session.status != SessionStatus::Paused {
+        tracing::warn!(
+            session_id = %session_id,
+            status = %session.status,
+            "[AgentSessions] Service: Cannot resume - not paused"
+        );
         return Err(Error::Conflict(format!(
             "Cannot resume session with status: {}. Only paused sessions can be resumed.",
             session.status
@@ -313,16 +419,30 @@ pub async fn resume_session(
 
     // TODO: Coordinate with ChatActor to resume agent processing
     // For now, we'll just update the status to idle
+    tracing::debug!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Updating session status to idle"
+    );
 
     let updated_session =
         agent_sessions::update_session_status(conn, session_id, SessionStatus::Idle).await?;
 
     // If task provided, update it
     let updated_session = if let Some(task) = task {
+        tracing::debug!(
+            session_id = %session_id,
+            task = %task,
+            "[AgentSessions] Service: Updating session task"
+        );
         agent_sessions::update_session_task(conn, session_id, Some(task)).await?
     } else {
         updated_session
     };
+
+    tracing::info!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Successfully resumed session"
+    );
 
     Ok(SessionActionResponse {
         session: updated_session.into(),
@@ -348,26 +468,50 @@ pub async fn cancel_session(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<SessionActionResponse> {
+    tracing::info!(
+        session_id = %session_id,
+        user_id = %user_id,
+        "[AgentSessions] Service: Cancelling session"
+    );
+
     let session = get_session(conn, session_id, user_id).await?;
 
     // Check if session can be cancelled
     match session.status {
         SessionStatus::Completed | SessionStatus::Error => {
+            tracing::warn!(
+                session_id = %session_id,
+                status = %session.status,
+                "[AgentSessions] Service: Cannot cancel - terminal state"
+            );
             return Err(Error::Conflict(format!(
                 "Cannot cancel session with status: {}",
                 session.status
             )));
         }
         _ => {
-            // Can cancel idle, running, or paused sessions
+            tracing::debug!(
+                session_id = %session_id,
+                status = %session.status,
+                "[AgentSessions] Service: Session can be cancelled"
+            );
         }
     }
 
     // TODO: Coordinate with ChatActor to cancel ongoing processing
     // For now, we'll mark the session as completed
+    tracing::debug!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Updating session status to completed"
+    );
 
     let updated_session =
         agent_sessions::update_session_status(conn, session_id, SessionStatus::Completed).await?;
+
+    tracing::info!(
+        session_id = %session_id,
+        "[AgentSessions] Service: Successfully cancelled session"
+    );
 
     Ok(SessionActionResponse {
         session: updated_session.into(),
@@ -390,6 +534,12 @@ pub async fn delete_session(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<()> {
+    tracing::info!(
+        session_id = %session_id,
+        user_id = %user_id,
+        "[AgentSessions] Service: Deleting session"
+    );
+
     // Verify ownership first
     get_session(conn, session_id, user_id).await?;
 
@@ -410,12 +560,16 @@ pub async fn delete_session(
 /// # Returns
 /// Number of sessions cleaned up
 pub async fn cleanup_stale_sessions(conn: &mut DbConn) -> Result<u64> {
+    tracing::debug!(
+        "[AgentSessions] Service: Checking for stale sessions"
+    );
+
     let count = agent_sessions::cleanup_stale_sessions(conn).await?;
 
     if count > 0 {
         tracing::info!(
             count,
-            "Cleaned up stale agent sessions",
+            "[AgentSessions] Service: Cleaned up stale sessions"
         );
     }
 
@@ -459,12 +613,25 @@ fn validate_status_transition(
     current_status: SessionStatus,
     new_status: SessionStatus,
 ) -> Result<()> {
+    tracing::trace!(
+        current_status = %current_status,
+        new_status = %new_status,
+        "[AgentSessions] Service: Validating status transition"
+    );
+
     match (current_status, new_status) {
         // Completed and Error are terminal states - cannot transition
-        (SessionStatus::Completed | SessionStatus::Error, _) => Err(Error::Conflict(format!(
-            "Cannot transition from {} to {}",
-            current_status, new_status
-        ))),
+        (SessionStatus::Completed | SessionStatus::Error, _) => {
+            tracing::warn!(
+                current_status = %current_status,
+                new_status = %new_status,
+                "[AgentSessions] Service: Invalid transition - terminal state"
+            );
+            Err(Error::Conflict(format!(
+                "Cannot transition from {} to {}",
+                current_status, new_status
+            )))
+        }
 
         // Can always transition to running from any non-terminal state
         (_, SessionStatus::Running) => Ok(()),
@@ -483,9 +650,16 @@ fn validate_status_transition(
         (SessionStatus::Paused, SessionStatus::Completed) => Ok(()),
 
         // All other transitions are invalid
-        (from, to) => Err(Error::Conflict(format!(
-            "Invalid status transition from {} to {}",
-            from, to
-        ))),
+        (from, to) => {
+            tracing::warn!(
+                from = %from,
+                to = %to,
+                "[AgentSessions] Service: Invalid status transition"
+            );
+            Err(Error::Conflict(format!(
+                "Invalid status transition from {} to {}",
+                from, to
+            )))
+        }
     }
 }

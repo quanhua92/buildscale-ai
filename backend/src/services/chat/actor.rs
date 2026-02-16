@@ -195,8 +195,19 @@ impl ChatActor {
 
         // Start heartbeat task if session was created
         if let Ok(session_id) = session_result {
+            tracing::info!(
+                chat_id = %self.chat_id,
+                session_id = %session_id,
+                "[ChatActor] Session created, starting heartbeat task"
+            );
             self.session_id = Some(session_id);
             self.heartbeat_handle = Some(self.start_heartbeat_task(session_id));
+        } else if let Err(e) = session_result {
+            tracing::error!(
+                chat_id = %self.chat_id,
+                error = ?e,
+                "[ChatActor] Failed to create session"
+            );
         }
 
         // Periodic heartbeat ping (every 10 seconds)
@@ -225,6 +236,11 @@ impl ChatActor {
                             AgentCommand::ProcessInteraction { user_id } => {
                                 // Update session status to running
                                 if let Some(session_id) = self.session_id {
+                                    tracing::debug!(
+                                        chat_id = %self.chat_id,
+                                        session_id = %session_id,
+                                        "[ChatActor] ProcessInteraction: Setting status to running"
+                                    );
                                     let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Running).await;
                                 }
 
@@ -233,8 +249,18 @@ impl ChatActor {
                                 // Update session status based on result
                                 if let Some(session_id) = self.session_id {
                                     let status = if result.is_err() {
+                                        tracing::warn!(
+                                            chat_id = %self.chat_id,
+                                            session_id = %session_id,
+                                            "[ChatActor] ProcessInteraction: Setting status to error (interaction failed)"
+                                        );
                                         crate::models::agent_session::SessionStatus::Error
                                     } else {
+                                        tracing::debug!(
+                                            chat_id = %self.chat_id,
+                                            session_id = %session_id,
+                                            "[ChatActor] ProcessInteraction: Setting status to idle (interaction complete)"
+                                        );
                                         crate::models::agent_session::SessionStatus::Idle
                                     };
                                     let _ = self.update_session_status(session_id, status).await;
@@ -1294,6 +1320,14 @@ impl ChatActor {
 
     /// Creates a new agent session in the database.
     async fn create_session(&self) -> Result<Uuid, crate::error::Error> {
+        tracing::info!(
+            chat_id = %self.chat_id,
+            workspace_id = %self.workspace_id,
+            user_id = %self.user_id,
+            persona = %self.default_persona,
+            "[ChatActor] Creating agent session in database"
+        );
+
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         // Determine agent type from mode
@@ -1310,6 +1344,14 @@ impl ChatActor {
             _ => "chat",
         };
 
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            agent_type = %agent_type,
+            model = DEFAULT_CHAT_MODEL.to_string(),
+            mode = %mode,
+            "[ChatActor] Session configuration determined"
+        );
+
         let session = agent_sessions::create_session(
             &mut conn,
             self.workspace_id,
@@ -1321,6 +1363,12 @@ impl ChatActor {
         )
         .await?;
 
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session.id,
+            "[ChatActor] Successfully created agent session"
+        );
+
         Ok(session.id)
     }
 
@@ -1330,15 +1378,35 @@ impl ChatActor {
         session_id: Uuid,
         status: crate::models::agent_session::SessionStatus,
     ) -> Result<(), crate::error::Error> {
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            new_status = %status,
+            "[ChatActor] Updating session status"
+        );
+
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         let _ = agent_sessions::update_session_status(&mut conn, session_id, status, self.user_id).await?;
+
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            new_status = %status,
+            "[ChatActor] Successfully updated session status"
+        );
 
         Ok(())
     }
 
     /// Marks the session as completed in the database.
     async fn mark_session_completed(&self, session_id: Uuid) -> Result<(), crate::error::Error> {
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            "[ChatActor] Marking session as completed (actor shutdown)"
+        );
+
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         let _ = agent_sessions::update_session_status(
@@ -1349,12 +1417,24 @@ impl ChatActor {
         )
         .await;
 
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            "[ChatActor] Successfully marked session as completed"
+        );
+
         Ok(())
     }
 
     /// Starts a background task that sends periodic heartbeats to the database.
     /// This keeps the session alive and indicates the agent is actively running.
     fn start_heartbeat_task(&self, session_id: Uuid) -> JoinHandle<()> {
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            "[ChatActor] Starting heartbeat task (30s interval)"
+        );
+
         let pool = self.pool.clone();
 
         tokio::spawn(async move {
@@ -1363,14 +1443,35 @@ impl ChatActor {
             loop {
                 interval.tick().await;
 
+                tracing::trace!(
+                    session_id = %session_id,
+                    "[ChatActor] Heartbeat: sending update"
+                );
+
                 let mut conn = match pool.acquire().await {
                     Ok(c) => c,
-                    Err(_) => continue,
+                    Err(e) => {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "[ChatActor] Heartbeat: failed to acquire database connection"
+                        );
+                        continue;
+                    }
                 };
 
                 // Update heartbeat timestamp
                 if let Err(e) = agent_sessions::update_heartbeat(&mut conn, session_id).await {
-                    tracing::warn!("[ChatActor] Failed to update heartbeat: {}", e);
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "[ChatActor] Heartbeat: failed to update heartbeat"
+                    );
+                } else {
+                    tracing::trace!(
+                        session_id = %session_id,
+                        "[ChatActor] Heartbeat: successfully updated"
+                    );
                 }
             }
         })

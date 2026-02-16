@@ -12,6 +12,16 @@ pub const STALE_SESSION_THRESHOLD_SECONDS: i64 = 120; // 2 minutes
 
 /// Creates a new agent session in the database.
 pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> Result<AgentSession> {
+    tracing::debug!(
+        chat_id = %new_session.chat_id,
+        workspace_id = %new_session.workspace_id,
+        user_id = %new_session.user_id,
+        agent_type = %new_session.agent_type,
+        model = %new_session.model,
+        mode = %new_session.mode,
+        "[AgentSessions] Creating new agent session"
+    );
+
     let session = sqlx::query_as!(
         AgentSession,
         r#"
@@ -51,20 +61,42 @@ pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> 
             || error_msg.contains("duplicate key")
             || error_msg.contains("agent_sessions_chat_id_key")
         {
+            tracing::warn!(
+                chat_id = %new_session.chat_id,
+                "[AgentSessions] Session already exists for this chat",
+            );
             Error::Conflict(format!(
                 "An active session already exists for this chat: {}",
                 new_session.chat_id
             ))
         } else {
+            tracing::error!(
+                chat_id = %new_session.chat_id,
+                error = %e,
+                "[AgentSessions] Failed to create session"
+            );
             Error::Sqlx(e)
         }
     })?;
+
+    tracing::info!(
+        session_id = %session.id,
+        chat_id = %session.chat_id,
+        workspace_id = %session.workspace_id,
+        agent_type = %session.agent_type,
+        model = %session.model,
+        mode = %session.mode,
+        status = %session.status,
+        "[AgentSessions] Created new agent session"
+    );
 
     Ok(session)
 }
 
 /// Gets a single session by its ID.
 pub async fn get_session_by_id(conn: &mut DbConn, id: Uuid) -> Result<Option<AgentSession>> {
+    tracing::trace!(session_id = %id, "[AgentSessions] Getting session by ID");
+
     let session = sqlx::query_as!(
         AgentSession,
         r#"
@@ -91,11 +123,21 @@ pub async fn get_session_by_id(conn: &mut DbConn, id: Uuid) -> Result<Option<Age
     .await
     .map_err(Error::Sqlx)?;
 
+    if session.is_some() {
+        tracing::debug!(
+            session_id = %id,
+            found = session.is_some(),
+            "[AgentSessions] Retrieved session by ID"
+        );
+    }
+
     Ok(session)
 }
 
 /// Gets a session by its chat ID (unique).
 pub async fn get_session_by_chat(conn: &mut DbConn, chat_id: Uuid) -> Result<Option<AgentSession>> {
+    tracing::trace!(chat_id = %chat_id, "[AgentSessions] Getting session by chat ID");
+
     let session = sqlx::query_as!(
         AgentSession,
         r#"
@@ -130,6 +172,11 @@ pub async fn get_active_sessions_by_workspace(
     conn: &mut DbConn,
     workspace_id: Uuid,
 ) -> Result<Vec<AgentSession>> {
+    tracing::trace!(
+        workspace_id = %workspace_id,
+        "[AgentSessions] Getting active sessions for workspace"
+    );
+
     let sessions = sqlx::query_as!(
         AgentSession,
         r#"
@@ -157,6 +204,12 @@ pub async fn get_active_sessions_by_workspace(
     .fetch_all(conn)
     .await
     .map_err(Error::Sqlx)?;
+
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        count = sessions.len(),
+        "[AgentSessions] Retrieved active sessions for workspace"
+    );
 
     Ok(sessions)
 }
@@ -235,6 +288,12 @@ pub async fn update_session_status(
     session_id: Uuid,
     status: SessionStatus,
 ) -> Result<AgentSession> {
+    tracing::debug!(
+        session_id = %session_id,
+        new_status = %status,
+        "[AgentSessions] Updating session status"
+    );
+
     let updated_at = match status {
         SessionStatus::Completed | SessionStatus::Error => Some(Utc::now()),
         _ => None,
@@ -269,11 +328,30 @@ pub async fn update_session_status(
     .await
     .map_err(|e| {
         if e.to_string().to_lowercase().contains("no rows") {
+            tracing::error!(
+                session_id = %session_id,
+                "[AgentSessions] Failed to update status - session not found"
+            );
             Error::NotFound(format!("Session with ID {} not found", session_id))
         } else {
+            tracing::error!(
+                session_id = %session_id,
+                error = %e,
+                "[AgentSessions] Failed to update session status"
+            );
             Error::Sqlx(e)
         }
     })?;
+
+    tracing::info!(
+        session_id = %session.id,
+        chat_id = %session.chat_id,
+        workspace_id = %session.workspace_id,
+        old_status = ?session_id, // We don't have the old status here, but the log shows the update happened
+        new_status = %session.status,
+        completed_at = ?session.completed_at,
+        "[AgentSessions] Updated session status"
+    );
 
     Ok(session)
 }
@@ -284,6 +362,12 @@ pub async fn update_session_task(
     session_id: Uuid,
     current_task: Option<String>,
 ) -> Result<AgentSession> {
+    tracing::debug!(
+        session_id = %session_id,
+        current_task = ?current_task,
+        "[AgentSessions] Updating session task"
+    );
+
     let session = sqlx::query_as!(
         AgentSession,
         r#"
@@ -312,17 +396,37 @@ pub async fn update_session_task(
     .await
     .map_err(|e| {
         if e.to_string().to_lowercase().contains("no rows") {
+            tracing::error!(
+                session_id = %session_id,
+                "[AgentSessions] Failed to update task - session not found"
+            );
             Error::NotFound(format!("Session with ID {} not found", session_id))
         } else {
+            tracing::error!(
+                session_id = %session_id,
+                error = %e,
+                "[AgentSessions] Failed to update session task"
+            );
             Error::Sqlx(e)
         }
     })?;
+
+    tracing::debug!(
+        session_id = %session.id,
+        current_task = ?session.current_task,
+        "[AgentSessions] Updated session task"
+    );
 
     Ok(session)
 }
 
 /// Updates the heartbeat timestamp for a session (keeps it alive).
 pub async fn update_heartbeat(conn: &mut DbConn, session_id: Uuid) -> Result<()> {
+    tracing::trace!(
+        session_id = %session_id,
+        "[AgentSessions] Updating heartbeat"
+    );
+
     let rows_affected = sqlx::query(
         r#"
         UPDATE agent_sessions
@@ -337,6 +441,10 @@ pub async fn update_heartbeat(conn: &mut DbConn, session_id: Uuid) -> Result<()>
     .rows_affected();
 
     if rows_affected == 0 {
+        tracing::warn!(
+            session_id = %session_id,
+            "[AgentSessions] Failed to update heartbeat - session not found"
+        );
         return Err(Error::NotFound(format!(
             "Session with ID {} not found",
             session_id
@@ -348,6 +456,11 @@ pub async fn update_heartbeat(conn: &mut DbConn, session_id: Uuid) -> Result<()>
 
 /// Deletes a session by ID.
 pub async fn delete_session(conn: &mut DbConn, session_id: Uuid) -> Result<()> {
+    tracing::debug!(
+        session_id = %session_id,
+        "[AgentSessions] Deleting session"
+    );
+
     let rows_affected = sqlx::query(
         r#"
         DELETE FROM agent_sessions
@@ -367,11 +480,21 @@ pub async fn delete_session(conn: &mut DbConn, session_id: Uuid) -> Result<()> {
         )));
     }
 
+    tracing::info!(
+        session_id = %session_id,
+        "[AgentSessions] Deleted session"
+    );
+
     Ok(())
 }
 
 /// Deletes all sessions for a specific chat.
 pub async fn delete_session_by_chat(conn: &mut DbConn, chat_id: Uuid) -> Result<()> {
+    tracing::debug!(
+        chat_id = %chat_id,
+        "[AgentSessions] Deleting all sessions for chat"
+    );
+
     sqlx::query(
         r#"
         DELETE FROM agent_sessions
@@ -403,7 +526,17 @@ pub async fn cleanup_stale_sessions(conn: &mut DbConn) -> Result<u64> {
     .await
     .map_err(Error::Sqlx)?;
 
-    Ok(result.rows_affected())
+    let count = result.rows_affected();
+
+    if count > 0 {
+        tracing::info!(
+            count,
+            threshold_seconds = STALE_SESSION_THRESHOLD_SECONDS,
+            "[AgentSessions] Cleaned up stale sessions"
+        );
+    }
+
+    Ok(count)
 }
 
 /// Gets sessions that are considered stale (old heartbeat).
@@ -437,6 +570,13 @@ pub async fn get_stale_sessions(conn: &mut DbConn) -> Result<Vec<AgentSession>> 
     .fetch_all(conn)
     .await
     .map_err(Error::Sqlx)?;
+
+    if !sessions.is_empty() {
+        tracing::warn!(
+            count = sessions.len(),
+            "[AgentSessions] Found stale sessions"
+        );
+    }
 
     Ok(sessions)
 }
