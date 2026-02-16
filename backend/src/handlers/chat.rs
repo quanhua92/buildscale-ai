@@ -117,6 +117,14 @@ pub async fn create_chat(
 
     // 6. Trigger Actor immediately for the initial goal
     let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
+
+    // Determine the mode from the request role (defaults to "plan" if not specified)
+    let mode = match req.role.as_deref() {
+        Some("builder") => "build",
+        Some("planner") | None => "plan",  // Default to plan mode for new chats
+        _ => "chat",
+    };
+
     let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
         chat_id: chat_file.id,
         workspace_id,
@@ -125,7 +133,7 @@ pub async fn create_chat(
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
         registry: state.agents.clone(),
-        default_persona: crate::agents::get_persona(None, None, None),
+        default_persona: crate::agents::get_persona(req.role.as_deref(), Some(mode), None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
         inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -167,7 +175,26 @@ pub async fn get_chat_events(
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
             registry: state.agents.clone(),
-            default_persona: crate::agents::get_persona(None, None, None),
+            default_persona: {
+                // Get the chat file and its latest version to determine the mode from app_data
+                let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+                let _chat_file = queries::files::get_file_by_id(&mut conn, chat_id).await?;
+                let latest_version = queries::files::get_latest_version(&mut conn, chat_id).await?;
+
+                // Extract mode from app_data, default to "plan" if not set
+                let mode = latest_version.app_data.get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("plan");
+
+                // Determine role from mode
+                let role = match mode {
+                    "build" => Some("builder"),
+                    "plan" => Some("planner"),
+                    _ => None,
+                };
+
+                crate::agents::get_persona(role, Some(mode), None)
+            },
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -292,7 +319,26 @@ pub async fn post_chat_message(
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
             registry: state.agents.clone(),
-            default_persona: crate::agents::get_persona(None, None, None),
+            default_persona: {
+                // Get the chat file and its latest version to determine the mode from app_data
+                let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+                let _chat_file = queries::files::get_file_by_id(&mut conn, chat_id).await?;
+                let latest_version = queries::files::get_latest_version(&mut conn, chat_id).await?;
+
+                // Extract mode from app_data, default to "plan" if not set
+                let mode = latest_version.app_data.get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("plan");
+
+                // Determine role from mode
+                let role = match mode {
+                    "build" => Some("builder"),
+                    "plan" => Some("planner"),
+                    _ => None,
+                };
+
+                crate::agents::get_persona(role, Some(mode), None)
+            },
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
