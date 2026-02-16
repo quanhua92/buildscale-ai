@@ -7,10 +7,8 @@ use crate::error::{Error, Result};
 use crate::models::files::FileType;
 use crate::queries;
 use crate::state::AppState;
-use crate::middleware::auth::WorkspaceAccess;
-use axum::extract::{Path, State};
-use axum::extension::Extension;
-use axum::http::StatusCode;
+use crate::middleware::workspace_access::WorkspaceAccess;
+use axum::extract::{Extension, Path, State};
 use axum::Json;
 use uuid::Uuid;
 
@@ -26,7 +24,7 @@ use uuid::Uuid;
 pub async fn list_chats(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
-    Path(workspace_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
 ) -> Result<Json<Vec<serde_json::Value>>> {
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
@@ -35,11 +33,7 @@ pub async fn list_chats(
         workspace_access.workspace_id,
         FileType::Chat,
     )
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to list chat files: {}", e);
-        Error::Sqlx(e)
-    })?;
+    .await?;
 
     // Convert to JSON response with chat-specific metadata
     let chats: Vec<serde_json::Value> = chat_files
