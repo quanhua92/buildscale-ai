@@ -176,7 +176,7 @@ function AgentsContent() {
                         <span className="font-medium capitalize text-sm">{session.agent_type}</span>
                         <span className="text-xs text-muted-foreground lowercase">· {session.mode}</span>
                         <span className="text-xs text-muted-foreground font-mono">
-                          #{session.chat_id.slice(0, 6)}
+                          #{session.chat_id.slice(0, 10)}
                         </span>
                       </div>
 
