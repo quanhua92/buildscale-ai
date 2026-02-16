@@ -268,6 +268,53 @@ pub async fn update_session_task(
     agent_sessions::update_session_task(conn, session_id, current_task).await
 }
 
+/// Updates session metadata (model, mode, agent_type).
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `session_id` - Session ID
+/// * `model` - New model name (None = no change)
+/// * `mode` - New mode (None = no change)
+/// * `agent_type` - New agent type (None = no change)
+/// * `user_id` - User requesting the update (for authorization)
+///
+/// # Returns
+/// The updated session
+///
+/// # Errors
+/// * `NotFound` - If session doesn't exist or user doesn't have access
+/// * `Forbidden` - If user doesn't have permission to update this session
+pub async fn update_session_metadata(
+    conn: &mut DbConn,
+    session_id: Uuid,
+    model: Option<String>,
+    mode: Option<String>,
+    agent_type: Option<crate::models::agent_session::AgentType>,
+    user_id: Uuid,
+) -> Result<AgentSession> {
+    tracing::debug!(
+        session_id = %session_id,
+        model = ?model,
+        mode = ?mode,
+        agent_type = ?agent_type,
+        user_id = %user_id,
+        "[AgentSessions] Service: Updating session metadata"
+    );
+
+    // Validate inputs if provided
+    if let Some(ref m) = model {
+        validate_model_name(m)?;
+    }
+    if let Some(ref m) = mode {
+        validate_mode(m)?;
+    }
+
+    // Verify ownership first
+    get_session(conn, session_id, user_id).await?;
+
+    agent_sessions::update_session_metadata(conn, session_id, model, mode, agent_type).await
+}
+
 /// Updates the heartbeat timestamp for a session (keeps it alive).
 ///
 /// This should be called periodically (e.g., every 30 seconds) while

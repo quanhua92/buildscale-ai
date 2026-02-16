@@ -420,6 +420,117 @@ pub async fn update_session_task(
     Ok(session)
 }
 
+/// Updates session metadata (model, mode, agent_type) with partial updates.
+///
+/// Only updates fields that are provided (Some values), leaving others unchanged.
+pub async fn update_session_metadata(
+    conn: &mut DbConn,
+    session_id: Uuid,
+    model: Option<String>,
+    mode: Option<String>,
+    agent_type: Option<AgentType>,
+) -> Result<AgentSession> {
+    tracing::debug!(
+        session_id = %session_id,
+        model = ?model,
+        mode = ?mode,
+        agent_type = ?agent_type,
+        "[AgentSessions] Updating session metadata"
+    );
+
+    // Update each field individually based on what's provided
+    // We use separate UPDATE statements for each field to avoid complex dynamic SQL
+
+    if let Some(m) = model {
+        sqlx::query(
+            r#"
+            UPDATE agent_sessions
+            SET model = $2, updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(session_id)
+        .bind(m)
+        .execute(&mut *conn)
+        .await
+        .map_err(Error::Sqlx)?;
+    }
+
+    if let Some(m) = mode {
+        sqlx::query(
+            r#"
+            UPDATE agent_sessions
+            SET mode = $2, updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(session_id)
+        .bind(m)
+        .execute(&mut *conn)
+        .await
+        .map_err(Error::Sqlx)?;
+    }
+
+    if let Some(t) = agent_type {
+        sqlx::query(
+            r#"
+            UPDATE agent_sessions
+            SET agent_type = $2, updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(session_id)
+        .bind(t as AgentType)
+        .execute(&mut *conn)
+        .await
+        .map_err(Error::Sqlx)?;
+    }
+
+    // Fetch and return the updated session
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            chat_id,
+            user_id,
+            agent_type as "agent_type: AgentType",
+            status as "status: SessionStatus",
+            model,
+            mode,
+            current_task,
+            created_at,
+            updated_at,
+            last_heartbeat,
+            completed_at
+        FROM agent_sessions
+        WHERE id = $1
+        "#,
+        session_id
+    )
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)?
+    .ok_or_else(|| {
+        tracing::error!(
+            session_id = %session_id,
+            "[AgentSessions] Failed to update metadata - session not found"
+        );
+        Error::NotFound(format!("Session with ID {} not found", session_id))
+    })?;
+
+    tracing::info!(
+        session_id = %session.id,
+        model = %session.model,
+        mode = %session.mode,
+        agent_type = %session.agent_type,
+        "[AgentSessions] Updated session metadata"
+    );
+
+    Ok(session)
+}
+
 /// Updates the heartbeat timestamp for a session (keeps it alive).
 pub async fn update_heartbeat(conn: &mut DbConn, session_id: Uuid) -> Result<()> {
     tracing::trace!(

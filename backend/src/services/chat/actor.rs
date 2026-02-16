@@ -74,6 +74,8 @@ struct InteractionState {
     current_cancellation_token: Option<CancellationToken>,
     /// Track current model for cancellation metadata
     current_model: Option<String>,
+    /// Current task description for session tracking
+    current_task: Option<String>,
 }
 
 impl ChatActorState {
@@ -100,6 +102,7 @@ impl Default for ChatActorState {
             interaction: InteractionState {
                 current_cancellation_token: None,
                 current_model: None,
+                current_task: None,
             },
             current_reasoning_id: None,
             reasoning_buffer: Vec::new(),
@@ -264,6 +267,15 @@ impl ChatActor {
                                         crate::models::agent_session::SessionStatus::Idle
                                     };
                                     let _ = self.update_session_status(session_id, status).await;
+
+                                    // Clear current task when interaction completes
+                                    if let Ok(mut conn) = self.pool.acquire().await {
+                                        let _ = agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
+                                        tracing::debug!(
+                                            session_id = %session_id,
+                                            "[ChatActor] Cleared current task (interaction complete)"
+                                        );
+                                    }
                                 }
 
                                 if let Err(e) = result {
@@ -366,6 +378,37 @@ impl ChatActor {
         let last_message = messages
             .last()
             .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
+
+        // Set current task for session tracking (truncate if too long)
+        let task_preview = if last_message.content.len() > 100 {
+            format!("{}...", &last_message.content[..100])
+        } else {
+            last_message.content.clone()
+        };
+        self.state.lock().await.interaction.current_task = Some(task_preview.clone());
+
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            task = %task_preview,
+            "[ChatActor] Set current task from user message"
+        );
+
+        // Update session with current task
+        if let Some(session_id) = self.session_id {
+            if let Err(e) = agent_sessions::update_session_task(&mut conn, session_id, Some(task_preview.clone()), self.user_id).await {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "[ChatActor] Failed to update session task"
+                );
+            } else {
+                tracing::debug!(
+                    session_id = %session_id,
+                    task = %task_preview,
+                    "[ChatActor] Updated session current_task"
+                );
+            }
+        }
 
         // 3. Convert history to Rig format with cache-optimized attachment interleaving
         // Attachments are now interleaved chronologically with messages for better caching
@@ -529,6 +572,16 @@ impl ChatActor {
 
         // Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
+
+        // Clear current task (interaction complete)
+        let current_task = self.state.lock().await.interaction.current_task.take();
+        if let Some(task) = current_task {
+            tracing::debug!(
+                chat_id = %self.chat_id,
+                task = %task,
+                "[ChatActor] Cleared current task (interaction complete)"
+            );
+        }
 
         Ok(())
     }
@@ -1003,6 +1056,32 @@ impl ChatActor {
                                              plan_file
                                          );
 
+                                         // Update agent session metadata with new mode and agent type
+                                         if let Some(session_id) = self.session_id {
+                                             let agent_type = crate::models::agent_session::AgentType::Builder;
+                                             if let Err(e) = agent_sessions::update_session_metadata(
+                                                 &mut update_conn,
+                                                 session_id,
+                                                 None,  // model unchanged
+                                                 Some(mode.to_string()),
+                                                 Some(agent_type),
+                                                 self.user_id,
+                                             ).await {
+                                                 tracing::warn!(
+                                                     session_id = %session_id,
+                                                     error = %e,
+                                                     "[ChatActor] Failed to update session metadata after mode change"
+                                                 );
+                                             } else {
+                                                 tracing::info!(
+                                                     session_id = %session_id,
+                                                     mode = %mode,
+                                                     agent_type = %agent_type,
+                                                     "[ChatActor] Successfully updated session metadata after mode change"
+                                                 );
+                                             }
+                                         }
+
                                          // Emit mode_changed event to frontend
                                          let _ = self.event_tx.send(SseEvent::ModeChanged {
                                              mode: "build".to_string(),
@@ -1310,6 +1389,51 @@ impl ChatActor {
             state.agent_state.current_user_id = Some(user_id);
             state.agent_state.current_mode = Some(session.agent_config.mode.clone());
 
+            // Update session metadata with the actual model being used
+            // Drop the lock before doing async database operation
+            drop(state);
+
+            if let Some(session_id) = &self.session_id {
+                tracing::debug!(
+                    session_id = %session_id,
+                    model = %session.agent_config.model,
+                    mode = %session.agent_config.mode,
+                    "[ChatActor] Updating session metadata after agent creation"
+                );
+
+                let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+                // Determine agent type from mode
+                let agent_type = match session.agent_config.mode.as_str() {
+                    "plan" => Some(AgentType::Planner),
+                    "build" => Some(AgentType::Builder),
+                    _ => Some(AgentType::Assistant),
+                };
+
+                // Update session with actual model, mode, and agent type
+                if let Err(e) = agent_sessions::update_session_metadata(
+                    &mut conn,
+                    *session_id,
+                    Some(session.agent_config.model.clone()),
+                    Some(session.agent_config.mode.clone()),
+                    agent_type,
+                    self.user_id,
+                ).await {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "[ChatActor] Failed to update session metadata after agent creation"
+                    );
+                } else {
+                    tracing::info!(
+                        session_id = %session_id,
+                        model = %session.agent_config.model,
+                        mode = %session.agent_config.mode,
+                        "[ChatActor] Successfully updated session metadata"
+                    );
+                }
+            }
+
             Ok(agent)
         }
     }
@@ -1330,26 +1454,53 @@ impl ChatActor {
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-        // Determine agent type from mode
-        let agent_type = match self.default_persona.as_str() {
-            "planner" => AgentType::Planner,
-            "builder" => AgentType::Builder,
-            _ => AgentType::Assistant,
+        // Get the chat file's latest version to extract actual model and mode
+        // This ensures the session is created with the correct values from the chat config
+        let (actual_model, actual_mode) = match queries::files::get_latest_version(&mut conn, self.chat_id).await {
+            Ok(version) => {
+                // Extract model and mode from app_data
+                let model = version.app_data.get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(DEFAULT_CHAT_MODEL)
+                    .to_string();
+
+                let mode = version.app_data.get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("plan")
+                    .to_string();
+
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    model = %model,
+                    mode = %mode,
+                    "[ChatActor] Extracted model and mode from chat file app_data"
+                );
+
+                (model, mode)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    chat_id = %self.chat_id,
+                    error = %e,
+                    "[ChatActor] Failed to get chat file version, using defaults"
+                );
+                (DEFAULT_CHAT_MODEL.to_string(), "plan".to_string())
+            }
         };
 
-        // Determine mode from persona
-        let mode = match self.default_persona.as_str() {
-            "planner" => "plan",
-            "builder" => "build",
-            _ => "chat",
+        // Determine agent type from mode (not from persona)
+        let agent_type = match actual_mode.as_str() {
+            "plan" => AgentType::Planner,
+            "build" => AgentType::Builder,
+            _ => AgentType::Assistant,
         };
 
         tracing::debug!(
             chat_id = %self.chat_id,
             agent_type = %agent_type,
-            model = DEFAULT_CHAT_MODEL.to_string(),
-            mode = %mode,
-            "[ChatActor] Session configuration determined"
+            model = %actual_model,
+            mode = %actual_mode,
+            "[ChatActor] Session configuration determined from chat file"
         );
 
         let session = agent_sessions::create_session(
@@ -1358,15 +1509,18 @@ impl ChatActor {
             self.chat_id,
             self.user_id,
             agent_type,
-            DEFAULT_CHAT_MODEL.to_string(),
-            mode.to_string(),
+            actual_model,
+            actual_mode,
         )
         .await?;
 
         tracing::info!(
             chat_id = %self.chat_id,
             session_id = %session.id,
-            "[ChatActor] Successfully created agent session"
+            model = %session.model,
+            mode = %session.mode,
+            agent_type = %session.agent_type,
+            "[ChatActor] Successfully created agent session with correct values"
         );
 
         Ok(session.id)
