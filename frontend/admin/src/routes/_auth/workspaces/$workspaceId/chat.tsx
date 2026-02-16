@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Chat, useChat, type ChatMessageItem } from '@buildscale/sdk'
+import { Chat, useChat, type ChatMessageItem, AgentSessionsProvider } from '@buildscale/sdk'
 import { z } from 'zod'
 import { useState } from 'react'
+import { RecentChatsBar } from '@/components/RecentChatsBar'
 
 const chatSearchSchema = z.object({
   chatId: z.string().optional(),
@@ -26,13 +27,15 @@ function ChatRoute() {
 
   return (
     <div className="flex-1 w-full relative">
-      <Chat.Provider
-        workspaceId={workspaceId}
-        chatId={chatId}
-        onChatCreated={handleChatCreated}
-      >
-        <ChatContent workspaceId={workspaceId} chatId={chatId} />
-      </Chat.Provider>
+      <AgentSessionsProvider workspaceId={workspaceId}>
+        <Chat.Provider
+          workspaceId={workspaceId}
+          chatId={chatId}
+          onChatCreated={handleChatCreated}
+        >
+          <ChatContent workspaceId={workspaceId} chatId={chatId} />
+        </Chat.Provider>
+      </AgentSessionsProvider>
     </div>
   )
 }
@@ -72,8 +75,10 @@ function ChatContent({ workspaceId, chatId }: { workspaceId: string; chatId?: st
   }
 
   return (
-    <Chat containerClassName="max-w-4xl flex flex-col h-full">
-      <Chat.Header
+    <>
+      <RecentChatsBar workspaceId={workspaceId} currentChatId={chatId} />
+      <Chat containerClassName="max-w-4xl flex flex-col h-full">
+        <Chat.Header
         onNewChat={handleNewChat}
         model={model}
         onModelChange={setModel}
@@ -135,5 +140,6 @@ function ChatContent({ workspaceId, chatId }: { workspaceId: string; chatId?: st
         </div>
       </div>
     </Chat>
+    </>
   )
 }
