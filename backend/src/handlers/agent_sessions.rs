@@ -281,6 +281,54 @@ pub async fn cancel_session(
 
     let mut conn = acquire_db_connection(&state, "cancel_session").await?;
 
+    // Get the session first to find the chat_id
+    let session = agent_sessions::get_session(&mut conn, session_id, auth_user.id)
+        .await
+        .inspect_err(|e| log_handler_error("cancel_session", e))?;
+
+    // Send Cancel command to the ChatActor to stop it gracefully
+    if let Some(handle) = state.agents.active_agents.read_async(&session.chat_id, |_, h| h.clone()).await {
+        tracing::info!(
+            operation = "cancel_session",
+            chat_id = %session.chat_id,
+            "Found active ChatActor, sending Cancel command"
+        );
+
+        // Send the Cancel command to the actor
+        let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+        let cancel_cmd = crate::services::chat::registry::AgentCommand::Cancel {
+            reason: "Session cancelled by user".to_string(),
+            responder: std::sync::Arc::new(tokio::sync::Mutex::new(Some(responder_tx))),
+        };
+
+        if let Err(_) = handle.command_tx.send(cancel_cmd).await {
+            tracing::warn!(
+                operation = "cancel_session",
+                chat_id = %session.chat_id,
+                "Failed to send Cancel command to ChatActor (channel closed)"
+            );
+        } else {
+            // Wait for the actor to acknowledge cancellation
+            let _ = tokio::time::timeout(
+                tokio::time::Duration::from_secs(5),
+                responder_rx
+            ).await;
+
+            // Remove the actor from the registry
+            state.agents.remove(&session.chat_id).await;
+        }
+    } else {
+        tracing::debug!(
+            operation = "cancel_session",
+            chat_id = %session.chat_id,
+            "No active ChatActor found for this chat"
+        );
+    }
+
+    // Also cancel any active stream cancellation tokens
+    state.agents.cancel_stream(&session.chat_id).await;
+
+    // Now delete the session from the database
     let response = agent_sessions::cancel_session(&mut conn, session_id, auth_user.id)
         .await
         .inspect_err(|e| log_handler_error("cancel_session", e))?;
