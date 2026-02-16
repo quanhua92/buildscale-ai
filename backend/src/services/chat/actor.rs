@@ -315,7 +315,9 @@ impl ChatActor {
                                     let _ = responder.send(Ok(true));
                                 }
 
-                                // Don't break the loop - actor continues running
+                                // Stop the actor - cancel should terminate the session
+                                // A new ChatActor will be created if the user chats again
+                                break;
                             }
                             AgentCommand::Shutdown => {
                                 tracing::info!("[ChatActor] Shutting down for chat {}", self.chat_id);

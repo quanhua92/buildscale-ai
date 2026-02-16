@@ -499,6 +499,9 @@ pub async fn resume_session(
 
 /// Cancels/stops an active session.
 ///
+/// This deletes the session from the database. When the user chats again,
+/// a new session will be created with full chat history preserved.
+///
 /// # Arguments
 /// * `conn` - Database connection
 /// * `session_id` - Session ID
@@ -545,23 +548,25 @@ pub async fn cancel_session(
         }
     }
 
-    // TODO: Coordinate with ChatActor to cancel ongoing processing
-    // For now, we'll mark the session as completed
+    // Delete the session instead of marking as completed
+    // This allows a new session to be created when the user chats again
+    // Chat history is preserved in the chat_messages table
     tracing::debug!(
         session_id = %session_id,
-        "[AgentSessions] Service: Updating session status to completed"
+        chat_id = %session.chat_id,
+        "[AgentSessions] Service: Deleting session on cancel"
     );
 
-    let updated_session =
-        agent_sessions::update_session_status(conn, session_id, SessionStatus::Completed).await?;
+    agent_sessions::delete_session_by_chat(conn, session.chat_id).await?;
 
     tracing::info!(
         session_id = %session_id,
-        "[AgentSessions] Service: Successfully cancelled session"
+        chat_id = %session.chat_id,
+        "[AgentSessions] Service: Successfully cancelled and deleted session"
     );
 
     Ok(SessionActionResponse {
-        session: updated_session.into(),
+        session: session.into(), // Return last known state
         message: "Session cancelled successfully".to_string(),
     })
 }
