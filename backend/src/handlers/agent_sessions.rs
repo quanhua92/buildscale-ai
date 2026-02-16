@@ -168,6 +168,48 @@ pub async fn pause_session(
 
     let mut conn = acquire_db_connection(&state, "pause_session").await?;
 
+    // Get the session first to find the chat_id
+    let session = agent_sessions::get_session(&mut conn, session_id, auth_user.id)
+        .await
+        .inspect_err(|e| log_handler_error("pause_session", e))?;
+
+    // Send Pause command to the ChatActor to pause any active interaction
+    if let Some(handle) = state.agents.active_agents.read_async(&session.chat_id, |_, h| h.clone()).await {
+        tracing::info!(
+            operation = "pause_session",
+            chat_id = %session.chat_id,
+            "Found active ChatActor, sending Pause command"
+        );
+
+        // Send the Pause command to the actor
+        let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+        let pause_cmd = crate::services::chat::registry::AgentCommand::Pause {
+            reason: request.reason.clone(),
+            responder: std::sync::Arc::new(tokio::sync::Mutex::new(Some(responder_tx))),
+        };
+
+        if let Err(_) = handle.command_tx.send(pause_cmd).await {
+            tracing::warn!(
+                operation = "pause_session",
+                chat_id = %session.chat_id,
+                "Failed to send Pause command to ChatActor (channel closed)"
+            );
+        } else {
+            // Wait for the actor to acknowledgment
+            let _ = tokio::time::timeout(
+                tokio::time::Duration::from_secs(5),
+                responder_rx
+            ).await;
+        }
+    } else {
+        tracing::debug!(
+            operation = "pause_session",
+            chat_id = %session.chat_id,
+            "No active ChatActor found for this chat"
+        );
+    }
+
+    // Now update the session status in the database
     let response = agent_sessions::pause_session(&mut conn, session_id, request, auth_user.id)
         .await
         .inspect_err(|e| log_handler_error("pause_session", e))?;

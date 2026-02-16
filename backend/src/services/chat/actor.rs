@@ -297,6 +297,40 @@ impl ChatActor {
                             AgentCommand::Ping => {
                                 tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
                             }
+                            AgentCommand::Pause { reason, responder } => {
+                                tracing::info!(
+                                    "[ChatActor] Pause requested for chat {} (reason: {:?})",
+                                    self.chat_id,
+                                    reason
+                                );
+
+                                // Cancel the current interaction if any
+                                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
+                                if let Some(token) = token {
+                                    tracing::debug!(
+                                        chat_id = %self.chat_id,
+                                        "[ChatActor] Cancelling current interaction token for pause"
+                                    );
+                                    token.cancel();
+                                }
+
+                                // Update session status to paused in database
+                                if let Some(session_id) = self.session_id {
+                                    tracing::debug!(
+                                        chat_id = %self.chat_id,
+                                        session_id = %session_id,
+                                        "[ChatActor] Pause: Setting status to paused"
+                                    );
+                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Paused).await;
+                                }
+
+                                // Send acknowledgment
+                                if let Some(responder) = responder.lock().await.take() {
+                                    let _ = responder.send(Ok(true));
+                                }
+
+                                // Don't break - keep the actor alive so it can be resumed
+                            }
                             AgentCommand::Cancel { reason, responder } => {
                                 tracing::info!(
                                     "[ChatActor] Cancel requested for chat {} (reason: {})",

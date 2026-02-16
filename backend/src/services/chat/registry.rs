@@ -13,6 +13,10 @@ pub enum AgentCommand {
     ProcessInteraction { user_id: Uuid },
     Ping,
     Shutdown,
+    Pause {
+        reason: Option<String>,
+        responder: Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>,
+    },
     Cancel {
         reason: String,
         responder: Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>,
