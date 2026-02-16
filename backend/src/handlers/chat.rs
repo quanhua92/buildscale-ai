@@ -22,7 +22,7 @@ use uuid::Uuid;
 use futures::StreamExt;
 
 /// Maximum length of goal text to include in chat file name.
-const CHAT_NAME_GOAL_SNIPPET_LENGTH: usize = 20;
+const CHAT_NAME_GOAL_SNIPPET_LENGTH: usize = 80;
 
 pub async fn create_chat(
     State(state): State<AppState>,
@@ -303,6 +303,17 @@ pub async fn post_chat_message(
     if let Some(new_model) = req.model {
         tracing::info!("[ChatHandler] Updating model for chat {} to {}", chat_id, new_model);
         ChatService::update_chat_model(&mut conn, workspace_id, chat_id, new_model).await?;
+    }
+
+    // 2.5. Update chat name from new message content
+    let content_trimmed = req.content.trim();
+    if !content_trimmed.is_empty() {
+        const CHAT_NAME_UPDATE_LENGTH: usize = 80;
+        let new_chat_name = ChatService::generate_chat_name(content_trimmed, CHAT_NAME_UPDATE_LENGTH);
+        if let Err(e) = ChatService::update_chat_name(&mut conn, chat_id, new_chat_name).await {
+            tracing::warn!("[ChatHandler] Failed to update chat name: {}", e);
+            // Don't fail the request if name update fails
+        }
     }
 
     // 3. Signal Actor

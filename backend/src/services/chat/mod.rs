@@ -1173,6 +1173,71 @@ impl ChatService {
             breakdown,
         }
     }
+
+    /// Generates a chat name from message content.
+    /// Uses smart truncation to avoid cutting words in half.
+    pub fn generate_chat_name(content: &str, max_length: usize) -> String {
+        // Trim whitespace first
+        let content = content.trim();
+
+        // If content is empty, return default
+        if content.is_empty() {
+            return "Chat".to_string();
+        }
+
+        // If content fits within max_length, use it all
+        if content.len() <= max_length {
+            return format!("Chat: {}", content);
+        }
+
+        // Find safe truncation point (don't cut words in half)
+        let snippet_end = content.char_indices()
+            .nth(max_length)
+            .map_or(content.len(), |(idx, _)| idx);
+
+        // If we're cutting mid-word, find the last space
+        let safe_end = if snippet_end < content.len() {
+            content[..snippet_end]
+                .rfind(' ')
+                .unwrap_or(snippet_end)
+        } else {
+            snippet_end
+        };
+
+        let truncated = &content[..safe_end];
+        format!("Chat: {}", truncated)
+    }
+
+    /// Updates the chat file name based on recent message content.
+    pub async fn update_chat_name(
+        conn: &mut DbConn,
+        chat_file_id: Uuid,
+        new_name: String,
+    ) -> Result<()> {
+        // 1. Get current file info
+        let current_file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+        // 2. Generate new slug and path from name (keep same pattern as creation)
+        let new_slug = format!("chat-{}.chat", chat_file_id);
+        let new_path = format!("/chats/{}", new_slug);
+
+        // 3. Update file metadata (name, slug, path)
+        queries::files::update_file_metadata(
+            conn,
+            chat_file_id,
+            current_file.parent_id,
+            &new_name,
+            &new_slug,
+            &new_path,
+            current_file.is_virtual,
+            current_file.is_remote,
+            current_file.permission,
+        ).await?;
+
+        tracing::info!("[ChatService] Updated chat name for {} to {}", chat_file_id, new_name);
+
+        Ok(())
+    }
 }
 
 fn format_message_as_markdown(msg: &ChatMessage) -> String {
