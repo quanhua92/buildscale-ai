@@ -210,6 +210,7 @@ export type {
   PauseSessionRequest,
   ResumeSessionRequest,
   SessionActionResponse,
+  ChatFile,
 } from './api/types'
 
 // Errors

@@ -569,3 +569,16 @@ export interface SessionActionResponse {
   session: AgentSession
   message: string
 }
+
+// ============================================================================
+// Chat File Types
+// ============================================================================
+
+export interface ChatFile {
+  id: string
+  name: string
+  path: string
+  created_at: string
+  updated_at: string
+  chat_id: string
+}

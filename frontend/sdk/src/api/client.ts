@@ -19,6 +19,7 @@ import type {
   AgentSessionsListResponse,
   AgentSession,
   SessionActionResponse,
+  ChatFile,
 } from './types'
 import { ApiError, TokenTheftError } from './errors'
 
@@ -345,6 +346,12 @@ class ApiClient {
 
   async getChat(workspaceId: string, chatId: string): Promise<GetChatResponse> {
     return this.request<GetChatResponse>(`/workspaces/${workspaceId}/chats/${chatId}`, {
+      method: 'GET',
+    })
+  }
+
+  async getRecentChats(workspaceId: string): Promise<ChatFile[]> {
+    return this.request<ChatFile[]>(`/workspaces/${workspaceId}/chats`, {
       method: 'GET',
     })
   }

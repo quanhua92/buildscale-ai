@@ -30,6 +30,7 @@ pub use handlers::{
     files::semantic_search,
     tools::execute_tool,
     chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat, chat::get_chat_context,
+    chats::list_chats,
     providers::get_providers, providers::get_workspace_providers,
 };
 pub use middleware::auth::AuthenticatedUser;
@@ -377,7 +378,8 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         // Chat routes
         .route(
             "/{id}/chats",
-            post(chat_handlers::create_chat)
+            get(crate::handlers::chats::list_chats)
+                .post(chat_handlers::create_chat)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

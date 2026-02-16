@@ -22,6 +22,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 - [Files & AI](#files-and-ai)
 - [Tools API](#tools-api)
 - [Agentic Chat API](#agentic-chat-api)
+  - [List Recent Chats](#list-recent-chats)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 - [Production Considerations](#production-considerations)
@@ -66,6 +67,7 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats` | GET | List recent chats | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | GET | Get chat history and config | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
@@ -497,6 +499,151 @@ Initialize a stateful agentic session.
   "chat_id": "uuid-chat-session-id",
   "plan_id": null
 }
+```
+
+---
+
+### List Recent Chats
+
+List all chat files in a workspace, ordered by most recently updated. This endpoint is designed for displaying recent chats in a navigation sidebar (similar to ChatGPT/Gemini UI).
+
+**Endpoint**: `GET /api/v1/workspaces/:id/chats`
+
+**Authentication**: Required (JWT access token + Workspace Member)
+
+**Permission**: User must be a member of the workspace.
+
+##### Request
+
+**Path Parameters**:
+- `id`: Workspace UUID
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+```bash
+curl http://localhost:3000/api/v1/workspaces/{workspace_id}/chats \
+  -H "Authorization: Bearer <access_token>"
+```
+
+##### Response (200 OK)
+
+```json
+[
+  {
+    "id": "019bfa7f-7b41-7d31-9368-aed217a36c7e",
+    "name": "Blog Post Planning",
+    "path": "/Blog Post Planning",
+    "created_at": "2024-01-26T10:00:00Z",
+    "updated_at": "2024-01-26T12:30:00Z",
+    "chat_id": "019bfa7f-7b41-7d31-9368-aed217a36c7e"
+  },
+  {
+    "id": "019bfa7f-7b42-7d32-9369-aed217a36c7f",
+    "name": "Code Refactoring",
+    "path": "/Code Refactoring",
+    "created_at": "2024-01-25T14:00:00Z",
+    "updated_at": "2024-01-25T16:45:00Z",
+    "chat_id": "019bfa7f-7b42-7d32-9369-aed217a36c7f"
+  }
+]
+```
+
+##### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string (UUID) | Chat file ID (same as chat_id) |
+| `name` | string | Chat file name |
+| `path` | string | File path in workspace |
+| `created_at` | string (ISO8601) | When the chat was created |
+| `updated_at` | string (ISO8601) | When the chat was last updated |
+| `chat_id` | string (UUID) | Chat ID (convenience field, same as id) |
+
+##### Use Cases
+
+- **Navigation sidebar**: Display recent chats in ChatGPT/Gemini-style UI
+- **Chat switching**: Allow users to quickly switch between active conversations
+- **Time-based grouping**: Group chats by Today, Yesterday, Previous 7 Days, Older
+- **Workspace overview**: Show all chat activity in a workspace
+
+##### Ordering
+
+Chats are ordered by `updated_at` in descending order (most recently updated first).
+
+##### Filtering
+
+The endpoint returns all chat files in the workspace. Client-side filtering is recommended for:
+- **Time-based grouping**: Today, Yesterday, Previous 7 Days, Older
+- **Search/filter**: Filter by chat name or content
+- **Pagination**: Limit results for better performance
+
+##### Error Responses
+
+**403 Forbidden** - Not a Workspace Member
+```json
+{
+  "error": "Access forbidden: User is not a member of this workspace",
+  "code": "FORBIDDEN"
+}
+```
+
+##### Example Usage (JavaScript/TypeScript)
+
+```javascript
+// Fetch recent chats for workspace
+const workspaceId = 'workspace-uuid';
+const response = await fetch(`/api/v1/workspaces/${workspaceId}/chats`, {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+if (!response.ok) {
+  throw new Error('Failed to fetch recent chats');
+}
+
+const chats = await response.json();
+
+// Group chats by time period (similar to ChatGPT/Gemini)
+const now = new Date();
+const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+const yesterday = new Date(today);
+yesterday.setDate(yesterday.getDate() - 1);
+const sevenDaysAgo = new Date(today);
+sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+const grouped = {
+  Today: [],
+  Yesterday: [],
+  'Previous 7 Days': [],
+  Older: []
+};
+
+chats.forEach(chat => {
+  const updatedDate = new Date(chat.updated_at);
+  if (updatedDate >= today) {
+    grouped.Today.push(chat);
+  } else if (updatedDate >= yesterday && updatedDate < today) {
+    grouped.Yesterday.push(chat);
+  } else if (updatedDate >= sevenDaysAgo && updatedDate < yesterday) {
+    grouped['Previous 7 Days'].push(chat);
+  } else {
+    grouped.Older.push(chat);
+  }
+});
+
+// Display in navigation sidebar
+Object.entries(grouped).forEach(([period, chats]) => {
+  if (chats.length > 0) {
+    console.log(`${period} (${chats.length})`);
+    chats.forEach(chat => {
+      console.log(`  - ${chat.name || 'Untitled Chat'}`);
+    });
+  }
+});
 ```
 
 ---
