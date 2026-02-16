@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { AgentSessionsProvider, useAgentSessions, AgentStatusIndicator, Button } from '@buildscale/sdk'
-import { Pause, Play, X, Search, Clock, Bot, ChevronDown, Filter } from 'lucide-react'
+import { Pause, Play, X, Search, Clock, Bot, ChevronDown, Filter, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 import type { SessionStatus } from '@buildscale/sdk'
 
@@ -19,6 +19,7 @@ function AgentsRoute() {
 }
 
 function AgentsContent() {
+  const { workspaceId } = Route.useParams()
   const { sessions, loading, pauseSession, resumeSession, cancelSession } = useAgentSessions()
   const [filterStatus, setFilterStatus] = useState<SessionStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -137,7 +138,7 @@ function AgentsContent() {
           </div>
         </div>
 
-        {/* Sessions List */}
+        {/* Sessions List - Table-like single row layout */}
         <div className="flex-1 border rounded-lg overflow-auto">
           {loading ? (
             <div className="flex items-center justify-center h-full">
@@ -156,101 +157,83 @@ function AgentsContent() {
               </p>
             </div>
           ) : (
-            <div className="p-2 sm:p-4 space-y-2 sm:space-y-3">
+            <div className="divide-y">
               {filteredSessions.map((session) => (
                 <div
                   key={session.id}
-                  className="border rounded-lg p-3 sm:p-4 hover:bg-muted/30 transition-colors"
+                  className="flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors"
                 >
-                  {/* Status and Basic Info */}
-                  <div className="flex items-start gap-3 mb-3">
+                  {/* Status */}
+                  <div className="shrink-0">
                     <AgentStatusIndicator status={session.status} size="sm" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium capitalize text-sm sm:text-base">
-                          {session.agent_type}
-                        </span>
-                        <span className="text-xs text-muted-foreground hidden sm:inline">
-                          {session.model}
-                        </span>
-                      </div>
-
-                      {/* Task - Desktop */}
-                      {session.current_task && (
-                        <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block line-clamp-2">
-                          {session.current_task}
-                        </p>
-                      )}
-
-                      {/* Task - Mobile */}
-                      {session.current_task && (
-                        <p className="text-xs text-muted-foreground sm:hidden line-clamp-1">
-                          {session.current_task}
-                        </p>
-                      )}
-
-                      {/* Model on mobile (shown below task) */}
-                      <span className="text-xs text-muted-foreground sm:hidden">
-                        {session.model}
-                      </span>
-                    </div>
                   </div>
 
-                  {/* Timestamps */}
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      <span>{formatTimeAgo(session.last_heartbeat)}</span>
+                  {/* Agent Info */}
+                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
+                    {/* Agent Type */}
+                    <div className="font-medium capitalize text-sm">{session.agent_type}</div>
+
+                    {/* Model - hide on very small screens */}
+                    <div className="text-xs sm:text-sm text-muted-foreground truncate hidden xs:block">
+                      {session.model}
                     </div>
-                    <span className="hidden sm:inline">•</span>
-                    <span className="hidden sm:inline">{new Date(session.created_at).toLocaleString()}</span>
+
+                    {/* Task or Timestamp */}
+                    {session.current_task ? (
+                      <div className="text-xs text-muted-foreground truncate" title={session.current_task}>
+                        {session.current_task}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        <span>{formatTimeAgo(session.last_heartbeat)}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                     {session.status === 'running' || session.status === 'idle' ? (
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => pauseSession(session.id)}
                         title="Pause session"
-                        className="flex-1 sm:flex-none"
+                        className="h-8 w-8"
                       >
-                        <Pause className="h-4 w-4 sm:mr-1" />
-                        <span className="hidden sm:inline">Pause</span>
+                        <Pause className="h-3 w-3 sm:h-4 sm:w-4" />
                       </Button>
                     ) : session.status === 'paused' ? (
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => resumeSession(session.id)}
                         title="Resume session"
-                        className="flex-1 sm:flex-none"
+                        className="h-8 w-8"
                       >
-                        <Play className="h-4 w-4 sm:mr-1" />
-                        <span className="hidden sm:inline">Resume</span>
+                        <Play className="h-3 w-3 sm:h-4 sm:w-4" />
                       </Button>
                     ) : null}
 
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       onClick={() => cancelSession(session.id)}
-                      className="text-destructive hover:text-destructive flex-1 sm:flex-none"
+                      className="text-destructive hover:text-destructive h-8 w-8"
                       title="Cancel session"
                     >
-                      <X className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">Cancel</span>
+                      <X className="h-3 w-3 sm:h-4 sm:w-4" />
                     </Button>
 
                     <Button
                       variant="outline"
                       size="sm"
                       asChild
-                      className="flex-1 sm:flex-none"
+                      className="h-8 px-2 sm:h-9 sm:px-3"
                     >
-                      <a href={`/admin/workspaces/${session.workspace_id}/chat?chatId=${session.chat_id}`}>
-                        View Chat
+                      <a href={`/admin/workspaces/${workspaceId}/chat?chatId=${session.chat_id}`}>
+                        <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                        <span className="hidden sm:inline">Chat</span>
                       </a>
                     </Button>
                   </div>
