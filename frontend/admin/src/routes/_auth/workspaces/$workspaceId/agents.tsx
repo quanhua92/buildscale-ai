@@ -169,26 +169,40 @@ function AgentsContent() {
                   </div>
 
                   {/* Agent Info */}
-                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
-                    {/* Agent Type */}
-                    <div className="font-medium capitalize text-sm">{session.agent_type}</div>
+                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-1 sm:gap-4">
+                    <div className="space-y-0.5">
+                      {/* Primary info: Agent type + mode + unique identifier */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium capitalize text-sm">{session.agent_type}</span>
+                        <span className="text-xs text-muted-foreground lowercase">· {session.mode}</span>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          #{session.chat_id.slice(0, 6)}
+                        </span>
+                      </div>
 
-                    {/* Model - hide on very small screens */}
-                    <div className="text-xs sm:text-sm text-muted-foreground truncate hidden xs:block">
-                      {session.model}
+                      {/* Secondary info: Task or Model */}
+                      {session.current_task ? (
+                        <div className="text-xs text-muted-foreground truncate" title={session.current_task}>
+                          {session.current_task}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">
+                          {session.model}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Task or Timestamp */}
-                    {session.current_task ? (
-                      <div className="text-xs text-muted-foreground truncate" title={session.current_task}>
-                        {session.current_task}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3 shrink-0" />
-                        <span>{formatTimeAgo(session.last_heartbeat)}</span>
-                      </div>
-                    )}
+                    {/* Timestamp */}
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
+                      <Clock className="h-3 w-3 shrink-0" />
+                      <span>{formatTimeAgo(session.last_heartbeat)}</span>
+                    </div>
+
+                    {/* Desktop timestamp */}
+                    <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3 shrink-0" />
+                      <span>{formatTimeAgo(session.last_heartbeat)}</span>
+                    </div>
                   </div>
 
                   {/* Actions */}
