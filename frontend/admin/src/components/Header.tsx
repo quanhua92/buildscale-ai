@@ -33,6 +33,11 @@ export default function Header() {
 
               {workspaceId && (
                 <>
+                  {/* Recent Chats Section */}
+                  <NavigationMenu.Section title="Recent Chats" defaultOpen={true}>
+                    <RecentChats workspaceId={workspaceId} />
+                  </NavigationMenu.Section>
+
                   <NavigationMenu.Section title="Current Workspace" defaultOpen={true}>
                     <NavigationMenu.Item
                       to="/workspaces/$workspaceId"
@@ -96,11 +101,6 @@ export default function Header() {
                     >
                       Recently Deleted
                     </NavigationMenu.Item>
-                  </NavigationMenu.Section>
-
-                  {/* Recent Chats Section */}
-                  <NavigationMenu.Section title="Recent Chats" defaultOpen={true}>
-                    <RecentChats workspaceId={workspaceId} />
                   </NavigationMenu.Section>
 
                   <NavigationMenu.Separator />

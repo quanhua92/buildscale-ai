@@ -46,6 +46,13 @@ export function WorkspaceNavigation({ workspaceId }: WorkspaceNavigationProps) {
 
       <NavigationMenu.Separator />
 
+      {/* Recent Chats Section */}
+      <NavigationMenu.Section title="Recent Chats" defaultOpen>
+        <div className="text-sm text-muted-foreground px-3 py-2">
+          No recent chats
+        </div>
+      </NavigationMenu.Section>
+
       {/* Active Agents Section */}
       <NavigationMenu.Section
         title={`Active Agents${activeSessions.length > 0 ? ` (${activeSessions.length})` : ''}`}
@@ -70,13 +77,6 @@ export function WorkspaceNavigation({ workspaceId }: WorkspaceNavigationProps) {
             />
           ))
         )}
-      </NavigationMenu.Section>
-
-      {/* Recent Chats Section - Placeholder for future implementation */}
-      <NavigationMenu.Section title="Recent Chats" defaultOpen={false}>
-        <div className="text-sm text-muted-foreground px-3 py-2">
-          No recent chats
-        </div>
       </NavigationMenu.Section>
 
       <NavigationMenu.Separator />
