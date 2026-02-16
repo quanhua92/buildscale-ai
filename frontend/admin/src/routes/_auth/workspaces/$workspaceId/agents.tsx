@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useAgentSessions, AgentStatusIndicator, Button } from '@buildscale/sdk'
+import { AgentSessionsProvider, useAgentSessions, AgentStatusIndicator, Button } from '@buildscale/sdk'
 import { Pause, Play, X, Search, Clock, Bot } from 'lucide-react'
 import { useState } from 'react'
 import type { SessionStatus } from '@buildscale/sdk'
@@ -10,6 +10,15 @@ export const Route = createFileRoute('/_auth/workspaces/$workspaceId/agents')({
 
 function AgentsRoute() {
   const { workspaceId } = Route.useParams()
+
+  return (
+    <AgentSessionsProvider workspaceId={workspaceId}>
+      <AgentsContent />
+    </AgentSessionsProvider>
+  )
+}
+
+function AgentsContent() {
   const { sessions, loading, pauseSession, resumeSession, cancelSession } = useAgentSessions()
   const [filterStatus, setFilterStatus] = useState<SessionStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -181,7 +190,7 @@ function AgentsRoute() {
                         size="sm"
                         asChild
                       >
-                        <a href={`/admin/workspaces/${workspaceId}/chat?chatId=${session.chat_id}`}>
+                        <a href={`/admin/workspaces/${session.workspace_id}/chat?chatId=${session.chat_id}`}>
                           View Chat
                         </a>
                       </Button>
