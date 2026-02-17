@@ -384,6 +384,9 @@ export function ChatProvider({
         return
       }
 
+      // Mark as connecting immediately to prevent race conditions
+      connectedChatIdRef.current = targetChatId
+
       // Use the MultiChatSSEManager to maintain multiple connections
       await sseManager.connectChat(targetChatId, workspaceId, (event) => {
         const { type, data } = event
@@ -428,8 +431,6 @@ export function ChatProvider({
                 setChatId(data.chat_id)
                 onChatCreatedRef.current?.(data.chat_id)
               }
-              // Update connected ref when we receive session_init
-              connectedChatIdRef.current = targetChatId
               return prev
             case 'thought':
               if (lastPart?.type === 'thought') {
