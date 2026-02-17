@@ -240,6 +240,9 @@ export function ChatProvider({
   // Track if initial chat has been loaded
   const initialChatLoadedRef = React.useRef(false)
 
+  // Track which chatId has been fully loaded to prevent duplicate loads
+  const loadedChatIdRef = React.useRef<string | null>(null)
+
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const connectingRef = React.useRef<string | null>(null)
   const connectionIdRef = React.useRef<number>(0)
@@ -497,10 +500,17 @@ export function ChatProvider({
   React.useEffect(() => {
     let mounted = true
     const initChat = async () => {
-      console.log('[Chat] initChat effect called', { chatId, workspaceId, mounted })
+      console.log('[Chat] initChat effect called', { chatId, workspaceId, mounted, loadedChatId: loadedChatIdRef.current })
 
       if (!chatId) {
         stopGeneration()
+        loadedChatIdRef.current = null
+        return
+      }
+
+      // Skip loading if this chat was already loaded (prevent duplicates from availableModels changes)
+      if (loadedChatIdRef.current === chatId && mounted) {
+        console.log('[Chat] Chat already loaded, skipping', { chatId })
         return
       }
 
@@ -562,6 +572,9 @@ export function ChatProvider({
              .sort((a, b) => a.created_at.localeCompare(b.created_at));
 
           setMessages(historyMessages);
+
+          // Mark this chat as successfully loaded to prevent duplicate loads
+          loadedChatIdRef.current = chatId
 
           // Add current chat to chatSessions cache
           setChatSessions((prev) => {
