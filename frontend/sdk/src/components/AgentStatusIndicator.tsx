@@ -6,6 +6,7 @@
  * - idle: Yellow circle
  * - paused: Orange pause icon
  * - completed: Blue circle
+ * - cancelled: Gray circle
  * - error: Red X icon
  *
  * ## Usage
@@ -66,6 +67,13 @@ const statusConfig = {
     color: 'text-blue-500',
     label: 'Completed',
     filled: true,
+    animate: false,
+  },
+  cancelled: {
+    icon: Circle,
+    color: 'text-gray-500',
+    label: 'Cancelled',
+    filled: false,
     animate: false,
   },
   error: {
