@@ -86,7 +86,7 @@ export function MultiChatSSEManagerProvider({
   maxConnections?: number
 }) {
   const connectionsRef = React.useRef<Map<string, SSEConnection>>(new Map())
-  const subscribersRef = React.useRef<Map<string, Set<(event: SSEEvent) => void>>>(new Map())
+  const subscribersRef = React.useRef<Map<string, (event: SSEEvent) => void>>(new Map())
   const connectionStatesRef = React.useRef<Map<string, SSEConnectionState>>(new Map())
   const accessOrderRef = React.useRef<string[]>([]) // For LRU eviction
   const connectionIdCounterRef = React.useRef(0)
@@ -162,19 +162,13 @@ export function MultiChatSSEManagerProvider({
       if (existingConnection && existingConnection.isActive) {
         console.log(`[MultiChatSSEManager] Already connected to ${chatId}, reusing connection`)
 
-        // Initialize subscribers set if needed
-        if (!subscribersRef.current.has(chatId)) {
-          subscribersRef.current.set(chatId, new Set())
-        }
-
-        const subscribers = subscribersRef.current.get(chatId)!
-
-        // DEDUPLICATION: Only add if not already subscribed
-        if (!subscribers.has(onEvent)) {
-          subscribers.add(onEvent)
-          console.log(`[MultiChatSSEManager] Added new subscriber for ${chatId}, total: ${subscribers.size}`)
+        // REPLACE the callback (one callback per chat - prevents duplication)
+        const existingCallback = subscribersRef.current.get(chatId)
+        if (existingCallback !== onEvent) {
+          subscribersRef.current.set(chatId, onEvent)
+          console.log(`[MultiChatSSEManager] Replaced callback for ${chatId}`)
         } else {
-          console.log(`[MultiChatSSEManager] Callback already subscribed for ${chatId}, skipping`)
+          console.log(`[MultiChatSSEManager] Callback already set for ${chatId}, skipping`)
         }
 
         return
@@ -236,11 +230,8 @@ export function MultiChatSSEManagerProvider({
           lastEventAt: Date.now(),
         })
 
-        // Add subscriber
-        if (!subscribersRef.current.has(chatId)) {
-          subscribersRef.current.set(chatId, new Set())
-        }
-        subscribersRef.current.get(chatId)!.add(onEvent)
+        // Add subscriber (one callback per chat)
+        subscribersRef.current.set(chatId, onEvent)
 
         console.log(`[MultiChatSSEManager] Connected to ${chatId} (connId: ${connectionId})`)
 
@@ -303,17 +294,15 @@ export function MultiChatSSEManagerProvider({
 
                   if (type === 'ping') continue
 
-                  // Emit event to subscribers
-                  const subscribers = subscribersRef.current.get(chatId)
-                  if (subscribers) {
+                  // Emit event to subscriber (single callback per chat)
+                  const callback = subscribersRef.current.get(chatId)
+                  if (callback) {
                     const event: SSEEvent = { type, data }
-                    subscribers.forEach((callback) => {
-                      try {
-                        callback(event)
-                      } catch (error) {
-                        console.error(`[MultiChatSSEManager] Error in subscriber callback:`, error)
-                      }
-                    })
+                    try {
+                      callback(event)
+                    } catch (error) {
+                      console.error(`[MultiChatSSEManager] Error in subscriber callback:`, error)
+                    }
                   }
                 } catch (e) {
                   console.error(`[MultiChatSSEManager] Parse error for ${chatId}:`, e)
