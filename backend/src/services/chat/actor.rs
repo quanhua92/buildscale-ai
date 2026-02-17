@@ -186,7 +186,19 @@ impl ChatActor {
     }
 
     async fn run(mut self) {
-        tracing::info!("[ChatActor] Started for chat {}", self.chat_id);
+        tracing::info!(
+            chat_id = %self.chat_id,
+            workspace_id = %self.workspace_id,
+            user_id = %self.user_id,
+            inactivity_timeout_secs = self.inactivity_timeout.as_secs(),
+            "[ChatActor] STARTED - Agent lifecycle beginning"
+        );
+
+        // Log when entering the main loop
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            "[ChatActor] Entering main event loop"
+        );
 
         // Create agent session in database
         let session_result = self.create_session().await;
@@ -227,7 +239,11 @@ impl ChatActor {
                     let _ = self.event_tx.send(SseEvent::Ping);
                 }
                 _ = &mut inactivity_timeout => {
-                    tracing::info!("[ChatActor] Shutting down due to inactivity for chat {}", self.chat_id);
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        reason = "inactivity_timeout",
+                        "[ChatActor] SHUTTING DOWN - No commands received within timeout period"
+                    );
                     break;
                 }
                 command = self.command_rx.recv() => {
@@ -285,9 +301,25 @@ impl ChatActor {
                                         self.chat_id,
                                         e
                                     );
-                                    let _ = self.event_tx.send(SseEvent::Error {
+                                    let send_result = self.event_tx.send(SseEvent::Error {
                                         message: format!("AI Engine Error: {}", e),
                                     });
+                                    if let Err(e) = send_result {
+                                        tracing::error!(
+                                            chat_id = %self.chat_id,
+                                            event_type = "Error",
+                                            error = ?e,
+                                            receivers = self.event_tx.receiver_count(),
+                                            "[SSE] FAILED to send error event - no receivers"
+                                        );
+                                    } else {
+                                        tracing::debug!(
+                                            chat_id = %self.chat_id,
+                                            event_type = "Error",
+                                            receivers = self.event_tx.receiver_count(),
+                                            "[SSE] SENT error event successfully"
+                                        );
+                                    }
                                 }
 
                                 // Reset inactivity timeout AGAIN after work completes
@@ -379,15 +411,26 @@ impl ChatActor {
         // - Inactivity timeout: session is NOT "completed", just inactive
         // - Normal shutdown: session stays in its last active state
         // Stale sessions will be handled by the cleanup worker if not re-activated.
-        tracing::debug!(
+        tracing::info!(
             chat_id = %self.chat_id,
             session_id = ?session_id,
-            "[ChatActor] Shutdown: session record persists in last state"
+            "[ChatActor] EXITED - Actor lifecycle complete"
         );
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
-        tracing::info!("[ChatActor] Processing interaction for chat {}", self.chat_id);
+        tracing::info!(
+            chat_id = %self.chat_id,
+            user_id = %user_id,
+            "[ChatActor] ProcessInteraction STARTED"
+        );
+
+        // Log SSE receiver count
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            receivers = self.event_tx.receiver_count(),
+            "[ChatActor] Current SSE receiver count"
+        );
 
         // Create a new cancellation token for this interaction
         let cancellation_token = CancellationToken::new();
@@ -605,11 +648,31 @@ impl ChatActor {
             .await?;
         }
 
-        let _ = self.event_tx.send(SseEvent::Done {
+        let send_result = self.event_tx.send(SseEvent::Done {
             message: "Turn complete".to_string(),
         });
+        if let Err(e) = send_result {
+            tracing::error!(
+                chat_id = %self.chat_id,
+                event_type = "Done",
+                error = ?e,
+                receivers = self.event_tx.receiver_count(),
+                "[SSE] FAILED to send event - no receivers"
+            );
+        } else {
+            tracing::debug!(
+                chat_id = %self.chat_id,
+                event_type = "Done",
+                receivers = self.event_tx.receiver_count(),
+                "[SSE] SENT event successfully"
+            );
+        }
 
-        tracing::info!("[ChatActor] Interaction turn complete for chat {}", self.chat_id);
+        tracing::info!(
+            chat_id = %self.chat_id,
+            receivers = self.event_tx.receiver_count(),
+            "[ChatActor] ProcessInteraction COMPLETED"
+        );
 
         // Clear the cancellation token for this interaction
         self.state.lock().await.interaction.current_cancellation_token = None;
@@ -823,11 +886,26 @@ impl ChatActor {
                         }
 
                         // Send streaming reasoning chunk to frontend via Thought event
-                        if let Err(e) = self.event_tx.send(SseEvent::Thought {
+                        let send_result = self.event_tx.send(SseEvent::Thought {
                             agent_id: None,
                             text: reasoning.clone(),
-                        }) {
-                            tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e);
+                        });
+                        if let Err(e) = send_result {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                event_type = "Thought",
+                                error = ?e,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] FAILED to send event - no receivers"
+                            );
+                        } else {
+                            tracing::trace!(
+                                chat_id = %self.chat_id,
+                                event_type = "Thought",
+                                reasoning_len = reasoning.len(),
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] SENT event successfully"
+                            );
                         }
                     }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
@@ -851,11 +929,26 @@ impl ChatActor {
                         // Send to frontend
                         for part in &thought.reasoning {
                             if !part.trim().is_empty() {
-                                if let Err(e) = self.event_tx.send(SseEvent::Thought {
+                                let send_result = self.event_tx.send(SseEvent::Thought {
                                     agent_id: None,
                                     text: part.clone(),
-                                }) {
-                                    tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e);
+                                });
+                                if let Err(e) = send_result {
+                                    tracing::error!(
+                                        chat_id = %self.chat_id,
+                                        event_type = "Thought",
+                                        error = ?e,
+                                        receivers = self.event_tx.receiver_count(),
+                                        "[SSE] FAILED to send event - no receivers"
+                                    );
+                                } else {
+                                    tracing::trace!(
+                                        chat_id = %self.chat_id,
+                                        event_type = "Thought",
+                                        reasoning_len = part.len(),
+                                        receivers = self.event_tx.receiver_count(),
+                                        "[SSE] SENT event successfully"
+                                    );
                                 }
                             }
                         }
@@ -960,12 +1053,28 @@ impl ChatActor {
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
 
+                        let tool_name = tool_call.function.name.clone();
                         if let Err(e) = self.event_tx.send(SseEvent::Call {
                             tool: tool_call.function.name,
                             path,
                             args: tool_call.function.arguments,
                         }) {
-                            tracing::error!("[ChatActor] [SSE] Failed to send Call event: {:?}", e);
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                event_type = "Call",
+                                tool = %tool_name,
+                                error = ?e,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] FAILED to send event - no receivers"
+                            );
+                        } else {
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                event_type = "Call",
+                                tool = %tool_name,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] SENT event successfully"
+                            );
                         }
                     }
                     _ => {}
@@ -1153,9 +1262,25 @@ impl ChatActor {
                                  output.clone()
                              }
                          );
-                          if let Err(e) = self.event_tx.send(SseEvent::Observation { output: normalized_output.clone(), success }) {
-                              tracing::error!("[ChatActor] [SSE] Failed to send Observation event: {:?}", e);
+                          let send_result = self.event_tx.send(SseEvent::Observation { output: normalized_output.clone(), success });
+                          if let Err(e) = send_result {
+                              tracing::error!(
+                                  chat_id = %self.chat_id,
+                                  event_type = "Observation",
+                                  error = ?e,
+                                  receivers = self.event_tx.receiver_count(),
+                                  "[SSE] FAILED to send event - no receivers"
+                              );
+                          } else {
+                              tracing::debug!(
+                                  chat_id = %self.chat_id,
+                                  event_type = "Observation",
+                                  success = success,
+                                  receivers = self.event_tx.receiver_count(),
+                                  "[SSE] SENT event successfully"
+                              );
                           }
+
 
                           // Persist tool result for audit trail (BEFORE any state modifications)
                           {

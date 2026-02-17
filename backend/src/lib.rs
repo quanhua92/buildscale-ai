@@ -56,9 +56,10 @@ pub fn load_config() -> Result<Config> {
 /// ```
 pub fn init_tracing() {
     let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
-    
-    // Always append our desired overrides if they aren't explicitly provided
+
     let mut final_filter = filter;
+
+    // Always set external libraries to warn
     if !final_filter.contains("rig=") {
         final_filter = format!("{},rig=warn", final_filter);
     }
@@ -67,6 +68,17 @@ pub fn init_tracing() {
     }
     if !final_filter.contains("openai=") {
         final_filter = format!("{},openai=warn", final_filter);
+    }
+
+    // Set our modules to debug by default for better visibility
+    if !final_filter.contains("buildscale::handlers::chat=") {
+        final_filter = format!("{},buildscale::handlers::chat=debug", final_filter);
+    }
+    if !final_filter.contains("buildscale::services::chat::actor=") {
+        final_filter = format!("{},buildscale::services::chat::actor=debug", final_filter);
+    }
+    if !final_filter.contains("buildscale::services::chat::registry=") {
+        final_filter = format!("{},buildscale::services::chat::registry=debug", final_filter);
     }
 
     tracing_subscriber::fmt()

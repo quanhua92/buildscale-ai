@@ -161,11 +161,22 @@ export function MultiChatSSEManagerProvider({
       const existingConnection = connectionsRef.current.get(chatId)
       if (existingConnection && existingConnection.isActive) {
         console.log(`[MultiChatSSEManager] Already connected to ${chatId}, reusing connection`)
-        // Add subscriber
+
+        // Initialize subscribers set if needed
         if (!subscribersRef.current.has(chatId)) {
           subscribersRef.current.set(chatId, new Set())
         }
-        subscribersRef.current.get(chatId)!.add(onEvent)
+
+        const subscribers = subscribersRef.current.get(chatId)!
+
+        // DEDUPLICATION: Only add if not already subscribed
+        if (!subscribers.has(onEvent)) {
+          subscribers.add(onEvent)
+          console.log(`[MultiChatSSEManager] Added new subscriber for ${chatId}, total: ${subscribers.size}`)
+        } else {
+          console.log(`[MultiChatSSEManager] Callback already subscribed for ${chatId}, skipping`)
+        }
+
         return
       }
 

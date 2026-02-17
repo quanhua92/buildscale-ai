@@ -160,9 +160,21 @@ pub async fn get_chat_events(
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>> {
-    tracing::info!("[ChatHandler] Connecting to chat events: workspace={}, chat={}", workspace_id, chat_id);
+    tracing::info!(
+        chat_id = %chat_id,
+        workspace_id = %workspace_id,
+        user_id = %_user.id,
+        "[SSE] CONNECTION_REQUEST - Client connecting to chat events"
+    );
+
     // 1. Get or create persistent bus
     let event_tx = state.agents.get_or_create_bus(chat_id).await;
+
+    // Log when sending SessionInit
+    tracing::debug!(
+        chat_id = %chat_id,
+        "[SSE] SENDING SessionInit event"
+    );
 
     // 2. Ensure actor is alive (rehydrate if needed)
     if state.agents.get_handle(&chat_id).await.is_none() {
@@ -211,9 +223,12 @@ pub async fn get_chat_events(
     let init_stream = stream::once(async move { Ok(Event::default().data(init_data)) });
 
     // 4. Stream from persistent broadcast channel
+    let current_receiver_count = event_tx.receiver_count();
     tracing::info!(
         chat_id = %chat_id,
-        "[SSE] Client subscribing to event stream"
+        receiver_count = current_receiver_count + 1, // +1 for this new connection
+        "[SSE] SUBSCRIBED - Client now receiving events (total receivers: {})",
+        current_receiver_count + 1
     );
     let broadcast_stream = BroadcastStream::new(event_tx.subscribe())
         .filter_map(move |msg| async move {

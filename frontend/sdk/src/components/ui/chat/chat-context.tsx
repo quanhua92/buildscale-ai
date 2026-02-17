@@ -243,6 +243,9 @@ export function ChatProvider({
   // Track which chatId has been fully loaded to prevent duplicate loads
   const loadedChatIdRef = React.useRef<string | null>(null)
 
+  // Track which chatId has an active SSE connection to prevent duplicate connections
+  const connectedChatIdRef = React.useRef<string | null>(null)
+
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const connectingRef = React.useRef<string | null>(null)
   const connectionIdRef = React.useRef<number>(0)
@@ -375,6 +378,12 @@ export function ChatProvider({
     async (targetChatId: string) => {
       console.log('[Chat] Connecting to SSE for chat:', targetChatId)
 
+      // Skip if already connected to this chat
+      if (connectedChatIdRef.current === targetChatId) {
+        console.log('[Chat] Already connected to SSE for this chat, skipping')
+        return
+      }
+
       // Use the MultiChatSSEManager to maintain multiple connections
       await sseManager.connectChat(targetChatId, workspaceId, (event) => {
         const { type, data } = event
@@ -419,6 +428,8 @@ export function ChatProvider({
                 setChatId(data.chat_id)
                 onChatCreatedRef.current?.(data.chat_id)
               }
+              // Update connected ref when we receive session_init
+              connectedChatIdRef.current = targetChatId
               return prev
             case 'thought':
               if (lastPart?.type === 'thought') {
@@ -982,6 +993,10 @@ export function ChatProvider({
       if (cachedSession) {
         // Load from cache - instant switch
         console.log('[Chat] Loading chat from cache:', targetChatId)
+
+        // Clear connected chat ID ref since we're switching
+        connectedChatIdRef.current = null
+
         setActiveChatId(targetChatId)
         setChatId(targetChatId)
         setMessages(cachedSession.messages)
@@ -998,6 +1013,10 @@ export function ChatProvider({
       } else {
         // Not cached - load from API
         console.log('[Chat] Loading chat from API:', targetChatId)
+
+        // Clear connected chat ID ref since we're switching
+        connectedChatIdRef.current = null
+
         setActiveChatId(targetChatId)
         setChatId(targetChatId)
         // The initChat effect will handle loading messages
