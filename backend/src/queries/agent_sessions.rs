@@ -218,7 +218,7 @@ pub async fn get_active_sessions_by_workspace(
         FROM agent_sessions s
         LEFT JOIN files f ON s.chat_id = f.id
         WHERE s.workspace_id = $1
-        AND s.status NOT IN ('completed', 'error')
+        AND s.status NOT IN ('completed', 'error', 'cancelled')
         ORDER BY s.created_at DESC
         "#,
         workspace_id,
@@ -296,7 +296,7 @@ pub async fn get_active_sessions_by_user(
         FROM agent_sessions s
         LEFT JOIN files f ON s.chat_id = f.id
         WHERE s.user_id = $1
-        AND s.status NOT IN ('completed', 'error')
+        AND s.status NOT IN ('completed', 'error', 'cancelled')
         ORDER BY s.created_at DESC
         "#,
         user_id,
@@ -722,7 +722,7 @@ pub async fn get_stale_sessions(conn: &mut DbConn) -> Result<Vec<AgentSession>> 
         FROM agent_sessions s
         LEFT JOIN files f ON s.chat_id = f.id
         WHERE s.last_heartbeat < $1
-        AND s.status NOT IN ('completed', 'error')
+        AND s.status NOT IN ('completed', 'error', 'cancelled')
         ORDER BY s.last_heartbeat ASC
         "#,
         threshold,
