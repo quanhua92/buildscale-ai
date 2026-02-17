@@ -17,6 +17,8 @@ export { ThemeProvider, useTheme, useResolvedTheme } from './context'
 export type { ThemeProviderProps, Theme } from './context'
 export { AgentSessionsProvider, useAgentSessions } from './context'
 export type { AgentSessionsProviderProps, AgentSessionsContextValue } from './context'
+export { MultiChatSSEManagerProvider } from './components/ui/chat/multi-chat-sse-manager'
+export type { SSEEvent, SSEConnection, SSEConnectionState } from './components/ui/chat/multi-chat-sse-manager'
 
 // Storage context
 export { StorageProvider, useStorage } from './context/StorageContext'
@@ -51,13 +53,19 @@ export type { AgentStatusIndicatorProps } from './components/AgentStatusIndicato
 export { AgentSessionMenuItem } from './components/AgentSessionMenuItem'
 export type { AgentSessionMenuItemProps } from './components/AgentSessionMenuItem'
 export { Chat, useChat } from './components/ui/chat'
-export type { ChatMessageItem, ChatModel } from './components/ui/chat'
 export {
   ChatQuestionBar,
   ChatSchemaForm,
   ChatModeIndicator,
   ChatModeToggle,
   ChatContextDialog,
+} from './components/ui/chat'
+export type {
+  ChatMessageItem,
+  ChatModel,
+  ChatTab,
+  ChatTabBarProps,
+  ChatTabStatus,
 } from './components/ui/chat'
 export type {
   ChatMode,

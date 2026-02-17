@@ -29,7 +29,7 @@ function ChatPage() {
 
   return (
     <div className="flex-1 w-full relative">
-      <Chat.Provider workspaceId={workspaceId} chatId={chatId}>
+      <Chat.Provider workspaceId={workspaceId} initialChatId={chatId}>
         <ChatContent activeSession={activeSession} />
       </Chat.Provider>
     </div>

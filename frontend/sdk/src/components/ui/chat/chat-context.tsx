@@ -10,7 +10,10 @@ import {
   type Question,
   type QuestionPendingData,
   type ModeChangedData,
+  type ChatFile,
+  type SessionStatus,
 } from "../../../api/types"
+import { useMultiChatSSEManager } from "./multi-chat-sse-manager"
 
 export type MessageRole = "user" | "assistant" | "system" | "tool"
 
@@ -106,7 +109,25 @@ export interface QuestionSession {
   createdAt: Date
 }
 
+// ============================================================================
+// Multi-Chat State Types
+// ============================================================================
+
+export interface ChatSessionState {
+  chatId: string
+  messages: ChatMessageItem[]
+  isStreaming: boolean
+  isLoading: boolean
+  model: ChatModel
+  mode: ChatMode
+  planFile: string | null
+  pendingQuestionSession: QuestionSession | null
+  lastAccessedAt: number
+  sessionStatus?: SessionStatus
+}
+
 interface ChatContextValue {
+  // Current active chat state
   messages: ChatMessageItem[]
   isStreaming: boolean
   isLoading: boolean
@@ -127,6 +148,14 @@ interface ChatContextValue {
   submitAnswer: (answer: any) => Promise<void>
   dismissQuestion: () => void
   setMode: (mode: ChatMode, planFile?: string) => Promise<void>
+
+  // Multi-Chat State
+  activeChatId: string | null
+  setActiveChatId: (chatId: string | null) => void
+  chatSessions: Map<string, ChatSessionState>
+  switchToChat: (chatId: string) => Promise<void>
+  recentChats: ChatFile[]
+  refreshRecentChats: () => Promise<void>
 }
 
 const ChatContext = React.createContext<ChatContextValue | null>(null)
@@ -142,7 +171,7 @@ export function useChat() {
 interface ChatProviderProps {
   children: React.ReactNode
   workspaceId: string
-  chatId?: string
+  initialChatId?: string  // Only for initial deep linking from URL
   onChatCreated?: (chatId: string) => void
 }
 
@@ -160,10 +189,11 @@ const generateId = () => {
 export function ChatProvider({
   children,
   workspaceId,
-  chatId: initialChatId,
+  initialChatId,
   onChatCreated,
 }: ChatProviderProps) {
   const { apiClient } = useAuth()
+  const sseManager = useMultiChatSSEManager()
   const apiClientRef = React.useRef(apiClient)
   React.useEffect(() => {
     apiClientRef.current = apiClient
@@ -192,6 +222,22 @@ export function ChatProvider({
     if (!pendingQuestionSession) return null
     return pendingQuestionSession.allQuestions[pendingQuestionSession.currentIndex] || null
   }, [pendingQuestionSession])
+
+  // ============================================================================
+  // Multi-Chat State
+  // ============================================================================
+
+  // Active chat ID (client-side state, NOT from URL)
+  const [activeChatId, setActiveChatId] = React.useState<string | null>(initialChatId ?? null)
+
+  // Chat sessions cache - stores state for multiple chats
+  const [chatSessions, setChatSessions] = React.useState<Map<string, ChatSessionState>>(new Map())
+
+  // Recent chats list
+  const [recentChats, setRecentChats] = React.useState<ChatFile[]>([])
+
+  // Track if initial chat has been loaded
+  const initialChatLoadedRef = React.useRef(false)
 
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const connectingRef = React.useRef<string | null>(null)
@@ -321,276 +367,137 @@ export function ChatProvider({
     }
   }, [workspaceId, chatId])
 
-  const connectToSse = React.useCallback(async (targetChatId: string) => {
-    if (connectingRef.current === targetChatId) return
+  const connectToSse = React.useCallback(
+    async (targetChatId: string) => {
+      console.log('[Chat] Connecting to SSE for chat:', targetChatId)
 
-    // Abort any existing connection before starting a new one
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    connectingRef.current = null
+      // Use the MultiChatSSEManager to maintain multiple connections
+      await sseManager.connectChat(targetChatId, workspaceId, (event) => {
+        const { type, data } = event
 
-    // Clear any existing streaming timeout
-    if (streamingTimeoutRef.current) {
-      clearTimeout(streamingTimeoutRef.current)
-      streamingTimeoutRef.current = null
-    }
+        if (type === 'ping') return
 
-    const currentConnectionId = ++connectionIdRef.current
+        // Detect streaming events
+        const isStreamingEvent = ['thought', 'chunk', 'call', 'observation'].includes(type)
 
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
-    connectingRef.current = targetChatId
-
-    // Don't set isStreaming immediately - wait for actual streaming events
-    hasReceivedStreamingEventRef.current = false
-
-    // Set a timeout: if no streaming events in 1 second, turn off streaming state
-    streamingTimeoutRef.current = setTimeout(() => {
-      if (currentConnectionId === connectionIdRef.current && !hasReceivedStreamingEventRef.current) {
-        setIsStreaming(false)
-      }
-      streamingTimeoutRef.current = null
-    }, 1000)
-
-    try {
-      const response = await apiClientRef.current.requestRaw(
-        `/workspaces/${workspaceId}/chats/${targetChatId}/events`,
-        {
-          headers: { 'Accept': 'text/event-stream' },
-          signal: abortController.signal,
-          timeout: false, // Disable timeout for SSE connections
+        if (isStreamingEvent && targetChatId === chatId) {
+          if (!hasReceivedStreamingEventRef.current) {
+            hasReceivedStreamingEventRef.current = true
+            setIsStreaming(true)
+          }
         }
-      )
 
-      if (!response.ok) throw new Error(`SSE Connection failed: ${response.statusText}`)
-      
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader available')
+        setMessages((prev) => {
+          if (targetChatId !== chatId) return prev
 
-      const decoder = new TextDecoder()
-      let buffer = ''
+          const newMessages = [...prev]
+          let lastMessage = newMessages[newMessages.length - 1]
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          if (currentConnectionId !== connectionIdRef.current) break
+          if (!lastMessage || lastMessage.role !== 'assistant' || lastMessage.status === 'completed') {
+            if (type === 'session_init' || type === 'file_updated') return prev
 
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            const parts = line.split('\n')
-            let eventType = 'chunk'
-            let dataStr = ''
-
-            for (const p of parts) {
-              if (p.startsWith('event: ')) eventType = p.slice(7).trim()
-              else if (p.startsWith('data: ')) dataStr = p.slice(6).trim()
+            lastMessage = {
+              id: generateId(),
+              role: 'assistant',
+              parts: [],
+              status: 'streaming',
+              created_at: new Date().toISOString(),
             }
+            newMessages.push(lastMessage)
+          }
 
-            if (!dataStr) continue
+          const updatedMessage = { ...lastMessage, parts: [...lastMessage.parts] }
+          const lastPart = updatedMessage.parts[updatedMessage.parts.length - 1]
 
-            try {
-              const payload = JSON.parse(dataStr)
-              const type = payload.type || eventType
-              const data = payload.data || payload
-
-              if (type === "ping") continue
-              if (currentConnectionId !== connectionIdRef.current) break
-
-              // Detect streaming events (thought, chunk, call, observation)
-              // These indicate AI is actively responding
-              const isStreamingEvent = ["thought", "chunk", "call", "observation"].includes(type)
-
-              if (isStreamingEvent && currentConnectionId === connectionIdRef.current) {
-                if (!hasReceivedStreamingEventRef.current) {
-                  hasReceivedStreamingEventRef.current = true
-                  setIsStreaming(true)
-
-                  // Clear the timeout since we received streaming event
-                  if (streamingTimeoutRef.current) {
-                    clearTimeout(streamingTimeoutRef.current)
-                    streamingTimeoutRef.current = null
-                  }
-                }
+          switch (type) {
+            case 'session_init':
+              if (data.chat_id && data.chat_id !== targetChatId) {
+                setChatId(data.chat_id)
+                onChatCreatedRef.current?.(data.chat_id)
               }
-
-              setMessages((prev) => {
-                if (currentConnectionId !== connectionIdRef.current) return prev
-
-                const newMessages = [...prev]
-                let lastMessage = newMessages[newMessages.length - 1]
-                
-                if (!lastMessage || lastMessage.role !== "assistant" || lastMessage.status === "completed") {
-                  if (type === "session_init" || type === "file_updated") return prev
-
-                  lastMessage = {
-                    id: generateId(),
-                    role: "assistant",
-                    parts: [],
-                    status: "streaming",
-                    created_at: new Date().toISOString(),
-                  }
-                  newMessages.push(lastMessage)
-                }
-
-                const updatedMessage = { ...lastMessage, parts: [...lastMessage.parts] }
-                const lastPart = updatedMessage.parts[updatedMessage.parts.length - 1]
-
-                switch (type) {
-                  case "session_init":
-                    if (data.chat_id && data.chat_id !== targetChatId) {
-                      setChatId(data.chat_id)
-                      onChatCreatedRef.current?.(data.chat_id)
-                    }
-                    return prev
-                  case "thought":
-                    if (lastPart?.type === "thought") {
-                      lastPart.content += (data.text || "")
-                    } else {
-                      updatedMessage.parts.push({ type: "thought", content: (data.text || "") })
-                    }
-                    updatedMessage.status = "streaming"
-                    break
-                  case "chunk":
-                    if (lastPart?.type === "text") {
-                      lastPart.content += (data.text || "")
-                    } else {
-                      updatedMessage.parts.push({ type: "text", content: (data.text || "") })
-                    }
-                    updatedMessage.status = "streaming"
-                    break
-                  case "call": {
-                    const callId = generateId()
-                    updatedMessage.parts.push({ type: "call", tool: data.tool, args: data.args, id: callId })
-                    updatedMessage.status = "streaming"
-                    break
-                  }
-                  case "observation":
-                    // Look for the last call part to link it, or just push it
-                    updatedMessage.parts.push({ 
-                      type: "observation", 
-                      output: data.output, 
-                      success: data.success ?? true,
-                      callId: "" // We'll link visually by order for now
-                    })
-                    updatedMessage.status = "streaming"
-                    break
-                  case "done":
-                    updatedMessage.status = "completed"
-                    if (currentConnectionId === connectionIdRef.current) {
-                      setIsStreaming(false)
-                      // Clear streaming timeout
-                      if (streamingTimeoutRef.current) {
-                        clearTimeout(streamingTimeoutRef.current)
-                        streamingTimeoutRef.current = null
-                      }
-                    }
-                    break
-                  case "error":
-                    updatedMessage.status = "error"
-                    updatedMessage.parts.push({ type: "text", content: `\nError: ${data.message}` })
-                    if (currentConnectionId === connectionIdRef.current) {
-                      setIsStreaming(false)
-                      // Clear streaming timeout
-                      if (streamingTimeoutRef.current) {
-                        clearTimeout(streamingTimeoutRef.current)
-                        streamingTimeoutRef.current = null
-                      }
-                    }
-                    break
-                  case "stopped":
-                    updatedMessage.status = "completed"
-                    if (currentConnectionId === connectionIdRef.current) {
-                      setIsStreaming(false)
-                      // Clear streaming timeout
-                      if (streamingTimeoutRef.current) {
-                        clearTimeout(streamingTimeoutRef.current)
-                        streamingTimeoutRef.current = null
-                      }
-                    }
-                    break
-                  case "file_updated":
-                    return prev
-                  case "question_pending":
-                    // Handle question_pending event
-                    if (currentConnectionId === connectionIdRef.current) {
-                      const questionData: QuestionPendingData = data
-                      // Create a question session with all questions
-                      if (questionData.questions && questionData.questions.length > 0) {
-                        setPendingQuestionSession({
-                          questionId: questionData.question_id,
-                          allQuestions: questionData.questions.map((q) => ({
-                            ...q,
-                            id: questionData.question_id,
-                            createdAt: new Date(questionData.created_at)
-                          })),
-                          currentIndex: 0,  // Start with first question
-                          answers: {},  // No answers yet
-                          createdAt: new Date(questionData.created_at)
-                        })
-                      }
-                    }
-                    return prev
-                  case "mode_changed":
-                    // Handle mode_changed event
-                    if (currentConnectionId === connectionIdRef.current) {
-                      const modeData: ModeChangedData = data
-                      setModeState(modeData.mode)
-                      setPlanFileState(modeData.plan_file)
-                    }
-                    return prev
-                }
-
-                newMessages[newMessages.length - 1] = updatedMessage
-                return newMessages
-              })
-            } catch (e) {
-              console.error(`[Chat] [Conn:${currentConnectionId}] SSE Parse error`, e)
+              return prev
+            case 'thought':
+              if (lastPart?.type === 'thought') {
+                lastPart.content += (data.text || '')
+              } else {
+                updatedMessage.parts.push({ type: 'thought', content: (data.text || '') })
+              }
+              updatedMessage.status = 'streaming'
+              break
+            case 'chunk':
+              if (lastPart?.type === 'text') {
+                lastPart.content += (data.text || '')
+              } else {
+                updatedMessage.parts.push({ type: 'text', content: (data.text || '') })
+              }
+              updatedMessage.status = 'streaming'
+              break
+            case 'call': {
+              const callId = generateId()
+              updatedMessage.parts.push({ type: 'call', tool: data.tool, args: data.args, id: callId })
+              updatedMessage.status = 'streaming'
+              break
             }
+            case 'observation':
+              updatedMessage.parts.push({
+                type: 'observation',
+                output: data.output,
+                success: data.success ?? true,
+                callId: '',
+              })
+              updatedMessage.status = 'streaming'
+              break
+            case 'done':
+              updatedMessage.status = 'completed'
+              setIsStreaming(false)
+              break
+            case 'error':
+              updatedMessage.status = 'error'
+              updatedMessage.parts.push({ type: 'text', content: `\nError: ${data.message}` })
+              setIsStreaming(false)
+              break
+            case 'stopped':
+              updatedMessage.status = 'completed'
+              setIsStreaming(false)
+              break
+            case 'file_updated':
+              return prev
+            case 'question_pending':
+              const questionData: QuestionPendingData = data
+              if (questionData.questions && questionData.questions.length > 0) {
+                setPendingQuestionSession({
+                  questionId: questionData.question_id,
+                  allQuestions: questionData.questions.map((q) => ({
+                    ...q,
+                    id: questionData.question_id,
+                    createdAt: new Date(questionData.created_at),
+                  })),
+                  currentIndex: 0,
+                  answers: {},
+                  createdAt: new Date(questionData.created_at),
+                })
+              }
+              return prev
+            case 'mode_changed':
+              const modeData: ModeChangedData = data
+              setModeState(modeData.mode)
+              setPlanFileState(modeData.plan_file)
+              return prev
           }
-        }
-      } finally {
-        reader.releaseLock()
-        // Clear streaming timeout on connection end
-        if (currentConnectionId === connectionIdRef.current) {
-          if (streamingTimeoutRef.current) {
-            clearTimeout(streamingTimeoutRef.current)
-            streamingTimeoutRef.current = null
-          }
-        }
-      }
-    } catch (error) {
-      if ((error as Error).name === 'AbortError') {
-        // Clear streaming timeout on abort
-        if (currentConnectionId === connectionIdRef.current) {
-          if (streamingTimeoutRef.current) {
-            clearTimeout(streamingTimeoutRef.current)
-            streamingTimeoutRef.current = null
-          }
-        }
-        return
-      }
-      console.error(`[Chat] [Conn:${currentConnectionId}] SSE Error:`, error)
-      if (currentConnectionId === connectionIdRef.current) {
-        setIsStreaming(false)
-        connectingRef.current = null
-        // Clear streaming timeout on error
-        if (streamingTimeoutRef.current) {
-          clearTimeout(streamingTimeoutRef.current)
-          streamingTimeoutRef.current = null
-        }
-      }
-    }
-  }, [workspaceId])
+
+          newMessages[newMessages.length - 1] = updatedMessage
+          return newMessages
+        })
+      })
+    },
+    [workspaceId, chatId, sseManager, setChatId, setMessages, setIsStreaming, setPendingQuestionSession, setModeState, setPlanFileState]
+  )
 
   React.useEffect(() => {
     let mounted = true
     const initChat = async () => {
+      console.log('[Chat] initChat effect called', { chatId, workspaceId, mounted })
+
       if (!chatId) {
         stopGeneration()
         return
@@ -653,7 +560,24 @@ export function ChatProvider({
            const historyMessages: ChatMessageItem[] = Array.from(messageGroups.values())
              .sort((a, b) => a.created_at.localeCompare(b.created_at));
 
-           setMessages(historyMessages);
+          setMessages(historyMessages);
+
+          // Add current chat to chatSessions cache
+          setChatSessions((prev) => {
+            const newSessions = new Map(prev)
+            newSessions.set(chatId, {
+              chatId,
+              messages: historyMessages,
+              isStreaming: false,
+              isLoading: false,
+              model,
+              mode: session.agent_config.mode || 'plan',
+              planFile: session.agent_config.plan_file || null,
+              pendingQuestionSession: null,
+              lastAccessedAt: Date.now(),
+            })
+            return newSessions
+          })
 
           // Load model from existing chat session
           // Priority: 1) chat's saved model (if available), 2) API's default model
@@ -682,13 +606,48 @@ export function ChatProvider({
           setModeState(session.agent_config.mode || 'plan')
           setPlanFileState(session.agent_config.plan_file || null)
 
+          // Add current chat to chatSessions cache
+          setChatSessions((prev) => {
+            const newSessions = new Map(prev)
+            newSessions.set(chatId, {
+              chatId,
+              messages: historyMessages,
+              isStreaming: false,
+              isLoading: false,
+              model,
+              mode: session.agent_config.mode || 'plan',
+              planFile: session.agent_config.plan_file || null,
+              pendingQuestionSession: null,
+              lastAccessedAt: Date.now(),
+            })
+            console.log('[Chat] Added chat to sessions cache:', chatId, 'Total sessions:', newSessions.size)
+            return newSessions
+          })
+
           // Connect to SSE only after history is loaded
           connectToSse(chatId)
         }
       } catch (error) {
         console.error('[Chat] Failed to load history:', error)
         if (mounted) {
-          // Even if history fails, try to connect to SSE
+          // Even if history fails, add an empty session to chatSessions
+          setChatSessions((prev) => {
+            const newSessions = new Map(prev)
+            newSessions.set(chatId, {
+              chatId,
+              messages: [],
+              isStreaming: false,
+              isLoading: false,
+              model,
+              mode: 'plan',
+              planFile: null,
+              pendingQuestionSession: null,
+              lastAccessedAt: Date.now(),
+            })
+            console.log('[Chat] Added empty chat session due to error:', chatId)
+            return newSessions
+          })
+          // Try to connect to SSE
           connectToSse(chatId)
         }
       } finally {
@@ -700,15 +659,15 @@ export function ChatProvider({
 
     return () => {
       mounted = false
-      if (abortControllerRef.current) abortControllerRef.current.abort()
-      connectingRef.current = null
+      // Note: Don't abort SSE connection here - it's managed by connectToSse
+      // The connectToSse function will abort old connections when connecting to a new chat
       // Clear streaming timeout on cleanup
       if (streamingTimeoutRef.current) {
         clearTimeout(streamingTimeoutRef.current)
         streamingTimeoutRef.current = null
       }
     }
-  }, [chatId, workspaceId, connectToSse, stopGeneration, availableModels])
+  }, [chatId, workspaceId, stopGeneration, availableModels])
 
   const sendMessage = React.useCallback(
     async (content: string, _attachments?: string[], metadata?: Record<string, any>) => {
@@ -950,16 +909,123 @@ export function ChatProvider({
     [workspaceId, chatId, model, setChatId, onChatCreatedRef]
   )
 
+  // ============================================================================
+  // Multi-Chat Functions
+  // ============================================================================
+
+  // Refresh the list of recent chats
+  const refreshRecentChats = React.useCallback(async () => {
+    try {
+      console.log('[Chat] Loading recent chats for workspace:', workspaceId)
+      const result = await apiClientRef.current.get<ChatFile[]>(
+        `/workspaces/${workspaceId}/chats`
+      )
+      console.log('[Chat] Recent chats loaded:', result)
+      if (result) {
+        setRecentChats(result)
+      }
+    } catch (error) {
+      console.error('[Chat] Failed to load recent chats:', error)
+    }
+  }, [workspaceId])
+
+  // Load recent chats on mount
+  React.useEffect(() => {
+    refreshRecentChats()
+  }, [refreshRecentChats])
+
+  // Switch to a different chat (client-side, no router navigation)
+  const switchToChat = React.useCallback(
+    async (targetChatId: string) => {
+      console.log('[Chat] switchToChat called', { targetChatId, activeChatId })
+
+      if (targetChatId === activeChatId) {
+        console.log('[Chat] Already on this chat, skipping')
+        return
+      }
+
+      // Save current chat state to cache
+      if (activeChatId) {
+        setChatSessions((prev) => {
+          const newSessions = new Map(prev)
+          newSessions.set(activeChatId, {
+            chatId: activeChatId,
+            messages,
+            isStreaming,
+            isLoading,
+            model,
+            mode,
+            planFile,
+            pendingQuestionSession,
+            lastAccessedAt: Date.now(),
+          })
+          return newSessions
+        })
+      }
+
+      // Check if target chat is already cached
+      const cachedSession = chatSessions.get(targetChatId)
+      if (cachedSession) {
+        // Load from cache - instant switch
+        console.log('[Chat] Loading chat from cache:', targetChatId)
+        setActiveChatId(targetChatId)
+        setChatId(targetChatId)
+        setMessages(cachedSession.messages)
+        setIsStreaming(cachedSession.isStreaming)
+        setIsLoading(cachedSession.isLoading)
+        setModel(cachedSession.model)
+        setModeState(cachedSession.mode)
+        setPlanFileState(cachedSession.planFile)
+        setPendingQuestionSession(cachedSession.pendingQuestionSession)
+
+        // Connect to SSE for this chat
+        console.log('[Chat] Connecting to SSE for cached chat:', targetChatId)
+        connectToSse(targetChatId)
+      } else {
+        // Not cached - load from API
+        console.log('[Chat] Loading chat from API:', targetChatId)
+        setActiveChatId(targetChatId)
+        setChatId(targetChatId)
+        // The initChat effect will handle loading messages
+      }
+    },
+    [
+      activeChatId,
+      chatSessions,
+      messages,
+      isStreaming,
+      isLoading,
+      model,
+      mode,
+      planFile,
+      pendingQuestionSession,
+      connectToSse,
+      setChatId,
+    ]
+  )
+
+  // Handle initial chat from URL (one-time sync for deep linking)
+  React.useEffect(() => {
+    if (initialChatId && !initialChatLoadedRef.current) {
+      setActiveChatId(initialChatId)
+      setChatId(initialChatId)
+      initialChatLoadedRef.current = true
+    }
+  }, [initialChatId, setChatId])
+
   const value = React.useMemo(
     () => ({
       messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, workspaceId,
       model, setModel, availableModels,
       // Plan Mode
       mode, planFile, pendingQuestionSession, currentQuestion,
-      submitAnswer, dismissQuestion, setMode
+      submitAnswer, dismissQuestion, setMode,
+      // Multi-Chat
+      activeChatId, setActiveChatId, chatSessions, switchToChat, recentChats, refreshRecentChats
     }),
     [messages, isStreaming, isLoading, sendMessage, stopGeneration, clearMessages, chatId, workspaceId, model, setModel, availableModels,
-     mode, planFile, pendingQuestionSession, currentQuestion, submitAnswer, dismissQuestion, setMode]
+     mode, planFile, pendingQuestionSession, currentQuestion, submitAnswer, dismissQuestion, setMode,
+     activeChatId, chatSessions, switchToChat, recentChats, refreshRecentChats]
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
