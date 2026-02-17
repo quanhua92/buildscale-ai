@@ -404,9 +404,101 @@ export function ChatProvider({
         }
 
         setMessages((prev) => {
-          // Only process events for this specific chat (prevents cross-chat contamination)
-          // Each SSE connection callback has its own chatId value from when it was created
-          if (targetChatId !== chatId) return prev
+          // Check if this event is for the currently active chat
+          const isCurrentChat = targetChatId === chatId
+
+          if (!isCurrentChat) {
+            // Event is for background chat - update cache
+            setChatSessions((prevSessions) => {
+              const newSessions = new Map(prevSessions)
+              const cachedSession = newSessions.get(targetChatId)
+
+              if (cachedSession) {
+                // Apply event to cached messages
+                const cachedMessages = cachedSession.messages
+                const newCached = [...cachedMessages]
+                let lastMessage = newCached[newCached.length - 1]
+
+                if (!lastMessage || lastMessage.role !== 'assistant' || lastMessage.status === 'completed') {
+                  if (type === 'session_init' || type === 'file_updated') return prevSessions
+
+                  lastMessage = {
+                    id: generateId(),
+                    role: 'assistant',
+                    parts: [],
+                    status: 'streaming',
+                    created_at: new Date().toISOString(),
+                  }
+                  newCached.push(lastMessage)
+                }
+
+                const updatedMessage = { ...lastMessage, parts: [...lastMessage.parts] }
+                const lastPart = updatedMessage.parts[updatedMessage.parts.length - 1]
+
+                // Process event types (same logic as current chat below)
+                switch (type) {
+                  case 'session_init':
+                    if (data.chat_id && data.chat_id !== targetChatId) {
+                      // Chat ID changed, update in cache
+                    }
+                    return prevSessions
+                  case 'thought':
+                    if (lastPart?.type === 'thought') {
+                      lastPart.content += (data.text || '')
+                    } else {
+                      updatedMessage.parts.push({ type: 'thought', content: (data.text || '') })
+                    }
+                    updatedMessage.status = 'streaming'
+                    break
+                  case 'chunk':
+                    if (lastPart?.type === 'text') {
+                      lastPart.content += (data.text || '')
+                    } else {
+                      updatedMessage.parts.push({ type: 'text', content: (data.text || '') })
+                    }
+                    updatedMessage.status = 'streaming'
+                    break
+                  case 'call': {
+                    const callId = generateId()
+                    updatedMessage.parts.push({ type: 'call', tool: data.tool, args: data.args, id: callId })
+                    updatedMessage.status = 'streaming'
+                    break
+                  }
+                  case 'observation':
+                    updatedMessage.parts.push({
+                      type: 'observation',
+                      output: data.output,
+                      success: data.success ?? true,
+                      callId: '',
+                    })
+                    updatedMessage.status = 'streaming'
+                    break
+                  case 'done':
+                    updatedMessage.status = 'completed'
+                    break
+                  case 'error':
+                    updatedMessage.status = 'error'
+                    updatedMessage.parts.push({ type: 'text', content: `\nError: ${data.message}` })
+                    break
+                  case 'stopped':
+                    updatedMessage.status = 'completed'
+                    break
+                  case 'file_updated':
+                  case 'question_pending':
+                  case 'mode_changed':
+                    return prevSessions
+                }
+
+                newCached[newCached.length - 1] = updatedMessage
+                newSessions.set(targetChatId, { ...cachedSession, messages: newCached })
+              }
+
+              return newSessions
+            })
+            return prev // Don't update current chat's messages
+          }
+
+          // Event is for current chat - process normally
 
           const newMessages = [...prev]
           let lastMessage = newMessages[newMessages.length - 1]
@@ -508,7 +600,7 @@ export function ChatProvider({
         })
       })
     },
-    [workspaceId, chatId, sseManager, setChatId, setMessages, setIsStreaming, setPendingQuestionSession, setModeState, setPlanFileState]
+    [workspaceId, chatId, sseManager, setChatId, setMessages, setIsStreaming, setPendingQuestionSession, setModeState, setPlanFileState, setChatSessions, chatSessions]
   )
 
   React.useEffect(() => {
