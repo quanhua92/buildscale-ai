@@ -201,7 +201,7 @@ export function ChatProvider({
   }, [apiClient, sseManager])
 
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([])
-  const [isStreaming, setIsStreaming] = React.useState(false)
+  // NOTE: isStreaming is now derived from the current chat's session state (see useMemo below)
   const [isLoading, setIsLoading] = React.useState(false)
   const [chatId, setChatId] = React.useState<string | undefined>(initialChatId)
   // Placeholder model state, will be replaced by API response
@@ -357,8 +357,16 @@ export function ChatProvider({
     connectingRef.current = null
 
     // Set streaming state to false synchronously before async backend call
-    setIsStreaming(false)
     hasReceivedStreamingEventRef.current = false
+    // Update per-chat streaming state
+    setChatSessions((prev) => {
+      const newSessions = new Map(prev)
+      const session = newSessions.get(chatId)
+      if (session) {
+        newSessions.set(chatId, { ...session, isStreaming: false })
+      }
+      return newSessions
+    })
 
     // Mark streaming message as completed
     setMessages((prev) => {
@@ -416,7 +424,15 @@ export function ChatProvider({
         if (isStreamingEvent) {
           if (!hasReceivedStreamingEventRef.current) {
             hasReceivedStreamingEventRef.current = true
-            setIsStreaming(true)
+            // Update per-chat streaming state
+            setChatSessions((prev) => {
+              const newSessions = new Map(prev)
+              const session = newSessions.get(targetChatId)
+              if (session) {
+                newSessions.set(targetChatId, { ...session, isStreaming: true })
+              }
+              return newSessions
+            })
           }
         }
 
@@ -500,14 +516,20 @@ export function ChatProvider({
                     break
                   case 'done':
                     updatedMessage.status = 'completed'
-                    break
+                    // CRITICAL: Also update the session's isStreaming state for background chats
+                    newSessions.set(targetChatId, { ...cachedSession, messages: newCached, isStreaming: false })
+                    return newSessions
                   case 'error':
                     updatedMessage.status = 'error'
                     updatedMessage.parts.push({ type: 'text', content: `\nError: ${data.message}` })
-                    break
+                    // CRITICAL: Also update the session's isStreaming state for background chats
+                    newSessions.set(targetChatId, { ...cachedSession, messages: newCached, isStreaming: false })
+                    return newSessions
                   case 'stopped':
                     updatedMessage.status = 'completed'
-                    break
+                    // CRITICAL: Also update the session's isStreaming state for background chats
+                    newSessions.set(targetChatId, { ...cachedSession, messages: newCached, isStreaming: false })
+                    return newSessions
                   case 'file_updated':
                   case 'question_pending':
                   case 'mode_changed':
@@ -584,16 +606,40 @@ export function ChatProvider({
               break
             case 'done':
               updatedMessage.status = 'completed'
-              setIsStreaming(false)
+              // Update per-chat streaming state
+              setChatSessions((prev) => {
+                const newSessions = new Map(prev)
+                const session = newSessions.get(targetChatId)
+                if (session) {
+                  newSessions.set(targetChatId, { ...session, isStreaming: false })
+                }
+                return newSessions
+              })
               break
             case 'error':
               updatedMessage.status = 'error'
               updatedMessage.parts.push({ type: 'text', content: `\nError: ${data.message}` })
-              setIsStreaming(false)
+              // Update per-chat streaming state
+              setChatSessions((prev) => {
+                const newSessions = new Map(prev)
+                const session = newSessions.get(targetChatId)
+                if (session) {
+                  newSessions.set(targetChatId, { ...session, isStreaming: false })
+                }
+                return newSessions
+              })
               break
             case 'stopped':
               updatedMessage.status = 'completed'
-              setIsStreaming(false)
+              // Update per-chat streaming state
+              setChatSessions((prev) => {
+                const newSessions = new Map(prev)
+                const session = newSessions.get(targetChatId)
+                if (session) {
+                  newSessions.set(targetChatId, { ...session, isStreaming: false })
+                }
+                return newSessions
+              })
               break
             case 'file_updated':
               return prev
@@ -625,7 +671,7 @@ export function ChatProvider({
         })
       })
     },
-    [workspaceId, chatId, sseManager, setChatId, setMessages, setIsStreaming, setPendingQuestionSession, setModeState, setPlanFileState, setChatSessions, chatSessions]
+    [workspaceId, chatId, sseManager, setChatId, setMessages, setPendingQuestionSession, setModeState, setPlanFileState, setChatSessions, chatSessions]
   )
 
   React.useEffect(() => {
@@ -835,8 +881,17 @@ export function ChatProvider({
       // Reset streaming event flag
       hasReceivedStreamingEventRef.current = false
 
-      // Set streaming state when sending message
-      setIsStreaming(true)
+      // Set streaming state when sending message (update per-chat state)
+      setChatSessions((prev) => {
+        const newSessions = new Map(prev)
+        if (chatId) {
+          const session = newSessions.get(chatId)
+          if (session) {
+            newSessions.set(chatId, { ...session, isStreaming: true })
+          }
+        }
+        return newSessions
+      })
 
       const maxRetries = 3
       const retryDelay = 1000 // 1 second between retries
@@ -902,8 +957,18 @@ export function ChatProvider({
               return newMessages
             })
 
-            setIsStreaming(false)
             hasReceivedStreamingEventRef.current = false
+            // Update per-chat streaming state
+            setChatSessions((prev) => {
+              const newSessions = new Map(prev)
+              if (chatId) {
+                const session = newSessions.get(chatId)
+                if (session) {
+                  newSessions.set(chatId, { ...session, isStreaming: false })
+                }
+              }
+              return newSessions
+            })
 
             // Re-throw for caller to handle
             throw lastError
@@ -1119,7 +1184,7 @@ export function ChatProvider({
         setActiveChatId(targetChatId)
         setChatId(targetChatId)
         setMessages(cachedSession.messages)
-        setIsStreaming(cachedSession.isStreaming)
+        // Note: isStreaming is now derived from chatSessions, no need to set it
         setIsLoading(cachedSession.isLoading)
         setModel(cachedSession.model)
         setModeState(cachedSession.mode)
@@ -1145,7 +1210,6 @@ export function ChatProvider({
       activeChatId,
       chatSessions,
       messages,
-      isStreaming,
       isLoading,
       model,
       mode,
@@ -1164,6 +1228,14 @@ export function ChatProvider({
       initialChatLoadedRef.current = true
     }
   }, [initialChatId, setChatId])
+
+  // Derive isStreaming from the current chat's session state
+  // This ensures the button shows the correct state for the active chat
+  const isStreaming = React.useMemo(() => {
+    if (!chatId) return false
+    const session = chatSessions.get(chatId)
+    return session?.isStreaming ?? false
+  }, [chatId, chatSessions])
 
   const value = React.useMemo(
     () => ({
