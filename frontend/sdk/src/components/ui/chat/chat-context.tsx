@@ -396,7 +396,7 @@ export function ChatProvider({
         // Detect streaming events
         const isStreamingEvent = ['thought', 'chunk', 'call', 'observation'].includes(type)
 
-        if (isStreamingEvent && targetChatId === chatId) {
+        if (isStreamingEvent) {
           if (!hasReceivedStreamingEventRef.current) {
             hasReceivedStreamingEventRef.current = true
             setIsStreaming(true)
@@ -404,6 +404,8 @@ export function ChatProvider({
         }
 
         setMessages((prev) => {
+          // Only process events for this specific chat (prevents cross-chat contamination)
+          // Each SSE connection callback has its own chatId value from when it was created
           if (targetChatId !== chatId) return prev
 
           const newMessages = [...prev]
