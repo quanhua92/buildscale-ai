@@ -506,53 +506,30 @@ pub async fn update_session_metadata(
         "[AgentSessions] Updating session metadata"
     );
 
-    // Update each field individually based on what's provided
-    // We use separate UPDATE statements for each field to avoid complex dynamic SQL
+    // Use a single atomic UPDATE with COALESCE to handle optional fields
+    // This is more efficient than multiple separate UPDATE statements
+    let model_sql = model.as_deref();
+    let mode_sql = mode.as_deref();
+    let agent_type_sql = agent_type.as_ref();
 
-    if let Some(m) = model {
-        sqlx::query(
-            r#"
-            UPDATE agent_sessions
-            SET model = $2, updated_at = NOW()
-            WHERE id = $1
-            "#,
-        )
-        .bind(session_id)
-        .bind(m)
-        .execute(&mut *conn)
-        .await
-        .map_err(Error::Sqlx)?;
-    }
-
-    if let Some(m) = mode {
-        sqlx::query(
-            r#"
-            UPDATE agent_sessions
-            SET mode = $2, updated_at = NOW()
-            WHERE id = $1
-            "#,
-        )
-        .bind(session_id)
-        .bind(m)
-        .execute(&mut *conn)
-        .await
-        .map_err(Error::Sqlx)?;
-    }
-
-    if let Some(t) = agent_type {
-        sqlx::query(
-            r#"
-            UPDATE agent_sessions
-            SET agent_type = $2, updated_at = NOW()
-            WHERE id = $1
-            "#,
-        )
-        .bind(session_id)
-        .bind(t as AgentType)
-        .execute(&mut *conn)
-        .await
-        .map_err(Error::Sqlx)?;
-    }
+    sqlx::query(
+        r#"
+        UPDATE agent_sessions
+        SET
+            model = COALESCE($2, model),
+            mode = COALESCE($3, mode),
+            agent_type = COALESCE($4, agent_type),
+            updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(session_id)
+    .bind(model_sql)
+    .bind(mode_sql)
+    .bind(agent_type_sql)
+    .execute(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)?;
 
     // Fetch and return the updated session
     let session = sqlx::query_as!(

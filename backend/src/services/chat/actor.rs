@@ -186,6 +186,8 @@ impl ChatActor {
     }
 
     async fn run(mut self) {
+        // Track if actor was cancelled by user (moved to stack for mutability)
+        let mut cancelled_by_user = false;
         tracing::info!("[ChatActor] Started for chat {}", self.chat_id);
 
         // Create agent session in database
@@ -344,6 +346,10 @@ impl ChatActor {
                                     token.cancel();
                                 }
 
+                                // Mark as cancelled by user so cleanup skips mark_session_completed
+                                // The handler/service owns the DB state for cancelled sessions
+                                cancelled_by_user = true;
+
                                 // Send acknowledgment
                                 if let Some(responder) = responder.lock().await.take() {
                                     let _ = responder.send(Ok(true));
@@ -373,8 +379,18 @@ impl ChatActor {
             handle.abort();
         }
 
-        if let Some(session_id) = session_id {
-            let _ = self.mark_session_completed(session_id).await;
+        // Only mark session as completed if NOT cancelled by user
+        // When user cancels, the handler/service owns the final DB state (deletion)
+        if !cancelled_by_user {
+            if let Some(session_id) = session_id {
+                let _ = self.mark_session_completed(session_id).await;
+            }
+        } else {
+            tracing::debug!(
+                chat_id = %self.chat_id,
+                session_id = ?session_id,
+                "[ChatActor] Skipping mark_session_completed for user-cancelled session"
+            );
         }
     }
 

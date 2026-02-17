@@ -379,13 +379,16 @@ pub async fn pause_session(
             );
         }
         SessionStatus::Paused => {
-            tracing::warn!(
+            // Session is already paused - likely by ChatActor
+            // This is the expected flow when the handler sends Pause command first
+            tracing::info!(
                 session_id = %session_id,
-                "[AgentSessions] Service: Session is already paused"
+                "[AgentSessions] Service: Session already paused (by ChatActor), returning confirmation"
             );
-            return Err(Error::Conflict(
-                "Session is already paused".to_string(),
-            ));
+            return Ok(SessionActionResponse {
+                session: session.into(),
+                message: "Session paused successfully".to_string(),
+            });
         }
         SessionStatus::Completed | SessionStatus::Error => {
             tracing::warn!(
@@ -400,8 +403,9 @@ pub async fn pause_session(
         }
     }
 
-    // TODO: Coordinate with ChatActor to actually pause the agent processing
-    // For now, we'll just update the status
+    // Update session status to paused
+    // Note: In most cases, ChatActor will have already updated the status
+    // before this service is called. This update is a fallback for edge cases.
     tracing::debug!(
         session_id = %session_id,
         "[AgentSessions] Service: Updating session status to paused"

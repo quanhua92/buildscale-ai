@@ -1177,6 +1177,8 @@ impl ChatService {
     /// Generates a chat name from message content.
     /// Uses smart truncation to avoid cutting words in half.
     pub fn generate_chat_name(content: &str, max_length: usize) -> String {
+        const PREFIX: &str = "Chat: ";
+
         // Trim whitespace first
         let content = content.trim();
 
@@ -1185,14 +1187,17 @@ impl ChatService {
             return "Chat".to_string();
         }
 
-        // If content fits within max_length, use it all
-        if content.len() <= max_length {
-            return format!("Chat: {}", content);
+        // Adjust max_length to account for prefix
+        let adjusted_max_length = max_length.saturating_sub(PREFIX.len());
+
+        // If content fits within adjusted max_length, use it all
+        if content.len() <= adjusted_max_length {
+            return format!("{}{}", PREFIX, content);
         }
 
         // Find safe truncation point (don't cut words in half)
         let snippet_end = content.char_indices()
-            .nth(max_length)
+            .nth(adjusted_max_length)
             .map_or(content.len(), |(idx, _)| idx);
 
         // If we're cutting mid-word, find the last space
@@ -1205,7 +1210,7 @@ impl ChatService {
         };
 
         let truncated = &content[..safe_end];
-        format!("Chat: {}", truncated)
+        format!("{}{}", PREFIX, truncated)
     }
 
     /// Updates the chat file name based on recent message content.

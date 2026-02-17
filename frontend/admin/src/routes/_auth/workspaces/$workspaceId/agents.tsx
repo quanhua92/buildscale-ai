@@ -3,6 +3,7 @@ import { AgentSessionsProvider, useAgentSessions, AgentStatusIndicator, Button }
 import { Pause, Play, X, Search, Clock, Bot, ChevronDown, Filter, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 import type { SessionStatus } from '@buildscale/sdk'
+import { formatTimeAgo } from '@/utils/time'
 
 export const Route = createFileRoute('/_auth/workspaces/$workspaceId/agents')({
   component: AgentsRoute,
@@ -35,21 +36,6 @@ function AgentsContent() {
       session.chat_name?.toLowerCase().includes(searchQuery.toLowerCase())
     return matchesStatus && matchesSearch
   })
-
-  const formatTimeAgo = (timestamp: string) => {
-    const now = new Date()
-    const time = new Date(timestamp)
-    const diff = now.getTime() - time.getTime()
-
-    const seconds = Math.floor(diff / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-
-    if (seconds < 60) return 'just now'
-    if (minutes < 60) return `${minutes}m ago`
-    if (hours < 24) return `${hours}h ago`
-    return `${Math.floor(hours / 24)}d ago`
-  }
 
   const statusCounts: Record<SessionStatus | 'all', number> = {
     all: sessions.length,
