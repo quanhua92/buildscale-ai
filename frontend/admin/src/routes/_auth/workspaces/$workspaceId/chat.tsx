@@ -146,7 +146,6 @@ function ChatContent({ workspaceId }: { workspaceId: string }) {
       return 0
     })
 
-    console.log('[Chat] Built tabs:', result.length, result)
     return result
   }, [chatSessions, recentChats, chatStatusMap])
 

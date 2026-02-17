@@ -393,6 +393,16 @@ export function ChatProvider({
 
         if (type === 'ping') return
 
+        // IMPORTANT: Log to debug cross-contamination
+        console.log('[SSE] Event received', {
+          eventType: type,
+          targetChatId,
+          capturedChatId: chatId, // Value from closure when callback was created
+          currentChatIdState: chatId, // Current state value
+          match: targetChatId === chatId,
+          message: `SSE event ${type} for ${targetChatId}, callback has chatId=${chatId}`
+        })
+
         // Detect streaming events
         const isStreamingEvent = ['thought', 'chunk', 'call', 'observation'].includes(type)
 
@@ -406,6 +416,14 @@ export function ChatProvider({
         setMessages((prev) => {
           // Check if this event is for the currently active chat
           const isCurrentChat = targetChatId === chatId
+
+          console.log('[SSE] Processing in setMessages', {
+            eventType: type,
+            targetChatId,
+            chatId,
+            isCurrentChat,
+            willProcess: isCurrentChat
+          })
 
           if (!isCurrentChat) {
             // Event is for background chat - update cache
@@ -1040,7 +1058,6 @@ export function ChatProvider({
       const result = await apiClientRef.current.get<ChatFile[]>(
         `/workspaces/${workspaceId}/chats`
       )
-      console.log('[Chat] Recent chats loaded:', result)
       if (result) {
         setRecentChats(result)
       }
