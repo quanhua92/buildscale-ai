@@ -61,6 +61,7 @@ interface MultiChatSSEManagerValue {
   getConnectionState: (chatId: string) => SSEConnectionState | undefined
   getAllConnectionStates: () => SSEConnectionState[]
   getConnectedChatIds: () => string[]
+  setApiClient: (client: any) => void
 }
 
 const MultiChatSSEManagerContext = React.createContext<MultiChatSSEManagerValue | null>(null)
@@ -387,6 +388,11 @@ export function MultiChatSSEManagerProvider({
     return Array.from(connectionsRef.current.keys())
   }, [])
 
+  const setApiClient = React.useCallback((client: any) => {
+    apiClientRef.current = client
+    console.log('[MultiChatSSEManager] API client set')
+  }, [])
+
   const value = React.useMemo(
     () => ({
       connectChat,
@@ -395,8 +401,9 @@ export function MultiChatSSEManagerProvider({
       getConnectionState,
       getAllConnectionStates,
       getConnectedChatIds,
+      setApiClient,
     }),
-    [connectChat, disconnectChat, disconnectAll, getConnectionState, getAllConnectionStates, getConnectedChatIds]
+    [connectChat, disconnectChat, disconnectAll, getConnectionState, getAllConnectionStates, getConnectedChatIds, setApiClient]
   )
 
   return <MultiChatSSEManagerContext.Provider value={value}>{children}</MultiChatSSEManagerContext.Provider>

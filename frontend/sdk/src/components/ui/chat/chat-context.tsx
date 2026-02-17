@@ -197,7 +197,8 @@ export function ChatProvider({
   const apiClientRef = React.useRef(apiClient)
   React.useEffect(() => {
     apiClientRef.current = apiClient
-  }, [apiClient])
+    sseManager.setApiClient(apiClient)
+  }, [apiClient, sseManager])
 
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([])
   const [isStreaming, setIsStreaming] = React.useState(false)

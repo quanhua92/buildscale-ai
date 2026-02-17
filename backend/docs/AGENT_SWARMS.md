@@ -20,9 +20,9 @@ Agent sessions are persisted in the `agent_sessions` table, providing:
 ### Session Lifecycle
 
 ```
-┌─────────┐     ┌──────────┐     ┌────────┐     ┌───────────┐     ┌───────────┐
-│  Create │ ──> │   Idle   │ ──> │ Running│ ──> │ Completed │     │   Error   │
-└─────────┘     └──────────┘     └────────┘     └───────────┘     └───────────┘
+┌─────────┐     ┌──────────┐     ┌────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐
+│  Create │ ──> │   Idle   │ ──> │ Running│ ──> │ Completed │     │  Cancelled │     │   Error   │
+└─────────┘     └──────────┘     └────────┘     └───────────┘     └───────────┘     └───────────┘
                      │                │
                      ▼                ▼
                   ┌────────┐     ┌────────┐
@@ -38,6 +38,7 @@ Agent sessions are persisted in the `agent_sessions` table, providing:
 | `running` | Agent is actively processing | Idle, Paused |
 | `paused` | Agent is temporarily paused | Running, Idle |
 | `completed` | Agent finished successfully | Running, Paused |
+| `cancelled` | Agent was cancelled by user | Running, Idle, Paused |
 | `error` | Agent encountered an error | Running |
 
 ### Heartbeat Mechanism
@@ -81,9 +82,9 @@ See [REST API Guide](./REST_API_GUIDE.md#agent-sessions-api) for detailed API do
 The `ChatActor` automatically manages session lifecycle:
 
 1. **Session Creation**: When a chat actor starts, it creates a session record
-2. **Status Updates**: Status changes are persisted (idle → running → completed)
+2. **Status Updates**: Status changes are persisted (idle → running → completed/cancelled)
 3. **Heartbeat**: Automatic heartbeat every 30 seconds while running
-4. **Cleanup**: Session marked as completed on actor shutdown
+4. **Shutdown**: Session persists in last state (idle/running/cancelled)
 
 ```rust
 // Session creation in ChatActor
@@ -103,8 +104,8 @@ update_session_status(&mut conn, session_id, SessionStatus::Running, user_id).aw
 // Heartbeat while running
 start_heartbeat_task(session_id, pool.clone());
 
-// Cleanup on shutdown
-mark_session_completed(&mut conn, session_id).await?;
+// Shutdown - session persists in last state (no longer marks as completed)
+// Stale sessions will be handled by cleanup worker if not re-activated
 ```
 
 ## Future: Distributed Agent Swarms
@@ -218,7 +219,7 @@ const interval = setInterval(async () => {
   const session = await apiClient.getAgentSession(sessionId);
   console.log(`Status: ${session.status}, Task: ${session.current_task}`);
 
-  if (session.status === 'completed' || session.status === 'error') {
+  if (session.status === 'completed' || session.status === 'error' || session.status === 'cancelled') {
     clearInterval(interval);
   }
 }, 5000);
@@ -258,7 +259,7 @@ eventSource.addEventListener('agent_task', (event) => {
 ## Best Practices
 
 ### 1. Session Cleanup
-- Always cancel sessions when no longer needed
+- Cancel sessions when no longer needed (sets status to Cancelled, preserves history)
 - Don't rely solely on automatic cleanup
 - Implement proper shutdown in your applications
 
