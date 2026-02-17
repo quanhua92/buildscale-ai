@@ -251,7 +251,14 @@ export function ChatProvider({
   const connectionIdRef = React.useRef<number>(0)
   const streamingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasReceivedStreamingEventRef = React.useRef<boolean>(false)
-  
+
+  // CRITICAL: Track current chatId with a ref to avoid stale closure issues in SSE callbacks
+  // Refs always have the current value, unlike closure-captured state variables
+  const currentChatIdRef = React.useRef<string | null>(chatId ?? null)
+  React.useEffect(() => {
+    currentChatIdRef.current = chatId ?? null
+  }, [chatId])
+
   const onChatCreatedRef = React.useRef(onChatCreated)
   React.useEffect(() => {
     onChatCreatedRef.current = onChatCreated
@@ -397,10 +404,10 @@ export function ChatProvider({
         console.log('[SSE] Event received', {
           eventType: type,
           targetChatId,
-          capturedChatId: chatId, // Value from closure when callback was created
-          currentChatIdState: chatId, // Current state value
-          match: targetChatId === chatId,
-          message: `SSE event ${type} for ${targetChatId}, callback has chatId=${chatId}`
+          capturedChatId: chatId, // Closure value (stale)
+          currentChatIdRef: currentChatIdRef.current, // Actual current
+          match: targetChatId === currentChatIdRef.current,
+          message: `SSE event ${type} for ${targetChatId}, ref has ${currentChatIdRef.current}`
         })
 
         // Detect streaming events
@@ -414,13 +421,13 @@ export function ChatProvider({
         }
 
         setMessages((prev) => {
-          // Check if this event is for the currently active chat
-          const isCurrentChat = targetChatId === chatId
+          // CRITICAL: Use ref to get the ACTUAL current chat, not stale closure value
+          const isCurrentChat = targetChatId === currentChatIdRef.current
 
           console.log('[SSE] Processing in setMessages', {
             eventType: type,
             targetChatId,
-            chatId,
+            chatIdRef: currentChatIdRef.current, // Always current
             isCurrentChat,
             willProcess: isCurrentChat
           })
