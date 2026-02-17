@@ -225,18 +225,21 @@ Cancel/stop a running or paused agent session.
 
 **Authentication**: Required (JWT access token + Session Owner)
 
+**Description**: Updates the session status to "cancelled". The session record is preserved for historical tracking.
+
 #### Response
 ```json
 {
   "session": {
     "id": "uuid-v7",
-    "status": "completed",
-    "completed_at": "2026-02-15T10:36:00Z",
+    "status": "cancelled",
     ...
   },
   "message": "Session cancelled successfully"
 }
 ```
+
+**Note**: The session status is updated to "cancelled" instead of deleting the record. This preserves historical data about cancelled sessions.
 
 ---
 

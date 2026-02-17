@@ -186,8 +186,6 @@ impl ChatActor {
     }
 
     async fn run(mut self) {
-        // Track if actor was cancelled by user (moved to stack for mutability)
-        let mut cancelled_by_user = false;
         tracing::info!("[ChatActor] Started for chat {}", self.chat_id);
 
         // Create agent session in database
@@ -346,10 +344,6 @@ impl ChatActor {
                                     token.cancel();
                                 }
 
-                                // Mark as cancelled by user so cleanup skips mark_session_completed
-                                // The handler/service owns the DB state for cancelled sessions
-                                cancelled_by_user = true;
-
                                 // Send acknowledgment
                                 if let Some(responder) = responder.lock().await.take() {
                                     let _ = responder.send(Ok(true));
@@ -379,19 +373,17 @@ impl ChatActor {
             handle.abort();
         }
 
-        // Only mark session as completed if NOT cancelled by user
-        // When user cancels, the handler/service owns the final DB state (deletion)
-        if !cancelled_by_user {
-            if let Some(session_id) = session_id {
-                let _ = self.mark_session_completed(session_id).await;
-            }
-        } else {
-            tracing::debug!(
-                chat_id = %self.chat_id,
-                session_id = ?session_id,
-                "[ChatActor] Skipping mark_session_completed for user-cancelled session"
-            );
-        }
+        // Note: We intentionally do NOT mark the session as completed here.
+        // The session record should persist in its last known state (e.g., idle, running).
+        // - User-cancelled sessions: handler/service owns final DB state
+        // - Inactivity timeout: session is NOT "completed", just inactive
+        // - Normal shutdown: session stays in its last active state
+        // Stale sessions will be handled by the cleanup worker if not re-activated.
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            session_id = ?session_id,
+            "[ChatActor] Shutdown: session record persists in last state"
+        );
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
@@ -1600,33 +1592,6 @@ impl ChatActor {
             session_id = %session_id,
             new_status = %status,
             "[ChatActor] Successfully updated session status"
-        );
-
-        Ok(())
-    }
-
-    /// Marks the session as completed in the database.
-    async fn mark_session_completed(&self, session_id: Uuid) -> Result<(), crate::error::Error> {
-        tracing::info!(
-            chat_id = %self.chat_id,
-            session_id = %session_id,
-            "[ChatActor] Marking session as completed (actor shutdown)"
-        );
-
-        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-
-        let _ = agent_sessions::update_session_status(
-            &mut conn,
-            session_id,
-            crate::models::agent_session::SessionStatus::Completed,
-            self.user_id,
-        )
-        .await;
-
-        tracing::info!(
-            chat_id = %self.chat_id,
-            session_id = %session_id,
-            "[ChatActor] Successfully marked session as completed"
         );
 
         Ok(())

@@ -37,6 +37,8 @@ pub enum SessionStatus {
     Completed,
     /// Agent session encountered an error
     Error,
+    /// Agent session was cancelled by user
+    Cancelled,
 }
 
 /// Agent session entity - represents an active AI agent session

@@ -390,7 +390,7 @@ pub async fn pause_session(
                 message: "Session paused successfully".to_string(),
             });
         }
-        SessionStatus::Completed | SessionStatus::Error => {
+        SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled => {
             tracing::warn!(
                 session_id = %session_id,
                 status = %session.status,
@@ -532,7 +532,7 @@ pub async fn cancel_session(
 
     // Check if session can be cancelled
     match session.status {
-        SessionStatus::Completed | SessionStatus::Error => {
+        SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled => {
             tracing::warn!(
                 session_id = %session_id,
                 status = %session.status,
@@ -552,25 +552,25 @@ pub async fn cancel_session(
         }
     }
 
-    // Delete the session instead of marking as completed
-    // This allows a new session to be created when the user chats again
-    // Chat history is preserved in the chat_messages table
+    // Update session status to cancelled (instead of deleting)
+    // This preserves historical data about cancelled sessions
     tracing::debug!(
         session_id = %session_id,
         chat_id = %session.chat_id,
-        "[AgentSessions] Service: Deleting session on cancel"
+        "[AgentSessions] Service: Updating session status to cancelled"
     );
 
-    agent_sessions::delete_session_by_chat(conn, session.chat_id).await?;
+    let updated_session =
+        agent_sessions::update_session_status(conn, session_id, SessionStatus::Cancelled).await?;
 
     tracing::info!(
         session_id = %session_id,
         chat_id = %session.chat_id,
-        "[AgentSessions] Service: Successfully cancelled and deleted session"
+        "[AgentSessions] Service: Successfully cancelled session"
     );
 
     Ok(SessionActionResponse {
-        session: session.into(), // Return last known state
+        session: updated_session.into(),
         message: "Session cancelled successfully".to_string(),
     })
 }
