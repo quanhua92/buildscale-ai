@@ -237,6 +237,26 @@ export function ChatProvider({
   // Recent chats list
   const [recentChats, setRecentChats] = React.useState<ChatFile[]>([])
 
+  // Add new chat optimistically to recentChats for instant tab appearance
+  const addRecentChatOptimistic = React.useCallback((newChatId: string) => {
+    setRecentChats((prev) => {
+      // Avoid duplicates
+      if (prev.some(c => c.chat_id === newChatId)) {
+        return prev
+      }
+      // Add new chat at the beginning with minimal data
+      const newChat: ChatFile = {
+        id: newChatId,
+        chat_id: newChatId,
+        name: 'New Chat', // Will be updated by server refresh
+        path: newChatId, // Will be updated by server refresh
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      }
+      return [newChat, ...prev]
+    })
+  }, [])
+
   // Track if initial chat has been loaded
   const initialChatLoadedRef = React.useRef(false)
 
@@ -571,6 +591,8 @@ export function ChatProvider({
               if (data.chat_id && data.chat_id !== targetChatId) {
                 setChatId(data.chat_id)
                 onChatCreatedRef.current?.(data.chat_id)
+                // Immediately add to recent chats for instant tab appearance
+                addRecentChatOptimistic(data.chat_id)
               }
               return prev
             case 'thought':
@@ -671,7 +693,7 @@ export function ChatProvider({
         })
       })
     },
-    [workspaceId, chatId, sseManager, setChatId, setMessages, setPendingQuestionSession, setModeState, setPlanFileState, setChatSessions, chatSessions]
+    [workspaceId, chatId, sseManager, setChatId, setMessages, setPendingQuestionSession, setModeState, setPlanFileState, setChatSessions, chatSessions, addRecentChatOptimistic]
   )
 
   React.useEffect(() => {
@@ -907,6 +929,8 @@ export function ChatProvider({
             if (!response?.chat_id) throw new Error('Invalid server response')
             setChatId(response.chat_id)
             onChatCreatedRef.current?.(response.chat_id)
+            // Immediately add to recent chats for instant tab appearance
+            addRecentChatOptimistic(response.chat_id)
 
             // Update message status to completed
             setMessages((prev) => {
@@ -983,7 +1007,7 @@ export function ChatProvider({
       // Should not reach here, but TypeScript needs it
       throw lastError || new Error('Failed to send message')
     },
-    [workspaceId, chatId, connectToSse, model]
+    [workspaceId, chatId, connectToSse, model, addRecentChatOptimistic]
   )
 
   const clearMessages = React.useCallback(() => {
@@ -1089,6 +1113,8 @@ export function ChatProvider({
           // Update chatId state so we don't create again
           setChatId(targetChatId)
           onChatCreatedRef.current?.(targetChatId)
+          // Immediately add to recent chats for instant tab appearance
+          addRecentChatOptimistic(targetChatId)
         }
 
         // Now update the mode
@@ -1116,7 +1142,7 @@ export function ChatProvider({
         console.error('[Chat] Set mode error', error)
       }
     },
-    [workspaceId, chatId, model, setChatId, onChatCreatedRef]
+    [workspaceId, chatId, model, setChatId, onChatCreatedRef, addRecentChatOptimistic]
   )
 
   // ============================================================================
