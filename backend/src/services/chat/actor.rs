@@ -300,6 +300,7 @@ impl ChatActor {
                                         tracing::warn!(
                                             chat_id = %self.chat_id,
                                             session_id = %session_id,
+                                            error = %e,
                                             "[ChatActor] ProcessInteraction: Setting status to error (interaction failed)"
                                         );
                                         (crate::models::agent_session::SessionStatus::Error, Some(format!("AI Engine Error: {}", e)))
@@ -311,7 +312,33 @@ impl ChatActor {
                                         );
                                         (crate::models::agent_session::SessionStatus::Idle, None)
                                     };
-                                    let _ = self.update_session_status(session_id, status, error_msg).await;
+
+                                    // Log the error message we're about to save
+                                    tracing::info!(
+                                        chat_id = %self.chat_id,
+                                        session_id = %session_id,
+                                        status = %status,
+                                        error_message = ?error_msg,
+                                        "[ChatActor] Updating session status after interaction"
+                                    );
+
+                                    match self.update_session_status(session_id, status, error_msg.clone()).await {
+                                        Ok(_) => {
+                                            tracing::info!(
+                                                chat_id = %self.chat_id,
+                                                session_id = %session_id,
+                                                "[ChatActor] Session status updated successfully"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                chat_id = %self.chat_id,
+                                                session_id = %session_id,
+                                                error = %e,
+                                                "[ChatActor] FAILED to update session status"
+                                            );
+                                        }
+                                    }
 
                                     // Clear current task when interaction completes
                                     if let Ok(mut conn) = self.pool.acquire().await {
@@ -1821,23 +1848,23 @@ impl ChatActor {
         status: crate::models::agent_session::SessionStatus,
         error_message: Option<String>,
     ) -> Result<(), crate::error::Error> {
-        tracing::debug!(
+        tracing::info!(
             chat_id = %self.chat_id,
             session_id = %session_id,
             new_status = %status,
             error_message = ?error_message,
-            "[ChatActor] Updating session status"
+            "[ChatActor] update_session_status: Starting update"
         );
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
         let _ = queries::agent_sessions::update_session_status(&mut conn, session_id, status, error_message).await?;
 
-        tracing::debug!(
+        tracing::info!(
             chat_id = %self.chat_id,
             session_id = %session_id,
             new_status = %status,
-            "[ChatActor] Successfully updated session status"
+            "[ChatActor] update_session_status: Successfully updated"
         );
 
         Ok(())

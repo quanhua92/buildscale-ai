@@ -321,11 +321,11 @@ pub async fn update_session_status(
     status: SessionStatus,
     error_message: Option<String>,
 ) -> Result<AgentSession> {
-    tracing::debug!(
+    tracing::info!(
         session_id = %session_id,
         new_status = %status,
         error_message = ?error_message,
-        "[AgentSessions] Updating session status"
+        "[AgentSessions] Query: Updating session status"
     );
 
     let completed_at = match status {
@@ -334,7 +334,7 @@ pub async fn update_session_status(
     };
 
     // First update the session
-    sqlx::query(
+    let update_result = sqlx::query(
         r#"
         UPDATE agent_sessions
         SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4
@@ -344,7 +344,7 @@ pub async fn update_session_status(
     .bind(session_id)
     .bind(status as SessionStatus)
     .bind(completed_at)
-    .bind(error_message)
+    .bind(error_message.clone())
     .execute(&mut *conn)
     .await
     .map_err(|e| {
@@ -363,6 +363,12 @@ pub async fn update_session_status(
             Error::Sqlx(e)
         }
     })?;
+
+    tracing::info!(
+        session_id = %session_id,
+        rows_affected = update_result.rows_affected(),
+        "[AgentSessions] Query: Update executed"
+    );
 
     // Then fetch with chat name
     let session = sqlx::query_as!(
@@ -404,10 +410,10 @@ pub async fn update_session_status(
         session_id = %session.id,
         chat_id = %session.chat_id,
         workspace_id = %session.workspace_id,
-        old_status = ?session_id, // We don't have the old status here, but the log shows the update happened
         new_status = %session.status,
+        error_message = ?session.error_message,
         completed_at = ?session.completed_at,
-        "[AgentSessions] Updated session status"
+        "[AgentSessions] Updated session status successfully"
     );
 
     Ok(session)
