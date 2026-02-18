@@ -76,6 +76,9 @@ struct InteractionState {
     current_model: Option<String>,
     /// Current task description for session tracking
     current_task: Option<String>,
+    /// Flag to track if the actor is actively processing an interaction
+    /// Used to prevent inactivity timeout during long-running tasks
+    is_actively_processing: bool,
 }
 
 impl ChatActorState {
@@ -103,6 +106,7 @@ impl Default for ChatActorState {
                 current_cancellation_token: None,
                 current_model: None,
                 current_task: None,
+                is_actively_processing: false,
             },
             current_reasoning_id: None,
             reasoning_buffer: Vec::new(),
@@ -239,12 +243,24 @@ impl ChatActor {
                     let _ = self.event_tx.send(SseEvent::Ping);
                 }
                 _ = &mut inactivity_timeout => {
-                    tracing::info!(
+                    // Only timeout if NOT actively processing
+                    let is_actively_processing = self.state.lock().await.interaction.is_actively_processing;
+
+                    if !is_actively_processing {
+                        tracing::info!(
+                            chat_id = %self.chat_id,
+                            reason = "inactivity_timeout",
+                            "[ChatActor] SHUTTING DOWN - No commands received while idle"
+                        );
+                        break;
+                    }
+
+                    // Reset timeout if actively processing - the actor is busy
+                    tracing::debug!(
                         chat_id = %self.chat_id,
-                        reason = "inactivity_timeout",
-                        "[ChatActor] SHUTTING DOWN - No commands received within timeout period"
+                        "[ChatActor] Inactivity timeout fired but actor is actively processing, resetting timeout"
                     );
-                    break;
+                    inactivity_timeout.as_mut().reset(tokio::time::Instant::now() + inactivity_timeout_duration);
                 }
                 command = self.command_rx.recv() => {
                     if let Some(cmd) = command {
@@ -253,6 +269,12 @@ impl ChatActor {
 
                         match cmd {
                             AgentCommand::ProcessInteraction { user_id } => {
+                                // Mark as actively processing to prevent inactivity timeout
+                                {
+                                    let mut state = self.state.lock().await;
+                                    state.interaction.is_actively_processing = true;
+                                }
+
                                 // Update session status to running
                                 if let Some(session_id) = self.session_id {
                                     tracing::debug!(
@@ -320,6 +342,12 @@ impl ChatActor {
                                             "[SSE] SENT error event successfully"
                                         );
                                     }
+                                }
+
+                                // Mark as done processing - actor is now idle
+                                {
+                                    let mut state = self.state.lock().await;
+                                    state.interaction.is_actively_processing = false;
                                 }
 
                                 // Reset inactivity timeout AGAIN after work completes
@@ -753,6 +781,9 @@ impl ChatActor {
 
         // 6. Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
+
+        // 7. Clear processing flag - actor is no longer actively processing
+        self.state.lock().await.interaction.is_actively_processing = false;
 
         Ok(())
     }
