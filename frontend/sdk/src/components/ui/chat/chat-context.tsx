@@ -932,6 +932,21 @@ export function ChatProvider({
             // Immediately add to recent chats for instant tab appearance
             addRecentChatOptimistic(response.chat_id)
 
+            // Set the mode on the newly created chat
+            try {
+              await apiClientRef.current.patch(
+                `/workspaces/${workspaceId}/chats/${response.chat_id}`,
+                {
+                  app_data: {
+                    mode: mode,
+                    plan_file: null
+                  }
+                }
+              )
+            } catch (modeError) {
+              console.error('[Chat] Failed to set mode on new chat:', modeError)
+            }
+
             // Update message status to completed
             setMessages((prev) => {
               const newMessages = [...prev]
@@ -1093,45 +1108,23 @@ export function ChatProvider({
   const setMode = React.useCallback(
     async (newMode: ChatMode, newPlanFile?: string) => {
       try {
-        let targetChatId = chatId
-
-        // If no chat exists, create one first with a default message
-        if (!targetChatId) {
-          const response = await apiClientRef.current.post<CreateChatResponse>(
-            `/workspaces/${workspaceId}/chats`,
-            {
-              goal: `Starting in ${newMode} mode`,
-              model: model.id
-            } as CreateChatRequest
-          )
-
-          if (!response?.chat_id) {
-            throw new Error('Failed to create chat')
-          }
-
-          targetChatId = response.chat_id
-          // Update chatId state so we don't create again
-          setChatId(targetChatId)
-          onChatCreatedRef.current?.(targetChatId)
-          // Immediately add to recent chats for instant tab appearance
-          addRecentChatOptimistic(targetChatId)
-        }
-
-        // Now update the mode
-        await apiClientRef.current.patch(
-          `/workspaces/${workspaceId}/chats/${targetChatId}`,
-          {
-            app_data: {
-              mode: newMode,
-              plan_file: newPlanFile || null
-            }
-          }
-        )
-
-        // Only update state on successful API call
+        // Update local state immediately
         setModeState(newMode)
         if (newPlanFile !== undefined) {
           setPlanFileState(newPlanFile)
+        }
+
+        // Only update on server if chat exists
+        if (chatId) {
+          await apiClientRef.current.patch(
+            `/workspaces/${workspaceId}/chats/${chatId}`,
+            {
+              app_data: {
+                mode: newMode,
+                plan_file: newPlanFile || null
+              }
+            }
+          )
         }
 
         const modeLabel = newMode === 'plan' ? 'Plan' : 'Build'
@@ -1142,7 +1135,7 @@ export function ChatProvider({
         console.error('[Chat] Set mode error', error)
       }
     },
-    [workspaceId, chatId, model, setChatId, onChatCreatedRef, addRecentChatOptimistic]
+    [workspaceId, chatId]
   )
 
   // ============================================================================
@@ -1204,9 +1197,6 @@ export function ChatProvider({
         // Load from cache - instant switch
         console.log('[Chat] Loading chat from cache:', targetChatId)
 
-        // Clear connected chat ID ref since we're switching
-        connectedChatIdRef.current = null
-
         setActiveChatId(targetChatId)
         setChatId(targetChatId)
         setMessages(cachedSession.messages)
@@ -1217,15 +1207,12 @@ export function ChatProvider({
         setPlanFileState(cachedSession.planFile)
         setPendingQuestionSession(cachedSession.pendingQuestionSession)
 
-        // Connect to SSE for this chat
+        // Connect to SSE for this chat (will skip if already connected)
         console.log('[Chat] Connecting to SSE for cached chat:', targetChatId)
         connectToSse(targetChatId)
       } else {
         // Not cached - load from API
         console.log('[Chat] Loading chat from API:', targetChatId)
-
-        // Clear connected chat ID ref since we're switching
-        connectedChatIdRef.current = null
 
         setActiveChatId(targetChatId)
         setChatId(targetChatId)
