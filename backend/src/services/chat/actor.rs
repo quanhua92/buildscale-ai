@@ -21,6 +21,8 @@ use uuid::Uuid;
 const MAX_AI_RETRIES: u32 = 3;
 /// Initial backoff duration in milliseconds for retries
 const RETRY_BACKOFF_MS: u64 = 1000;
+/// Stream read timeout in seconds - if no data received from API within this time, consider it stalled
+const STREAM_READ_TIMEOUT_SECS: u64 = 120;
 
 /// Consolidated state for ChatActor to reduce lock contention
 /// All state that was previously in separate Arc<Mutex<>> fields is now grouped logically
@@ -1522,19 +1524,36 @@ impl ChatActor {
             }
 
             // Use tokio::select! to allow cancellation during stream.next()
+            // Also add a timeout to detect stalled API streams
+            let stream_timeout = tokio::time::Duration::from_secs(STREAM_READ_TIMEOUT_SECS);
             let item = tokio::select! {
                 _ = cancellation_token.cancelled() => {
                     tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
                     self.handle_cancellation(conn, full_response.clone(), "user_cancelled").await?;
                     return Err(crate::error::Error::Internal("Chat cancelled by user".to_string()));
                 },
-                item = stream.next() => {
-                    match &item {
-                        Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = *item_count, "Received stream item"),
-                        Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
-                        None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                item_result = tokio::time::timeout(stream_timeout, stream.next()) => {
+                    match item_result {
+                        Ok(item) => {
+                            match &item {
+                                Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = *item_count, "Received stream item"),
+                                Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
+                                None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                            }
+                            item
+                        }
+                        Err(_) => {
+                            // Timeout - API stream stalled
+                            tracing::warn!(
+                                chat_id = %self.chat_id,
+                                timeout_secs = STREAM_READ_TIMEOUT_SECS,
+                                "[ChatActor] Stream read timeout - API stalled"
+                            );
+                            return Err(crate::error::Error::Internal(
+                                format!("Stream read timeout after {} seconds - API stalled", STREAM_READ_TIMEOUT_SECS)
+                            ));
+                        }
                     }
-                    item
                 }
             };
 
