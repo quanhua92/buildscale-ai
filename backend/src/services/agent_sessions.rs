@@ -214,11 +214,13 @@ pub async fn update_session_status(
     conn: &mut DbConn,
     session_id: Uuid,
     status: SessionStatus,
+    error_message: Option<String>,
     user_id: Uuid,
 ) -> Result<AgentSession> {
     tracing::info!(
         session_id = %session_id,
         new_status = %status,
+        error_message = ?error_message,
         user_id = %user_id,
         "[AgentSessions] Service: Updating session status"
     );
@@ -236,7 +238,7 @@ pub async fn update_session_status(
     // Validate status transition
     validate_status_transition(session.status, status)?;
 
-    agent_sessions::update_session_status(conn, session_id, status).await
+    agent_sessions::update_session_status(conn, session_id, status, error_message).await
 }
 
 /// Updates the current task of a session.
@@ -412,7 +414,7 @@ pub async fn pause_session(
     );
 
     let updated_session =
-        agent_sessions::update_session_status(conn, session_id, SessionStatus::Paused).await?;
+        agent_sessions::update_session_status(conn, session_id, SessionStatus::Paused, None).await?;
 
     tracing::info!(
         session_id = %session_id,
@@ -476,7 +478,7 @@ pub async fn resume_session(
     );
 
     let updated_session =
-        agent_sessions::update_session_status(conn, session_id, SessionStatus::Idle).await?;
+        agent_sessions::update_session_status(conn, session_id, SessionStatus::Idle, None).await?;
 
     // If task provided, update it
     let updated_session = if let Some(task) = task {
@@ -561,7 +563,7 @@ pub async fn cancel_session(
     );
 
     let updated_session =
-        agent_sessions::update_session_status(conn, session_id, SessionStatus::Cancelled).await?;
+        agent_sessions::update_session_status(conn, session_id, SessionStatus::Cancelled, None).await?;
 
     tracing::info!(
         session_id = %session_id,

@@ -289,29 +289,29 @@ impl ChatActor {
                                         session_id = %session_id,
                                         "[ChatActor] ProcessInteraction: Setting status to running"
                                     );
-                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Running).await;
+                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Running, None).await;
                                 }
 
                                 let result = self.process_interaction(user_id).await;
 
                                 // Update session status based on result
                                 if let Some(session_id) = self.session_id {
-                                    let status = if result.is_err() {
+                                    let (status, error_msg) = if let Err(ref e) = result {
                                         tracing::warn!(
                                             chat_id = %self.chat_id,
                                             session_id = %session_id,
                                             "[ChatActor] ProcessInteraction: Setting status to error (interaction failed)"
                                         );
-                                        crate::models::agent_session::SessionStatus::Error
+                                        (crate::models::agent_session::SessionStatus::Error, Some(format!("AI Engine Error: {}", e)))
                                     } else {
                                         tracing::debug!(
                                             chat_id = %self.chat_id,
                                             session_id = %session_id,
                                             "[ChatActor] ProcessInteraction: Setting status to idle (interaction complete)"
                                         );
-                                        crate::models::agent_session::SessionStatus::Idle
+                                        (crate::models::agent_session::SessionStatus::Idle, None)
                                     };
-                                    let _ = self.update_session_status(session_id, status).await;
+                                    let _ = self.update_session_status(session_id, status, error_msg).await;
 
                                     // Clear current task when interaction completes
                                     if let Ok(mut conn) = self.pool.acquire().await {
@@ -388,7 +388,7 @@ impl ChatActor {
                                         session_id = %session_id,
                                         "[ChatActor] Pause: Setting status to paused"
                                     );
-                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Paused).await;
+                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Paused, None).await;
                                 }
 
                                 // Send acknowledgment
@@ -1819,17 +1819,19 @@ impl ChatActor {
         &self,
         session_id: Uuid,
         status: crate::models::agent_session::SessionStatus,
+        error_message: Option<String>,
     ) -> Result<(), crate::error::Error> {
         tracing::debug!(
             chat_id = %self.chat_id,
             session_id = %session_id,
             new_status = %status,
+            error_message = ?error_message,
             "[ChatActor] Updating session status"
         );
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-        let _ = agent_sessions::update_session_status(&mut conn, session_id, status, self.user_id).await?;
+        let _ = queries::agent_sessions::update_session_status(&mut conn, session_id, status, error_message).await?;
 
         tracing::debug!(
             chat_id = %self.chat_id,

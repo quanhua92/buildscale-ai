@@ -53,6 +53,7 @@ pub struct AgentSession {
     pub model: String,
     pub mode: String,
     pub current_task: Option<String>,
+    pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_heartbeat: DateTime<Utc>,
@@ -76,6 +77,7 @@ pub struct NewAgentSession {
 pub struct UpdateAgentSession {
     pub status: Option<SessionStatus>,
     pub current_task: Option<Option<String>>,
+    pub error_message: Option<Option<String>>,
     pub completed_at: Option<Option<DateTime<Utc>>>,
 }
 
@@ -97,6 +99,7 @@ pub struct AgentSessionInfo {
     pub model: String,
     pub mode: String,
     pub current_task: Option<String>,
+    pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_heartbeat: DateTime<Utc>,
@@ -116,6 +119,7 @@ impl From<AgentSession> for AgentSessionInfo {
             model: session.model,
             mode: session.mode,
             current_task: session.current_task,
+            error_message: session.error_message,
             created_at: session.created_at,
             updated_at: session.updated_at,
             last_heartbeat: session.last_heartbeat,

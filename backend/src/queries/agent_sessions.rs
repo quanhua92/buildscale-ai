@@ -80,6 +80,7 @@ pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> 
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -126,6 +127,7 @@ pub async fn get_session_by_id(conn: &mut DbConn, id: Uuid) -> Result<Option<Age
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -169,6 +171,7 @@ pub async fn get_session_by_chat(conn: &mut DbConn, chat_id: Uuid) -> Result<Opt
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -210,6 +213,7 @@ pub async fn get_active_sessions_by_workspace(
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -251,6 +255,7 @@ pub async fn get_sessions_by_user(conn: &mut DbConn, user_id: Uuid) -> Result<Ve
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -288,6 +293,7 @@ pub async fn get_active_sessions_by_user(
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -313,14 +319,16 @@ pub async fn update_session_status(
     conn: &mut DbConn,
     session_id: Uuid,
     status: SessionStatus,
+    error_message: Option<String>,
 ) -> Result<AgentSession> {
     tracing::debug!(
         session_id = %session_id,
         new_status = %status,
+        error_message = ?error_message,
         "[AgentSessions] Updating session status"
     );
 
-    let updated_at = match status {
+    let completed_at = match status {
         SessionStatus::Completed | SessionStatus::Error => Some(Utc::now()),
         _ => None,
     };
@@ -329,13 +337,14 @@ pub async fn update_session_status(
     sqlx::query(
         r#"
         UPDATE agent_sessions
-        SET status = $2, updated_at = NOW(), completed_at = $3
+        SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4
         WHERE id = $1
         "#,
     )
     .bind(session_id)
     .bind(status as SessionStatus)
-    .bind(updated_at)
+    .bind(completed_at)
+    .bind(error_message)
     .execute(&mut *conn)
     .await
     .map_err(|e| {
@@ -369,6 +378,7 @@ pub async fn update_session_status(
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -458,6 +468,7 @@ pub async fn update_session_task(
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -545,6 +556,7 @@ pub async fn update_session_metadata(
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,
@@ -714,6 +726,7 @@ pub async fn get_stale_sessions(conn: &mut DbConn) -> Result<Vec<AgentSession>> 
             s.model,
             s.mode,
             s.current_task,
+            s.error_message,
             s.created_at,
             s.updated_at,
             s.last_heartbeat,

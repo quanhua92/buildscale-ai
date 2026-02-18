@@ -323,6 +323,16 @@ export function MultiChatSSEManagerProvider({
                 status: 'error',
               })
             }
+
+            // Emit error event to subscriber so UI can display it
+            const callback = subscribersRef.current.get(chatId)
+            if (callback) {
+              const errorMessage = (error as Error).message || 'Connection error'
+              callback({
+                type: 'error',
+                data: { message: `SSE Connection Error: ${errorMessage}` },
+              })
+            }
           } finally {
             reader.releaseLock()
             connectionsRef.current.delete(chatId)
@@ -351,6 +361,13 @@ export function MultiChatSSEManagerProvider({
             status: 'error',
           })
         }
+
+        // Emit error event to subscriber so UI can display it
+        const errorMessage = (error as Error).message || 'Connection failed'
+        onEvent({
+          type: 'error',
+          data: { message: `SSE Connection Failed: ${errorMessage}` },
+        })
 
         throw error
       }
