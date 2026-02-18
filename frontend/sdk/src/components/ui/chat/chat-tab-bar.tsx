@@ -23,7 +23,7 @@
  * ```
  */
 
-import { X } from 'lucide-react'
+import { X, Plus } from 'lucide-react'
 import { cn } from '../../../utils'
 import { AgentStatusIndicator } from '../../AgentStatusIndicator'
 import type { SessionStatus } from '../../../api/types'
@@ -46,6 +46,7 @@ export interface ChatTabBarProps {
   activeTabId: string | null
   onTabClick: (chatId: string) => void
   onTabClose?: (chatId: string) => void
+  onNewChat?: () => void
   className?: string
 }
 
@@ -53,11 +54,7 @@ export interface ChatTabBarProps {
 // Component
 // ============================================================================
 
-export function ChatTabBar({ tabs, activeTabId, onTabClick, onTabClose, className }: ChatTabBarProps) {
-  if (tabs.length === 0) {
-    return null
-  }
-
+export function ChatTabBar({ tabs, activeTabId, onTabClick, onTabClose, onNewChat, className }: ChatTabBarProps) {
   return (
     <div
       className={cn(
@@ -65,6 +62,17 @@ export function ChatTabBar({ tabs, activeTabId, onTabClick, onTabClose, classNam
         className
       )}
     >
+      {/* New Chat Button */}
+      {onNewChat && (
+        <button
+          onClick={onNewChat}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 border-b-2 border-transparent whitespace-nowrap"
+        >
+          <Plus className="h-4 w-4" />
+          <span>New Chat</span>
+        </button>
+      )}
+
       {tabs.map((tab) => {
         const isActive = tab.chatId === activeTabId
 

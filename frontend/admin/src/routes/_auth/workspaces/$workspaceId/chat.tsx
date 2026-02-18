@@ -179,24 +179,18 @@ function ChatContent({ workspaceId }: { workspaceId: string }) {
         tabs={tabs}
         activeTabId={activeChatId}
         onTabClick={switchToChat}
+        onNewChat={handleNewChat}
       />
       <Chat containerClassName="max-w-4xl flex flex-col h-full">
         <Chat.Header
-          onNewChat={handleNewChat}
           model={model}
           onModelChange={setModel}
-        >
-          {/* Mode Toggle in header */}
-          <Chat.ModeToggle
-            currentMode={mode}
-            onModeChange={handleModeChange}
-            disabled={isChangingMode}
-          />
-          {/* Context Dialog */}
-          {activeChatId && (
-            <Chat.ContextDialog workspaceId={workspaceId} chatId={activeChatId} />
-          )}
-        </Chat.Header>
+          workspaceId={workspaceId}
+          chatId={activeChatId ?? undefined}
+          mode={mode}
+          onModeChange={handleModeChange}
+          isChangingMode={isChangingMode}
+        />
 
         {/* Question Bar (appears when AI asks a question) */}
         {currentQuestion && (
