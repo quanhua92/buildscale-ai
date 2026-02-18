@@ -17,6 +17,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+/// Maximum number of retries for transient AI engine errors
+const MAX_AI_RETRIES: u32 = 3;
+/// Initial backoff duration in milliseconds for retries
+const RETRY_BACKOFF_MS: u64 = 1000;
+
 /// Consolidated state for ChatActor to reduce lock contention
 /// All state that was previously in separate Arc<Mutex<>> fields is now grouped logically
 struct ChatActorState {
@@ -496,7 +501,12 @@ impl ChatActor {
 
         // Set current task for session tracking (truncate if too long)
         let task_preview = if last_message.content.len() > 100 {
-            format!("{}...", &last_message.content[..100])
+            // Find a valid char boundary at or before position 100
+            let mut end = 100;
+            while end > 0 && !last_message.content.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &last_message.content[..end])
         } else {
             last_message.content.clone()
         };
@@ -595,33 +605,87 @@ impl ChatActor {
 
         let mut item_count = 0usize;
 
-        // Process stream based on provider type
-        let full_response = match &agent {
-            Agent::OpenAI(openai_agent) => {
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Calling OpenAI agent.stream_chat"
-                );
-                let stream = openai_agent.stream_chat(&prompt, history).await;
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Stream created (OpenAI), entering response loop"
-                );
-                self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await?
+        // Process stream with retry logic for transient errors
+        let mut retry_count = 0u32;
+        let full_response = loop {
+            // Check for cancellation before attempting
+            if cancellation_token.is_cancelled() {
+                tracing::info!("[ChatActor] Cancelled before streaming for chat {}", self.chat_id);
+                return Err(crate::error::Error::Internal("Chat cancelled by user".to_string()));
             }
-            Agent::OpenRouter(openrouter_agent) => {
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Calling OpenRouter agent.stream_chat"
-                );
-                let stream = openrouter_agent.stream_chat(&prompt, history).await;
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Stream created (OpenRouter), entering response loop"
-                );
-                self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await?
+
+            let result = match &agent {
+                Agent::OpenAI(openai_agent) => {
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        retry = retry_count,
+                        "Calling OpenAI agent.stream_chat"
+                    );
+                    let stream = openai_agent.stream_chat(&prompt, history.clone()).await;
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        "Stream created (OpenAI), entering response loop"
+                    );
+                    self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await
+                }
+                Agent::OpenRouter(openrouter_agent) => {
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        retry = retry_count,
+                        "Calling OpenRouter agent.stream_chat"
+                    );
+                    let stream = openrouter_agent.stream_chat(&prompt, history.clone()).await;
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        "Stream created (OpenRouter), entering response loop"
+                    );
+                    self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await
+                }
+            };
+
+            match result {
+                Ok(response) => break response,
+                Err(e) => {
+                    // Check if error is retryable (transient errors)
+                    let error_str = format!("{:?}", e);
+                    let is_retryable = error_str.contains("Failed to get tool definitions")
+                        || error_str.contains("RequestError")
+                        || error_str.contains("rate limit")
+                        || error_str.contains("timeout")
+                        || error_str.contains("connection")
+                        || error_str.contains("5")
+                        || error_str.contains("overloaded");
+
+                    if is_retryable && retry_count < MAX_AI_RETRIES {
+                        retry_count += 1;
+                        let backoff_ms = RETRY_BACKOFF_MS * (1 << (retry_count - 1)); // Exponential backoff
+                        tracing::warn!(
+                            chat_id = %self.chat_id,
+                            retry = retry_count,
+                            max_retries = MAX_AI_RETRIES,
+                            backoff_ms = backoff_ms,
+                            error = ?e,
+                            "[ChatActor] Transient AI error, retrying with backoff"
+                        );
+
+                        // Clear agent cache to force fresh agent creation on retry
+                        self.state.lock().await.agent_state.cached_agent = None;
+
+                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                    } else {
+                        // Non-retryable error or max retries exceeded
+                        tracing::error!(
+                            chat_id = %self.chat_id,
+                            retry = retry_count,
+                            error = ?e,
+                            "[ChatActor] AI error (not retrying)"
+                        );
+                        return Err(e);
+                    }
+                }
             }
         };
+
         // Check if stream completed without any items (possible API access issue)
         if item_count == 0 {
             tracing::warn!(
@@ -1029,7 +1093,12 @@ impl ChatActor {
                         let args_preview = if let Ok(args_str) = serde_json::to_string_pretty(&summarized_args) {
                             // Truncate if too long for file content
                             if args_str.len() > 500 {
-                                format!("{}...\n[Arguments truncated, see metadata for full details]", &args_str[..500])
+                                // Find a valid char boundary at or before position 500
+                                let mut end = 500;
+                                while end > 0 && !args_str.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                format!("{}...\n[Arguments truncated, see metadata for full details]", &args_str[..end])
                             } else {
                                 args_str
                             }
