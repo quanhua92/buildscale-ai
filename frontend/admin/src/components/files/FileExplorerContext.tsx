@@ -154,8 +154,8 @@ export function FileExplorerProvider({
 
   const selectedEntries = React.useMemo(() => {
     return Object.keys(rowSelection)
-      .filter(id => rowSelection[id])
-      .map(id => files.find(f => f.id === id))
+      .filter(path => rowSelection[path])
+      .map(path => files.find(f => f.path === path))
       .filter((f): f is LsEntry => !!f)
   }, [rowSelection, files])
 
