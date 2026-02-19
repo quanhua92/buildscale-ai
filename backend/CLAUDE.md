@@ -868,6 +868,49 @@ match default_provider {
 }
 ```
 
+### UTF-8 Safe String Slicing
+
+**Never use byte indexing on strings - it will panic on multi-byte UTF-8 characters.**
+
+**Why:** Rust strings are UTF-8 encoded. Characters like Vietnamese (`chiến`), Chinese (`你好`), or emoji (`🎉`) use multiple bytes. Slicing at byte position 50 may land in the middle of a character, causing a runtime panic.
+
+**Bad - Panics on multi-byte UTF-8:**
+```rust
+// Will panic if byte 50 is mid-character
+let preview = &text[..text.len().min(50)];
+
+// Also dangerous
+let preview = &text[..50];
+```
+
+**Good - Character-aware slicing:**
+```rust
+// Use the safe_preview utility function
+use crate::utils::safe_preview;
+let preview = safe_preview(&text, 50); // Returns "first 50 chars..."
+
+// Or manually with chars()
+let preview: String = text.chars().take(50).collect();
+```
+
+**Available utilities in `src/utils/string.rs`:**
+- `safe_preview(text: &str, max_chars: usize) -> String` - Returns preview with "..." if truncated
+- `truncate_safe(text: &str, max_chars: usize) -> &str` - Returns truncated slice without owning
+
+**When logging text previews:**
+```rust
+// ALWAYS use safe_preview for logging user/AI generated content
+tracing::debug!(
+    text_preview = %safe_preview(&text, 50),
+    "Received text chunk"
+);
+```
+
+**Common locations where this bug occurs:**
+- `actor.rs` - AI response streaming logs
+- `web_search.rs` - HTTP response previews
+- Any code that logs user-generated content
+
 ## Architecture Rules
 
 ### Handler vs Service Responsibility
