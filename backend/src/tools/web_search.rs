@@ -3,6 +3,7 @@ use crate::models::requests::{
     ToolResponse, WebSearchArgs, WebSearchResult, SearchResultItem,
 };
 use crate::services::storage::FileStorageService;
+use crate::utils::safe_preview;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -249,7 +250,7 @@ async fn get_vqd(client: &reqwest::Client, query: &str) -> Result<String> {
     vqd_re.captures(&body)
         .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
         .ok_or_else(|| {
-            tracing::error!(query = %query, body_preview = %&body[..body.len().min(500)], "Failed to extract VQD token");
+            tracing::error!(query = %query, body_preview = %safe_preview(&body, 500), "Failed to extract VQD token");
             Error::Internal("Failed to extract VQD token from DuckDuckGo".to_string())
         })
 }
@@ -280,7 +281,7 @@ async fn search_with_vqd(client: &reqwest::Client, query: &str, vqd: &str) -> Re
     let body = response.text().await
         .map_err(|e| Error::Internal(format!("Failed to read search response: {}", e)))?;
 
-    tracing::debug!(body_len = body.len(), body_preview = %&body[..body.len().min(200)], "Got d.js response");
+    tracing::debug!(body_len = body.len(), body_preview = %safe_preview(&body, 200), "Got d.js response");
 
     // Parse the JSONP-like response
     parse_ddg_js_response(&body)
@@ -299,7 +300,7 @@ fn parse_ddg_js_response(body: &str) -> Result<Vec<SearchResultItem>> {
     let json_end = body.rfind(']').map(|i| i + 1).unwrap_or(body.len());
 
     if json_start >= json_end {
-        tracing::warn!(body_preview = %&body[..body.len().min(200)], "No JSON array found in d.js response");
+        tracing::warn!(body_preview = %safe_preview(body, 200), "No JSON array found in d.js response");
         return Ok(results);
     }
 
@@ -324,7 +325,7 @@ fn parse_ddg_js_response(body: &str) -> Result<Vec<SearchResultItem>> {
             }
         }
         Err(e) => {
-            tracing::warn!(error = %e, json_preview = %&json_str[..json_str.len().min(200)], "Failed to parse d.js JSON");
+            tracing::warn!(error = %e, json_preview = %safe_preview(json_str, 200), "Failed to parse d.js JSON");
         }
     }
 

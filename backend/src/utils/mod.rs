@@ -3,6 +3,7 @@
 pub mod plan_namer;
 pub mod frontmatter;
 pub mod memory_metadata;
+pub mod string;
 
 pub use plan_namer::generate_plan_name;
 pub use frontmatter::{parse_frontmatter, prepend_frontmatter, PlanMetadata, PlanStatus};
@@ -11,3 +12,4 @@ pub use memory_metadata::{
     parse_memory_path,
     MemoryMetadata, MemoryScope,
 };
+pub use string::{safe_preview, truncate_safe, MAX_PREVIEW_LEN};

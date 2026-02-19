@@ -963,7 +963,7 @@ impl ChatActor {
                         tracing::debug!(
                             chat_id = %self.chat_id,
                             text_len = text.text.len(),
-                            text_preview = %format!("{}...", &text.text[..text.text.len().min(50)]),
+                            text_preview = %format!("{}...", text.text.chars().take(50).collect::<String>()),
                             "[ChatActor] [Rig] Received Text chunk"
                         );
                         if !*has_started_responding {
