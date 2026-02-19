@@ -18,7 +18,7 @@ import {
   useTools,
   isHtmlFile,
 } from "@buildscale/sdk"
-import { Trash2, Move } from "lucide-react"
+import { Trash2, Move, Download } from "lucide-react"
 import { useFileExplorer } from "./FileExplorerContext"
 import { columns } from "./columns"
 import type { LsEntry } from "./types"
@@ -116,6 +116,20 @@ export function FileExplorerList() {
     setMoveOpen(true)
   }
 
+  const handleBatchDownload = async () => {
+    const filesToDownload = selectedRows
+      .map(row => row.original)
+      .filter(file => file.file_type !== 'folder')
+
+    for (const file of filesToDownload) {
+      await handleDownload(file)
+      // Small delay between downloads to avoid browser blocking
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+  }
+
+  const hasNonFolderSelected = selectedRows.some(row => row.original.file_type !== 'folder')
+
   const getColumnClassName = (columnId: string) => {
     switch (columnId) {
       case 'file_type':
@@ -139,13 +153,19 @@ export function FileExplorerList() {
         </div>
         {selectedCount > 0 && (
           <div className="flex items-center gap-2">
+            {hasNonFolderSelected && (
+              <Button size="sm" onClick={handleBatchDownload} variant="outline" className="gap-2">
+                <Download className="h-4 w-4" />
+                Download
+              </Button>
+            )}
             <Button size="sm" onClick={handleBatchMove} variant="outline" className="gap-2">
               <Move className="h-4 w-4" />
               Move
             </Button>
             <Button size="sm" onClick={handleBatchDelete} variant="outline" className="gap-2 text-destructive hover:text-destructive">
               <Trash2 className="h-4 w-4" />
-              Move to Trash
+              Delete
             </Button>
           </div>
         )}
