@@ -209,6 +209,12 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
   }, [apiClient, handleError])
 
   const executeTool = useCallback(async <T,>(workspaceId: string, tool: string, args: any): Promise<ApiResult<T>> => {
+    // Guard against undefined workspaceId
+    if (!workspaceId || workspaceId === 'undefined') {
+      console.warn('[AuthContext] executeTool called with invalid workspaceId:', workspaceId, 'tool:', tool)
+      return { success: false, error: { message: 'Invalid workspace ID' } }
+    }
+
     try {
       const response = await apiClient.post<{ success: boolean, result: T, error?: string }>(
         `/workspaces/${workspaceId}/tools`,

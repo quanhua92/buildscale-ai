@@ -57,6 +57,13 @@ export function RecentChats({ workspaceId, currentChatId }: RecentChatsProps) {
   // Load recent chats
   useEffect(() => {
     const loadChats = async () => {
+      // Guard against undefined/invalid workspaceId
+      if (!workspaceId || workspaceId === 'undefined') {
+        console.warn('[RecentChats] Cannot load chats: workspaceId is invalid')
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       setError(null)
       try {

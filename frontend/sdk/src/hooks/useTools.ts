@@ -144,6 +144,12 @@ export function useTools(workspaceId: string) {
     tool: string,
     args: Record<string, unknown>
   ): Promise<T | null> => {
+    // Guard against undefined/invalid workspaceId
+    if (!workspaceId || workspaceId === 'undefined') {
+      console.warn(`[useTools] Cannot call ${tool}: workspaceId is invalid (${workspaceId})`)
+      return null
+    }
+
     const result = await executeTool<T>(workspaceId, tool, args)
     if (!result.success) {
       toast.error(result.error?.message || `${tool} failed`)

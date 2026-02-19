@@ -63,7 +63,11 @@ export function AgentSessionsProvider({
 
   // Fetch sessions from API
   const fetchSessions = useCallback(async () => {
-    if (!workspaceId) return
+    // Guard against undefined/invalid workspaceId
+    if (!workspaceId || workspaceId === 'undefined') {
+      console.warn('[AgentSessions] Cannot fetch sessions: workspaceId is invalid')
+      return
+    }
 
     try {
       const response = await apiClient.getWorkspaceAgentSessions(workspaceId)
