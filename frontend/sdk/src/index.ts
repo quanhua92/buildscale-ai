@@ -219,6 +219,8 @@ export type {
   ResumeSessionRequest,
   SessionActionResponse,
   ChatFile,
+  ChatMessage,
+  ChatMessageRole,
 } from './api/types'
 
 // Errors

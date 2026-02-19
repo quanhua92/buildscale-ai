@@ -1,9 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { AgentSessionsProvider, useAgentSessions, AgentStatusIndicator, Button } from '@buildscale/sdk'
-import { Pause, Play, X, Search, Clock, Bot, ChevronDown, Filter, MessageSquare } from 'lucide-react'
+import { AgentSessionsProvider, useAgentSessions, useAuth, AgentStatusIndicator, Button, cn } from '@buildscale/sdk'
+import { Pause, Play, X, Search, Clock, Bot, ChevronDown, Filter, MessageSquare, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import type { SessionStatus } from '@buildscale/sdk'
 import { formatTimeAgo } from '@/utils/time'
+import { useSessionMessages } from '@/hooks/useSessionMessages'
+import { MessagePreviewList } from '@/components/MessagePreview'
+
+// Constants for message preview behavior
+const MESSAGE_PREVIEW_POLL_INTERVAL_MS = 2000
+const MESSAGE_PREVIEW_MAX_MESSAGES = 3
 
 export const Route = createFileRoute('/_auth/workspaces/$workspaceId/agents')({
   component: AgentsRoute,
@@ -22,9 +28,33 @@ function AgentsRoute() {
 function AgentsContent() {
   const { workspaceId } = Route.useParams()
   const { sessions, loading, pauseSession, resumeSession, cancelSession } = useAgentSessions()
+  const { apiClient } = useAuth()
   const [filterStatus, setFilterStatus] = useState<SessionStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
+
+  const toggleExpanded = (sessionId: string) => {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev)
+      if (next.has(sessionId)) {
+        next.delete(sessionId)
+      } else {
+        next.add(sessionId)
+      }
+      return next
+    })
+  }
+
+  // Fetch and poll messages for expanded sessions
+  const { messages, loading: messagesLoading, errors } = useSessionMessages({
+    apiClient,
+    workspaceId,
+    expandedSessionIds: expandedSessions,
+    sessions,
+    pollInterval: MESSAGE_PREVIEW_POLL_INTERVAL_MS,
+    maxMessages: MESSAGE_PREVIEW_MAX_MESSAGES,
+  })
 
   const filteredSessions = sessions.filter((session) => {
     const matchesStatus = filterStatus === 'all' || session.status === filterStatus
@@ -145,108 +175,158 @@ function AgentsContent() {
             </div>
           ) : (
             <div className="divide-y">
-              {filteredSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors"
-                >
-                  {/* Status */}
-                  <div className="shrink-0">
-                    <AgentStatusIndicator status={session.status} size="sm" />
-                  </div>
+              {filteredSessions.map((session) => {
+                const isExpanded = expandedSessions.has(session.id)
+                const sessionMessages = messages.get(session.id)
+                const isLoading = messagesLoading.has(session.id)
+                const error = errors.get(session.id)
 
-                  {/* Agent Info */}
-                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-1 sm:gap-4">
-                    <div className="space-y-0.5">
-                      {/* Primary info: Agent type + mode + unique identifier */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium capitalize text-sm">{session.agent_type}</span>
-                        <span className="text-xs text-muted-foreground lowercase">· {session.mode}</span>
-                        <span className="text-xs text-muted-foreground font-mono">
-                          #{session.chat_id.slice(0, 8)}
-                        </span>
+                return (
+                  <div key={session.id}>
+                    {/* Session Row */}
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors",
+                        isExpanded && "bg-muted/20"
+                      )}
+                    >
+                      {/* Status */}
+                      <div className="shrink-0">
+                        <AgentStatusIndicator status={session.status} size="sm" />
                       </div>
 
-                      {/* Chat name */}
-                      {session.chat_name && (
-                        <div className="text-xs text-muted-foreground truncate" title={session.chat_name}>
-                          {session.chat_name}
-                        </div>
-                      )}
+                      {/* Agent Info */}
+                      <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-1 sm:gap-4">
+                        <div className="space-y-0.5">
+                          {/* Primary info: Agent type + mode + unique identifier */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium capitalize text-sm">{session.agent_type}</span>
+                            <span className="text-xs text-muted-foreground lowercase">· {session.mode}</span>
+                            <span className="text-xs text-muted-foreground font-mono">
+                              #{session.chat_id.slice(0, 8)}
+                            </span>
+                          </div>
 
-                      {/* Secondary info: Task or Model */}
-                      {session.current_task ? (
-                        <div className="text-xs text-muted-foreground truncate" title={session.current_task}>
-                          {session.current_task}
+                          {/* Chat name */}
+                          {session.chat_name && (
+                            <div className="text-xs text-muted-foreground truncate" title={session.chat_name}>
+                              {session.chat_name}
+                            </div>
+                          )}
+
+                          {/* Secondary info: Task or Model */}
+                          {session.current_task ? (
+                            <div className="text-xs text-muted-foreground truncate" title={session.current_task}>
+                              {session.current_task}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground">
+                              {session.model}
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <div className="text-xs text-muted-foreground">
-                          {session.model}
+
+                        {/* Timestamp */}
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
+                          <Clock className="h-3 w-3 shrink-0" />
+                          <span>{formatTimeAgo(session.last_heartbeat)}</span>
                         </div>
-                      )}
+
+                        {/* Desktop timestamp */}
+                        <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3 shrink-0" />
+                          <span>{formatTimeAgo(session.last_heartbeat)}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                        {session.status === 'running' || session.status === 'idle' ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => pauseSession(session.id)}
+                            title="Pause session"
+                            className="h-8 w-8"
+                          >
+                            <Pause className="h-3 w-3 sm:h-4 sm:w-4" />
+                          </Button>
+                        ) : session.status === 'paused' ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => resumeSession(session.id)}
+                            title="Resume session"
+                            className="h-8 w-8"
+                          >
+                            <Play className="h-3 w-3 sm:h-4 sm:w-4" />
+                          </Button>
+                        ) : null}
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => cancelSession(session.id)}
+                          className="text-destructive hover:text-destructive h-8 w-8"
+                          title="Cancel session"
+                        >
+                          <X className="h-3 w-3 sm:h-4 sm:w-4" />
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                          className="h-8 px-2 sm:h-9 sm:px-3"
+                        >
+                          <a href={`/admin/workspaces/${workspaceId}/chat?chatId=${session.chat_id}`}>
+                            <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                            <span className="hidden sm:inline">Chat</span>
+                          </a>
+                        </Button>
+
+                        {/* Expand toggle */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleExpanded(session.id)}
+                          className="h-8 w-8"
+                          title={isExpanded ? 'Hide activity' : 'Show activity'}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform duration-200",
+                              isExpanded && "rotate-180"
+                            )}
+                          />
+                        </Button>
+                      </div>
                     </div>
 
-                    {/* Timestamp */}
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
-                      <Clock className="h-3 w-3 shrink-0" />
-                      <span>{formatTimeAgo(session.last_heartbeat)}</span>
-                    </div>
-
-                    {/* Desktop timestamp */}
-                    <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3 shrink-0" />
-                      <span>{formatTimeAgo(session.last_heartbeat)}</span>
-                    </div>
+                    {/* Activity Section */}
+                    {isExpanded && (
+                      <div className="px-4 pb-3 pt-1 border-t border-muted/50">
+                        <div className="pl-2 border-l-2 border-primary/30 space-y-2">
+                          <div className="text-xs font-medium text-muted-foreground px-2 flex items-center gap-2">
+                            Recent Activity
+                            {isLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                          </div>
+                          {error ? (
+                            <div className="text-xs text-destructive px-2">{error}</div>
+                          ) : sessionMessages ? (
+                            <MessagePreviewList
+                              messages={sessionMessages}
+                              isSessionRunning={session.status === 'running'}
+                            />
+                          ) : (
+                            <div className="text-xs text-muted-foreground px-2">Loading...</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                    {session.status === 'running' || session.status === 'idle' ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => pauseSession(session.id)}
-                        title="Pause session"
-                        className="h-8 w-8"
-                      >
-                        <Pause className="h-3 w-3 sm:h-4 sm:w-4" />
-                      </Button>
-                    ) : session.status === 'paused' ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => resumeSession(session.id)}
-                        title="Resume session"
-                        className="h-8 w-8"
-                      >
-                        <Play className="h-3 w-3 sm:h-4 sm:w-4" />
-                      </Button>
-                    ) : null}
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => cancelSession(session.id)}
-                      className="text-destructive hover:text-destructive h-8 w-8"
-                      title="Cancel session"
-                    >
-                      <X className="h-3 w-3 sm:h-4 sm:w-4" />
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      asChild
-                      className="h-8 px-2 sm:h-9 sm:px-3"
-                    >
-                      <a href={`/admin/workspaces/${workspaceId}/chat?chatId=${session.chat_id}`}>
-                        <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                        <span className="hidden sm:inline">Chat</span>
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
