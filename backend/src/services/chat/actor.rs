@@ -259,6 +259,21 @@ impl ChatActor {
                             reason = "inactivity_timeout",
                             "[ChatActor] SHUTTING DOWN - No commands received while idle"
                         );
+
+                        // Update session status to completed in database
+                        if let Some(session_id) = self.session_id {
+                            let _ = self.update_session_status(
+                                session_id,
+                                crate::models::agent_session::SessionStatus::Completed,
+                                None,
+                            ).await;
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                session_id = %session_id,
+                                "[ChatActor] Session marked as completed due to inactivity timeout"
+                            );
+                        }
+
                         break;
                     }
 
