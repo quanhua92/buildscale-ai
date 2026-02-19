@@ -97,15 +97,22 @@ pub async fn create_chat(
 
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
 
-    // 4. Create initial version with config in app_data
-    // New chats default to Plan Mode (user switches to Build Mode when ready)
+    // 4. Determine the mode from the request role (defaults to "plan" if not specified)
+    // This must be done BEFORE creating app_data so the mode is saved correctly
+    let mode = match req.role.as_deref() {
+        Some("builder") => "build",
+        Some("planner") | None => "plan",  // Default to plan mode for new chats
+        _ => "chat",
+    };
+
+    // 5. Create initial version with config in app_data
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
         "model": req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
-        "persona": crate::agents::get_persona(req.role.as_deref(), Some("plan"), None),
+        "persona": crate::agents::get_persona(req.role.as_deref(), Some(mode), None),
         "temperature": 0.7,
-        "mode": "plan",
+        "mode": mode,
         "plan_file": null
     });
 
@@ -145,13 +152,6 @@ pub async fn create_chat(
 
     // 6. Trigger Actor immediately for the initial goal
     let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
-
-    // Determine the mode from the request role (defaults to "plan" if not specified)
-    let mode = match req.role.as_deref() {
-        Some("builder") => "build",
-        Some("planner") | None => "plan",  // Default to plan mode for new chats
-        _ => "chat",
-    };
 
     let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
         chat_id: chat_file.id,

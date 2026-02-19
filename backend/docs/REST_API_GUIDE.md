@@ -484,17 +484,32 @@ Initialize a stateful agentic session.
 ```json
 {
   "goal": "I want to start a new blog post about Rust.",
-    "files": ["019bf537-f228-7cd3-aa1c-3da8af302e12"],
-
-  "role": "assistant",
+  "files": ["019bf537-f228-7cd3-aa1c-3da8af302e12"],
+  "role": "planner",
   "model": "gpt-4o-mini"
 }
 ```
 
-- `goal`: The initial prompt or objective for the agent.
-- `files`: Optional array of UUIDs for files to include in the initial context.
-- `role`: Optional agent role (e.g., `assistant`). Defaults to `assistant` (Coworker).
-- `model`: Optional LLM model override.
+##### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `goal` | string | Yes | The initial prompt or objective for the agent |
+| `files` | array of UUID | No | Files to include in the initial context |
+| `role` | string | No | Agent role: `planner` (default), `builder`, or `assistant` |
+| `model` | string | No | LLM model override (e.g., `gpt-4o-mini`) |
+
+##### Role to Mode Mapping
+
+The `role` parameter determines which agent mode is used:
+
+| Role | Mode | Agent Type | Description |
+|------|------|------------|-------------|
+| `planner` | `plan` | Planner Agent | Strategic planning phase - asks questions, creates plan files |
+| `builder` | `build` | Builder Agent | Execution phase - executes plans with full tool access |
+| `assistant` or omitted | `chat` | Assistant Agent | General purpose chat with standard tool access |
+
+**Important**: The `role` parameter sets the chat mode in the database immediately upon creation. This ensures the correct agent type is spawned from the start.
 
 ##### Response (201 Created)
 ```json

@@ -922,30 +922,17 @@ export function ChatProvider({
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           if (!chatId) {
+            // Determine role based on current mode (backend uses role to set mode correctly)
+            const role = mode === 'build' ? 'builder' : 'planner'
             const response = await apiClientRef.current.post<CreateChatResponse>(
               `/workspaces/${workspaceId}/chats`,
-              { goal: content, model: model.id } as CreateChatRequest
+              { goal: content, model: model.id, role } as CreateChatRequest
             )
             if (!response?.chat_id) throw new Error('Invalid server response')
             setChatId(response.chat_id)
             onChatCreatedRef.current?.(response.chat_id)
             // Immediately add to recent chats for instant tab appearance
             addRecentChatOptimistic(response.chat_id)
-
-            // Set the mode on the newly created chat
-            try {
-              await apiClientRef.current.patch(
-                `/workspaces/${workspaceId}/chats/${response.chat_id}`,
-                {
-                  app_data: {
-                    mode: mode,
-                    plan_file: null
-                  }
-                }
-              )
-            } catch (modeError) {
-              console.error('[Chat] Failed to set mode on new chat:', modeError)
-            }
 
             // Update message status to completed
             setMessages((prev) => {
