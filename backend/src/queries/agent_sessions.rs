@@ -333,22 +333,45 @@ pub async fn update_session_status(
         _ => None,
     };
 
-    // First update the session
-    let update_result = sqlx::query(
+    // Single query with CTE to UPDATE and fetch with chat_name in one round-trip
+    let session = sqlx::query_as!(
+        AgentSession,
         r#"
-        UPDATE agent_sessions
-        SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4
-        WHERE id = $1
+        WITH updated AS (
+            UPDATE agent_sessions
+            SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4
+            WHERE id = $1
+            RETURNING *
+        )
+        SELECT
+            u.id,
+            u.workspace_id,
+            u.chat_id,
+            u.user_id,
+            u.agent_type as "agent_type: AgentType",
+            u.status as "status: SessionStatus",
+            u.model,
+            u.mode,
+            u.current_task,
+            u.error_message,
+            u.created_at,
+            u.updated_at,
+            u.last_heartbeat,
+            u.completed_at,
+            f.name as "chat_name?"
+        FROM updated u
+        LEFT JOIN files f ON u.chat_id = f.id
         "#,
+        session_id,
+        status as SessionStatus,
+        completed_at,
+        error_message.clone()
     )
-    .bind(session_id)
-    .bind(status as SessionStatus)
-    .bind(completed_at)
-    .bind(error_message.clone())
-    .execute(&mut *conn)
+    .fetch_one(&mut *conn)
     .await
     .map_err(|e| {
-        if e.to_string().to_lowercase().contains("no rows") {
+        let error_str = e.to_string().to_lowercase();
+        if error_str.contains("no rows") {
             tracing::error!(
                 session_id = %session_id,
                 "[AgentSessions] Failed to update status - session not found"
@@ -360,48 +383,6 @@ pub async fn update_session_status(
                 error = %e,
                 "[AgentSessions] Failed to update session status"
             );
-            Error::Sqlx(e)
-        }
-    })?;
-
-    tracing::info!(
-        session_id = %session_id,
-        rows_affected = update_result.rows_affected(),
-        "[AgentSessions] Query: Update executed"
-    );
-
-    // Then fetch with chat name
-    let session = sqlx::query_as!(
-        AgentSession,
-        r#"
-        SELECT
-            s.id,
-            s.workspace_id,
-            s.chat_id,
-            s.user_id,
-            s.agent_type as "agent_type: AgentType",
-            s.status as "status: SessionStatus",
-            s.model,
-            s.mode,
-            s.current_task,
-            s.error_message,
-            s.created_at,
-            s.updated_at,
-            s.last_heartbeat,
-            s.completed_at,
-            f.name as "chat_name?"
-        FROM agent_sessions s
-        LEFT JOIN files f ON s.chat_id = f.id
-        WHERE s.id = $1
-        "#,
-        session_id
-    )
-    .fetch_one(conn)
-    .await
-    .map_err(|e| {
-        if e.to_string().to_lowercase().contains("no rows") {
-            Error::NotFound(format!("Session with ID {} not found", session_id))
-        } else {
             Error::Sqlx(e)
         }
     })?;

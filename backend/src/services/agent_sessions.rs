@@ -505,8 +505,9 @@ pub async fn resume_session(
 
 /// Cancels/stops an active session.
 ///
-/// This deletes the session from the database. When the user chats again,
-/// a new session will be created with full chat history preserved.
+/// This updates the session status to 'cancelled'. The session record is preserved
+/// for historical tracking. When the user chats again, a new session will be created
+/// with full chat history preserved.
 ///
 /// # Arguments
 /// * `conn` - Database connection

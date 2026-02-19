@@ -40,7 +40,7 @@ async fn test_update_session_status_success() {
     assert_eq!(created.status, SessionStatus::Idle);
 
     // Update status to Running
-    let updated = update_session_status(&mut conn, created.id, SessionStatus::Running)
+    let updated = update_session_status(&mut conn, created.id, SessionStatus::Running, None)
         .await
         .expect("Status update should succeed");
 
@@ -49,7 +49,7 @@ async fn test_update_session_status_success() {
     assert!(updated.completed_at.is_none());
 
     // Update status to Completed
-    let completed = update_session_status(&mut conn, created.id, SessionStatus::Completed)
+    let completed = update_session_status(&mut conn, created.id, SessionStatus::Completed, None)
         .await
         .expect("Status update to Completed should succeed");
 
@@ -194,7 +194,7 @@ async fn test_get_active_sessions_by_workspace() {
 
     // Mark one as completed
     let first_session = &active_sessions[0];
-    update_session_status(&mut conn, first_session.id, SessionStatus::Completed)
+    update_session_status(&mut conn, first_session.id, SessionStatus::Completed, None)
         .await
         .expect("Status update should succeed");
 
@@ -306,7 +306,7 @@ async fn test_get_workspace_session_stats() {
 
         // Update status if not idle
         if status != SessionStatus::Idle {
-            update_session_status(&mut conn, created.id, status)
+            update_session_status(&mut conn, created.id, status, None)
                 .await
                 .expect("Status update should succeed");
         }
@@ -334,7 +334,7 @@ async fn test_update_nonexistent_session() {
     let fake_id = Uuid::now_v7();
 
     // Try to update non-existent session
-    let result = update_session_status(&mut conn, fake_id, SessionStatus::Running).await;
+    let result = update_session_status(&mut conn, fake_id, SessionStatus::Running, None).await;
 
     assert!(result.is_err(), "Should return error for non-existent session");
 }

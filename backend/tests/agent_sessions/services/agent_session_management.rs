@@ -283,6 +283,7 @@ async fn test_service_update_session_status_valid_transitions() {
         &mut conn,
         session.id,
         SessionStatus::Running,
+        None,
         user_id,
     )
     .await
@@ -295,6 +296,7 @@ async fn test_service_update_session_status_valid_transitions() {
         &mut conn,
         session.id,
         SessionStatus::Paused,
+        None,
         user_id,
     )
     .await
@@ -307,6 +309,7 @@ async fn test_service_update_session_status_valid_transitions() {
         &mut conn,
         session.id,
         SessionStatus::Completed,
+        None,
         user_id,
     )
     .await
@@ -347,6 +350,7 @@ async fn test_service_update_session_status_invalid_transitions() {
         &mut conn,
         session.id,
         SessionStatus::Running,
+        None,
         user_id,
     )
     .await
@@ -357,6 +361,7 @@ async fn test_service_update_session_status_invalid_transitions() {
         &mut conn,
         session.id,
         SessionStatus::Completed,
+        None,
         user_id,
     )
     .await
@@ -367,6 +372,7 @@ async fn test_service_update_session_status_invalid_transitions() {
         &mut conn,
         session.id,
         SessionStatus::Running,
+        None,
         user_id,
     )
     .await;
@@ -441,7 +447,7 @@ async fn test_service_pause_session() {
     .expect("Session creation should succeed");
 
     // Update to running
-    update_session_status(&mut conn, session.id, SessionStatus::Running, user_id)
+    update_session_status(&mut conn, session.id, SessionStatus::Running, None, user_id)
         .await
         .unwrap();
 
@@ -484,7 +490,7 @@ async fn test_service_pause_already_paused() {
     .await
     .expect("Session creation should succeed");
 
-    update_session_status(&mut conn, session.id, SessionStatus::Paused, user_id)
+    update_session_status(&mut conn, session.id, SessionStatus::Paused, None, user_id)
         .await
         .unwrap();
 
@@ -524,7 +530,7 @@ async fn test_service_resume_session() {
     .await
     .expect("Session creation should succeed");
 
-    update_session_status(&mut conn, session.id, SessionStatus::Paused, user_id)
+    update_session_status(&mut conn, session.id, SessionStatus::Paused, None, user_id)
         .await
         .unwrap();
 
@@ -596,7 +602,7 @@ async fn test_service_cancel_session() {
     .await
     .expect("Session creation should succeed");
 
-    update_session_status(&mut conn, session.id, SessionStatus::Running, user_id)
+    update_session_status(&mut conn, session.id, SessionStatus::Running, None, user_id)
         .await
         .unwrap();
 
@@ -605,7 +611,7 @@ async fn test_service_cancel_session() {
         .await
         .expect("Cancellation should succeed");
 
-    assert_eq!(response.session.status, SessionStatus::Completed);
+    assert_eq!(response.session.status, SessionStatus::Cancelled);
     assert_eq!(response.message, "Session cancelled successfully");
 }
 
