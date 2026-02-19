@@ -1596,6 +1596,22 @@ impl ChatActor {
 
             match item {
                 Err(e) => {
+                    let error_str = e.to_string();
+
+                    // Check for JSON parsing errors in tool calls (common with very long content)
+                    if error_str.contains("JsonError") || error_str.contains("EOF while parsing") {
+                        tracing::error!(
+                            chat_id = %self.chat_id,
+                            error = %error_str,
+                            item_num = *item_count,
+                            "[ChatActor] JSON parsing error in tool call - content may be too long or have invalid characters"
+                        );
+                        return Err(crate::error::Error::Internal(
+                            "Tool call JSON parsing failed. The content may be too long or contain invalid characters. \
+                             Try using smaller content chunks or check for special characters that need escaping.".to_string()
+                        ));
+                    }
+
                     tracing::error!(
                         chat_id = %self.chat_id,
                         error = %e,
