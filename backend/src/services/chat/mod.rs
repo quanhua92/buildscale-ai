@@ -124,12 +124,12 @@ use uuid::Uuid;
 /// Default token limit for the context window (128k for modern models).
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 128000;
 
-/// Max length for tool output before truncation (2KB)
-const MAX_TOOL_OUTPUT_LENGTH: usize = 2048;
-/// Max length for 'write' tool content arg (1KB)
-const MAX_WRITE_CONTENT_LENGTH: usize = 1000;
-/// Max length for 'edit' tool diff args (500 chars)
-const MAX_EDIT_DIFF_LENGTH: usize = 500;
+/// Max length for tool output before truncation (1MB)
+const MAX_TOOL_OUTPUT_LENGTH: usize = 1_048_576;
+/// Max length for 'write' tool content arg (10MB)
+const MAX_WRITE_CONTENT_LENGTH: usize = 10_485_760;
+/// Max length for 'edit' tool diff args (1MB)
+const MAX_EDIT_DIFF_LENGTH: usize = 1_048_576;
 /// Number of items to preview for 'ls' tool
 const LS_PREVIEW_ITEMS: usize = 50;
 /// Number of matches to preview for 'grep' tool

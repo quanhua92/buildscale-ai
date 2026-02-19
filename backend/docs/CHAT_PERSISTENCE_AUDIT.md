@@ -181,10 +181,10 @@ To prevent database bloat, tool inputs and outputs are summarized before persist
 - **Tool Outputs (`tool_output`)**:
   - `read`: Truncated with stats (bytes, lines) and preview.
   - `ls`, `grep`: Limit number of items/matches shown.
-  - `default`: Generic size cap (e.g. 2KB).
+  - `default`: Generic size cap (e.g. 1MB).
 - **Tool Inputs (`tool_arguments`)**:
-  - `write`: Content field truncated if > 1KB.
-  - `edit`: Diff fields truncated if > 500 chars.
+  - `write`: Content field truncated if > 10MB.
+  - `edit`: Diff fields truncated if > 1MB.
 
 This ensures essential audit info is preserved without storing megabytes of raw data.
 
