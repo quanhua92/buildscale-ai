@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { AgentSessionsProvider, useAgentSessions, useAuth, AgentStatusIndicator, Button, cn } from '@buildscale/sdk'
 import { Pause, Play, X, Search, Clock, Bot, ChevronDown, Filter, MessageSquare, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { SessionStatus } from '@buildscale/sdk'
 import { formatTimeAgo } from '@/utils/time'
 import { useSessionMessages } from '@/hooks/useSessionMessages'
@@ -33,6 +33,13 @@ function AgentsContent() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
+
+  // Expand all sessions by default when they load
+  useEffect(() => {
+    if (sessions.length > 0 && expandedSessions.size === 0) {
+      setExpandedSessions(new Set(sessions.map(s => s.id)))
+    }
+  }, [sessions, expandedSessions.size])
 
   const toggleExpanded = (sessionId: string) => {
     setExpandedSessions((prev) => {
