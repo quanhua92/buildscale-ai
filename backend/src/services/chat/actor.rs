@@ -213,28 +213,29 @@ impl ChatActor {
 
         // Create agent session in database
         let session_result = self.create_session().await;
-        if let Err(e) = &session_result {
-            tracing::warn!("[ChatActor] Failed to create session: {}", e);
-        } else {
-            tracing::info!("[ChatActor] Created session for chat {}", self.chat_id);
-        }
 
-        // Start heartbeat task if session was created
-        if let Ok(session_id) = session_result {
-            tracing::info!(
-                chat_id = %self.chat_id,
-                session_id = %session_id,
-                "[ChatActor] Session created, starting heartbeat task"
-            );
-            self.session_id = Some(session_id);
-            self.heartbeat_handle = Some(self.start_heartbeat_task(session_id));
-        } else if let Err(e) = session_result {
-            tracing::error!(
-                chat_id = %self.chat_id,
-                error = ?e,
-                "[ChatActor] Failed to create session"
-            );
-        }
+        // Treat session creation failure as fatal error - shut down actor
+        let session_id = match session_result {
+            Ok(id) => {
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    session_id = %id,
+                    "[ChatActor] Session created, starting heartbeat task"
+                );
+                id
+            }
+            Err(e) => {
+                tracing::error!(
+                    chat_id = %self.chat_id,
+                    error = ?e,
+                    "[ChatActor] Failed to create session - shutting down actor"
+                );
+                return;
+            }
+        };
+
+        self.session_id = Some(session_id);
+        self.heartbeat_handle = Some(self.start_heartbeat_task(session_id));
 
         // Periodic heartbeat ping (every 10 seconds)
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
@@ -544,16 +545,7 @@ impl ChatActor {
             .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
 
         // Set current task for session tracking (truncate if too long)
-        let task_preview = if last_message.content.len() > 100 {
-            // Find a valid char boundary at or before position 100
-            let mut end = 100;
-            while end > 0 && !last_message.content.is_char_boundary(end) {
-                end -= 1;
-            }
-            format!("{}...", &last_message.content[..end])
-        } else {
-            last_message.content.clone()
-        };
+        let task_preview = crate::utils::safe_preview(&last_message.content, 100);
         self.state.lock().await.interaction.current_task = Some(task_preview.clone());
 
         tracing::debug!(
@@ -978,7 +970,7 @@ impl ChatActor {
                         tracing::debug!(
                             chat_id = %self.chat_id,
                             text_len = text.text.len(),
-                            text_preview = %format!("{}...", text.text.chars().take(50).collect::<String>()),
+                            text_preview = %crate::utils::safe_preview(&text.text, 50),
                             "[ChatActor] [Rig] Received Text chunk"
                         );
                         if !*has_started_responding {
@@ -1137,12 +1129,7 @@ impl ChatActor {
                         let args_preview = if let Ok(args_str) = serde_json::to_string_pretty(&summarized_args) {
                             // Truncate if too long for file content
                             if args_str.len() > 500 {
-                                // Find a valid char boundary at or before position 500
-                                let mut end = 500;
-                                while end > 0 && !args_str.is_char_boundary(end) {
-                                    end -= 1;
-                                }
-                                format!("{}...\n[Arguments truncated, see metadata for full details]", &args_str[..end])
+                                format!("{}...\n[Arguments truncated, see metadata for full details]", crate::utils::truncate_safe(&args_str, 500))
                             } else {
                                 args_str
                             }
@@ -1396,15 +1383,7 @@ impl ChatActor {
                              "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}",
                              self.chat_id,
                              success,
-                             if output.len() > 100 {
-                                 let mut end = 100;
-                                 while end > 0 && !output.is_char_boundary(end) {
-                                     end -= 1;
-                                 }
-                                 format!("{}...", &output[..end])
-                             } else {
-                                 output.clone()
-                             }
+                             crate::utils::safe_preview(&output, 100)
                          );
                           let send_result = self.event_tx.send(SseEvent::Observation { output: normalized_output.clone(), success });
                           if let Err(e) = send_result {

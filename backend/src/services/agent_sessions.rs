@@ -679,8 +679,8 @@ fn validate_status_transition(
     );
 
     match (current_status, new_status) {
-        // Completed and Error are terminal states - cannot transition
-        (SessionStatus::Completed | SessionStatus::Error, _) => {
+        // Completed, Error, and Cancelled are terminal states - cannot transition
+        (SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled, _) => {
             tracing::warn!(
                 current_status = %current_status,
                 new_status = %new_status,

@@ -674,7 +674,7 @@ pub async fn cleanup_stale_sessions(conn: &mut DbConn) -> Result<u64> {
         r#"
         DELETE FROM agent_sessions
         WHERE last_heartbeat < $1
-        AND status NOT IN ('completed', 'error')
+        AND status NOT IN ('completed', 'error', 'cancelled')
         RETURNING id
         "#,
     )
