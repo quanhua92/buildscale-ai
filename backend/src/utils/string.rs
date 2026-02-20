@@ -15,7 +15,8 @@ pub const MAX_PREVIEW_LEN: usize = 100;
 /// ```
 pub fn safe_preview(text: &str, max_chars: usize) -> String {
     let preview: String = text.chars().take(max_chars).collect();
-    if text.chars().count() > max_chars {
+    // Use nth() for O(1) check instead of count() which is O(N)
+    if text.chars().nth(max_chars).is_some() {
         format!("{}...", preview)
     } else {
         preview
