@@ -173,6 +173,10 @@ pub async fn pause_session(
         .await
         .inspect_err(|e| log_handler_error("pause_session", e))?;
 
+    // Interrupt any active generation immediately (before sending Pause command)
+    // This ensures the UI is responsive even if the actor's main loop is blocked
+    state.agents.cancel_stream(&session.chat_id).await;
+
     // Send Pause command to the ChatActor to pause any active interaction
     if let Some(handle) = state.agents.active_agents.read_async(&session.chat_id, |_, h| h.clone()).await {
         tracing::info!(
