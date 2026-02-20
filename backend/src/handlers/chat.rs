@@ -332,14 +332,18 @@ pub async fn post_chat_message(
         ChatService::update_chat_model(&mut conn, workspace_id, chat_id, new_model).await?;
     }
 
-    // 2.5. Update chat name from new message content
+    // 2.5. Update chat name from new message content (only for the first few messages to establish topic)
     let content_trimmed = req.content.trim();
     if !content_trimmed.is_empty() {
-        const CHAT_NAME_UPDATE_LENGTH: usize = 80;
-        let new_chat_name = ChatService::generate_chat_name(content_trimmed, CHAT_NAME_UPDATE_LENGTH);
-        if let Err(e) = ChatService::update_chat_name(&mut conn, chat_id, new_chat_name).await {
-            tracing::warn!("[ChatHandler] Failed to update chat name: {}", e);
-            // Don't fail the request if name update fails
+        // Get current message count to limit name updates
+        let messages = crate::queries::chat::get_messages_by_file_id(&mut conn, workspace_id, chat_id).await?;
+        // Only update name for the first few user messages to refine the topic
+        if messages.len() < 2 {
+            let new_chat_name = ChatService::generate_chat_name(content_trimmed, CHAT_NAME_GOAL_SNIPPET_LENGTH);
+            if let Err(e) = ChatService::update_chat_name(&mut conn, chat_id, new_chat_name).await {
+                tracing::warn!("[ChatHandler] Failed to update chat name: {}", e);
+                // Don't fail the request if name update fails
+            }
         }
     }
 
@@ -349,6 +353,7 @@ pub async fn post_chat_message(
     } else {
         // Rehydrate actor
         let event_tx = state.agents.get_or_create_bus(chat_id).await;
+        let default_persona = get_chat_persona(&mut conn, chat_id).await?;
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
@@ -357,10 +362,7 @@ pub async fn post_chat_message(
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
             registry: state.agents.clone(),
-            default_persona: {
-                let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
-                get_chat_persona(&mut conn, chat_id).await?
-            },
+            default_persona,
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
