@@ -313,138 +313,11 @@ impl ChatActor {
 
                         // Fall back to legacy command processing
                         match cmd {
-                            AgentCommand::ProcessInteraction { user_id } => {
-                                // Mark as actively processing to prevent inactivity timeout
-                                {
-                                    let mut state = self.state.lock().await;
-                                    state.interaction.is_actively_processing = true;
-                                }
-
-                                // State transition: Idle → Running
-                                let _ = self.transition_state(
-                                    ActorEvent::ProcessInteraction { user_id },
-                                    "Starting interaction processing"
-                                ).await;
-
-                                // Update session status to running
-                                if let Some(session_id) = self.session_id {
-                                    tracing::debug!(
-                                        chat_id = %self.chat_id,
-                                        session_id = %session_id,
-                                        "[ChatActor] ProcessInteraction: Setting status to running"
-                                    );
-                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Running, None).await;
-                                }
-
-                                let result = self.process_interaction(user_id).await;
-
-                                // Update session status based on result
-                                if let Some(session_id) = self.session_id {
-                                    let (status, error_msg, transition_event) = if let Err(ref e) = result {
-                                        tracing::warn!(
-                                            chat_id = %self.chat_id,
-                                            session_id = %session_id,
-                                            error = %e,
-                                            "[ChatActor] ProcessInteraction: Setting status to error (interaction failed)"
-                                        );
-                                        (
-                                            crate::models::agent_session::SessionStatus::Error,
-                                            Some(format!("AI Engine Error: {}", e)),
-                                            ActorEvent::InteractionComplete { success: false, error: Some(format!("{}", e)) }
-                                        )
-                                    } else {
-                                        tracing::debug!(
-                                            chat_id = %self.chat_id,
-                                            session_id = %session_id,
-                                            "[ChatActor] ProcessInteraction: Setting status to idle (interaction complete)"
-                                        );
-                                        (
-                                            crate::models::agent_session::SessionStatus::Idle,
-                                            None,
-                                            ActorEvent::InteractionComplete { success: true, error: None }
-                                        )
-                                    };
-
-                                    // State transition based on result
-                                    let _ = self.transition_state(
-                                        transition_event,
-                                        if error_msg.is_some() { "Interaction failed" } else { "Interaction completed successfully" }
-                                    ).await;
-
-                                    // Log the error message we're about to save
-                                    tracing::info!(
-                                        chat_id = %self.chat_id,
-                                        session_id = %session_id,
-                                        status = %status,
-                                        error_message = ?error_msg,
-                                        "[ChatActor] Updating session status after interaction"
-                                    );
-
-                                    match self.update_session_status(session_id, status, error_msg.clone()).await {
-                                        Ok(_) => {
-                                            tracing::info!(
-                                                chat_id = %self.chat_id,
-                                                session_id = %session_id,
-                                                "[ChatActor] Session status updated successfully"
-                                            );
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(
-                                                chat_id = %self.chat_id,
-                                                session_id = %session_id,
-                                                error = %e,
-                                                "[ChatActor] FAILED to update session status"
-                                            );
-                                        }
-                                    }
-
-                                    // Clear current task when interaction completes
-                                    if let Ok(mut conn) = self.pool.acquire().await {
-                                        let _ = agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
-                                        tracing::debug!(
-                                            session_id = %session_id,
-                                            "[ChatActor] Cleared current task (interaction complete)"
-                                        );
-                                    }
-                                }
-
-                                if let Err(e) = result {
-
-                                    tracing::error!(
-                                        "[ChatActor] Error processing interaction for chat {}: {:?}",
-                                        self.chat_id,
-                                        e
-                                    );
-                                    let send_result = self.event_tx.send(SseEvent::Error {
-                                        message: format!("AI Engine Error: {}", e),
-                                    });
-                                    if let Err(e) = send_result {
-                                        tracing::error!(
-                                            chat_id = %self.chat_id,
-                                            event_type = "Error",
-                                            error = ?e,
-                                            receivers = self.event_tx.receiver_count(),
-                                            "[SSE] FAILED to send error event - no receivers"
-                                        );
-                                    } else {
-                                        tracing::debug!(
-                                            chat_id = %self.chat_id,
-                                            event_type = "Error",
-                                            receivers = self.event_tx.receiver_count(),
-                                            "[SSE] SENT error event successfully"
-                                        );
-                                    }
-                                }
-
-                                // Mark as done processing - actor is now idle
-                                {
-                                    let mut state = self.state.lock().await;
-                                    state.interaction.is_actively_processing = false;
-                                }
-
-                                // Reset inactivity timeout AGAIN after work completes
-                                // This ensures the idle period starts from the end of the interaction.
-                                inactivity_timeout.as_mut().reset(tokio::time::Instant::now() + inactivity_timeout_duration);
+                            // Note: ProcessInteraction is now fully handled by the state machine
+                            // This arm should never be reached since process_command_via_state_handler
+                            // handles it and returns true (command was handled)
+                            AgentCommand::ProcessInteraction { .. } => {
+                                unreachable!("ProcessInteraction should be handled by state machine")
                             }
                             AgentCommand::Ping => {
                                 tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
@@ -497,6 +370,7 @@ impl ChatActor {
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
+        println!("[DEBUG] ProcessInteraction STARTED");
         tracing::info!(
             chat_id = %self.chat_id,
             user_id = %user_id,
@@ -2053,6 +1927,103 @@ impl ChatActor {
                 // This action is just a signal that the command failed
                 let _ = message;
             }
+            StateAction::StartProcessing { user_id } => {
+                println!("[DEBUG] StartProcessing action reached! user_id={}", user_id);
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    user_id = %user_id,
+                    "[ChatActor] Executing StartProcessing action - triggering AI interaction"
+                );
+
+                // Trigger the AI processing (this is async and may take time)
+                println!("[DEBUG] About to call process_interaction...");
+                let result = self.process_interaction(user_id).await;
+                println!("[DEBUG] process_interaction returned: {:?}", result.is_ok());
+
+                // Update session status based on result
+                if let Some(session_id) = self.session_id {
+                    let (status, error_msg, transition_event) = if let Err(ref e) = result {
+                        tracing::warn!(
+                            chat_id = %self.chat_id,
+                            session_id = %session_id,
+                            error = %e,
+                            "[ChatActor] StartProcessing: Setting status to error (interaction failed)"
+                        );
+                        (
+                            crate::models::agent_session::SessionStatus::Error,
+                            Some(format!("AI Engine Error: {}", e)),
+                            ActorEvent::InteractionComplete { success: false, error: Some(format!("{}", e)) }
+                        )
+                    } else {
+                        tracing::debug!(
+                            chat_id = %self.chat_id,
+                            session_id = %session_id,
+                            "[ChatActor] StartProcessing: Setting status to idle (interaction complete)"
+                        );
+                        (
+                            crate::models::agent_session::SessionStatus::Idle,
+                            None,
+                            ActorEvent::InteractionComplete { success: true, error: None }
+                        )
+                    };
+
+                    // Update session status
+                    match self.update_session_status(session_id, status, error_msg.clone()).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                chat_id = %self.chat_id,
+                                session_id = %session_id,
+                                "[ChatActor] StartProcessing: Session status updated successfully"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                session_id = %session_id,
+                                error = %e,
+                                "[ChatActor] StartProcessing: FAILED to update session status"
+                            );
+                        }
+                    }
+
+                    // Clear current task when interaction completes
+                    if let Ok(mut conn) = self.pool.acquire().await {
+                        let _ = crate::services::agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
+                    }
+
+                    // Send state transition event to handle the result
+                    let _ = self.transition_state(
+                        transition_event,
+                        if error_msg.is_some() { "Interaction failed" } else { "Interaction completed successfully" }
+                    ).await;
+                }
+
+                if let Err(e) = result {
+                    tracing::error!(
+                        "[ChatActor] StartProcessing: Error processing interaction for chat {}: {:?}",
+                        self.chat_id,
+                        e
+                    );
+                    let send_result = self.event_tx.send(SseEvent::Error {
+                        message: format!("AI Engine Error: {}", e),
+                    });
+                    if let Err(e) = send_result {
+                        tracing::error!(
+                            chat_id = %self.chat_id,
+                            event_type = "Error",
+                            error = ?e,
+                            receivers = self.event_tx.receiver_count(),
+                            "[SSE] FAILED to send error event - no receivers"
+                        );
+                    }
+                }
+
+                // Mark as done processing - actor can now be idle
+                {
+                    let mut state = self.state.lock().await;
+                    state.interaction.is_actively_processing = false;
+                }
+            }
         }
         Ok(())
     }
@@ -2181,6 +2152,15 @@ impl ChatActor {
 
         match result {
             Ok(event_result) => {
+                tracing::debug!(
+                    new_state = ?event_result.new_state,
+                    actions_count = event_result.actions.len(),
+                    "[ChatActor] State handler result"
+                );
+                // Remember if there were actions before moving
+                let has_actions = !event_result.actions.is_empty();
+                let has_state_change = event_result.new_state.is_some();
+
                 // Separate response actions from other actions
                 let mut response_actions = Vec::new();
                 let mut other_actions = Vec::new();
@@ -2255,7 +2235,17 @@ impl ChatActor {
                     }
                 }
 
-                Ok(true)
+                // Return true if the handler actually did something (state change or actions)
+                // Return false to fall through to legacy path
+                let handled = has_state_change || has_actions;
+                println!("[DEBUG] State handler 'handled' result: {} (state_change={}, actions={})", handled, has_state_change, has_actions);
+                tracing::debug!(
+                    handled,
+                    has_state_change,
+                    has_actions,
+                    "[ChatActor] State handler 'handled' result (false=fall through to legacy)"
+                );
+                Ok(handled)
             }
             Err(e) => {
                 // Send failure response to responder if present

@@ -20,7 +20,7 @@ async fn test_chat_created_with_default_model() {
 
     // Verify default model is openai:gpt-5-mini (multi-provider format includes provider prefix)
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "openai:gpt-5-mini");
+    assert_eq!(chat["agent_config"]["model"], "openrouter:stepfun/step-3.5-flash:free");
 }
 
 #[tokio::test]
@@ -64,7 +64,7 @@ async fn test_model_updated_on_message() {
     let chat_id = create_chat(&app, &workspace_id, &token, "Start with mini").await;
 
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "openai:gpt-5-mini");
+    assert_eq!(chat["agent_config"]["model"], "openrouter:stepfun/step-3.5-flash:free");
 
     // Send message with model change to gpt-4o
     let response = post_message(

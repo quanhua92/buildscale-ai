@@ -93,6 +93,9 @@ pub enum StateAction {
 
     /// Send a failure response to a command responder
     SendFailureResponse { message: String },
+
+    /// Start the AI interaction processing (triggers process_interaction in the actor)
+    StartProcessing { user_id: uuid::Uuid },
 }
 
 /// Result of processing an event in a state handler.

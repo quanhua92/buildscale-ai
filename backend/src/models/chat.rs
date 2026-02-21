@@ -4,7 +4,7 @@ use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
 /// Default AI model for new chat sessions
-pub const DEFAULT_CHAT_MODEL: &str = "gpt-5-mini";
+pub const DEFAULT_CHAT_MODEL: &str = "openrouter:stepfun/step-3.5-flash:free";
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, sqlx::Type,

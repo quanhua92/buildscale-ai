@@ -49,15 +49,16 @@ impl StateHandler for IdleState {
         let _shared_state = ctx.shared_state; // Acknowledge the field exists
 
         match event {
-            ActorEvent::ProcessInteraction { user_id: _ } => {
-                // Transition to Running
+            ActorEvent::ProcessInteraction { user_id } => {
+                // Transition to Running and trigger AI processing
                 Ok(EventResult::transition_with_reason(
                     ActorState::Running,
                     "idle",
                     Some("Processing user interaction".to_string()),
                 )
                 .with_action(StateAction::SetActivelyProcessing(true))
-                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Running)))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Running))
+                .with_action(StateAction::StartProcessing { user_id }))
             }
 
             ActorEvent::Pause { reason } => {
