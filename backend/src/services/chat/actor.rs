@@ -370,7 +370,6 @@ impl ChatActor {
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
-        println!("[DEBUG] ProcessInteraction STARTED");
         tracing::info!(
             chat_id = %self.chat_id,
             user_id = %user_id,
@@ -1815,7 +1814,6 @@ impl ChatActor {
         reason: &str,
     ) -> Result<()> {
         let from_state = self.current_state();
-        println!("[DEBUG] transition_state: from={:?} event={:?} reason={}", from_state, std::mem::discriminant(&event), reason);
 
         // Try to perform the transition
         match self.state_machine.handle_event(event) {
@@ -1929,7 +1927,6 @@ impl ChatActor {
                 let _ = message;
             }
             StateAction::StartProcessing { user_id } => {
-                println!("[DEBUG] StartProcessing action reached! user_id={}", user_id);
                 tracing::info!(
                     chat_id = %self.chat_id,
                     user_id = %user_id,
@@ -1937,9 +1934,7 @@ impl ChatActor {
                 );
 
                 // Trigger the AI processing (this is async and may take time)
-                println!("[DEBUG] About to call process_interaction...");
                 let result = self.process_interaction(user_id).await;
-                println!("[DEBUG] process_interaction returned: {:?}", result.is_ok());
 
                 // Update session status based on result
                 if let Some(session_id) = self.session_id {
@@ -2274,7 +2269,6 @@ impl ChatActor {
                 // Return true if the handler actually did something (state change or actions)
                 // Return false to fall through to legacy path
                 let handled = has_state_change || has_actions;
-                println!("[DEBUG] State handler 'handled' result: {} (state_change={}, actions={})", handled, has_state_change, has_actions);
                 tracing::debug!(
                     handled,
                     has_state_change,
