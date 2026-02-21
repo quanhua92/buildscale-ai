@@ -7,7 +7,7 @@ use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
-use crate::services::chat::states::{StateContext, StateHandlerRegistry};
+use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
 use crate::services::storage::FileStorageService;
 use crate::providers::Agent;
 use crate::DbPool;
@@ -144,6 +144,8 @@ pub struct ChatActor {
     /// Consolidated state - single lock for all actor state
     /// Reduces lock contention and eliminates deadlock risk
     state: Arc<Mutex<ChatActorState>>,
+    /// Shared state for state handlers (NEW - simplified, no agent cache)
+    shared_state: Arc<Mutex<SharedActorState>>,
     /// State machine for managing actor lifecycle (NEW)
     state_machine: StateMachine,
     /// State handlers for state-specific behavior (NEW)
@@ -197,6 +199,7 @@ impl ChatActor {
             session_id: None,
             heartbeat_handle: None,
             state: Arc::new(Mutex::new(ChatActorState::default())),
+            shared_state: Arc::new(Mutex::new(SharedActorState::default())),
             state_machine,
             state_handlers,
         };
@@ -2136,6 +2139,39 @@ impl ChatActor {
                 // For now, this is a placeholder for future implementation
                 let _ = response;
             }
+            StateAction::CancelInteraction => {
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] Executing CancelInteraction action"
+                );
+                // Cancel the current interaction token
+                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
+                if let Some(token) = token {
+                    tracing::debug!(
+                        chat_id = %self.chat_id,
+                        "[ChatActor] Cancelled current interaction token"
+                    );
+                    token.cancel();
+                }
+            }
+            StateAction::SendSuccessResponse => {
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] Executing SendSuccessResponse action"
+                );
+                // The responder is handled separately in the command processing
+                // This action is just a signal that the command succeeded
+            }
+            StateAction::SendFailureResponse { message } => {
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    message = %message,
+                    "[ChatActor] Executing SendFailureResponse action"
+                );
+                // The responder is handled separately in the command processing
+                // This action is just a signal that the command failed
+                let _ = message;
+            }
         }
         Ok(())
     }
@@ -2182,7 +2218,7 @@ impl ChatActor {
             event_tx: self.event_tx.clone(),
             default_persona: self.default_persona.clone(),
             default_context_token_limit: self.default_context_token_limit,
-            shared_state: None, // Will be populated later when we migrate to SharedActorState
+            shared_state: Some(&self.shared_state),
         }
     }
 

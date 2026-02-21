@@ -78,6 +78,7 @@ impl StateHandler for RunningState {
                     Some(reason_str),
                 )
                 .with_action(StateAction::SetActivelyProcessing(false))
+                .with_action(StateAction::CancelInteraction)
                 .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
             }
 
@@ -89,6 +90,7 @@ impl StateHandler for RunningState {
                     Some(reason),
                 )
                 .with_action(StateAction::SetActivelyProcessing(false))
+                .with_action(StateAction::CancelInteraction)
                 .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled)))
             }
 

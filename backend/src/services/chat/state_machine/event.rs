@@ -84,6 +84,15 @@ pub enum StateAction {
 
     /// Save a response to the database
     SaveResponse(String),
+
+    /// Cancel the current interaction token
+    CancelInteraction,
+
+    /// Send a success response to a command responder (for Pause/Cancel acknowledgments)
+    SendSuccessResponse,
+
+    /// Send a failure response to a command responder
+    SendFailureResponse { message: String },
 }
 
 /// Result of processing an event in a state handler.

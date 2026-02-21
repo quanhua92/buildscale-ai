@@ -68,7 +68,8 @@ impl StateHandler for IdleState {
                     "idle",
                     Some(reason_str),
                 )
-                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused))
+                .with_action(StateAction::CancelInteraction))
             }
 
             ActorEvent::InactivityTimeout => {
