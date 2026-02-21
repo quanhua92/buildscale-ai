@@ -132,24 +132,28 @@ mod tests {
         assert_eq!(result.new_state, ActorState::Idle);
     }
 
-    /// Test error flow.
+    /// Test transient failure flow.
+    ///
+    /// AI interaction failures are transient and should return to Idle
+    /// (not Error terminal state) to allow retry.
     #[test]
     fn test_error_flow() {
         let mut machine = StateMachine::new(ActorState::Running);
 
-        // Error during processing
+        // Transient error during processing (e.g., AI timeout)
         let event = ActorEvent::InteractionComplete {
             success: false,
             error: Some("AI engine error".to_string()),
         };
         let result = machine.handle_event(event).unwrap();
-        assert_eq!(result.new_state, ActorState::Error);
+        assert_eq!(result.new_state, ActorState::Idle);
 
-        // Terminal state - cannot transition
+        // Should be able to process another interaction (not terminal)
         let event = ActorEvent::ProcessInteraction {
             user_id: Uuid::new_v4(),
         };
-        assert!(machine.handle_event(event).is_err());
+        let result = machine.handle_event(event).unwrap();
+        assert_eq!(result.new_state, ActorState::Running);
     }
 
     /// Test cancellation flow.

@@ -35,7 +35,7 @@ async fn test_running_to_idle_on_complete_success() {
 }
 
 #[tokio::test]
-async fn test_running_to_error_on_complete_failure() {
+async fn test_running_to_idle_on_complete_failure() {
     let mut machine = StateMachine::new(ActorState::Running);
     let event = ActorEvent::InteractionComplete {
         success: false,
@@ -43,7 +43,7 @@ async fn test_running_to_error_on_complete_failure() {
     };
 
     let result = machine.handle_event(event).unwrap();
-    assert_eq!(result.new_state, ActorState::Error);
+    assert_eq!(result.new_state, ActorState::Idle);
     assert!(result.state_changed);
 }
 
@@ -226,19 +226,20 @@ async fn test_pause_resume_flow() {
 async fn test_error_flow() {
     let mut machine = StateMachine::new(ActorState::Running);
 
-    // Error during processing
+    // Transient error during processing (e.g., AI timeout)
     let event = ActorEvent::InteractionComplete {
         success: false,
         error: Some("AI engine error".to_string()),
     };
     let result = machine.handle_event(event).unwrap();
-    assert_eq!(result.new_state, ActorState::Error);
+    assert_eq!(result.new_state, ActorState::Idle);
 
-    // Terminal state - cannot transition
+    // Should be able to process another interaction (not terminal)
     let event2 = ActorEvent::ProcessInteraction {
         user_id: Uuid::new_v4(),
     };
-    assert!(machine.handle_event(event2).is_err());
+    let result2 = machine.handle_event(event2).unwrap();
+    assert_eq!(result2.new_state, ActorState::Running);
 }
 
 #[tokio::test]

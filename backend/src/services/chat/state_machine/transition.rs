@@ -90,6 +90,7 @@ impl TransitionTable {
         // From Idle
         self.insert(ActorState::Idle, "process_interaction", ActorState::Running);
         self.insert(ActorState::Idle, "pause", ActorState::Paused);
+        self.insert(ActorState::Idle, "cancel", ActorState::Cancelled);
         self.insert(ActorState::Idle, "inactivity_timeout", ActorState::Completed);
 
         // From Running
@@ -160,6 +161,10 @@ mod tests {
             Some(ActorState::Paused)
         );
         assert_eq!(
+            table.get_target(ActorState::Idle, "cancel"),
+            Some(ActorState::Cancelled)
+        );
+        assert_eq!(
             table.get_target(ActorState::Idle, "inactivity_timeout"),
             Some(ActorState::Completed)
         );
@@ -203,8 +208,9 @@ mod tests {
         let table = TransitionTable::new();
 
         assert!(table.is_valid_transition(ActorState::Idle, "process_interaction"));
+        assert!(table.is_valid_transition(ActorState::Idle, "cancel"));
         assert!(table.is_valid_transition(ActorState::Running, "pause"));
-        assert!(!table.is_valid_transition(ActorState::Idle, "cancel"));
+        assert!(!table.is_valid_transition(ActorState::Idle, "shutdown"));
     }
 
     #[test]

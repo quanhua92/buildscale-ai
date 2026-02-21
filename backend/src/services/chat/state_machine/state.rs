@@ -73,8 +73,8 @@ impl ActorState {
     ///
     /// - Terminal states cannot transition to any state
     /// - Can always transition to Running from any non-terminal state
-    /// - Running → Idle, Paused, Completed, Error
-    /// - Idle → Paused
+    /// - Running → Idle, Paused, Completed, Error, Cancelled
+    /// - Idle → Paused, Cancelled, Completed
     /// - Paused → Idle, Completed
     ///
     /// # Example
@@ -111,8 +111,9 @@ impl ActorState {
             (Self::Running, Self::Error) => true,
             (Self::Running, Self::Cancelled) => true,
 
-            // Idle can go to paused (pause event) and completed (inactivity timeout)
+            // Idle can go to paused (pause event), cancelled (cancel), and completed (inactivity timeout)
             (Self::Idle, Self::Paused) => true,
+            (Self::Idle, Self::Cancelled) => true,
             (Self::Idle, Self::Completed) => true,
 
             // Paused can go to idle (resume) and completed (inactivity timeout)
@@ -144,10 +145,10 @@ mod tests {
         let from = ActorState::Idle;
         assert!(from.can_transition_to(ActorState::Running));
         assert!(from.can_transition_to(ActorState::Paused));
+        assert!(from.can_transition_to(ActorState::Cancelled)); // via cancel event
         assert!(from.can_transition_to(ActorState::Completed)); // via inactivity timeout
         assert!(!from.can_transition_to(ActorState::Idle));
         assert!(!from.can_transition_to(ActorState::Error));
-        assert!(!from.can_transition_to(ActorState::Cancelled));
     }
 
     #[test]

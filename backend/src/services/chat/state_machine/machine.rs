@@ -265,6 +265,18 @@ mod tests {
     }
 
     #[test]
+    fn test_idle_to_cancelled() {
+        let mut machine = StateMachine::new(ActorState::Idle);
+        let event = ActorEvent::Cancel {
+            reason: "User cancelled".to_string(),
+        };
+
+        let result = machine.handle_event(event).unwrap();
+        assert_eq!(result.new_state, ActorState::Cancelled);
+        assert!(result.state_changed);
+    }
+
+    #[test]
     fn test_terminal_states_block_transitions() {
         for terminal_state in [ActorState::Error, ActorState::Cancelled, ActorState::Completed] {
             let mut machine = StateMachine::new(terminal_state);
