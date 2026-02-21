@@ -8,6 +8,8 @@ use crate::models::sse::SseEvent;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::state::ActorState;
+
 /// Events that can trigger state transitions in a ChatActor.
 ///
 /// Each event represents a distinct action or occurrence that may cause
@@ -91,7 +93,7 @@ pub enum StateAction {
 #[derive(Debug, Clone)]
 pub struct EventResult {
     /// The new state after handling the event (None means no state change)
-    pub new_state: Option<crate::models::agent_session::SessionStatus>,
+    pub new_state: Option<ActorState>,
 
     /// Actions to execute as part of handling this event
     pub actions: Vec<StateAction>,
@@ -111,30 +113,29 @@ impl EventResult {
     }
 
     /// Creates an EventResult that transitions to a specific state.
-    pub fn transition_to(status: SessionStatus) -> Self {
+    pub fn transition_to(state: ActorState) -> Self {
         Self {
-            new_state: Some(status),
-            actions: vec![StateAction::UpdateSessionStatus(status)],
+            new_state: Some(state),
+            actions: vec![],
             emit_sse: Vec::new(),
         }
     }
 
     /// Creates an EventResult that transitions to a state with a reason.
     pub fn transition_with_reason(
-        status: SessionStatus,
+        state: ActorState,
         from_state: &str,
         reason: Option<String>,
     ) -> Self {
         let sse_event = SseEvent::StateChanged {
             from_state: from_state.to_string(),
-            to_state: status.to_string(),
+            to_state: state.to_string(),
             reason,
         };
 
         Self {
-            new_state: Some(status),
+            new_state: Some(state),
             actions: vec![
-                StateAction::UpdateSessionStatus(status),
                 StateAction::EmitSse(sse_event.clone()),
             ],
             emit_sse: vec![sse_event],
@@ -195,9 +196,9 @@ mod tests {
 
     #[test]
     fn test_event_result_transition() {
-        let result = EventResult::transition_to(SessionStatus::Running);
-        assert_eq!(result.new_state, Some(SessionStatus::Running));
-        assert_eq!(result.actions.len(), 1);
+        let result = EventResult::transition_to(ActorState::Running);
+        assert_eq!(result.new_state, Some(ActorState::Running));
+        assert_eq!(result.actions.len(), 0);
         assert!(result.emit_sse.is_empty());
     }
 }

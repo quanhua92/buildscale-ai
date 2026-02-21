@@ -6,7 +6,7 @@ use crate::services::agent_sessions;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine};
+use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
 use crate::services::chat::states::StateHandlerRegistry;
 use crate::services::storage::FileStorageService;
 use crate::providers::Agent;
@@ -2054,5 +2054,73 @@ impl ChatActor {
                 Ok(())
             }
         }
+    }
+
+    /// Execute a state action returned by a state handler.
+    #[instrument(skip(self), fields(chat_id = %self.chat_id))]
+    async fn execute_state_action(&mut self, action: StateAction) -> Result<(), crate::error::Error> {
+        match action {
+            StateAction::UpdateSessionStatus(status) => {
+                if let Some(session_id) = self.session_id {
+                    tracing::debug!(
+                        chat_id = %self.chat_id,
+                        session_id = %session_id,
+                        new_status = %status,
+                        "[ChatActor] Executing UpdateSessionStatus action"
+                    );
+                    let _ = self.update_session_status(session_id, status, None).await;
+                }
+            }
+            StateAction::SetActivelyProcessing(value) => {
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    is_actively_processing = value,
+                    "[ChatActor] Executing SetActivelyProcessing action"
+                );
+                let mut state = self.state.lock().await;
+                state.interaction.is_actively_processing = value;
+            }
+            StateAction::EmitSse(event) => {
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    event_type = ?event,
+                    "[ChatActor] Executing EmitSse action"
+                );
+                let _ = self.event_tx.send(event);
+            }
+            StateAction::ResetInactivityTimer => {
+                // This is handled by the main loop's select! statement
+                tracing::trace!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] ResetInactivityTimer action requested"
+                );
+            }
+            StateAction::ShutdownActor => {
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] Executing ShutdownActor action"
+                );
+                // This will be handled by breaking out of the main loop
+                // The state machine will transition to a terminal state first
+            }
+            StateAction::SaveResponse(response) => {
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] Executing SaveResponse action"
+                );
+                // This would save the response to the database
+                // For now, this is a placeholder for future implementation
+                let _ = response;
+            }
+        }
+        Ok(())
+    }
+
+    /// Execute multiple state actions in sequence.
+    async fn execute_state_actions(&mut self, actions: Vec<StateAction>) -> Result<(), crate::error::Error> {
+        for action in actions {
+            self.execute_state_action(action).await?;
+        }
+        Ok(())
     }
 }

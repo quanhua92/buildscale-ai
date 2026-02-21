@@ -48,31 +48,34 @@ impl StateHandler for IdleState {
             ActorEvent::ProcessInteraction { user_id: _ } => {
                 // Transition to Running
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Running,
+                    ActorState::Running,
                     "idle",
                     Some("Processing user interaction".to_string()),
                 )
-                .with_action(StateAction::SetActivelyProcessing(true)))
+                .with_action(StateAction::SetActivelyProcessing(true))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Running)))
             }
 
             ActorEvent::Pause { reason } => {
                 // Already idle, can pause
                 let reason_str = reason.unwrap_or_else(|| "Paused while idle".to_string());
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Paused,
+                    ActorState::Paused,
                     "idle",
                     Some(reason_str),
-                ))
+                )
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
             }
 
             ActorEvent::InactivityTimeout => {
                 // Transition to Completed (terminal)
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Completed,
+                    ActorState::Completed,
                     "idle",
                     Some("Inactivity timeout - session completed".to_string()),
                 )
-                .with_action(StateAction::ShutdownActor))
+                .with_action(StateAction::ShutdownActor)
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Completed)))
             }
 
             ActorEvent::Ping => {

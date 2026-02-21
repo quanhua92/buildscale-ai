@@ -5,7 +5,7 @@
 use crate::error::Result;
 use crate::models::agent_session::SessionStatus;
 use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, EventResult};
+use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
 use crate::services::chat::states::StateContext;
 
 /// Processor for Pause events.
@@ -41,10 +41,11 @@ impl EventProcessor for PauseProcessor {
 
         // Transition to Paused state
         Ok(EventResult::transition_with_reason(
-            SessionStatus::Paused,
+            ActorState::Paused,
             "unknown",
             Some(reason_str),
-        ))
+        )
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
     }
 }
 

@@ -5,7 +5,7 @@
 use crate::error::Result;
 use crate::models::agent_session::SessionStatus;
 use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, EventResult};
+use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
 use crate::services::chat::states::StateContext;
 
 /// Processor for Cancel events.
@@ -39,10 +39,11 @@ impl EventProcessor for CancelProcessor {
 
         // Transition to Cancelled terminal state
         Ok(EventResult::transition_with_reason(
-            SessionStatus::Cancelled,
+            ActorState::Cancelled,
             "unknown",
             Some(reason),
-        ))
+        )
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled)))
     }
 }
 

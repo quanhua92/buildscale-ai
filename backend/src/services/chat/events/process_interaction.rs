@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::models::agent_session::SessionStatus;
 use crate::models::sse::SseEvent;
 use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, EventResult, StateAction};
+use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
 use crate::services::chat::states::StateContext;
 use crate::services::storage::FileStorageService;
 use crate::DbPool;
@@ -56,11 +56,12 @@ impl EventProcessor for ProcessInteractionProcessor {
 
         // Transition to Running state
         Ok(EventResult::transition_with_reason(
-            SessionStatus::Running,
+            ActorState::Running,
             "unknown",
             Some(format!("Processing interaction for user {}", user_id)),
         )
-        .with_action(StateAction::SetActivelyProcessing(true)))
+        .with_action(StateAction::SetActivelyProcessing(true))
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Running)))
     }
 }
 

@@ -50,20 +50,22 @@ impl StateHandler for RunningState {
                 if success {
                     // Transition to Idle on success
                     Ok(EventResult::transition_with_reason(
-                        SessionStatus::Idle,
+                        ActorState::Idle,
                         "running",
                         Some("Interaction completed successfully".to_string()),
                     )
-                    .with_action(StateAction::SetActivelyProcessing(false)))
+                    .with_action(StateAction::SetActivelyProcessing(false))
+                    .with_action(StateAction::UpdateSessionStatus(SessionStatus::Idle)))
                 } else {
                     // Transition to Error on failure
                     let error_msg = error.unwrap_or_else(|| "Unknown error".to_string());
                     Ok(EventResult::transition_with_reason(
-                        SessionStatus::Error,
+                        ActorState::Error,
                         "running",
                         Some(format!("Interaction failed: {}", error_msg)),
                     )
-                    .with_action(StateAction::SetActivelyProcessing(false)))
+                    .with_action(StateAction::SetActivelyProcessing(false))
+                    .with_action(StateAction::UpdateSessionStatus(SessionStatus::Error)))
                 }
             }
 
@@ -71,21 +73,23 @@ impl StateHandler for RunningState {
                 // Pause while running
                 let reason_str = reason.unwrap_or_else(|| "Paused during processing".to_string());
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Paused,
+                    ActorState::Paused,
                     "running",
                     Some(reason_str),
                 )
-                .with_action(StateAction::SetActivelyProcessing(false)))
+                .with_action(StateAction::SetActivelyProcessing(false))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
             }
 
             ActorEvent::Cancel { reason } => {
                 // Cancel while running
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Cancelled,
+                    ActorState::Cancelled,
                     "running",
                     Some(reason),
                 )
-                .with_action(StateAction::SetActivelyProcessing(false)))
+                .with_action(StateAction::SetActivelyProcessing(false))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled)))
             }
 
             ActorEvent::Ping => {

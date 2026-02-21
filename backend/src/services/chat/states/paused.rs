@@ -47,10 +47,11 @@ impl StateHandler for PausedState {
             ActorEvent::ProcessInteraction { user_id: _ } => {
                 // Resume to Idle first, then will transition to Running
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Idle,
+                    ActorState::Idle,
                     "paused",
                     Some("Resuming from pause".to_string()),
-                ))
+                )
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Idle)))
             }
 
             ActorEvent::Pause { reason: _ } => {
@@ -65,11 +66,12 @@ impl StateHandler for PausedState {
             ActorEvent::InactivityTimeout => {
                 // Transition to Completed (terminal)
                 Ok(EventResult::transition_with_reason(
-                    SessionStatus::Completed,
+                    ActorState::Completed,
                     "paused",
                     Some("Inactivity timeout while paused".to_string()),
                 )
-                .with_action(StateAction::ShutdownActor))
+                .with_action(StateAction::ShutdownActor)
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Completed)))
             }
 
             ActorEvent::Ping => {
@@ -79,15 +81,6 @@ impl StateHandler for PausedState {
                     actions: vec![StateAction::ResetInactivityTimer],
                     emit_sse: vec![SseEvent::Ping],
                 })
-            }
-
-            ActorEvent::Cancel { reason } => {
-                // Can also cancel from paused
-                Ok(EventResult::transition_with_reason(
-                    SessionStatus::Cancelled,
-                    "paused",
-                    Some(reason),
-                ))
             }
 
             _ => Ok(EventResult::no_change()),
