@@ -1202,7 +1202,10 @@ export function ChatProvider({
         setMessages(cachedSession.messages)
         // Note: isStreaming is now derived from chatSessions, no need to set it
         setIsLoading(cachedSession.isLoading)
-        setModel(cachedSession.model)
+        // Ensure model is valid - if cached model is undefined, keep current model
+        if (cachedSession.model) {
+          setModel(cachedSession.model)
+        }
         setModeState(cachedSession.mode)
         setPlanFileState(cachedSession.planFile)
         setPendingQuestionSession(cachedSession.pendingQuestionSession)
