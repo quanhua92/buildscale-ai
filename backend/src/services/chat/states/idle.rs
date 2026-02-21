@@ -43,7 +43,11 @@ impl StateHandler for IdleState {
         ])
     }
 
-    fn handle_event(&self, event: ActorEvent, _ctx: &mut StateContext) -> Result<EventResult> {
+    fn handle_event(&self, event: ActorEvent, ctx: &mut StateContext) -> Result<EventResult> {
+        // Note: shared_state is currently None as we migrate to the new architecture
+        // State handlers can access it via ctx.shared_state when needed
+        let _shared_state = ctx.shared_state; // Acknowledge the field exists
+
         match event {
             ActorEvent::ProcessInteraction { user_id: _ } => {
                 // Transition to Running

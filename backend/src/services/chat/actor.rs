@@ -7,7 +7,7 @@ use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
-use crate::services::chat::states::StateHandlerRegistry;
+use crate::services::chat::states::{StateContext, StateHandlerRegistry};
 use crate::services::storage::FileStorageService;
 use crate::providers::Agent;
 use crate::DbPool;
@@ -318,6 +318,30 @@ impl ChatActor {
                         // Reset inactivity timeout on any command
                         inactivity_timeout.as_mut().reset(tokio::time::Instant::now() + inactivity_timeout_duration);
 
+                        // Try to process the command through state handlers first
+                        // If the handler returns true, the command was fully handled
+                        // If the handler returns false or errors, fall back to legacy path
+                        let handled_by_state_handler = match self.process_command_via_state_handler(&cmd).await {
+                            Ok(handled) => handled,
+                            Err(e) => {
+                                warn!(
+                                    error = ?e,
+                                    "[ChatActor] State handler processing failed, falling back to legacy path"
+                                );
+                                false
+                            }
+                        };
+
+                        // If state handler handled it, continue to next command
+                        if handled_by_state_handler {
+                            // Check if we should break (terminal state)
+                            if self.current_state().is_terminal() {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        // Fall back to legacy command processing
                         match cmd {
                             AgentCommand::ProcessInteraction { user_id } => {
                                 // Mark as actively processing to prevent inactivity timeout
@@ -2147,22 +2171,88 @@ impl ChatActor {
         }
     }
 
+    /// Create a state context for state handlers.
+    fn create_state_context(&self) -> StateContext<'_> {
+        StateContext {
+            chat_id: self.chat_id,
+            workspace_id: self.workspace_id,
+            user_id: self.user_id,
+            pool: self.pool.clone(),
+            storage: self.storage.clone(),
+            event_tx: self.event_tx.clone(),
+            default_persona: self.default_persona.clone(),
+            default_context_token_limit: self.default_context_token_limit,
+            shared_state: None, // Will be populated later when we migrate to SharedActorState
+        }
+    }
+
     /// Process a command through the state handler system.
     ///
     /// Returns true if the command was fully handled by the state system,
     /// false if it needs to be processed by the legacy code path.
-    ///
-    /// Note: For now, state handlers are NOT used because they require
-    /// a StateContext which we can't properly construct yet. This method
-    /// is a placeholder for future integration.
-    #[instrument(skip(self, _command), fields(chat_id = %self.chat_id))]
+    #[instrument(skip(self, command), fields(chat_id = %self.chat_id))]
     async fn process_command_via_state_handler(
         &mut self,
-        _command: &AgentCommand,
+        command: &AgentCommand,
     ) -> Result<bool, crate::error::Error> {
-        // State handlers require a StateContext with shared_state reference
-        // which we can't properly construct without refactoring the
-        // ChatActorState structure. For now, always use legacy path.
-        Ok(false)
+        // Convert command to event
+        let event = match self.command_to_event(command) {
+            Some(e) => e,
+            None => {
+                // Command doesn't map to an event, use legacy path
+                return Ok(false);
+            }
+        };
+
+        let current_state = self.current_state();
+
+        // Clone event for use after handle_event (which moves it)
+        let event_for_log = event.clone();
+        let event_for_transition = event.clone();
+
+        // Get handler before creating mutable context
+        let handler = self.state_handlers.get_handler(current_state);
+
+        // Create context (now only requires &self, not &mut self)
+        let mut ctx = self.create_state_context();
+
+        // Call the state handler
+        let result = handler.handle_event(event, &mut ctx);
+
+        match result {
+            Ok(event_result) => {
+                // Execute all actions returned by the handler
+                self.execute_state_actions(event_result.actions).await?;
+
+                // Emit any SSE events
+                for sse_event in event_result.emit_sse {
+                    let _ = self.event_tx.send(sse_event);
+                }
+
+                // If the handler specified a new state, transition to it
+                if let Some(new_state) = event_result.new_state {
+                    let _ = self.transition_state(
+                        event_for_transition,
+                        &format!("State handler: {:?} → {:?}", current_state, new_state)
+                    ).await;
+
+                    // Check if we should break out of the loop (terminal state)
+                    if new_state.is_terminal() {
+                        return Ok(true);
+                    }
+                }
+
+                Ok(true)
+            }
+            Err(e) => {
+                warn!(
+                    current_state = %current_state,
+                    event = ?event_for_log,
+                    error = ?e,
+                    "[ChatActor] State handler failed, falling back to legacy path"
+                );
+                Ok(false)
+            }
+        }
     }
 }

@@ -82,8 +82,8 @@ pub struct StateContext<'a> {
     /// Default context token limit
     pub default_context_token_limit: usize,
 
-    /// Shared actor state (simplified - no agent cache)
-    pub shared_state: &'a Arc<tokio::sync::Mutex<SharedActorState>>,
+    /// Shared actor state (optional - for gradual migration)
+    pub shared_state: Option<&'a Arc<tokio::sync::Mutex<SharedActorState>>>,
 }
 
 /// Shared state for ChatActor (simplified - no agent cache).
