@@ -1,0 +1,101 @@
+//! Idle state handler for ChatActor.
+//!
+//! The Idle state represents when the actor is waiting for user input.
+
+use crate::error::Result;
+use crate::models::agent_session::SessionStatus;
+use crate::models::sse::SseEvent;
+use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::services::chat::states::{StateContext, StateHandler};
+
+/// Handler for the Idle state.
+///
+/// In the Idle state, the actor is waiting for user input or events.
+/// It can transition to:
+/// - Running (when ProcessInteraction is received)
+/// - Paused (when Pause is received)
+/// - Completed (on InactivityTimeout)
+#[derive(Debug, Clone)]
+pub struct IdleState;
+
+impl IdleState {
+    /// Creates a new IdleState handler.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for IdleState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StateHandler for IdleState {
+    fn state(&self) -> ActorState {
+        ActorState::Idle
+    }
+
+    fn on_enter(&self, _ctx: &mut StateContext) -> Result<Vec<StateAction>> {
+        Ok(vec![
+            StateAction::UpdateSessionStatus(SessionStatus::Idle),
+            StateAction::ResetInactivityTimer,
+        ])
+    }
+
+    fn handle_event(&self, event: ActorEvent, _ctx: &mut StateContext) -> Result<EventResult> {
+        match event {
+            ActorEvent::ProcessInteraction { user_id: _ } => {
+                // Transition to Running
+                Ok(EventResult::transition_with_reason(
+                    SessionStatus::Running,
+                    "idle",
+                    Some("Processing user interaction".to_string()),
+                )
+                .with_action(StateAction::SetActivelyProcessing(true)))
+            }
+
+            ActorEvent::Pause { reason } => {
+                // Already idle, can pause
+                let reason_str = reason.unwrap_or_else(|| "Paused while idle".to_string());
+                Ok(EventResult::transition_with_reason(
+                    SessionStatus::Paused,
+                    "idle",
+                    Some(reason_str),
+                ))
+            }
+
+            ActorEvent::InactivityTimeout => {
+                // Transition to Completed (terminal)
+                Ok(EventResult::transition_with_reason(
+                    SessionStatus::Completed,
+                    "idle",
+                    Some("Inactivity timeout - session completed".to_string()),
+                )
+                .with_action(StateAction::ShutdownActor))
+            }
+
+            ActorEvent::Ping => {
+                // Just reset the inactivity timer, no state change
+                Ok(EventResult {
+                    new_state: None,
+                    actions: vec![StateAction::ResetInactivityTimer],
+                    emit_sse: vec![SseEvent::Ping],
+                })
+            }
+
+            _ => Ok(EventResult::no_change()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_idle_state() {
+        let handler = IdleState::new();
+        assert_eq!(handler.state(), ActorState::Idle);
+    }
+}

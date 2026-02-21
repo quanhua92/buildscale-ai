@@ -95,9 +95,12 @@
 
 pub mod actor;
 pub mod context;
+pub mod events;
 pub mod registry;
 pub mod rig_engine;
 pub mod rig_tools;
+pub mod state_machine;
+pub mod states;
 pub mod sync;
 
 pub use context::{
