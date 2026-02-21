@@ -294,6 +294,16 @@ export function MultiChatSSEManagerProvider({
 
                   if (type === 'ping') continue
 
+                  // Debug logging for done event
+                  if (type === 'done') {
+                    console.log('[MultiChatSSEManager] Done event received', {
+                      chatId,
+                      type,
+                      data,
+                      rawPayload: payload
+                    })
+                  }
+
                   // Emit event to subscriber (single callback per chat)
                   const callback = subscribersRef.current.get(chatId)
                   if (callback) {

@@ -1997,6 +1997,29 @@ impl ChatActor {
                         ActorEvent::InteractionComplete { success, error },
                         if success { "Interaction completed successfully" } else { "Interaction failed" }
                     ).await;
+
+                    // CRITICAL: Send Done event to frontend to stop blinking cursor
+                    if success {
+                        let send_result = self.event_tx.send(SseEvent::Done {
+                            message: "Turn complete".to_string(),
+                        });
+                        if let Err(e) = send_result {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                event_type = "Done",
+                                error = ?e,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] FAILED to send Done event - no receivers"
+                            );
+                        } else {
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                event_type = "Done",
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] SENT Done event successfully"
+                            );
+                        }
+                    }
                 }
 
                 if let Err(e) = result {
