@@ -95,9 +95,14 @@ impl ActorState {
             return false;
         }
 
+        // Same state transition is not allowed
+        if self == target {
+            return false;
+        }
+
         match (self, target) {
-            // Can always transition to running from non-terminal
-            (_, Self::Running) => true,
+            // Non-terminal states can transition to running
+            (ActorState::Idle | ActorState::Paused, Self::Running) => true,
 
             // Running can go to idle, paused, completed, error, cancelled
             (Self::Running, Self::Idle) => true,
@@ -106,15 +111,13 @@ impl ActorState {
             (Self::Running, Self::Error) => true,
             (Self::Running, Self::Cancelled) => true,
 
-            // Idle can go to paused, completed, cancelled
+            // Idle can go to paused (pause event) and completed (inactivity timeout)
             (Self::Idle, Self::Paused) => true,
             (Self::Idle, Self::Completed) => true,
-            (Self::Idle, Self::Cancelled) => true,
 
-            // Paused can go to idle, completed, cancelled
+            // Paused can go to idle (resume) and completed (inactivity timeout)
             (Self::Paused, Self::Idle) => true,
             (Self::Paused, Self::Completed) => true,
-            (Self::Paused, Self::Cancelled) => true,
 
             // All other transitions are invalid
             _ => false,
@@ -141,8 +144,8 @@ mod tests {
         let from = ActorState::Idle;
         assert!(from.can_transition_to(ActorState::Running));
         assert!(from.can_transition_to(ActorState::Paused));
+        assert!(from.can_transition_to(ActorState::Completed)); // via inactivity timeout
         assert!(!from.can_transition_to(ActorState::Idle));
-        assert!(!from.can_transition_to(ActorState::Completed));
         assert!(!from.can_transition_to(ActorState::Error));
         assert!(!from.can_transition_to(ActorState::Cancelled));
     }
@@ -154,8 +157,8 @@ mod tests {
         assert!(from.can_transition_to(ActorState::Paused));
         assert!(from.can_transition_to(ActorState::Completed));
         assert!(from.can_transition_to(ActorState::Error));
+        assert!(from.can_transition_to(ActorState::Cancelled)); // via cancel event
         assert!(!from.can_transition_to(ActorState::Running));
-        assert!(!from.can_transition_to(ActorState::Cancelled));
     }
 
     #[test]

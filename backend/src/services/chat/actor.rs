@@ -6,6 +6,8 @@ use crate::services::agent_sessions;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
+use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine};
+use crate::services::chat::states::StateHandlerRegistry;
 use crate::services::storage::FileStorageService;
 use crate::providers::Agent;
 use crate::DbPool;
@@ -15,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::{info, debug, warn, instrument};
 use uuid::Uuid;
 
 /// Maximum number of retries for transient AI engine errors
@@ -141,6 +144,10 @@ pub struct ChatActor {
     /// Consolidated state - single lock for all actor state
     /// Reduces lock contention and eliminates deadlock risk
     state: Arc<Mutex<ChatActorState>>,
+    /// State machine for managing actor lifecycle (NEW)
+    state_machine: StateMachine,
+    /// State handlers for state-specific behavior (NEW)
+    state_handlers: StateHandlerRegistry,
 }
 
 pub struct ChatActorArgs {
@@ -168,6 +175,12 @@ impl ChatActor {
         let (command_tx, command_rx) = mpsc::channel(32);
         let event_tx = args.event_tx.clone();
 
+        // Initialize state machine in Idle state
+        let state_machine = StateMachine::new(ActorState::Idle);
+
+        // Initialize state handlers registry
+        let state_handlers = StateHandlerRegistry::new();
+
         let actor = Self {
             chat_id: args.chat_id,
             workspace_id: args.workspace_id,
@@ -184,6 +197,8 @@ impl ChatActor {
             session_id: None,
             heartbeat_handle: None,
             state: Arc::new(Mutex::new(ChatActorState::default())),
+            state_machine,
+            state_handlers,
         };
 
         tokio::spawn(async move {
@@ -237,6 +252,13 @@ impl ChatActor {
         self.session_id = Some(session_id);
         self.heartbeat_handle = Some(self.start_heartbeat_task(session_id));
 
+        // Log initial state entry (actor starts in Idle state)
+        self.log_state_transition(
+            ActorState::Idle,
+            ActorState::Idle,
+            "Actor started - entering Idle state"
+        );
+
         // Periodic heartbeat ping (every 10 seconds)
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
 
@@ -260,6 +282,12 @@ impl ChatActor {
                             reason = "inactivity_timeout",
                             "[ChatActor] SHUTTING DOWN - No commands received while idle"
                         );
+
+                        // State transition: → Completed (terminal state)
+                        let _ = self.transition_state(
+                            ActorEvent::InactivityTimeout,
+                            "Inactivity timeout reached"
+                        ).await;
 
                         // Update session status to completed in database
                         if let Some(session_id) = self.session_id {
@@ -298,6 +326,12 @@ impl ChatActor {
                                     state.interaction.is_actively_processing = true;
                                 }
 
+                                // State transition: Idle → Running
+                                let _ = self.transition_state(
+                                    ActorEvent::ProcessInteraction { user_id },
+                                    "Starting interaction processing"
+                                ).await;
+
                                 // Update session status to running
                                 if let Some(session_id) = self.session_id {
                                     tracing::debug!(
@@ -312,22 +346,36 @@ impl ChatActor {
 
                                 // Update session status based on result
                                 if let Some(session_id) = self.session_id {
-                                    let (status, error_msg) = if let Err(ref e) = result {
+                                    let (status, error_msg, transition_event) = if let Err(ref e) = result {
                                         tracing::warn!(
                                             chat_id = %self.chat_id,
                                             session_id = %session_id,
                                             error = %e,
                                             "[ChatActor] ProcessInteraction: Setting status to error (interaction failed)"
                                         );
-                                        (crate::models::agent_session::SessionStatus::Error, Some(format!("AI Engine Error: {}", e)))
+                                        (
+                                            crate::models::agent_session::SessionStatus::Error,
+                                            Some(format!("AI Engine Error: {}", e)),
+                                            ActorEvent::InteractionComplete { success: false, error: Some(format!("{}", e)) }
+                                        )
                                     } else {
                                         tracing::debug!(
                                             chat_id = %self.chat_id,
                                             session_id = %session_id,
                                             "[ChatActor] ProcessInteraction: Setting status to idle (interaction complete)"
                                         );
-                                        (crate::models::agent_session::SessionStatus::Idle, None)
+                                        (
+                                            crate::models::agent_session::SessionStatus::Idle,
+                                            None,
+                                            ActorEvent::InteractionComplete { success: true, error: None }
+                                        )
                                     };
+
+                                    // State transition based on result
+                                    let _ = self.transition_state(
+                                        transition_event,
+                                        if error_msg.is_some() { "Interaction failed" } else { "Interaction completed successfully" }
+                                    ).await;
 
                                     // Log the error message we're about to save
                                     tracing::info!(
@@ -424,6 +472,13 @@ impl ChatActor {
                                     token.cancel();
                                 }
 
+                                // State transition: → Paused
+                                let pause_reason = reason.clone().unwrap_or_else(|| "User requested pause".to_string());
+                                let _ = self.transition_state(
+                                    ActorEvent::Pause { reason: reason.clone() },
+                                    &pause_reason
+                                ).await;
+
                                 // Update session status to paused in database
                                 if let Some(session_id) = self.session_id {
                                     tracing::debug!(
@@ -454,6 +509,13 @@ impl ChatActor {
                                     token.cancel();
                                 }
 
+                                // State transition: → Cancelled (terminal state)
+                                let cancel_reason = reason.clone();
+                                let _ = self.transition_state(
+                                    ActorEvent::Cancel { reason: reason.clone() },
+                                    &cancel_reason
+                                ).await;
+
                                 // Send acknowledgment
                                 if let Some(responder) = responder.lock().await.take() {
                                     let _ = responder.send(Ok(true));
@@ -465,6 +527,11 @@ impl ChatActor {
                             }
                             AgentCommand::Shutdown => {
                                 tracing::info!("[ChatActor] Shutting down for chat {}", self.chat_id);
+                                // State transition: → Completed (terminal state) via shutdown
+                                let _ = self.transition_state(
+                                    ActorEvent::Shutdown,
+                                    "Actor shutting down"
+                                ).await;
                                 break;
                             }
                         }
@@ -1929,5 +1996,63 @@ impl ChatActor {
                 }
             }
         })
+    }
+
+    // ========================================================================
+    // STATE MACHINE INTEGRATION METHODS
+    // ========================================================================
+
+    /// Log a state transition for debugging and monitoring
+    #[instrument(skip(self), fields(chat_id = %self.chat_id))]
+    fn log_state_transition(&self, from: ActorState, to: ActorState, reason: &str) {
+        info!(
+            from_state = %from,
+            to_state = %to,
+            reason = %reason,
+            "[ChatActor] State transition"
+        );
+
+        // Emit StateChanged SSE event
+        let _ = self.event_tx.send(SseEvent::StateChanged {
+            from_state: from.to_string(),
+            to_state: to.to_string(),
+            reason: Some(reason.to_string()),
+        });
+    }
+
+    /// Get the current state from the state machine
+    fn current_state(&self) -> ActorState {
+        self.state_machine.current_state()
+    }
+
+    /// Transition state using the state machine and log the transition
+    #[instrument(skip(self, event, reason), fields(chat_id = %self.chat_id))]
+    async fn transition_state(
+        &mut self,
+        event: ActorEvent,
+        reason: &str,
+    ) -> Result<(), crate::error::Error> {
+        let from_state = self.current_state();
+
+        // Try to perform the transition
+        match self.state_machine.handle_event(event) {
+            Ok(transition) if transition.state_changed => {
+                self.log_state_transition(from_state, transition.new_state, reason);
+                Ok(())
+            }
+            Ok(_) => {
+                // No state change, but not an error
+                Ok(())
+            }
+            Err(e) => {
+                warn!(
+                    from_state = %from_state,
+                    error = ?e,
+                    "[ChatActor] State transition failed, continuing with current state"
+                );
+                // Continue despite failed transition - don't break the actor
+                Ok(())
+            }
+        }
     }
 }

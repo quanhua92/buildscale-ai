@@ -56,8 +56,8 @@ impl fmt::Display for TransitionError {
             ),
             Self::TerminalState { state, attempted_event } => write!(
                 f,
-                "Cannot process event {:?} in terminal state {:?}",
-                attempted_event, state
+                "Terminal state {:?} cannot process event {:?}",
+                state, attempted_event
             ),
         }
     }
@@ -91,7 +91,6 @@ impl TransitionTable {
         self.insert(ActorState::Idle, "process_interaction", ActorState::Running);
         self.insert(ActorState::Idle, "pause", ActorState::Paused);
         self.insert(ActorState::Idle, "inactivity_timeout", ActorState::Completed);
-        self.insert(ActorState::Idle, "cancel", ActorState::Cancelled);
 
         // From Running
         self.insert(
@@ -106,6 +105,7 @@ impl TransitionTable {
         );
         self.insert(ActorState::Running, "pause", ActorState::Paused);
         self.insert(ActorState::Running, "cancel", ActorState::Cancelled);
+        self.insert(ActorState::Running, "inactivity_timeout", ActorState::Completed);
 
         // From Paused
         self.insert(ActorState::Paused, "process_interaction", ActorState::Idle);
@@ -114,7 +114,6 @@ impl TransitionTable {
             "inactivity_timeout",
             ActorState::Completed,
         );
-        self.insert(ActorState::Paused, "cancel", ActorState::Cancelled);
     }
 
     /// Helper to insert a transition into the table.
