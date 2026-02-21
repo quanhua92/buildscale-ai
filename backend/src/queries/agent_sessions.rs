@@ -10,6 +10,159 @@ use crate::DbConn;
 /// Default heartbeat timeout in seconds - sessions older than this are considered stale
 pub const STALE_SESSION_THRESHOLD_SECONDS: i64 = 120; // 2 minutes
 
+/// Gets or creates an agent session in the database.
+///
+/// This function implements intelligent session reuse:
+/// 1. Creates a new session if none exists for the chat
+/// 2. Reuses and updates an existing session if it's in a terminal state (completed, error, cancelled)
+/// 3. Returns an error if an active session exists (idle, running, paused)
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `new_session` - Session parameters to insert or use for update
+///
+/// # Returns
+/// The created or updated agent session
+///
+/// # Errors
+/// * `Conflict` - If an active session already exists for this chat
+/// * `NotFound` - If workspace, chat, or user doesn't exist
+pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSession) -> Result<AgentSession> {
+    tracing::debug!(
+        chat_id = %new_session.chat_id,
+        workspace_id = %new_session.workspace_id,
+        user_id = %new_session.user_id,
+        agent_type = %new_session.agent_type,
+        model = %new_session.model,
+        mode = %new_session.mode,
+        "[AgentSessions] Get or create agent session"
+    );
+
+    // First, try to get an existing session for this chat
+    let existing_session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.error_message,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.chat_id = $1
+        "#,
+        new_session.chat_id
+    )
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    match existing_session {
+        Some(session) => {
+            // Session exists - check if we can reuse it
+            match session.status {
+                SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled => {
+                    // Terminal state - reuse by updating to idle
+                    tracing::info!(
+                        chat_id = %new_session.chat_id,
+                        existing_status = %session.status,
+                        session_id = %session.id,
+                        "[AgentSessions] Reusing terminal session"
+                    );
+
+                    let updated = sqlx::query_as!(
+                        AgentSession,
+                        r#"
+                        WITH updated AS (
+                            UPDATE agent_sessions
+                            SET
+                                status = 'idle',
+                                user_id = $2,
+                                agent_type = $3,
+                                model = $4,
+                                mode = $5,
+                                updated_at = NOW(),
+                                last_heartbeat = NOW(),
+                                completed_at = NULL,
+                                error_message = NULL,
+                                current_task = NULL
+                            WHERE chat_id = $1
+                            RETURNING *
+                        )
+                        SELECT
+                            u.id,
+                            u.workspace_id,
+                            u.chat_id,
+                            u.user_id,
+                            u.agent_type as "agent_type: AgentType",
+                            u.status as "status: SessionStatus",
+                            u.model,
+                            u.mode,
+                            u.current_task,
+                            u.error_message,
+                            u.created_at,
+                            u.updated_at,
+                            u.last_heartbeat,
+                            u.completed_at,
+                            f.name as "chat_name?"
+                        FROM updated u
+                        LEFT JOIN files f ON u.chat_id = f.id
+                        "#,
+                        new_session.chat_id,
+                        new_session.user_id,
+                        new_session.agent_type as AgentType,
+                        &new_session.model,
+                        &new_session.mode
+                    )
+                    .fetch_one(conn)
+                    .await
+                    .map_err(Error::Sqlx)?;
+
+                    tracing::info!(
+                        session_id = %updated.id,
+                        chat_id = %updated.chat_id,
+                        "[AgentSessions] Reused session successfully"
+                    );
+
+                    Ok(updated)
+                }
+                _ => {
+                    // Active session - return error
+                    tracing::warn!(
+                        chat_id = %new_session.chat_id,
+                        existing_status = %session.status,
+                        session_id = %session.id,
+                        "[AgentSessions] Active session already exists for chat"
+                    );
+                    Err(Error::Conflict(format!(
+                        "An active session already exists for this chat: {} (status: {}, session_id: {})",
+                        new_session.chat_id, session.status, session.id
+                    )))
+                }
+            }
+        }
+        None => {
+            // No existing session - create a new one
+            tracing::debug!(
+                chat_id = %new_session.chat_id,
+                "[AgentSessions] No existing session, creating new one"
+            );
+            create_session(conn, new_session).await
+        }
+    }
+}
+
 /// Creates a new agent session in the database.
 pub async fn create_session(conn: &mut DbConn, new_session: NewAgentSession) -> Result<AgentSession> {
     tracing::debug!(

@@ -1803,7 +1803,7 @@ impl ChatActor {
             "[ChatActor] Session configuration determined from chat file"
         );
 
-        let session = agent_sessions::create_session(
+        let session = agent_sessions::get_or_create_session(
             &mut conn,
             self.workspace_id,
             self.chat_id,

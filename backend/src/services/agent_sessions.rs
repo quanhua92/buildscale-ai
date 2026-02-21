@@ -19,6 +19,63 @@ use uuid::Uuid;
 // SESSION CREATION
 // ============================================================================
 
+/// Gets an existing session or creates a new one for a chat.
+///
+/// This function implements intelligent session reuse:
+/// - If no session exists for the chat, creates a new one
+/// - If a terminal session exists (completed/error/cancelled), reuses it by updating to idle
+/// - If an active session exists (idle/running/paused), returns a conflict error
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `workspace_id` - Workspace ID
+/// * `chat_id` - Chat file ID (unique per session)
+/// * `user_id` - User who initiated the session
+/// * `agent_type` - Type of agent (assistant, planner, builder)
+/// * `model` - AI model name
+/// * `mode` - Operating mode (chat, plan, build)
+///
+/// # Returns
+/// The created or reused agent session
+///
+/// # Errors
+/// * `Conflict` - If an active session already exists for this chat
+/// * `NotFound` - If workspace, chat, or user doesn't exist
+pub async fn get_or_create_session(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    chat_id: Uuid,
+    user_id: Uuid,
+    agent_type: crate::models::agent_session::AgentType,
+    model: String,
+    mode: String,
+) -> Result<AgentSession> {
+    tracing::info!(
+        workspace_id = %workspace_id,
+        chat_id = %chat_id,
+        user_id = %user_id,
+        agent_type = %agent_type,
+        model = %model,
+        mode = %mode,
+        "[AgentSessions] Service: Getting or creating agent session"
+    );
+
+    // Validate inputs
+    validate_model_name(&model)?;
+    validate_mode(&mode)?;
+
+    let new_session = NewAgentSession {
+        workspace_id,
+        chat_id,
+        user_id,
+        agent_type,
+        model,
+        mode,
+    };
+
+    agent_sessions::get_or_create_session(conn, new_session).await
+}
+
 /// Creates a new agent session for a chat.
 ///
 /// # Arguments
