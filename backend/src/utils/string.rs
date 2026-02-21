@@ -59,7 +59,8 @@ mod tests {
         // Should not panic on emoji
         let emoji = "Hello 🎉 World 🌍";
         let preview = safe_preview(emoji, 8);
-        assert_eq!(preview, "Hello 🎉 W...");
+        // First 8 chars: "Hello 🎉 " (H e l l o space 🎉 space), then "..."
+        assert_eq!(preview, "Hello 🎉 ...");
     }
 
     #[test]
