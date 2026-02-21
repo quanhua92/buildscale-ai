@@ -1815,6 +1815,7 @@ impl ChatActor {
         reason: &str,
     ) -> Result<()> {
         let from_state = self.current_state();
+        println!("[DEBUG] transition_state: from={:?} event={:?} reason={}", from_state, std::mem::discriminant(&event), reason);
 
         // Try to perform the transition
         match self.state_machine.handle_event(event) {

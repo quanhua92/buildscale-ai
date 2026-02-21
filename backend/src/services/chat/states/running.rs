@@ -48,6 +48,7 @@ impl StateHandler for RunningState {
         match event {
             ActorEvent::InteractionComplete { success, error } => {
                 if success {
+                    println!("[DEBUG] RunningState: InteractionComplete success=true, transitioning to Idle");
                     // Transition to Idle on success
                     Ok(EventResult::transition_with_reason(
                         ActorState::Idle,
@@ -57,15 +58,17 @@ impl StateHandler for RunningState {
                     .with_action(StateAction::SetActivelyProcessing(false))
                     .with_action(StateAction::UpdateSessionStatus(SessionStatus::Idle)))
                 } else {
-                    // Transition to Error on failure
+                    println!("[DEBUG] RunningState: InteractionComplete success=false, transitioning to Idle");
+                    // Transition to Idle on failure (not Error - allow retry)
+                    // Error state is for unrecoverable failures, not transient AI errors
                     let error_msg = error.unwrap_or_else(|| "Unknown error".to_string());
                     Ok(EventResult::transition_with_reason(
-                        ActorState::Error,
+                        ActorState::Idle,
                         "running",
                         Some(format!("Interaction failed: {}", error_msg)),
                     )
                     .with_action(StateAction::SetActivelyProcessing(false))
-                    .with_action(StateAction::UpdateSessionStatus(SessionStatus::Error)))
+                    .with_action(StateAction::UpdateSessionStatus(SessionStatus::Idle)))
                 }
             }
 

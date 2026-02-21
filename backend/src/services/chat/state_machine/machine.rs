@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn test_running_to_error_on_failure() {
+    fn test_running_to_idle_on_failure() {
         let mut machine = StateMachine::new(ActorState::Running);
         let event = ActorEvent::InteractionComplete {
             success: false,
@@ -202,7 +202,7 @@ mod tests {
         };
 
         let result = machine.handle_event(event).unwrap();
-        assert_eq!(result.new_state, ActorState::Error);
+        assert_eq!(result.new_state, ActorState::Idle);  // Changed from Error to Idle
         assert!(result.state_changed);
     }
 

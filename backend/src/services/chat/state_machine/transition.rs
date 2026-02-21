@@ -98,10 +98,12 @@ impl TransitionTable {
             "interaction_complete_success",
             ActorState::Idle,
         );
+        // Changed from Error to Idle - allow retry after transient AI failures
+        // Error state should be reserved for unrecoverable failures only
         self.insert(
             ActorState::Running,
             "interaction_complete_failure",
-            ActorState::Error,
+            ActorState::Idle,
         );
         self.insert(ActorState::Running, "pause", ActorState::Paused);
         self.insert(ActorState::Running, "cancel", ActorState::Cancelled);
@@ -166,6 +168,10 @@ mod tests {
         assert_eq!(
             table.get_target(ActorState::Running, "interaction_complete_success"),
             Some(ActorState::Idle)
+        );
+        assert_eq!(
+            table.get_target(ActorState::Running, "interaction_complete_failure"),
+            Some(ActorState::Idle)  // Changed from Error to Idle - allow retry
         );
         assert_eq!(
             table.get_target(ActorState::Running, "pause"),
