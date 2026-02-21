@@ -79,7 +79,8 @@ impl StateHandler for RunningState {
                 )
                 .with_action(StateAction::SetActivelyProcessing(false))
                 .with_action(StateAction::CancelInteraction)
-                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused))
+                .with_action(StateAction::SendSuccessResponse))
             }
 
             ActorEvent::Cancel { reason } => {
@@ -91,7 +92,8 @@ impl StateHandler for RunningState {
                 )
                 .with_action(StateAction::SetActivelyProcessing(false))
                 .with_action(StateAction::CancelInteraction)
-                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled)))
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled))
+                .with_action(StateAction::SendSuccessResponse))
             }
 
             ActorEvent::Ping => {
@@ -101,6 +103,19 @@ impl StateHandler for RunningState {
                     actions: Vec::new(),
                     emit_sse: vec![SseEvent::Ping],
                 })
+            }
+
+            ActorEvent::Shutdown => {
+                // Transition to Completed (terminal)
+                Ok(EventResult::transition_with_reason(
+                    ActorState::Completed,
+                    "running",
+                    Some("Shutdown requested".to_string()),
+                )
+                .with_action(StateAction::SetActivelyProcessing(false))
+                .with_action(StateAction::CancelInteraction)
+                .with_action(StateAction::ShutdownActor)
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Completed)))
             }
 
             _ => Ok(EventResult::no_change()),

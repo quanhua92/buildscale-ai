@@ -31,7 +31,7 @@ impl EventProcessor for ShutdownProcessor {
         "shutdown"
     }
 
-    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_>) -> Result<EventResult> {
+    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_, '_>) -> Result<EventResult> {
         if !matches!(event, ActorEvent::Shutdown) {
             return Err(crate::error::Error::Internal("Invalid event type for ShutdownProcessor".into()));
         }

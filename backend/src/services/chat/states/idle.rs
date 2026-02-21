@@ -69,7 +69,19 @@ impl StateHandler for IdleState {
                     Some(reason_str),
                 )
                 .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused))
-                .with_action(StateAction::CancelInteraction))
+                .with_action(StateAction::CancelInteraction)
+                .with_action(StateAction::SendSuccessResponse))
+            }
+
+            ActorEvent::Cancel { reason } => {
+                // Cancel while idle
+                Ok(EventResult::transition_with_reason(
+                    ActorState::Cancelled,
+                    "idle",
+                    Some(reason),
+                )
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled))
+                .with_action(StateAction::SendSuccessResponse))
             }
 
             ActorEvent::InactivityTimeout => {
@@ -90,6 +102,17 @@ impl StateHandler for IdleState {
                     actions: vec![StateAction::ResetInactivityTimer],
                     emit_sse: vec![SseEvent::Ping],
                 })
+            }
+
+            ActorEvent::Shutdown => {
+                // Transition to Completed (terminal)
+                Ok(EventResult::transition_with_reason(
+                    ActorState::Completed,
+                    "idle",
+                    Some("Shutdown requested".to_string()),
+                )
+                .with_action(StateAction::ShutdownActor)
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Completed)))
             }
 
             _ => Ok(EventResult::no_change()),

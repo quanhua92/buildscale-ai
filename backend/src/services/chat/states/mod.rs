@@ -13,7 +13,7 @@ use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, 
 use crate::services::storage::FileStorageService;
 use crate::DbPool;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot, Mutex};
 use uuid::Uuid;
 
 pub mod cancelled;
@@ -35,14 +35,14 @@ pub trait StateHandler: Send + Sync {
     /// Called when entering this state.
     ///
     /// Returns a list of actions to execute during the state transition.
-    fn on_enter(&self, _ctx: &mut StateContext) -> Result<Vec<StateAction>> {
+    fn on_enter(&self, _ctx: &mut StateContext<'_, '_>) -> Result<Vec<StateAction>> {
         Ok(Vec::new())
     }
 
     /// Called when exiting this state.
     ///
     /// Returns a list of actions to execute during the state transition.
-    fn on_exit(&self, _ctx: &mut StateContext) -> Result<Vec<StateAction>> {
+    fn on_exit(&self, _ctx: &mut StateContext<'_, '_>) -> Result<Vec<StateAction>> {
         Ok(Vec::new())
     }
 
@@ -50,14 +50,14 @@ pub trait StateHandler: Send + Sync {
     ///
     /// Returns an EventResult containing the new state (if transition should occur),
     /// actions to execute, and SSE events to emit.
-    fn handle_event(&self, event: ActorEvent, ctx: &mut StateContext) -> Result<EventResult>;
+    fn handle_event(&self, event: ActorEvent, ctx: &mut StateContext<'_, '_>) -> Result<EventResult>;
 }
 
 /// Context passed to state handlers containing all necessary dependencies.
 ///
 /// This context provides access to database connections, services,
 /// and shared state needed by state handlers.
-pub struct StateContext<'a> {
+pub struct StateContext<'a, 'b> {
     /// The chat session ID
     pub chat_id: Uuid,
 
@@ -84,6 +84,9 @@ pub struct StateContext<'a> {
 
     /// Shared actor state (optional - for gradual migration)
     pub shared_state: Option<&'a Arc<tokio::sync::Mutex<SharedActorState>>>,
+
+    /// Optional responder for Pause/Cancel commands
+    pub responder: Option<&'b Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>>,
 }
 
 /// Shared state for ChatActor (simplified - no agent cache).

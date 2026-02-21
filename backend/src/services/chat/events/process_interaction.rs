@@ -49,7 +49,7 @@ impl EventProcessor for ProcessInteractionProcessor {
         "process_interaction"
     }
 
-    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_>) -> Result<EventResult> {
+    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_, '_>) -> Result<EventResult> {
         let ActorEvent::ProcessInteraction { user_id } = event else {
             return Err(crate::error::Error::Internal("Invalid event type for ProcessInteractionProcessor".into()));
         };

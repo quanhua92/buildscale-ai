@@ -32,7 +32,7 @@ impl EventProcessor for CancelProcessor {
         "cancel"
     }
 
-    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_>) -> Result<EventResult> {
+    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_, '_>) -> Result<EventResult> {
         let ActorEvent::Cancel { reason } = event else {
             return Err(crate::error::Error::Internal("Invalid event type for CancelProcessor".into()));
         };

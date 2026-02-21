@@ -1,6 +1,7 @@
 use crate::models::agent_session::AgentType;
 use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
+use crate::providers::Agent;
 use crate::queries;
 use crate::services::agent_sessions;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
@@ -9,12 +10,12 @@ use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
 use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
 use crate::services::storage::FileStorageService;
-use crate::providers::Agent;
 use crate::DbPool;
+use crate::error::Result;
 use futures::StreamExt;
 use rig::streaming::StreamingChat;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn, instrument};
@@ -30,8 +31,6 @@ const STREAM_READ_TIMEOUT_SECS: u64 = 120;
 /// Consolidated state for ChatActor to reduce lock contention
 /// All state that was previously in separate Arc<Mutex<>> fields is now grouped logically
 struct ChatActorState {
-    /// Agent State Management (accessed together in get_or_create_agent)
-    agent_state: AgentState,
     /// Tool Tracking (always accessed in pairs)
     tool_tracking: ToolTracking,
     /// Interaction Lifecycle (independent access)
@@ -40,32 +39,6 @@ struct ChatActorState {
     current_reasoning_id: Option<String>,
     /// Buffer for reasoning chunks (aggregated before DB persistence)
     reasoning_buffer: Vec<String>,
-}
-
-/// Agent cache and validation state
-/// These fields are accessed together when checking/creating agents
-struct AgentState {
-    /// Cached agent with preserved chat_history
-    /// Contains reasoning items for GPT-5 multi-turn conversations (for OpenAI)
-    /// Wraps both OpenAI and OpenRouter agents in our unified Agent enum
-    cached_agent: Option<Agent>,
-    /// Track model name to detect when to recreate agent
-    current_model_name: Option<String>,
-    /// Track user_id to detect when to recreate agent
-    current_user_id: Option<Uuid>,
-    /// Track mode to detect when to recreate agent (mode changes require new ToolConfig)
-    current_mode: Option<String>,
-}
-
-impl AgentState {
-    /// Check if the cached agent can be reused for the given session and user.
-    /// Agent can be reused only if all criteria match: model, user_id, and mode.
-    fn can_reuse(&self, session: &crate::models::chat::ChatSession, user_id: Uuid) -> bool {
-        self.cached_agent.is_some()
-            && self.current_model_name.as_ref() == Some(&session.agent_config.model)
-            && self.current_user_id.as_ref() == Some(&user_id)
-            && self.current_mode.as_ref() == Some(&session.agent_config.mode)
-    }
 }
 
 /// Current tool execution tracking
@@ -102,12 +75,6 @@ impl ChatActorState {
 impl Default for ChatActorState {
     fn default() -> Self {
         Self {
-            agent_state: AgentState {
-                cached_agent: None,
-                current_model_name: None,
-                current_user_id: None,
-                current_mode: None,
-            },
             tool_tracking: ToolTracking {
                 current_tool_name: None,
                 current_tool_args: None,
@@ -482,84 +449,17 @@ impl ChatActor {
                             AgentCommand::Ping => {
                                 tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
                             }
-                            AgentCommand::Pause { reason, responder } => {
-                                tracing::info!(
-                                    "[ChatActor] Pause requested for chat {} (reason: {:?})",
-                                    self.chat_id,
-                                    reason
-                                );
-
-                                // Cancel the current interaction if any
-                                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
-                                if let Some(token) = token {
-                                    tracing::debug!(
-                                        chat_id = %self.chat_id,
-                                        "[ChatActor] Cancelling current interaction token for pause"
-                                    );
-                                    token.cancel();
-                                }
-
-                                // State transition: → Paused
-                                let pause_reason = reason.clone().unwrap_or_else(|| "User requested pause".to_string());
-                                let _ = self.transition_state(
-                                    ActorEvent::Pause { reason: reason.clone() },
-                                    &pause_reason
-                                ).await;
-
-                                // Update session status to paused in database
-                                if let Some(session_id) = self.session_id {
-                                    tracing::debug!(
-                                        chat_id = %self.chat_id,
-                                        session_id = %session_id,
-                                        "[ChatActor] Pause: Setting status to paused"
-                                    );
-                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Paused, None).await;
-                                }
-
-                                // Send acknowledgment
-                                if let Some(responder) = responder.lock().await.take() {
-                                    let _ = responder.send(Ok(true));
-                                }
-
-                                // Don't break - keep the actor alive so it can be resumed
+                            // Note: Pause, Cancel, and Shutdown are now fully handled by state handlers
+                            // The following arms should never be reached since process_command_via_state_handler
+                            // handles these commands before we get to this legacy match.
+                            AgentCommand::Pause { .. } => {
+                                unreachable!("Pause should be handled by state handlers")
                             }
-                            AgentCommand::Cancel { reason, responder } => {
-                                tracing::info!(
-                                    "[ChatActor] Cancel requested for chat {} (reason: {})",
-                                    self.chat_id,
-                                    reason
-                                );
-
-                                // Trigger cancellation of current interaction's token
-                                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
-                                if let Some(token) = token {
-                                    token.cancel();
-                                }
-
-                                // State transition: → Cancelled (terminal state)
-                                let cancel_reason = reason.clone();
-                                let _ = self.transition_state(
-                                    ActorEvent::Cancel { reason: reason.clone() },
-                                    &cancel_reason
-                                ).await;
-
-                                // Send acknowledgment
-                                if let Some(responder) = responder.lock().await.take() {
-                                    let _ = responder.send(Ok(true));
-                                }
-
-                                // Stop the actor - cancel should terminate the session
-                                // A new ChatActor will be created if the user chats again
-                                break;
+                            AgentCommand::Cancel { .. } => {
+                                unreachable!("Cancel should be handled by state handlers")
                             }
                             AgentCommand::Shutdown => {
-                                tracing::info!("[ChatActor] Shutting down for chat {}", self.chat_id);
-                                // State transition: → Completed (terminal state) via shutdown
-                                let _ = self.transition_state(
-                                    ActorEvent::Shutdown,
-                                    "Actor shutting down"
-                                ).await;
-                                break;
+                                unreachable!("Shutdown should be handled by state handlers")
                             }
                         }
                     } else {
@@ -798,9 +698,6 @@ impl ChatActor {
                             "[ChatActor] Transient AI error, retrying with backoff"
                         );
 
-                        // Clear agent cache to force fresh agent creation on retry
-                        self.state.lock().await.agent_state.cached_agent = None;
-
                         tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
                     } else {
                         // Non-retryable error or max retries exceeded
@@ -970,10 +867,7 @@ impl ChatActor {
         // 4. Clear the cancellation token for this interaction
         self.state.lock().await.interaction.current_cancellation_token = None;
 
-        // 5. Clear agent cache to ensure fresh state after cancellation
-        self.state.lock().await.agent_state.cached_agent = None;
-
-        // 6. Clear reasoning ID for next interaction
+        // 5. Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
 
         // 7. Clear processing flag - actor is no longer actively processing
@@ -1465,9 +1359,6 @@ impl ChatActor {
                                              mode: "build".to_string(),
                                              plan_file: if plan_file.is_empty() { None } else { Some(plan_file.to_string()) },
                                          });
-
-                                         // Clear agent cache to force new agent with build mode
-                                         self.state.lock().await.agent_state.cached_agent = None;
                                      }
                                  }
                              }
@@ -1621,9 +1512,9 @@ impl ChatActor {
         conn: &mut sqlx::PgConnection,
         session: &crate::models::chat::ChatSession,
         item_count: &mut usize,
-    ) -> crate::error::Result<String>
+    ) -> Result<String>
     where
-        S: futures::Stream<Item = Result<rig::agent::MultiTurnStreamItem<M>, E>> + Unpin,
+        S: futures::Stream<Item = std::result::Result<rig::agent::MultiTurnStreamItem<M>, E>> + Unpin,
         M: std::fmt::Debug + 'static,
         E: std::fmt::Display,
     {
@@ -1780,81 +1671,65 @@ impl ChatActor {
         session: &crate::models::chat::ChatSession,
         ai_config: &crate::config::AiConfig,
     ) -> crate::error::Result<Agent> {
-        let mut state = self.state.lock().await;
+        tracing::info!(
+            "[ChatActor] Creating new agent for chat {} (model: {})",
+            self.chat_id, session.agent_config.model
+        );
 
-        // Check if we can reuse the cached agent
-        if state.agent_state.can_reuse(session, user_id) {
-            Ok(state.agent_state.cached_agent.as_ref().unwrap().clone())
-        } else {
-            tracing::info!(
-                "[ChatActor] Creating new agent for chat {} (model: {})",
-                self.chat_id, session.agent_config.model
+        // Create fresh agent - no caching, simpler and always correct
+        let agent = self.rig_service.create_agent(
+            self.pool.clone(),
+            self.storage.clone(),
+            self.workspace_id,
+            self.chat_id,
+            user_id,
+            session,
+            ai_config,
+        ).await?;
+
+        // Update session metadata with the actual model being used
+        if let Some(session_id) = &self.session_id {
+            tracing::debug!(
+                session_id = %session_id,
+                model = %session.agent_config.model,
+                mode = %session.agent_config.mode,
+                "[ChatActor] Updating session metadata after agent creation"
             );
 
-            // Create new agent
-            let agent = self.rig_service.create_agent(
-                self.pool.clone(),
-                self.storage.clone(),
-                self.workspace_id,
-                self.chat_id,
-                user_id,
-                session,
-                ai_config,
-            ).await?;
+            let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-            // Update cache - single atomic update
-            state.agent_state.cached_agent = Some(agent.clone());
-            state.agent_state.current_model_name = Some(session.agent_config.model.clone());
-            state.agent_state.current_user_id = Some(user_id);
-            state.agent_state.current_mode = Some(session.agent_config.mode.clone());
+            // Determine agent type from mode
+            let agent_type = match session.agent_config.mode.as_str() {
+                "plan" => Some(AgentType::Planner),
+                "build" => Some(AgentType::Builder),
+                _ => Some(AgentType::Assistant),
+            };
 
-            // Update session metadata with the actual model being used
-            // Drop the lock before doing async database operation
-            drop(state);
-
-            if let Some(session_id) = &self.session_id {
-                tracing::debug!(
+            // Update session with actual model, mode, and agent type
+            if let Err(e) = agent_sessions::update_session_metadata(
+                &mut conn,
+                *session_id,
+                Some(session.agent_config.model.clone()),
+                Some(session.agent_config.mode.clone()),
+                agent_type,
+                self.user_id,
+            ).await {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "[ChatActor] Failed to update session metadata after agent creation"
+                );
+            } else {
+                tracing::info!(
                     session_id = %session_id,
                     model = %session.agent_config.model,
                     mode = %session.agent_config.mode,
-                    "[ChatActor] Updating session metadata after agent creation"
+                    "[ChatActor] Successfully updated session metadata"
                 );
-
-                let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-
-                // Determine agent type from mode
-                let agent_type = match session.agent_config.mode.as_str() {
-                    "plan" => Some(AgentType::Planner),
-                    "build" => Some(AgentType::Builder),
-                    _ => Some(AgentType::Assistant),
-                };
-
-                // Update session with actual model, mode, and agent type
-                if let Err(e) = agent_sessions::update_session_metadata(
-                    &mut conn,
-                    *session_id,
-                    Some(session.agent_config.model.clone()),
-                    Some(session.agent_config.mode.clone()),
-                    agent_type,
-                    self.user_id,
-                ).await {
-                    tracing::warn!(
-                        session_id = %session_id,
-                        error = %e,
-                        "[ChatActor] Failed to update session metadata after agent creation"
-                    );
-                } else {
-                    tracing::info!(
-                        session_id = %session_id,
-                        model = %session.agent_config.model,
-                        mode = %session.agent_config.mode,
-                        "[ChatActor] Successfully updated session metadata"
-                    );
-                }
             }
-
-            Ok(agent)
         }
+
+        Ok(agent)
     }
 
     // ========================================================================
@@ -1862,7 +1737,7 @@ impl ChatActor {
     // ========================================================================
 
     /// Creates a new agent session in the database.
-    async fn create_session(&self) -> Result<Uuid, crate::error::Error> {
+    async fn create_session(&self) -> Result<Uuid> {
         tracing::info!(
             chat_id = %self.chat_id,
             workspace_id = %self.workspace_id,
@@ -1951,7 +1826,7 @@ impl ChatActor {
         session_id: Uuid,
         status: crate::models::agent_session::SessionStatus,
         error_message: Option<String>,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<()> {
         tracing::info!(
             chat_id = %self.chat_id,
             session_id = %session_id,
@@ -2058,7 +1933,7 @@ impl ChatActor {
         &mut self,
         event: ActorEvent,
         reason: &str,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<()> {
         let from_state = self.current_state();
 
         // Try to perform the transition
@@ -2085,7 +1960,7 @@ impl ChatActor {
 
     /// Execute a state action returned by a state handler.
     #[instrument(skip(self), fields(chat_id = %self.chat_id))]
-    async fn execute_state_action(&mut self, action: StateAction) -> Result<(), crate::error::Error> {
+    async fn execute_state_action(&mut self, action: StateAction) -> Result<()> {
         match action {
             StateAction::UpdateSessionStatus(status) => {
                 if let Some(session_id) = self.session_id {
@@ -2177,7 +2052,7 @@ impl ChatActor {
     }
 
     /// Execute multiple state actions in sequence.
-    async fn execute_state_actions(&mut self, actions: Vec<StateAction>) -> Result<(), crate::error::Error> {
+    async fn execute_state_actions(&mut self, actions: Vec<StateAction>) -> Result<()> {
         for action in actions {
             self.execute_state_action(action).await?;
         }
@@ -2208,7 +2083,7 @@ impl ChatActor {
     }
 
     /// Create a state context for state handlers.
-    fn create_state_context(&self) -> StateContext<'_> {
+    fn create_state_context(&self) -> StateContext<'_, '_> {
         StateContext {
             chat_id: self.chat_id,
             workspace_id: self.workspace_id,
@@ -2219,6 +2094,26 @@ impl ChatActor {
             default_persona: self.default_persona.clone(),
             default_context_token_limit: self.default_context_token_limit,
             shared_state: Some(&self.shared_state),
+            responder: None,
+        }
+    }
+
+    /// Create a state context with a responder for Pause/Cancel commands.
+    fn create_state_context_with_responder<'b>(
+        &self,
+        responder: &'b Arc<Mutex<Option<oneshot::Sender<crate::error::Result<bool>>>>>,
+    ) -> StateContext<'_, 'b> {
+        StateContext {
+            chat_id: self.chat_id,
+            workspace_id: self.workspace_id,
+            user_id: self.user_id,
+            pool: self.pool.clone(),
+            storage: self.storage.clone(),
+            event_tx: self.event_tx.clone(),
+            default_persona: self.default_persona.clone(),
+            default_context_token_limit: self.default_context_token_limit,
+            shared_state: Some(&self.shared_state),
+            responder: Some(responder),
         }
     }
 
@@ -2230,7 +2125,14 @@ impl ChatActor {
     async fn process_command_via_state_handler(
         &mut self,
         command: &AgentCommand,
-    ) -> Result<bool, crate::error::Error> {
+    ) -> Result<bool> {
+        // Extract responder from Pause/Cancel commands
+        let responder = match command {
+            AgentCommand::Pause { responder, .. } => Some(responder),
+            AgentCommand::Cancel { responder, .. } => Some(responder),
+            _ => None,
+        };
+
         // Convert command to event
         let event = match self.command_to_event(command) {
             Some(e) => e,
@@ -2249,16 +2151,61 @@ impl ChatActor {
         // Get handler before creating mutable context
         let handler = self.state_handlers.get_handler(current_state);
 
-        // Create context (now only requires &self, not &mut self)
-        let mut ctx = self.create_state_context();
+        // Create context with or without responder
+        let mut ctx = if let Some(ref responder_arc) = responder {
+            self.create_state_context_with_responder(responder_arc)
+        } else {
+            self.create_state_context()
+        };
 
         // Call the state handler
         let result = handler.handle_event(event, &mut ctx);
 
         match result {
             Ok(event_result) => {
-                // Execute all actions returned by the handler
-                self.execute_state_actions(event_result.actions).await?;
+                // Separate response actions from other actions
+                let mut response_actions = Vec::new();
+                let mut other_actions = Vec::new();
+                for action in event_result.actions {
+                    if matches!(
+                        action,
+                        StateAction::SendSuccessResponse | StateAction::SendFailureResponse { .. }
+                    ) {
+                        response_actions.push(action);
+                    } else {
+                        other_actions.push(action);
+                    }
+                }
+
+                // Execute non-response actions
+                self.execute_state_actions(other_actions).await?;
+
+                // Handle response actions by sending to the responder
+                if let Some(responder_arc) = responder {
+                    if let Some(sender_option) = responder_arc.lock().await.take() {
+                        let send_result = if response_actions.iter().any(|a| matches!(a, StateAction::SendSuccessResponse)) {
+                            // Success - send Ok(true)
+                            sender_option.send(Ok(true))
+                        } else if let Some(fail_action) = response_actions.iter().find(|a| matches!(a, StateAction::SendFailureResponse { .. })) {
+                            // Failure - send error message
+                            if let StateAction::SendFailureResponse { message } = fail_action {
+                                sender_option.send(Err(crate::error::Error::Internal(message.clone())))
+                            } else {
+                                unreachable!()
+                            }
+                        } else {
+                            // No explicit response action, but command was processed successfully
+                            sender_option.send(Ok(true))
+                        };
+
+                        if let Err(_) = send_result {
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                "[ChatActor] Responder dropped before receiving response"
+                            );
+                        }
+                    }
+                }
 
                 // Emit any SSE events
                 for sse_event in event_result.emit_sse {
@@ -2281,6 +2228,14 @@ impl ChatActor {
                 Ok(true)
             }
             Err(e) => {
+                // Send failure response to responder if present
+                if let Some(responder_arc) = responder {
+                    if let Some(sender_option) = responder_arc.lock().await.take() {
+                        let error_msg = format!("State handler failed: {}", e);
+                        let _ = sender_option.send(Err(crate::error::Error::Internal(error_msg)));
+                    }
+                }
+
                 warn!(
                     current_state = %current_state,
                     event = ?event_for_log,

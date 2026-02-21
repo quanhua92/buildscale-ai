@@ -33,7 +33,7 @@ impl EventProcessor for PingProcessor {
         "ping"
     }
 
-    fn execute(&self, _event: ActorEvent, _ctx: &mut StateContext<'_>) -> Result<EventResult> {
+    fn execute(&self, _event: ActorEvent, _ctx: &mut StateContext<'_, '_>) -> Result<EventResult> {
         // Ping event: acknowledge and reset inactivity timer
         Ok(EventResult {
             new_state: None,

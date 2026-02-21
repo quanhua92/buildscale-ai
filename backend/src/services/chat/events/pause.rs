@@ -32,7 +32,7 @@ impl EventProcessor for PauseProcessor {
         "pause"
     }
 
-    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_>) -> Result<EventResult> {
+    fn execute(&self, event: ActorEvent, _ctx: &mut StateContext<'_, '_>) -> Result<EventResult> {
         let ActorEvent::Pause { reason } = event else {
             return Err(crate::error::Error::Internal("Invalid event type for PauseProcessor".into()));
         };

@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use crate::models::agent_session::SessionStatus;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult};
+use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
 use crate::services::chat::states::{StateContext, StateHandler};
 
 /// Handler for the Cancelled (terminal) state.
@@ -32,9 +32,9 @@ impl StateHandler for CancelledState {
         ActorState::Cancelled
     }
 
-    fn on_enter(&self, _ctx: &mut StateContext) -> Result<Vec<crate::services::chat::state_machine::StateAction>> {
+    fn on_enter(&self, _ctx: &mut StateContext) -> Result<Vec<StateAction>> {
         Ok(vec![
-            crate::services::chat::state_machine::StateAction::UpdateSessionStatus(SessionStatus::Cancelled),
+            StateAction::UpdateSessionStatus(SessionStatus::Cancelled),
         ])
     }
 

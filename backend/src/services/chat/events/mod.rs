@@ -39,7 +39,7 @@ pub trait EventProcessor: Send + Sync {
     }
 
     /// Executes the event processing logic.
-    fn execute(&self, event: ActorEvent, ctx: &mut StateContext<'_>) -> Result<EventResult>;
+    fn execute(&self, event: ActorEvent, ctx: &mut StateContext<'_, '_>) -> Result<EventResult>;
 }
 
 /// Registry of event processors.

@@ -55,12 +55,23 @@ impl StateHandler for PausedState {
             }
 
             ActorEvent::Pause { reason: _ } => {
-                // Already paused, emit a ping to acknowledge
+                // Already paused, acknowledge success
                 Ok(EventResult {
                     new_state: None,
-                    actions: Vec::new(),
+                    actions: vec![StateAction::SendSuccessResponse],
                     emit_sse: vec![SseEvent::Ping],
                 })
+            }
+
+            ActorEvent::Cancel { reason } => {
+                // Cancel while paused
+                Ok(EventResult::transition_with_reason(
+                    ActorState::Cancelled,
+                    "paused",
+                    Some(reason),
+                )
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled))
+                .with_action(StateAction::SendSuccessResponse))
             }
 
             ActorEvent::InactivityTimeout => {
@@ -81,6 +92,17 @@ impl StateHandler for PausedState {
                     actions: vec![StateAction::ResetInactivityTimer],
                     emit_sse: vec![SseEvent::Ping],
                 })
+            }
+
+            ActorEvent::Shutdown => {
+                // Transition to Completed (terminal)
+                Ok(EventResult::transition_with_reason(
+                    ActorState::Completed,
+                    "paused",
+                    Some("Shutdown requested".to_string()),
+                )
+                .with_action(StateAction::ShutdownActor)
+                .with_action(StateAction::UpdateSessionStatus(SessionStatus::Completed)))
             }
 
             _ => Ok(EventResult::no_change()),
