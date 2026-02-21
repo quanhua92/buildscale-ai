@@ -1942,7 +1942,7 @@ impl ChatActor {
 
                 // Update session status based on result
                 if let Some(session_id) = self.session_id {
-                    let (status, error_msg, transition_event) = if let Err(ref e) = result {
+                    let (status, error_msg) = if let Err(ref e) = result {
                         tracing::warn!(
                             chat_id = %self.chat_id,
                             session_id = %session_id,
@@ -1951,8 +1951,7 @@ impl ChatActor {
                         );
                         (
                             crate::models::agent_session::SessionStatus::Error,
-                            Some(format!("AI Engine Error: {}", e)),
-                            ActorEvent::InteractionComplete { success: false, error: Some(format!("{}", e)) }
+                            Some(format!("AI Engine Error: {}", e))
                         )
                     } else {
                         tracing::debug!(
@@ -1962,8 +1961,7 @@ impl ChatActor {
                         );
                         (
                             crate::models::agent_session::SessionStatus::Idle,
-                            None,
-                            ActorEvent::InteractionComplete { success: true, error: None }
+                            None
                         )
                     };
 
@@ -1991,10 +1989,13 @@ impl ChatActor {
                         let _ = crate::services::agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
                     }
 
-                    // Send state transition event to handle the result
+                    // Send InteractionComplete event to trigger state transition
+                    // The actor should now be in Running state, so RunningState will handle this
+                    let success = result.is_ok();
+                    let error = if let Err(ref e) = result { Some(format!("{}", e)) } else { None };
                     let _ = self.transition_state(
-                        transition_event,
-                        if error_msg.is_some() { "Interaction failed" } else { "Interaction completed successfully" }
+                        ActorEvent::InteractionComplete { success, error },
+                        if success { "Interaction completed successfully" } else { "Interaction failed" }
                     ).await;
                 }
 
@@ -2175,10 +2176,26 @@ impl ChatActor {
                     }
                 }
 
-                // Execute non-response actions
+                // IMPORTANT: State transition MUST happen BEFORE executing actions
+                // This ensures that actions like StartProcessing can send events
+                // (like InteractionComplete) that will be handled by the NEW state
+                if let Some(new_state) = event_result.new_state {
+                    tracing::info!(
+                        from = %current_state,
+                        to = %new_state,
+                        "[ChatActor] Transitioning state BEFORE executing actions"
+                    );
+                    let _ = self.transition_state(
+                        event_for_transition,
+                        &format!("State handler: {:?} → {:?}", current_state, new_state)
+                    ).await;
+                }
+
+                // Execute non-response actions AFTER state transition
                 self.execute_state_actions(other_actions).await?;
 
                 // Handle response actions by sending to the responder
+                // This MUST happen BEFORE checking for terminal state, so responses are sent
                 if let Some(responder_arc) = responder {
                     tracing::info!(
                         chat_id = %self.chat_id,
@@ -2217,22 +2234,17 @@ impl ChatActor {
                     }
                 }
 
-                // Emit any SSE events
-                for sse_event in event_result.emit_sse {
-                    let _ = self.event_tx.send(sse_event);
-                }
-
-                // If the handler specified a new state, transition to it
+                // NOW check if we should break out of the loop (terminal state)
+                // Response has been sent, so we can safely exit
                 if let Some(new_state) = event_result.new_state {
-                    let _ = self.transition_state(
-                        event_for_transition,
-                        &format!("State handler: {:?} → {:?}", current_state, new_state)
-                    ).await;
-
-                    // Check if we should break out of the loop (terminal state)
                     if new_state.is_terminal() {
                         return Ok(true);
                     }
+                }
+
+                // Emit any SSE events
+                for sse_event in event_result.emit_sse {
+                    let _ = self.event_tx.send(sse_event);
                 }
 
                 // Return true if the handler actually did something (state change or actions)

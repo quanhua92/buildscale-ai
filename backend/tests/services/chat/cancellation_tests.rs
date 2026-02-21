@@ -445,9 +445,8 @@ async fn test_cancellation_token_propagation() {
         .send(AgentCommand::ProcessInteraction { user_id })
         .await;
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    // Cancel
+    // Cancel immediately (with dummy API, processing completes very quickly)
+    // In production, there would be time to cancel during streaming
     let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
     let _ = handle
         .command_tx

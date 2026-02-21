@@ -211,6 +211,10 @@ async fn test_stop_endpoint_returns_200() {
 
     let (_email, access_token, workspace_id, chat_id) = setup_test_chat(&app).await;
 
+    // Wait for initial AI processing to complete (chat creation triggers ProcessInteraction)
+    // With dummy API, this will fail and put the session in Error state
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
     let response = app
         .client
         .post(&app.url(&format!(
@@ -222,7 +226,8 @@ async fn test_stop_endpoint_returns_200() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), 200);
+    assert_eq!(response.status(), 200, "Stop endpoint returned {}: {}", response.status(),
+               response.text().await.unwrap_or_else(|_| "Unable to read response body".to_string()));
 
     let body: serde_json::Value = response.json().await.unwrap();
     assert_eq!(body["status"], "cancelled");
@@ -234,6 +239,9 @@ async fn test_stop_endpoint_multiple_requests() {
     let app = TestApp::new().await;
 
     let (_email, access_token, workspace_id, chat_id) = setup_test_chat(&app).await;
+
+    // Wait for initial AI processing to complete
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     // Send multiple stop requests (should be idempotent)
     for _ in 0..3 {
@@ -257,6 +265,9 @@ async fn test_stop_endpoint_returns_correct_content_type() {
     let app = TestApp::new().await;
 
     let (_email, access_token, workspace_id, chat_id) = setup_test_chat(&app).await;
+
+    // Wait for initial AI processing to complete
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     let response = app
         .client

@@ -81,74 +81,53 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         "[AgentSessions] Reusing terminal session"
                     );
 
-                    let updated = sqlx::query_as!(
-                        AgentSession,
-                        r#"
-                        WITH updated AS (
-                            UPDATE agent_sessions
-                            SET
-                                status = 'idle',
-                                user_id = $2,
-                                agent_type = $3,
-                                model = $4,
-                                mode = $5,
-                                updated_at = NOW(),
-                                last_heartbeat = NOW(),
-                                completed_at = NULL,
-                                error_message = NULL,
-                                current_task = NULL
-                            WHERE chat_id = $1
-                            RETURNING *
-                        )
-                        SELECT
-                            u.id,
-                            u.workspace_id,
-                            u.chat_id,
-                            u.user_id,
-                            u.agent_type as "agent_type: AgentType",
-                            u.status as "status: SessionStatus",
-                            u.model,
-                            u.mode,
-                            u.current_task,
-                            u.error_message,
-                            u.created_at,
-                            u.updated_at,
-                            u.last_heartbeat,
-                            u.completed_at,
-                            f.name as "chat_name?"
-                        FROM updated u
-                        LEFT JOIN files f ON u.chat_id = f.id
-                        "#,
+                    reset_session_to_idle(
+                        conn,
                         new_session.chat_id,
                         new_session.user_id,
-                        new_session.agent_type as AgentType,
+                        new_session.agent_type,
                         &new_session.model,
-                        &new_session.mode
-                    )
-                    .fetch_one(conn)
-                    .await
-                    .map_err(Error::Sqlx)?;
-
-                    tracing::info!(
-                        session_id = %updated.id,
-                        chat_id = %updated.chat_id,
-                        "[AgentSessions] Reused session successfully"
-                    );
-
-                    Ok(updated)
+                        &new_session.mode,
+                    ).await
                 }
-                _ => {
-                    // Active session - return error
-                    tracing::warn!(
-                        chat_id = %new_session.chat_id,
-                        existing_status = %session.status,
-                        session_id = %session.id,
-                        "[AgentSessions] Active session already exists for chat"
-                    );
-                    Err(Error::Conflict(format!(
-                        "An active session already exists for this chat: {} (status: {}, session_id: {})",
-                        new_session.chat_id, session.status, session.id
-                    )))
+                SessionStatus::Idle | SessionStatus::Running | SessionStatus::Paused => {
+                    // Non-terminal state - check if session is stale (no recent heartbeat)
+                    let heartbeat_age = Utc::now().signed_duration_since(session.last_heartbeat);
+                    let heartbeat_age_secs = heartbeat_age.num_seconds();
+
+                    if heartbeat_age_secs > STALE_SESSION_THRESHOLD_SECONDS {
+                        // Stale session - reuse by updating to idle
+                        tracing::info!(
+                            chat_id = %new_session.chat_id,
+                            existing_status = %session.status,
+                            session_id = %session.id,
+                            heartbeat_age_secs = %heartbeat_age_secs,
+                            stale_threshold_secs = %STALE_SESSION_THRESHOLD_SECONDS,
+                            "[AgentSessions] Reusing stale session (heartbeat too old)"
+                        );
+
+                        reset_session_to_idle(
+                            conn,
+                            new_session.chat_id,
+                            new_session.user_id,
+                            new_session.agent_type,
+                            &new_session.model,
+                            &new_session.mode,
+                        ).await
+                    } else {
+                        // Active session with recent heartbeat - return error
+                        tracing::warn!(
+                            chat_id = %new_session.chat_id,
+                            existing_status = %session.status,
+                            session_id = %session.id,
+                            heartbeat_age_secs = %heartbeat_age_secs,
+                            "[AgentSessions] Active session already exists for chat (recent heartbeat)"
+                        );
+                        Err(Error::Conflict(format!(
+                            "An active session already exists for this chat: {} (status: {}, session_id: {})",
+                            new_session.chat_id, session.status, session.id
+                        )))
+                    }
                 }
             }
         }
@@ -725,6 +704,98 @@ pub async fn update_session_metadata(
         mode = %session.mode,
         agent_type = %session.agent_type,
         "[AgentSessions] Updated session metadata"
+    );
+
+    Ok(session)
+}
+
+/// Resets a session to idle state with new parameters.
+/// Used when reusing an existing session (terminal or stale).
+pub async fn reset_session_to_idle(
+    conn: &mut DbConn,
+    chat_id: Uuid,
+    user_id: Uuid,
+    agent_type: AgentType,
+    model: &str,
+    mode: &str,
+) -> Result<AgentSession> {
+    tracing::info!(
+        chat_id = %chat_id,
+        user_id = %user_id,
+        agent_type = %agent_type,
+        model = %model,
+        mode = %mode,
+        "[AgentSessions] Resetting session to idle state"
+    );
+
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        WITH updated AS (
+            UPDATE agent_sessions
+            SET
+                status = 'idle',
+                user_id = $2,
+                agent_type = $3,
+                model = $4,
+                mode = $5,
+                updated_at = NOW(),
+                last_heartbeat = NOW(),
+                completed_at = NULL,
+                error_message = NULL,
+                current_task = NULL
+            WHERE chat_id = $1
+            RETURNING *
+        )
+        SELECT
+            u.id,
+            u.workspace_id,
+            u.chat_id,
+            u.user_id,
+            u.agent_type as "agent_type: AgentType",
+            u.status as "status: SessionStatus",
+            u.model,
+            u.mode,
+            u.current_task,
+            u.error_message,
+            u.created_at,
+            u.updated_at,
+            u.last_heartbeat,
+            u.completed_at,
+            f.name as "chat_name?"
+        FROM updated u
+        LEFT JOIN files f ON u.chat_id = f.id
+        "#,
+        chat_id,
+        user_id,
+        agent_type as AgentType,
+        model,
+        mode
+    )
+    .fetch_one(conn)
+    .await
+    .map_err(|e| {
+        let error_str = e.to_string().to_lowercase();
+        if error_str.contains("no rows") {
+            tracing::error!(
+                chat_id = %chat_id,
+                "[AgentSessions] Failed to reset session - not found"
+            );
+            Error::NotFound(format!("Session for chat {} not found", chat_id))
+        } else {
+            tracing::error!(
+                chat_id = %chat_id,
+                error = %e,
+                "[AgentSessions] Failed to reset session"
+            );
+            Error::Sqlx(e)
+        }
+    })?;
+
+    tracing::info!(
+        session_id = %session.id,
+        chat_id = %session.chat_id,
+        "[AgentSessions] Reset session successfully"
     );
 
     Ok(session)
