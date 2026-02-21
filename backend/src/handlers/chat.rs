@@ -525,11 +525,31 @@ pub async fn stop_chat_generation(
     );
 
     // Get the actor handle
-    let handle = state
-        .agents
-        .get_handle(&chat_id)
-        .await
-        .ok_or_else(|| Error::NotFound(format!("Chat actor not found and no active stream for chat {}", chat_id)))?;
+    let handle = match state.agents.get_handle(&chat_id).await {
+        Some(h) => h,
+        None => {
+            // Actor not found - check if session is already in terminal state
+            let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+            if let Ok(Some(session)) = crate::queries::agent_sessions::get_session_by_chat(&mut conn, chat_id).await {
+                use crate::models::agent_session::SessionStatus;
+                let is_terminal = matches!(session.status, SessionStatus::Cancelled | SessionStatus::Error | SessionStatus::Completed);
+                if is_terminal {
+                    // Session already in terminal state - return success (idempotent)
+                    tracing::info!(
+                        "[ChatHandler] Session {} already in terminal state: {}",
+                        chat_id,
+                        session.status
+                    );
+                    return Ok(Json(serde_json::json!({
+                        "status": session.status.to_string().to_lowercase(),
+                        "chat_id": chat_id
+                    })));
+                }
+            }
+            // No actor and session not in terminal state (or doesn't exist)
+            return Err(Error::NotFound(format!("Chat actor not found and no active stream for chat {}", chat_id)));
+        }
+    };
 
     // Create a one-shot channel for response
     let (responder, response) = oneshot::channel();

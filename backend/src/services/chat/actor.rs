@@ -473,6 +473,12 @@ impl ChatActor {
         let heartbeat_handle = self.heartbeat_handle.take();
         let session_id = self.session_id.take();
 
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = ?session_id,
+            "[ChatActor] ACTOR EXITING - cleanup starting"
+        );
+
         if let Some(handle) = heartbeat_handle {
             handle.abort();
         }
@@ -2128,8 +2134,20 @@ impl ChatActor {
     ) -> Result<bool> {
         // Extract responder from Pause/Cancel commands
         let responder = match command {
-            AgentCommand::Pause { responder, .. } => Some(responder),
-            AgentCommand::Cancel { responder, .. } => Some(responder),
+            AgentCommand::Pause { responder, .. } => {
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] Pause: responder extracted"
+                );
+                Some(responder)
+            }
+            AgentCommand::Cancel { responder, reason: _ } => {
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    "[ChatActor] Cancel: responder extracted"
+                );
+                Some(responder)
+            }
             _ => None,
         };
 
@@ -2182,7 +2200,16 @@ impl ChatActor {
 
                 // Handle response actions by sending to the responder
                 if let Some(responder_arc) = responder {
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        response_actions_count = response_actions.len(),
+                        "[ChatActor] Processing response actions"
+                    );
                     if let Some(sender_option) = responder_arc.lock().await.take() {
+                        tracing::info!(
+                            chat_id = %self.chat_id,
+                            "[ChatActor] Sending response"
+                        );
                         let send_result = if response_actions.iter().any(|a| matches!(a, StateAction::SendSuccessResponse)) {
                             // Success - send Ok(true)
                             sender_option.send(Ok(true))
@@ -2198,12 +2225,15 @@ impl ChatActor {
                             sender_option.send(Ok(true))
                         };
 
-                        if let Err(_) = send_result {
-                            tracing::debug!(
-                                chat_id = %self.chat_id,
-                                "[ChatActor] Responder dropped before receiving response"
-                            );
+                        match &send_result {
+                            Ok(_) => tracing::info!(chat_id = %self.chat_id, "[ChatActor] Response sent successfully"),
+                            Err(_) => tracing::warn!(chat_id = %self.chat_id, "[ChatActor] Failed to send response"),
                         }
+                    } else {
+                        tracing::warn!(
+                            chat_id = %self.chat_id,
+                            "[ChatActor] Responder sender was None (already taken?)"
+                        );
                     }
                 }
 

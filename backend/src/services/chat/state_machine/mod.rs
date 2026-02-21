@@ -56,10 +56,12 @@
 //!
 //! ```rust
 //! use buildscale::services::chat::state_machine::{StateMachine, ActorState, ActorEvent};
+//! use uuid::Uuid;
 //!
 //! let mut machine = StateMachine::new(ActorState::Idle);
 //!
 //! // Process an interaction
+//! let user_id = Uuid::now_v7();
 //! let event = ActorEvent::ProcessInteraction { user_id };
 //! let result = machine.handle_event(event)?;
 //!

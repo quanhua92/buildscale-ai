@@ -38,9 +38,19 @@ impl StateHandler for ErrorState {
         ])
     }
 
-    fn handle_event(&self, _event: ActorEvent, _ctx: &mut StateContext) -> Result<EventResult> {
-        // Terminal state - reject all events
-        Ok(EventResult::no_change())
+    fn handle_event(&self, event: ActorEvent, _ctx: &mut StateContext) -> Result<EventResult> {
+        // Terminal state - but still respond to Cancel commands from user
+        match event {
+            ActorEvent::Cancel { .. } => {
+                // Already in terminal state, but acknowledge the cancel request
+                Ok(EventResult::no_change()
+                    .with_action(StateAction::SendSuccessResponse))
+            }
+            _ => {
+                // Reject all other events
+                Ok(EventResult::no_change())
+            }
+        }
     }
 }
 
