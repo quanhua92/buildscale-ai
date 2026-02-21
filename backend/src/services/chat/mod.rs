@@ -124,12 +124,12 @@ use uuid::Uuid;
 /// Default token limit for the context window (128k for modern models).
 pub const DEFAULT_CONTEXT_TOKEN_LIMIT: usize = 128000;
 
-/// Max length for tool output before truncation (2KB)
-const MAX_TOOL_OUTPUT_LENGTH: usize = 2048;
-/// Max length for 'write' tool content arg (1KB)
-const MAX_WRITE_CONTENT_LENGTH: usize = 1000;
-/// Max length for 'edit' tool diff args (500 chars)
-const MAX_EDIT_DIFF_LENGTH: usize = 500;
+/// Max length for tool output before truncation (1MB)
+const MAX_TOOL_OUTPUT_LENGTH: usize = 1_048_576;
+/// Max length for 'write' tool content arg (10MB)
+const MAX_WRITE_CONTENT_LENGTH: usize = 10_485_760;
+/// Max length for 'edit' tool diff args (1MB)
+const MAX_EDIT_DIFF_LENGTH: usize = 1_048_576;
 /// Number of items to preview for 'ls' tool
 const LS_PREVIEW_ITEMS: usize = 50;
 /// Number of matches to preview for 'grep' tool
@@ -1172,6 +1172,76 @@ impl ChatService {
             token_limit,
             breakdown,
         }
+    }
+
+    /// Generates a chat name from message content.
+    /// Uses smart truncation to avoid cutting words in half.
+    pub fn generate_chat_name(content: &str, max_length: usize) -> String {
+        const PREFIX: &str = "Chat: ";
+
+        // Trim whitespace first
+        let content = content.trim();
+
+        // If content is empty, return default
+        if content.is_empty() {
+            return "Chat".to_string();
+        }
+
+        // Adjust max_length to account for prefix
+        let adjusted_max_length = max_length.saturating_sub(PREFIX.len());
+
+        // If content fits within adjusted max_length, use it all
+        if content.len() <= adjusted_max_length {
+            return format!("{}{}", PREFIX, content);
+        }
+
+        // Find safe truncation point (don't cut words in half)
+        let snippet_end = content.char_indices()
+            .nth(adjusted_max_length)
+            .map_or(content.len(), |(idx, _)| idx);
+
+        // If we're cutting mid-word, find the last space
+        let safe_end = if snippet_end < content.len() {
+            content[..snippet_end]
+                .rfind(' ')
+                .unwrap_or(snippet_end)
+        } else {
+            snippet_end
+        };
+
+        let truncated = &content[..safe_end];
+        format!("{}{}", PREFIX, truncated)
+    }
+
+    /// Updates the chat file name based on recent message content.
+    pub async fn update_chat_name(
+        conn: &mut DbConn,
+        chat_file_id: Uuid,
+        new_name: String,
+    ) -> Result<()> {
+        // 1. Get current file info
+        let current_file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+        // 2. Generate new slug and path from name (keep same pattern as creation)
+        let new_slug = format!("chat-{}.chat", chat_file_id);
+        let new_path = format!("/chats/{}", new_slug);
+
+        // 3. Update file metadata (name, slug, path)
+        queries::files::update_file_metadata(
+            conn,
+            chat_file_id,
+            current_file.parent_id,
+            &new_name,
+            &new_slug,
+            &new_path,
+            current_file.is_virtual,
+            current_file.is_remote,
+            current_file.permission,
+        ).await?;
+
+        tracing::info!("[ChatService] Updated chat name for {} to {}", chat_file_id, new_name);
+
+        Ok(())
     }
 }
 

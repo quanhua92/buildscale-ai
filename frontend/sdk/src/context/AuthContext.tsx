@@ -4,7 +4,7 @@
 
 import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import type { User, Workspace, WorkspaceMemberDetailed } from '../api/types'
+import type { User, Workspace, WorkspaceMemberDetailed, ChatFile } from '../api/types'
 import ApiClient from '../api/client'
 import { ApiError } from '../api/errors'
 import { useStorage } from './StorageContext'
@@ -47,6 +47,7 @@ export interface AuthContextType {
   updateWorkspace: (id: string, name: string) => Promise<ApiResult<Workspace>>
   deleteWorkspace: (id: string) => Promise<ApiResult<{ message: string }>>
   getMembership: (workspaceId: string) => Promise<ApiResult<WorkspaceMemberDetailed>>
+  getRecentChats: (workspaceId: string) => Promise<ApiResult<ChatFile[]>>
   executeTool: <T>(workspaceId: string, tool: string, args: any) => Promise<ApiResult<T>>
   apiClient: ApiClient
 }
@@ -198,7 +199,22 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     }
   }, [apiClient, handleError])
 
+  const getRecentChats = useCallback(async (workspaceId: string): Promise<ApiResult<ChatFile[]>> => {
+    try {
+      const response = await apiClient.getRecentChats(workspaceId)
+      return { success: true, data: response }
+    } catch (err) {
+      return { success: false, error: handleError(err) }
+    }
+  }, [apiClient, handleError])
+
   const executeTool = useCallback(async <T,>(workspaceId: string, tool: string, args: any): Promise<ApiResult<T>> => {
+    // Guard against undefined workspaceId
+    if (!workspaceId || workspaceId === 'undefined') {
+      console.warn('[AuthContext] executeTool called with invalid workspaceId:', workspaceId, 'tool:', tool)
+      return { success: false, error: { message: 'Invalid workspace ID' } }
+    }
+
     try {
       const response = await apiClient.post<{ success: boolean, result: T, error?: string }>(
         `/workspaces/${workspaceId}/tools`,
@@ -253,6 +269,7 @@ export function AuthProvider({ children, apiBaseUrl, redirectTarget: redirectTar
     updateWorkspace,
     deleteWorkspace,
     getMembership,
+    getRecentChats,
     executeTool,
     apiClient,
   }

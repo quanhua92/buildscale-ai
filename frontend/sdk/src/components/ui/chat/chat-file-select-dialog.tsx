@@ -47,6 +47,10 @@ export function ChatFileSelectDialog({
   const isSearchMode = searchQuery.trim().length > 0
 
   const fetchEntries = React.useCallback(async (path: string) => {
+    // Guard against invalid workspaceId
+    if (!workspaceId || workspaceId === 'undefined') {
+      return
+    }
     setIsLoading(true)
     try {
       // Use limit: 0 to get all entries for file select dialog
@@ -59,18 +63,19 @@ export function ChatFileSelectDialog({
     } finally {
       setIsLoading(false)
     }
-  }, [ls])
+  }, [ls, workspaceId])
 
   // Fetch when dialog opens
   React.useEffect(() => {
-    if (open) {
+    // Guard against invalid workspaceId
+    if (open && workspaceId && workspaceId !== 'undefined') {
       setBrowsingPath("/")
       fetchEntries("/")
       // Reset search state
       setSearchQuery("")
       setSearchResults([])
     }
-  }, [open, fetchEntries])
+  }, [open, fetchEntries, workspaceId])
 
   const navigateTo = (path: string) => {
     setBrowsingPath(path)

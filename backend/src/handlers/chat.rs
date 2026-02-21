@@ -22,7 +22,35 @@ use uuid::Uuid;
 use futures::StreamExt;
 
 /// Maximum length of goal text to include in chat file name.
-const CHAT_NAME_GOAL_SNIPPET_LENGTH: usize = 20;
+const CHAT_NAME_GOAL_SNIPPET_LENGTH: usize = 80;
+
+/// Helper function to get the persona for a chat based on its mode.
+///
+/// This extracts the mode from the chat's app_data and determines the appropriate
+/// persona (role) for the agent.
+async fn get_chat_persona(
+    conn: &mut sqlx::PgConnection,
+    chat_id: Uuid,
+) -> Result<String> {
+    // Get the latest version to determine the mode from app_data
+    let latest_version = queries::files::get_latest_version(conn, chat_id).await?;
+
+    // Extract mode from app_data, default to "plan" if not set
+    let mode = latest_version
+        .app_data
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("plan");
+
+    // Determine role from mode
+    let role = match mode {
+        "build" => Some("builder"),
+        "plan" => Some("planner"),
+        _ => None,
+    };
+
+    Ok(crate::agents::get_persona(role, Some(mode), None))
+}
 
 pub async fn create_chat(
     State(state): State<AppState>,
@@ -69,15 +97,22 @@ pub async fn create_chat(
 
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
 
-    // 4. Create initial version with config in app_data
-    // New chats default to Plan Mode (user switches to Build Mode when ready)
+    // 4. Determine the mode from the request role (defaults to "plan" if not specified)
+    // This must be done BEFORE creating app_data so the mode is saved correctly
+    let mode = match req.role.as_deref() {
+        Some("builder") => "build",
+        Some("planner") | None => "plan",  // Default to plan mode for new chats
+        _ => "chat",
+    };
+
+    // 5. Create initial version with config in app_data
     let app_data = serde_json::json!({
         "goal": req.goal,
         "agents": req.agents,
         "model": req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
-        "persona": crate::agents::get_persona(req.role.as_deref(), Some("plan"), None),
+        "persona": crate::agents::get_persona(req.role.as_deref(), Some(mode), None),
         "temperature": 0.7,
-        "mode": "plan",
+        "mode": mode,
         "plan_file": null
     });
 
@@ -117,14 +152,16 @@ pub async fn create_chat(
 
     // 6. Trigger Actor immediately for the initial goal
     let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
+
     let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
         chat_id: chat_file.id,
         workspace_id,
+        user_id: user.id,
         pool: state.pool.clone(),
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
         registry: state.agents.clone(),
-        default_persona: crate::agents::get_persona(None, None, None),
+        default_persona: crate::agents::get_persona(req.role.as_deref(), Some(mode), None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
         inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -151,9 +188,21 @@ pub async fn get_chat_events(
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>> {
-    tracing::info!("[ChatHandler] Connecting to chat events: workspace={}, chat={}", workspace_id, chat_id);
+    tracing::info!(
+        chat_id = %chat_id,
+        workspace_id = %workspace_id,
+        user_id = %_user.id,
+        "[SSE] CONNECTION_REQUEST - Client connecting to chat events"
+    );
+
     // 1. Get or create persistent bus
     let event_tx = state.agents.get_or_create_bus(chat_id).await;
+
+    // Log when sending SessionInit
+    tracing::debug!(
+        chat_id = %chat_id,
+        "[SSE] SENDING SessionInit event"
+    );
 
     // 2. Ensure actor is alive (rehydrate if needed)
     if state.agents.get_handle(&chat_id).await.is_none() {
@@ -161,11 +210,15 @@ pub async fn get_chat_events(
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
+            user_id: _user.id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
             registry: state.agents.clone(),
-            default_persona: crate::agents::get_persona(None, None, None),
+            default_persona: {
+                let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
+                get_chat_persona(&mut conn, chat_id).await?
+            },
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -182,9 +235,12 @@ pub async fn get_chat_events(
     let init_stream = stream::once(async move { Ok(Event::default().data(init_data)) });
 
     // 4. Stream from persistent broadcast channel
+    let current_receiver_count = event_tx.receiver_count();
     tracing::info!(
         chat_id = %chat_id,
-        "[SSE] Client subscribing to event stream"
+        receiver_count = current_receiver_count + 1, // +1 for this new connection
+        "[SSE] SUBSCRIBED - Client now receiving events (total receivers: {})",
+        current_receiver_count + 1
     );
     let broadcast_stream = BroadcastStream::new(event_tx.subscribe())
         .filter_map(move |msg| async move {
@@ -276,20 +332,37 @@ pub async fn post_chat_message(
         ChatService::update_chat_model(&mut conn, workspace_id, chat_id, new_model).await?;
     }
 
+    // 2.5. Update chat name from new message content (only for the first few messages to establish topic)
+    let content_trimmed = req.content.trim();
+    if !content_trimmed.is_empty() {
+        // Get current message count to limit name updates
+        let messages = crate::queries::chat::get_messages_by_file_id(&mut conn, workspace_id, chat_id).await?;
+        // Only update name for the first few user messages to refine the topic
+        if messages.len() < 2 {
+            let new_chat_name = ChatService::generate_chat_name(content_trimmed, CHAT_NAME_GOAL_SNIPPET_LENGTH);
+            if let Err(e) = ChatService::update_chat_name(&mut conn, chat_id, new_chat_name).await {
+                tracing::warn!("[ChatHandler] Failed to update chat name: {}", e);
+                // Don't fail the request if name update fails
+            }
+        }
+    }
+
     // 3. Signal Actor
     let handle = if let Some(handle) = state.agents.get_handle(&chat_id).await {
         handle
     } else {
         // Rehydrate actor
         let event_tx = state.agents.get_or_create_bus(chat_id).await;
+        let default_persona = get_chat_persona(&mut conn, chat_id).await?;
         let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
             chat_id,
             workspace_id,
+            user_id: user.id,
             pool: state.pool.clone(),
             rig_service: state.rig_service.clone(),
             storage: state.storage.clone(),
             registry: state.agents.clone(),
-            default_persona: crate::agents::get_persona(None, None, None),
+            default_persona,
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),

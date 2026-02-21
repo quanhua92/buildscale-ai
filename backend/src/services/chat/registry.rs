@@ -13,6 +13,10 @@ pub enum AgentCommand {
     ProcessInteraction { user_id: Uuid },
     Ping,
     Shutdown,
+    Pause {
+        reason: Option<String>,
+        responder: Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>,
+    },
     Cancel {
         reason: String,
         responder: Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>,
@@ -46,9 +50,18 @@ impl AgentRegistry {
     /// This bus survives actor restarts to keep SSE connections stable.
     pub async fn get_or_create_bus(&self, chat_id: Uuid) -> broadcast::Sender<SseEvent> {
         if let Some(bus) = self.event_buses.read_async(&chat_id, |_, b| b.clone()).await {
+            tracing::debug!(
+                chat_id = %chat_id,
+                receivers = bus.receiver_count(),
+                "[AgentRegistry] Reusing existing event bus"
+            );
             bus
         } else {
-            tracing::info!("Creating new persistent event bus for chat {}", chat_id);
+            tracing::info!(
+                chat_id = %chat_id,
+                capacity = EVENT_BUS_CAPACITY,
+                "[AgentRegistry] CREATING new persistent event bus"
+            );
             let (tx, _) = broadcast::channel(EVENT_BUS_CAPACITY);
             let _ = self.event_buses.insert_async(chat_id, tx.clone()).await;
             tx
@@ -62,16 +75,27 @@ impl AgentRegistry {
 
         // Check if the actor is still alive (receiver hasn't dropped)
         if handle.command_tx.is_closed() {
+            tracing::warn!(
+                chat_id = %chat_id,
+                "[AgentRegistry] REMOVING dead actor handle (command channel closed)"
+            );
             // Remove the dead handle and return None to trigger re-spawn
             let _ = self.active_agents.remove_async(chat_id).await;
             None
         } else {
+            tracing::debug!(
+                chat_id = %chat_id,
+                "[AgentRegistry] Found active actor"
+            );
             Some(handle)
         }
     }
 
     pub async fn register(&self, chat_id: Uuid, handle: AgentHandle) {
-        tracing::info!("Registering active actor for chat {}", chat_id);
+        tracing::info!(
+            chat_id = %chat_id,
+            "[AgentRegistry] REGISTERING actor"
+        );
         let _ = self.active_agents.insert_async(chat_id, handle).await;
     }
 

@@ -1,5 +1,7 @@
+pub mod agent_sessions;
 pub mod auth;
 pub mod chat;
+pub mod chats;
 pub mod health;
 pub mod workspaces;
 pub mod members;
@@ -7,8 +9,10 @@ pub mod files;
 pub mod tools;
 pub mod providers;
 
+pub use agent_sessions::*;
 pub use auth::*;
 pub use chat::*;
+pub use chats::*;
 pub use health::*;
 pub use workspaces::*;
 pub use members::*;

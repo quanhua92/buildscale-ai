@@ -18,9 +18,11 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
   - [User Logout](#user-logout)
 - [Workspaces API](#workspaces-api)
 - [Workspace Members API](#workspace-members-api)
+- [Agent Sessions API](#agent-sessions-api)
 - [Files & AI](#files-and-ai)
 - [Tools API](#tools-api)
 - [Agentic Chat API](#agentic-chat-api)
+  - [List Recent Chats](#list-recent-chats)
 - [Error Responses](#error-responses)
 - [Testing the API](#testing-the-api)
 - [Production Considerations](#production-considerations)
@@ -65,16 +67,179 @@ HTTP REST API endpoints for the BuildScale multi-tenant workspace-based RBAC sys
 | `/api/v1/workspaces/:id/files/:fid/links/:tid` | DELETE | Remove file link | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/files/:fid/network` | GET | Get file network graph | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/tools` | POST | Execute tool (ls, read, write, rm, mv, touch) | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/chats` | GET | List recent chats | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats` | POST | Start new agentic chat | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | GET | Get chat history and config | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | POST | Send message to existing chat | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid` | PATCH | Update chat metadata (mode, plan_file) | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/stop` | POST | Stop AI generation | Yes (JWT + Member) |
 | `/api/v1/workspaces/:id/chats/:cid/events` | GET | Connect to SSE event stream | Yes (JWT + Member) |
+| `/api/v1/workspaces/:id/agent-sessions` | GET | List active agent sessions | Yes (JWT + Member) |
+| `/api/v1/agent-sessions/:sid` | GET | Get agent session details | Yes (JWT + Owner) |
+| `/api/v1/agent-sessions/:sid/pause` | POST | Pause agent session | Yes (JWT + Owner) |
+| `/api/v1/agent-sessions/:sid/resume` | POST | Resume agent session | Yes (JWT + Owner) |
+| `/api/v1/agent-sessions/:sid` | DELETE | Cancel/stop agent session | Yes (JWT + Owner) |
 
 **Base URL**: `http://localhost:3000` (default)
 
 **API Version**: `v1` (all endpoints are prefixed with `/api/v1`)
+
+---
+
+## Agent Sessions API
+
+Manage active AI agent sessions for monitoring and controlling background agent processes.
+
+### List Workspace Agent Sessions
+
+List all active agent sessions in a workspace.
+
+**Endpoint**: `GET /api/v1/workspaces/:id/agent-sessions`
+
+**Authentication**: Required (JWT access token + Workspace Member)
+
+#### Query Parameters
+- `status` (optional): Filter by status (`idle`, `running`, `paused`, `completed`, `error`)
+- `agent_type` (optional): Filter by agent type (`assistant`, `planner`, `builder`)
+
+#### Response
+```json
+{
+  "sessions": [
+    {
+      "id": "uuid-v7",
+      "workspace_id": "uuid-v7",
+      "chat_id": "uuid-v7",
+      "user_id": "uuid-v7",
+      "agent_type": "assistant",
+      "status": "running",
+      "model": "gpt-4o",
+      "mode": "chat",
+      "current_task": "Writing code for user story",
+      "created_at": "2026-02-15T10:30:00Z",
+      "updated_at": "2026-02-15T10:35:00Z",
+      "last_heartbeat": "2026-02-15T10:34:55Z",
+      "completed_at": null
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### Get Agent Session Details
+
+Get detailed information about a specific agent session.
+
+**Endpoint**: `GET /api/v1/agent-sessions/:id`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "workspace_id": "uuid-v7",
+    "chat_id": "uuid-v7",
+    "user_id": "uuid-v7",
+    "agent_type": "planner",
+    "status": "running",
+    "model": "claude-3-5-sonnet",
+    "mode": "plan",
+    "current_task": "Creating implementation plan",
+    "created_at": "2026-02-15T10:30:00Z",
+    "updated_at": "2026-02-15T10:35:00Z",
+    "last_heartbeat": "2026-02-15T10:34:55Z",
+    "completed_at": null
+  }
+}
+```
+
+---
+
+### Pause Agent Session
+
+Pause a running agent session.
+
+**Endpoint**: `POST /api/v1/agent-sessions/:id/pause`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Request
+```json
+{
+  "reason": "User requested pause"
+}
+```
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "status": "paused",
+    ...
+  },
+  "message": "Session paused successfully"
+}
+```
+
+---
+
+### Resume Agent Session
+
+Resume a paused agent session.
+
+**Endpoint**: `POST /api/v1/agent-sessions/:id/resume`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+#### Request
+```json
+{
+  "task": "Continue with the implementation"
+}
+```
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "status": "running",
+    ...
+  },
+  "message": "Session resumed successfully"
+}
+```
+
+---
+
+### Cancel Agent Session
+
+Cancel/stop a running or paused agent session.
+
+**Endpoint**: `DELETE /api/v1/agent-sessions/:id`
+
+**Authentication**: Required (JWT access token + Session Owner)
+
+**Description**: Updates the session status to "cancelled". The session record is preserved for historical tracking.
+
+#### Response
+```json
+{
+  "session": {
+    "id": "uuid-v7",
+    "status": "cancelled",
+    ...
+  },
+  "message": "Session cancelled successfully"
+}
+```
+
+**Note**: The session status is updated to "cancelled" instead of deleting the record. This preserves historical data about cancelled sessions.
 
 ---
 
@@ -319,17 +484,32 @@ Initialize a stateful agentic session.
 ```json
 {
   "goal": "I want to start a new blog post about Rust.",
-    "files": ["019bf537-f228-7cd3-aa1c-3da8af302e12"],
-
-  "role": "assistant",
+  "files": ["019bf537-f228-7cd3-aa1c-3da8af302e12"],
+  "role": "planner",
   "model": "gpt-4o-mini"
 }
 ```
 
-- `goal`: The initial prompt or objective for the agent.
-- `files`: Optional array of UUIDs for files to include in the initial context.
-- `role`: Optional agent role (e.g., `assistant`). Defaults to `assistant` (Coworker).
-- `model`: Optional LLM model override.
+##### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `goal` | string | Yes | The initial prompt or objective for the agent |
+| `files` | array of UUID | No | Files to include in the initial context |
+| `role` | string | No | Agent role: `planner` (default), `builder`, or `assistant` |
+| `model` | string | No | LLM model override (e.g., `gpt-4o-mini`) |
+
+##### Role to Mode Mapping
+
+The `role` parameter determines which agent mode is used:
+
+| Role | Mode | Agent Type | Description |
+|------|------|------------|-------------|
+| `planner` | `plan` | Planner Agent | Strategic planning phase - asks questions, creates plan files |
+| `builder` | `build` | Builder Agent | Execution phase - executes plans with full tool access |
+| `assistant` or omitted | `chat` | Assistant Agent | General purpose chat with standard tool access |
+
+**Important**: The `role` parameter sets the chat mode in the database immediately upon creation. This ensures the correct agent type is spawned from the start.
 
 ##### Response (201 Created)
 ```json
@@ -337,6 +517,151 @@ Initialize a stateful agentic session.
   "chat_id": "uuid-chat-session-id",
   "plan_id": null
 }
+```
+
+---
+
+### List Recent Chats
+
+List all chat files in a workspace, ordered by most recently updated. This endpoint is designed for displaying recent chats in a navigation sidebar (similar to ChatGPT/Gemini UI).
+
+**Endpoint**: `GET /api/v1/workspaces/:id/chats`
+
+**Authentication**: Required (JWT access token + Workspace Member)
+
+**Permission**: User must be a member of the workspace.
+
+##### Request
+
+**Path Parameters**:
+- `id`: Workspace UUID
+
+**Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+```bash
+curl http://localhost:3000/api/v1/workspaces/{workspace_id}/chats \
+  -H "Authorization: Bearer <access_token>"
+```
+
+##### Response (200 OK)
+
+```json
+[
+  {
+    "id": "019bfa7f-7b41-7d31-9368-aed217a36c7e",
+    "name": "Blog Post Planning",
+    "path": "/Blog Post Planning",
+    "created_at": "2024-01-26T10:00:00Z",
+    "updated_at": "2024-01-26T12:30:00Z",
+    "chat_id": "019bfa7f-7b41-7d31-9368-aed217a36c7e"
+  },
+  {
+    "id": "019bfa7f-7b42-7d32-9369-aed217a36c7f",
+    "name": "Code Refactoring",
+    "path": "/Code Refactoring",
+    "created_at": "2024-01-25T14:00:00Z",
+    "updated_at": "2024-01-25T16:45:00Z",
+    "chat_id": "019bfa7f-7b42-7d32-9369-aed217a36c7f"
+  }
+]
+```
+
+##### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string (UUID) | Chat file ID (same as chat_id) |
+| `name` | string | Chat file name |
+| `path` | string | File path in workspace |
+| `created_at` | string (ISO8601) | When the chat was created |
+| `updated_at` | string (ISO8601) | When the chat was last updated |
+| `chat_id` | string (UUID) | Chat ID (convenience field, same as id) |
+
+##### Use Cases
+
+- **Navigation sidebar**: Display recent chats in ChatGPT/Gemini-style UI
+- **Chat switching**: Allow users to quickly switch between active conversations
+- **Time-based grouping**: Group chats by Today, Yesterday, Previous 7 Days, Older
+- **Workspace overview**: Show all chat activity in a workspace
+
+##### Ordering
+
+Chats are ordered by `updated_at` in descending order (most recently updated first).
+
+##### Filtering
+
+The endpoint returns all chat files in the workspace. Client-side filtering is recommended for:
+- **Time-based grouping**: Today, Yesterday, Previous 7 Days, Older
+- **Search/filter**: Filter by chat name or content
+- **Pagination**: Limit results for better performance
+
+##### Error Responses
+
+**403 Forbidden** - Not a Workspace Member
+```json
+{
+  "error": "Access forbidden: User is not a member of this workspace",
+  "code": "FORBIDDEN"
+}
+```
+
+##### Example Usage (JavaScript/TypeScript)
+
+```javascript
+// Fetch recent chats for workspace
+const workspaceId = 'workspace-uuid';
+const response = await fetch(`/api/v1/workspaces/${workspaceId}/chats`, {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+if (!response.ok) {
+  throw new Error('Failed to fetch recent chats');
+}
+
+const chats = await response.json();
+
+// Group chats by time period (similar to ChatGPT/Gemini)
+const now = new Date();
+const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+const yesterday = new Date(today);
+yesterday.setDate(yesterday.getDate() - 1);
+const sevenDaysAgo = new Date(today);
+sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+const grouped = {
+  Today: [],
+  Yesterday: [],
+  'Previous 7 Days': [],
+  Older: []
+};
+
+chats.forEach(chat => {
+  const updatedDate = new Date(chat.updated_at);
+  if (updatedDate >= today) {
+    grouped.Today.push(chat);
+  } else if (updatedDate >= yesterday && updatedDate < today) {
+    grouped.Yesterday.push(chat);
+  } else if (updatedDate >= sevenDaysAgo && updatedDate < yesterday) {
+    grouped['Previous 7 Days'].push(chat);
+  } else {
+    grouped.Older.push(chat);
+  }
+});
+
+// Display in navigation sidebar
+Object.entries(grouped).forEach(([period, chats]) => {
+  if (chats.length > 0) {
+    console.log(`${period} (${chats.length})`);
+    chats.forEach(chat => {
+      console.log(`  - ${chat.name || 'Untitled Chat'}`);
+    });
+  }
+});
 ```
 
 ---

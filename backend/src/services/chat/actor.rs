@@ -1,6 +1,8 @@
+use crate::models::agent_session::AgentType;
 use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::queries;
+use crate::services::agent_sessions;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
@@ -11,8 +13,16 @@ use futures::StreamExt;
 use rig::streaming::StreamingChat;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+/// Maximum number of retries for transient AI engine errors
+const MAX_AI_RETRIES: u32 = 3;
+/// Initial backoff duration in milliseconds for retries
+const RETRY_BACKOFF_MS: u64 = 1000;
+/// Stream read timeout in seconds - if no data received from API within this time, consider it stalled
+const STREAM_READ_TIMEOUT_SECS: u64 = 120;
 
 /// Consolidated state for ChatActor to reduce lock contention
 /// All state that was previously in separate Arc<Mutex<>> fields is now grouped logically
@@ -71,6 +81,11 @@ struct InteractionState {
     current_cancellation_token: Option<CancellationToken>,
     /// Track current model for cancellation metadata
     current_model: Option<String>,
+    /// Current task description for session tracking
+    current_task: Option<String>,
+    /// Flag to track if the actor is actively processing an interaction
+    /// Used to prevent inactivity timeout during long-running tasks
+    is_actively_processing: bool,
 }
 
 impl ChatActorState {
@@ -97,6 +112,8 @@ impl Default for ChatActorState {
             interaction: InteractionState {
                 current_cancellation_token: None,
                 current_model: None,
+                current_task: None,
+                is_actively_processing: false,
             },
             current_reasoning_id: None,
             reasoning_buffer: Vec::new(),
@@ -107,6 +124,7 @@ impl Default for ChatActorState {
 pub struct ChatActor {
     chat_id: Uuid,
     workspace_id: Uuid,
+    user_id: Uuid,
     pool: DbPool,
     rig_service: Arc<RigService>,
     storage: Arc<FileStorageService>,
@@ -116,6 +134,10 @@ pub struct ChatActor {
     default_persona: String,
     default_context_token_limit: usize,
     inactivity_timeout: std::time::Duration,
+    /// Agent session ID for tracking this actor in the database
+    session_id: Option<Uuid>,
+    /// Handle for the heartbeat task
+    heartbeat_handle: Option<JoinHandle<()>>,
     /// Consolidated state - single lock for all actor state
     /// Reduces lock contention and eliminates deadlock risk
     state: Arc<Mutex<ChatActorState>>,
@@ -124,6 +146,7 @@ pub struct ChatActor {
 pub struct ChatActorArgs {
     pub chat_id: Uuid,
     pub workspace_id: Uuid,
+    pub user_id: Uuid,
     pub pool: DbPool,
     pub rig_service: Arc<RigService>,
     pub storage: Arc<FileStorageService>,
@@ -148,15 +171,18 @@ impl ChatActor {
         let actor = Self {
             chat_id: args.chat_id,
             workspace_id: args.workspace_id,
-            pool: args.pool,
+            user_id: args.user_id,
+            pool: args.pool.clone(),
             rig_service: args.rig_service,
             storage: args.storage,
             registry: args.registry,
             command_rx,
-            event_tx: args.event_tx,
+            event_tx: args.event_tx.clone(),
             default_persona: args.default_persona,
             default_context_token_limit: args.default_context_token_limit,
             inactivity_timeout: args.inactivity_timeout,
+            session_id: None,
+            heartbeat_handle: None,
             state: Arc::new(Mutex::new(ChatActorState::default())),
         };
 
@@ -171,7 +197,45 @@ impl ChatActor {
     }
 
     async fn run(mut self) {
-        tracing::info!("[ChatActor] Started for chat {}", self.chat_id);
+        tracing::info!(
+            chat_id = %self.chat_id,
+            workspace_id = %self.workspace_id,
+            user_id = %self.user_id,
+            inactivity_timeout_secs = self.inactivity_timeout.as_secs(),
+            "[ChatActor] STARTED - Agent lifecycle beginning"
+        );
+
+        // Log when entering the main loop
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            "[ChatActor] Entering main event loop"
+        );
+
+        // Create agent session in database
+        let session_result = self.create_session().await;
+
+        // Treat session creation failure as fatal error - shut down actor
+        let session_id = match session_result {
+            Ok(id) => {
+                tracing::info!(
+                    chat_id = %self.chat_id,
+                    session_id = %id,
+                    "[ChatActor] Session created, starting heartbeat task"
+                );
+                id
+            }
+            Err(e) => {
+                tracing::error!(
+                    chat_id = %self.chat_id,
+                    error = ?e,
+                    "[ChatActor] Failed to create session - shutting down actor"
+                );
+                return;
+            }
+        };
+
+        self.session_id = Some(session_id);
+        self.heartbeat_handle = Some(self.start_heartbeat_task(session_id));
 
         // Periodic heartbeat ping (every 10 seconds)
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(10));
@@ -187,8 +251,39 @@ impl ChatActor {
                     let _ = self.event_tx.send(SseEvent::Ping);
                 }
                 _ = &mut inactivity_timeout => {
-                    tracing::info!("[ChatActor] Shutting down due to inactivity for chat {}", self.chat_id);
-                    break;
+                    // Only timeout if NOT actively processing
+                    let is_actively_processing = self.state.lock().await.interaction.is_actively_processing;
+
+                    if !is_actively_processing {
+                        tracing::info!(
+                            chat_id = %self.chat_id,
+                            reason = "inactivity_timeout",
+                            "[ChatActor] SHUTTING DOWN - No commands received while idle"
+                        );
+
+                        // Update session status to completed in database
+                        if let Some(session_id) = self.session_id {
+                            let _ = self.update_session_status(
+                                session_id,
+                                crate::models::agent_session::SessionStatus::Completed,
+                                None,
+                            ).await;
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                session_id = %session_id,
+                                "[ChatActor] Session marked as completed due to inactivity timeout"
+                            );
+                        }
+
+                        break;
+                    }
+
+                    // Reset timeout if actively processing - the actor is busy
+                    tracing::debug!(
+                        chat_id = %self.chat_id,
+                        "[ChatActor] Inactivity timeout fired but actor is actively processing, resetting timeout"
+                    );
+                    inactivity_timeout.as_mut().reset(tokio::time::Instant::now() + inactivity_timeout_duration);
                 }
                 command = self.command_rx.recv() => {
                     if let Some(cmd) = command {
@@ -197,16 +292,112 @@ impl ChatActor {
 
                         match cmd {
                             AgentCommand::ProcessInteraction { user_id } => {
-                                if let Err(e) = self.process_interaction(user_id).await {
+                                // Mark as actively processing to prevent inactivity timeout
+                                {
+                                    let mut state = self.state.lock().await;
+                                    state.interaction.is_actively_processing = true;
+                                }
+
+                                // Update session status to running
+                                if let Some(session_id) = self.session_id {
+                                    tracing::debug!(
+                                        chat_id = %self.chat_id,
+                                        session_id = %session_id,
+                                        "[ChatActor] ProcessInteraction: Setting status to running"
+                                    );
+                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Running, None).await;
+                                }
+
+                                let result = self.process_interaction(user_id).await;
+
+                                // Update session status based on result
+                                if let Some(session_id) = self.session_id {
+                                    let (status, error_msg) = if let Err(ref e) = result {
+                                        tracing::warn!(
+                                            chat_id = %self.chat_id,
+                                            session_id = %session_id,
+                                            error = %e,
+                                            "[ChatActor] ProcessInteraction: Setting status to error (interaction failed)"
+                                        );
+                                        (crate::models::agent_session::SessionStatus::Error, Some(format!("AI Engine Error: {}", e)))
+                                    } else {
+                                        tracing::debug!(
+                                            chat_id = %self.chat_id,
+                                            session_id = %session_id,
+                                            "[ChatActor] ProcessInteraction: Setting status to idle (interaction complete)"
+                                        );
+                                        (crate::models::agent_session::SessionStatus::Idle, None)
+                                    };
+
+                                    // Log the error message we're about to save
+                                    tracing::info!(
+                                        chat_id = %self.chat_id,
+                                        session_id = %session_id,
+                                        status = %status,
+                                        error_message = ?error_msg,
+                                        "[ChatActor] Updating session status after interaction"
+                                    );
+
+                                    match self.update_session_status(session_id, status, error_msg.clone()).await {
+                                        Ok(_) => {
+                                            tracing::info!(
+                                                chat_id = %self.chat_id,
+                                                session_id = %session_id,
+                                                "[ChatActor] Session status updated successfully"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                chat_id = %self.chat_id,
+                                                session_id = %session_id,
+                                                error = %e,
+                                                "[ChatActor] FAILED to update session status"
+                                            );
+                                        }
+                                    }
+
+                                    // Clear current task when interaction completes
+                                    if let Ok(mut conn) = self.pool.acquire().await {
+                                        let _ = agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
+                                        tracing::debug!(
+                                            session_id = %session_id,
+                                            "[ChatActor] Cleared current task (interaction complete)"
+                                        );
+                                    }
+                                }
+
+                                if let Err(e) = result {
 
                                     tracing::error!(
                                         "[ChatActor] Error processing interaction for chat {}: {:?}",
                                         self.chat_id,
                                         e
                                     );
-                                    let _ = self.event_tx.send(SseEvent::Error {
+                                    let send_result = self.event_tx.send(SseEvent::Error {
                                         message: format!("AI Engine Error: {}", e),
                                     });
+                                    if let Err(e) = send_result {
+                                        tracing::error!(
+                                            chat_id = %self.chat_id,
+                                            event_type = "Error",
+                                            error = ?e,
+                                            receivers = self.event_tx.receiver_count(),
+                                            "[SSE] FAILED to send error event - no receivers"
+                                        );
+                                    } else {
+                                        tracing::debug!(
+                                            chat_id = %self.chat_id,
+                                            event_type = "Error",
+                                            receivers = self.event_tx.receiver_count(),
+                                            "[SSE] SENT error event successfully"
+                                        );
+                                    }
+                                }
+
+                                // Mark as done processing - actor is now idle
+                                {
+                                    let mut state = self.state.lock().await;
+                                    state.interaction.is_actively_processing = false;
                                 }
 
                                 // Reset inactivity timeout AGAIN after work completes
@@ -215,6 +406,40 @@ impl ChatActor {
                             }
                             AgentCommand::Ping => {
                                 tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
+                            }
+                            AgentCommand::Pause { reason, responder } => {
+                                tracing::info!(
+                                    "[ChatActor] Pause requested for chat {} (reason: {:?})",
+                                    self.chat_id,
+                                    reason
+                                );
+
+                                // Cancel the current interaction if any
+                                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
+                                if let Some(token) = token {
+                                    tracing::debug!(
+                                        chat_id = %self.chat_id,
+                                        "[ChatActor] Cancelling current interaction token for pause"
+                                    );
+                                    token.cancel();
+                                }
+
+                                // Update session status to paused in database
+                                if let Some(session_id) = self.session_id {
+                                    tracing::debug!(
+                                        chat_id = %self.chat_id,
+                                        session_id = %session_id,
+                                        "[ChatActor] Pause: Setting status to paused"
+                                    );
+                                    let _ = self.update_session_status(session_id, crate::models::agent_session::SessionStatus::Paused, None).await;
+                                }
+
+                                // Send acknowledgment
+                                if let Some(responder) = responder.lock().await.take() {
+                                    let _ = responder.send(Ok(true));
+                                }
+
+                                // Don't break - keep the actor alive so it can be resumed
                             }
                             AgentCommand::Cancel { reason, responder } => {
                                 tracing::info!(
@@ -234,7 +459,9 @@ impl ChatActor {
                                     let _ = responder.send(Ok(true));
                                 }
 
-                                // Don't break the loop - actor continues running
+                                // Stop the actor - cancel should terminate the session
+                                // A new ChatActor will be created if the user chats again
+                                break;
                             }
                             AgentCommand::Shutdown => {
                                 tracing::info!("[ChatActor] Shutting down for chat {}", self.chat_id);
@@ -247,10 +474,41 @@ impl ChatActor {
                 }
             }
         }
+
+        // Cleanup: stop heartbeat and mark session as completed
+        let heartbeat_handle = self.heartbeat_handle.take();
+        let session_id = self.session_id.take();
+
+        if let Some(handle) = heartbeat_handle {
+            handle.abort();
+        }
+
+        // Note: We intentionally do NOT mark the session as completed here.
+        // The session record should persist in its last known state (e.g., idle, running).
+        // - User-cancelled sessions: handler/service owns final DB state
+        // - Inactivity timeout: session is NOT "completed", just inactive
+        // - Normal shutdown: session stays in its last active state
+        // Stale sessions will be handled by the cleanup worker if not re-activated.
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = ?session_id,
+            "[ChatActor] EXITED - Actor lifecycle complete"
+        );
     }
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
-        tracing::info!("[ChatActor] Processing interaction for chat {}", self.chat_id);
+        tracing::info!(
+            chat_id = %self.chat_id,
+            user_id = %user_id,
+            "[ChatActor] ProcessInteraction STARTED"
+        );
+
+        // Log SSE receiver count
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            receivers = self.event_tx.receiver_count(),
+            "[ChatActor] Current SSE receiver count"
+        );
 
         // Create a new cancellation token for this interaction
         let cancellation_token = CancellationToken::new();
@@ -285,6 +543,33 @@ impl ChatActor {
         let last_message = messages
             .last()
             .ok_or_else(|| crate::error::Error::Internal("No messages found".into()))?;
+
+        // Set current task for session tracking (truncate if too long)
+        let task_preview = crate::utils::safe_preview(&last_message.content, 100);
+        self.state.lock().await.interaction.current_task = Some(task_preview.clone());
+
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            task = %task_preview,
+            "[ChatActor] Set current task from user message"
+        );
+
+        // Update session with current task
+        if let Some(session_id) = self.session_id {
+            if let Err(e) = agent_sessions::update_session_task(&mut conn, session_id, Some(task_preview.clone()), self.user_id).await {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "[ChatActor] Failed to update session task"
+                );
+            } else {
+                tracing::debug!(
+                    session_id = %session_id,
+                    task = %task_preview,
+                    "[ChatActor] Updated session current_task"
+                );
+            }
+        }
 
         // 3. Convert history to Rig format with cache-optimized attachment interleaving
         // Attachments are now interleaved chronologically with messages for better caching
@@ -356,33 +641,87 @@ impl ChatActor {
 
         let mut item_count = 0usize;
 
-        // Process stream based on provider type
-        let full_response = match &agent {
-            Agent::OpenAI(openai_agent) => {
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Calling OpenAI agent.stream_chat"
-                );
-                let stream = openai_agent.stream_chat(&prompt, history).await;
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Stream created (OpenAI), entering response loop"
-                );
-                self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await?
+        // Process stream with retry logic for transient errors
+        let mut retry_count = 0u32;
+        let full_response = loop {
+            // Check for cancellation before attempting
+            if cancellation_token.is_cancelled() {
+                tracing::info!("[ChatActor] Cancelled before streaming for chat {}", self.chat_id);
+                return Err(crate::error::Error::Internal("Chat cancelled by user".to_string()));
             }
-            Agent::OpenRouter(openrouter_agent) => {
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Calling OpenRouter agent.stream_chat"
-                );
-                let stream = openrouter_agent.stream_chat(&prompt, history).await;
-                tracing::info!(
-                    chat_id = %self.chat_id,
-                    "Stream created (OpenRouter), entering response loop"
-                );
-                self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await?
+
+            let result = match &agent {
+                Agent::OpenAI(openai_agent) => {
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        retry = retry_count,
+                        "Calling OpenAI agent.stream_chat"
+                    );
+                    let stream = openai_agent.stream_chat(&prompt, history.clone()).await;
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        "Stream created (OpenAI), entering response loop"
+                    );
+                    self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await
+                }
+                Agent::OpenRouter(openrouter_agent) => {
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        retry = retry_count,
+                        "Calling OpenRouter agent.stream_chat"
+                    );
+                    let stream = openrouter_agent.stream_chat(&prompt, history.clone()).await;
+                    tracing::info!(
+                        chat_id = %self.chat_id,
+                        "Stream created (OpenRouter), entering response loop"
+                    );
+                    self.process_agent_stream(stream, &cancellation_token, &mut conn, &session, &mut item_count).await
+                }
+            };
+
+            match result {
+                Ok(response) => break response,
+                Err(e) => {
+                    // Check if error is retryable (transient errors)
+                    let error_str = format!("{:?}", e);
+                    let is_retryable = error_str.contains("Failed to get tool definitions")
+                        || error_str.contains("RequestError")
+                        || error_str.contains("rate limit")
+                        || error_str.contains("timeout")
+                        || error_str.contains("connection")
+                        || error_str.contains("5")
+                        || error_str.contains("overloaded");
+
+                    if is_retryable && retry_count < MAX_AI_RETRIES {
+                        retry_count += 1;
+                        let backoff_ms = RETRY_BACKOFF_MS * (1 << (retry_count - 1)); // Exponential backoff
+                        tracing::warn!(
+                            chat_id = %self.chat_id,
+                            retry = retry_count,
+                            max_retries = MAX_AI_RETRIES,
+                            backoff_ms = backoff_ms,
+                            error = ?e,
+                            "[ChatActor] Transient AI error, retrying with backoff"
+                        );
+
+                        // Clear agent cache to force fresh agent creation on retry
+                        self.state.lock().await.agent_state.cached_agent = None;
+
+                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                    } else {
+                        // Non-retryable error or max retries exceeded
+                        tracing::error!(
+                            chat_id = %self.chat_id,
+                            retry = retry_count,
+                            error = ?e,
+                            "[ChatActor] AI error (not retrying)"
+                        );
+                        return Err(e);
+                    }
+                }
             }
         };
+
         // Check if stream completed without any items (possible API access issue)
         if item_count == 0 {
             tracing::warn!(
@@ -437,17 +776,47 @@ impl ChatActor {
             .await?;
         }
 
-        let _ = self.event_tx.send(SseEvent::Done {
+        let send_result = self.event_tx.send(SseEvent::Done {
             message: "Turn complete".to_string(),
         });
+        if let Err(e) = send_result {
+            tracing::error!(
+                chat_id = %self.chat_id,
+                event_type = "Done",
+                error = ?e,
+                receivers = self.event_tx.receiver_count(),
+                "[SSE] FAILED to send event - no receivers"
+            );
+        } else {
+            tracing::debug!(
+                chat_id = %self.chat_id,
+                event_type = "Done",
+                receivers = self.event_tx.receiver_count(),
+                "[SSE] SENT event successfully"
+            );
+        }
 
-        tracing::info!("[ChatActor] Interaction turn complete for chat {}", self.chat_id);
+        tracing::info!(
+            chat_id = %self.chat_id,
+            receivers = self.event_tx.receiver_count(),
+            "[ChatActor] ProcessInteraction COMPLETED"
+        );
 
         // Clear the cancellation token for this interaction
         self.state.lock().await.interaction.current_cancellation_token = None;
 
         // Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
+
+        // Clear current task (interaction complete)
+        let current_task = self.state.lock().await.interaction.current_task.take();
+        if let Some(task) = current_task {
+            tracing::debug!(
+                chat_id = %self.chat_id,
+                task = %task,
+                "[ChatActor] Cleared current task (interaction complete)"
+            );
+        }
 
         Ok(())
     }
@@ -512,6 +881,9 @@ impl ChatActor {
 
         // 6. Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
+
+        // 7. Clear processing flag - actor is no longer actively processing
+        self.state.lock().await.interaction.is_actively_processing = false;
 
         Ok(())
     }
@@ -598,7 +970,7 @@ impl ChatActor {
                         tracing::debug!(
                             chat_id = %self.chat_id,
                             text_len = text.text.len(),
-                            text_preview = %format!("{}...", &text.text[..text.text.len().min(50)]),
+                            text_preview = %crate::utils::safe_preview(&text.text, 50),
                             "[ChatActor] [Rig] Received Text chunk"
                         );
                         if !*has_started_responding {
@@ -645,11 +1017,26 @@ impl ChatActor {
                         }
 
                         // Send streaming reasoning chunk to frontend via Thought event
-                        if let Err(e) = self.event_tx.send(SseEvent::Thought {
+                        let send_result = self.event_tx.send(SseEvent::Thought {
                             agent_id: None,
                             text: reasoning.clone(),
-                        }) {
-                            tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e);
+                        });
+                        if let Err(e) = send_result {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                event_type = "Thought",
+                                error = ?e,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] FAILED to send event - no receivers"
+                            );
+                        } else {
+                            tracing::trace!(
+                                chat_id = %self.chat_id,
+                                event_type = "Thought",
+                                reasoning_len = reasoning.len(),
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] SENT event successfully"
+                            );
                         }
                     }
                     rig::streaming::StreamedAssistantContent::Reasoning(thought) => {
@@ -673,11 +1060,26 @@ impl ChatActor {
                         // Send to frontend
                         for part in &thought.reasoning {
                             if !part.trim().is_empty() {
-                                if let Err(e) = self.event_tx.send(SseEvent::Thought {
+                                let send_result = self.event_tx.send(SseEvent::Thought {
                                     agent_id: None,
                                     text: part.clone(),
-                                }) {
-                                    tracing::error!("[ChatActor] [SSE] Failed to send Thought event: {:?}", e);
+                                });
+                                if let Err(e) = send_result {
+                                    tracing::error!(
+                                        chat_id = %self.chat_id,
+                                        event_type = "Thought",
+                                        error = ?e,
+                                        receivers = self.event_tx.receiver_count(),
+                                        "[SSE] FAILED to send event - no receivers"
+                                    );
+                                } else {
+                                    tracing::trace!(
+                                        chat_id = %self.chat_id,
+                                        event_type = "Thought",
+                                        reasoning_len = part.len(),
+                                        receivers = self.event_tx.receiver_count(),
+                                        "[SSE] SENT event successfully"
+                                    );
                                 }
                             }
                         }
@@ -727,7 +1129,7 @@ impl ChatActor {
                         let args_preview = if let Ok(args_str) = serde_json::to_string_pretty(&summarized_args) {
                             // Truncate if too long for file content
                             if args_str.len() > 500 {
-                                format!("{}...\n[Arguments truncated, see metadata for full details]", &args_str[..500])
+                                format!("{}...\n[Arguments truncated, see metadata for full details]", crate::utils::truncate_safe(&args_str, 500))
                             } else {
                                 args_str
                             }
@@ -782,12 +1184,28 @@ impl ChatActor {
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
 
+                        let tool_name = tool_call.function.name.clone();
                         if let Err(e) = self.event_tx.send(SseEvent::Call {
                             tool: tool_call.function.name,
                             path,
                             args: tool_call.function.arguments,
                         }) {
-                            tracing::error!("[ChatActor] [SSE] Failed to send Call event: {:?}", e);
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                event_type = "Call",
+                                tool = %tool_name,
+                                error = ?e,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] FAILED to send event - no receivers"
+                            );
+                        } else {
+                            tracing::debug!(
+                                chat_id = %self.chat_id,
+                                event_type = "Call",
+                                tool = %tool_name,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] SENT event successfully"
+                            );
                         }
                     }
                     _ => {}
@@ -922,6 +1340,32 @@ impl ChatActor {
                                              plan_file
                                          );
 
+                                         // Update agent session metadata with new mode and agent type
+                                         if let Some(session_id) = self.session_id {
+                                             let agent_type = crate::models::agent_session::AgentType::Builder;
+                                             if let Err(e) = agent_sessions::update_session_metadata(
+                                                 &mut update_conn,
+                                                 session_id,
+                                                 None,  // model unchanged
+                                                 Some(mode.to_string()),
+                                                 Some(agent_type),
+                                                 self.user_id,
+                                             ).await {
+                                                 tracing::warn!(
+                                                     session_id = %session_id,
+                                                     error = %e,
+                                                     "[ChatActor] Failed to update session metadata after mode change"
+                                                 );
+                                             } else {
+                                                 tracing::info!(
+                                                     session_id = %session_id,
+                                                     mode = %mode,
+                                                     agent_type = %agent_type,
+                                                     "[ChatActor] Successfully updated session metadata after mode change"
+                                                 );
+                                             }
+                                         }
+
                                          // Emit mode_changed event to frontend
                                          let _ = self.event_tx.send(SseEvent::ModeChanged {
                                              mode: "build".to_string(),
@@ -939,19 +1383,27 @@ impl ChatActor {
                              "[ChatActor] [Rig] Tool execution finished for chat {} (success: {}). Output: {}",
                              self.chat_id,
                              success,
-                             if output.len() > 100 {
-                                 let mut end = 100;
-                                 while end > 0 && !output.is_char_boundary(end) {
-                                     end -= 1;
-                                 }
-                                 format!("{}...", &output[..end])
-                             } else {
-                                 output.clone()
-                             }
+                             crate::utils::safe_preview(&output, 100)
                          );
-                          if let Err(e) = self.event_tx.send(SseEvent::Observation { output: normalized_output.clone(), success }) {
-                              tracing::error!("[ChatActor] [SSE] Failed to send Observation event: {:?}", e);
+                          let send_result = self.event_tx.send(SseEvent::Observation { output: normalized_output.clone(), success });
+                          if let Err(e) = send_result {
+                              tracing::error!(
+                                  chat_id = %self.chat_id,
+                                  event_type = "Observation",
+                                  error = ?e,
+                                  receivers = self.event_tx.receiver_count(),
+                                  "[SSE] FAILED to send event - no receivers"
+                              );
+                          } else {
+                              tracing::debug!(
+                                  chat_id = %self.chat_id,
+                                  event_type = "Observation",
+                                  success = success,
+                                  receivers = self.event_tx.receiver_count(),
+                                  "[SSE] SENT event successfully"
+                              );
                           }
+
 
                           // Persist tool result for audit trail (BEFORE any state modifications)
                           {
@@ -1093,19 +1545,36 @@ impl ChatActor {
             }
 
             // Use tokio::select! to allow cancellation during stream.next()
+            // Also add a timeout to detect stalled API streams
+            let stream_timeout = tokio::time::Duration::from_secs(STREAM_READ_TIMEOUT_SECS);
             let item = tokio::select! {
                 _ = cancellation_token.cancelled() => {
                     tracing::info!("[ChatActor] Cancelled during streaming for chat {}", self.chat_id);
                     self.handle_cancellation(conn, full_response.clone(), "user_cancelled").await?;
                     return Err(crate::error::Error::Internal("Chat cancelled by user".to_string()));
                 },
-                item = stream.next() => {
-                    match &item {
-                        Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = *item_count, "Received stream item"),
-                        Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
-                        None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                item_result = tokio::time::timeout(stream_timeout, stream.next()) => {
+                    match item_result {
+                        Ok(item) => {
+                            match &item {
+                                Some(Ok(_)) => tracing::debug!(chat_id = %self.chat_id, item_num = *item_count, "Received stream item"),
+                                Some(Err(e)) => tracing::error!(chat_id = %self.chat_id, error = %e, "Stream error"),
+                                None => tracing::info!(chat_id = %self.chat_id, "Stream ended (None)"),
+                            }
+                            item
+                        }
+                        Err(_) => {
+                            // Timeout - API stream stalled
+                            tracing::warn!(
+                                chat_id = %self.chat_id,
+                                timeout_secs = STREAM_READ_TIMEOUT_SECS,
+                                "[ChatActor] Stream read timeout - API stalled"
+                            );
+                            return Err(crate::error::Error::Internal(
+                                format!("Stream read timeout after {} seconds - API stalled", STREAM_READ_TIMEOUT_SECS)
+                            ));
+                        }
                     }
-                    item
                 }
             };
 
@@ -1121,6 +1590,22 @@ impl ChatActor {
 
             match item {
                 Err(e) => {
+                    let error_str = e.to_string();
+
+                    // Check for JSON parsing errors in tool calls (common with very long content)
+                    if error_str.contains("JsonError") || error_str.contains("EOF while parsing") {
+                        tracing::error!(
+                            chat_id = %self.chat_id,
+                            error = %error_str,
+                            item_num = *item_count,
+                            "[ChatActor] JSON parsing error in tool call - content may be too long or have invalid characters"
+                        );
+                        return Err(crate::error::Error::Internal(
+                            "Tool call JSON parsing failed. The content may be too long or contain invalid characters. \
+                             Try using smaller content chunks or check for special characters that need escaping.".to_string()
+                        ));
+                    }
+
                     tracing::error!(
                         chat_id = %self.chat_id,
                         error = %e,
@@ -1229,7 +1714,220 @@ impl ChatActor {
             state.agent_state.current_user_id = Some(user_id);
             state.agent_state.current_mode = Some(session.agent_config.mode.clone());
 
+            // Update session metadata with the actual model being used
+            // Drop the lock before doing async database operation
+            drop(state);
+
+            if let Some(session_id) = &self.session_id {
+                tracing::debug!(
+                    session_id = %session_id,
+                    model = %session.agent_config.model,
+                    mode = %session.agent_config.mode,
+                    "[ChatActor] Updating session metadata after agent creation"
+                );
+
+                let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+                // Determine agent type from mode
+                let agent_type = match session.agent_config.mode.as_str() {
+                    "plan" => Some(AgentType::Planner),
+                    "build" => Some(AgentType::Builder),
+                    _ => Some(AgentType::Assistant),
+                };
+
+                // Update session with actual model, mode, and agent type
+                if let Err(e) = agent_sessions::update_session_metadata(
+                    &mut conn,
+                    *session_id,
+                    Some(session.agent_config.model.clone()),
+                    Some(session.agent_config.mode.clone()),
+                    agent_type,
+                    self.user_id,
+                ).await {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "[ChatActor] Failed to update session metadata after agent creation"
+                    );
+                } else {
+                    tracing::info!(
+                        session_id = %session_id,
+                        model = %session.agent_config.model,
+                        mode = %session.agent_config.mode,
+                        "[ChatActor] Successfully updated session metadata"
+                    );
+                }
+            }
+
             Ok(agent)
         }
+    }
+
+    // ========================================================================
+    // SESSION TRACKING METHODS
+    // ========================================================================
+
+    /// Creates a new agent session in the database.
+    async fn create_session(&self) -> Result<Uuid, crate::error::Error> {
+        tracing::info!(
+            chat_id = %self.chat_id,
+            workspace_id = %self.workspace_id,
+            user_id = %self.user_id,
+            persona = %self.default_persona,
+            "[ChatActor] Creating agent session in database"
+        );
+
+        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+        // Get the chat file's latest version to extract actual model and mode
+        // This ensures the session is created with the correct values from the chat config
+        let (actual_model, actual_mode) = match queries::files::get_latest_version(&mut conn, self.chat_id).await {
+            Ok(version) => {
+                // Extract model and mode from app_data
+                let model = version.app_data.get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(DEFAULT_CHAT_MODEL)
+                    .to_string();
+
+                let mode = version.app_data.get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("plan")
+                    .to_string();
+
+                tracing::debug!(
+                    chat_id = %self.chat_id,
+                    model = %model,
+                    mode = %mode,
+                    "[ChatActor] Extracted model and mode from chat file app_data"
+                );
+
+                (model, mode)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    chat_id = %self.chat_id,
+                    error = %e,
+                    "[ChatActor] Failed to get chat file version, using defaults"
+                );
+                (DEFAULT_CHAT_MODEL.to_string(), "plan".to_string())
+            }
+        };
+
+        // Determine agent type from mode (not from persona)
+        let agent_type = match actual_mode.as_str() {
+            "plan" => AgentType::Planner,
+            "build" => AgentType::Builder,
+            _ => AgentType::Assistant,
+        };
+
+        tracing::debug!(
+            chat_id = %self.chat_id,
+            agent_type = %agent_type,
+            model = %actual_model,
+            mode = %actual_mode,
+            "[ChatActor] Session configuration determined from chat file"
+        );
+
+        let session = agent_sessions::create_session(
+            &mut conn,
+            self.workspace_id,
+            self.chat_id,
+            self.user_id,
+            agent_type,
+            actual_model,
+            actual_mode,
+        )
+        .await?;
+
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session.id,
+            model = %session.model,
+            mode = %session.mode,
+            agent_type = %session.agent_type,
+            "[ChatActor] Successfully created agent session with correct values"
+        );
+
+        Ok(session.id)
+    }
+
+    /// Updates the session status in the database.
+    async fn update_session_status(
+        &self,
+        session_id: Uuid,
+        status: crate::models::agent_session::SessionStatus,
+        error_message: Option<String>,
+    ) -> Result<(), crate::error::Error> {
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            new_status = %status,
+            error_message = ?error_message,
+            "[ChatActor] update_session_status: Starting update"
+        );
+
+        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
+
+        let _ = queries::agent_sessions::update_session_status(&mut conn, session_id, status, error_message).await?;
+
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            new_status = %status,
+            "[ChatActor] update_session_status: Successfully updated"
+        );
+
+        Ok(())
+    }
+
+    /// Starts a background task that sends periodic heartbeats to the database.
+    /// This keeps the session alive and indicates the agent is actively running.
+    fn start_heartbeat_task(&self, session_id: Uuid) -> JoinHandle<()> {
+        tracing::info!(
+            chat_id = %self.chat_id,
+            session_id = %session_id,
+            "[ChatActor] Starting heartbeat task (30s interval)"
+        );
+
+        let pool = self.pool.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+
+            loop {
+                interval.tick().await;
+
+                tracing::trace!(
+                    session_id = %session_id,
+                    "[ChatActor] Heartbeat: sending update"
+                );
+
+                let mut conn = match pool.acquire().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "[ChatActor] Heartbeat: failed to acquire database connection"
+                        );
+                        continue;
+                    }
+                };
+
+                // Update heartbeat timestamp
+                if let Err(e) = agent_sessions::update_heartbeat(&mut conn, session_id).await {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "[ChatActor] Heartbeat: failed to update heartbeat"
+                    );
+                } else {
+                    tracing::trace!(
+                        session_id = %session_id,
+                        "[ChatActor] Heartbeat: successfully updated"
+                    );
+                }
+            }
+        })
     }
 }

@@ -60,7 +60,7 @@ Tool results can be very large (file contents, directory listings, grep output).
 ### Strategy
 
 - Keep full outputs for the **most recent 5 tool results**
-- Truncate older tool results to **50 characters** with `…` suffix
+- Truncate older tool results to **1KB (1024 characters)** with `…[re-run]` suffix
 - Tool calls are always preserved (AI knows what was executed)
 
 ### Why This Works
@@ -75,7 +75,7 @@ Tool results can be very large (file contents, directory listings, grep output).
 ```rust
 // Constants in context.rs
 const KEEP_RECENT_TOOL_RESULTS: usize = 5;
-const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
+const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 1024;
 
 // Truncate old tool results
 if is_old_tool_result {
@@ -105,7 +105,7 @@ After optimization:
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `KEEP_RECENT_TOOL_RESULTS` | 5 | Number of recent tool results to keep full |
-| `TRUNCATED_TOOL_RESULT_PREVIEW` | 50 | Approximate character preview length (UTF-8 safe) |
+| `TRUNCATED_TOOL_RESULT_PREVIEW` | 1024 | Approximate character preview length (1KB, UTF-8 safe) |
 
 ### Key Implementation Files
 

@@ -15,6 +15,10 @@ export { AuthProvider, useAuth } from './context'
 export type { AuthProviderProps, AuthError, AuthResult, AuthContextType } from './context'
 export { ThemeProvider, useTheme, useResolvedTheme } from './context'
 export type { ThemeProviderProps, Theme } from './context'
+export { AgentSessionsProvider, useAgentSessions } from './context'
+export type { AgentSessionsProviderProps, AgentSessionsContextValue } from './context'
+export { MultiChatSSEManagerProvider } from './components/ui/chat/multi-chat-sse-manager'
+export type { SSEEvent, SSEConnection, SSEConnectionState } from './components/ui/chat/multi-chat-sse-manager'
 
 // Storage context
 export { StorageProvider, useStorage } from './context/StorageContext'
@@ -44,14 +48,24 @@ export type {
 // Components
 export { default as Auth } from './components/auth'
 export { NavigationMenu } from './components/NavigationMenu'
+export { AgentStatusIndicator } from './components/AgentStatusIndicator'
+export type { AgentStatusIndicatorProps } from './components/AgentStatusIndicator'
+export { AgentSessionMenuItem } from './components/AgentSessionMenuItem'
+export type { AgentSessionMenuItemProps } from './components/AgentSessionMenuItem'
 export { Chat, useChat } from './components/ui/chat'
-export type { ChatMessageItem, ChatModel } from './components/ui/chat'
 export {
   ChatQuestionBar,
   ChatSchemaForm,
   ChatModeIndicator,
   ChatModeToggle,
   ChatContextDialog,
+} from './components/ui/chat'
+export type {
+  ChatMessageItem,
+  ChatModel,
+  ChatTab,
+  ChatTabBarProps,
+  ChatTabStatus,
 } from './components/ui/chat'
 export type {
   ChatMode,
@@ -197,6 +211,16 @@ export type {
   File,
   FileType,
   FileStatus,
+  AgentType,
+  AgentSession,
+  SessionStatus,
+  AgentSessionsListResponse,
+  PauseSessionRequest,
+  ResumeSessionRequest,
+  SessionActionResponse,
+  ChatFile,
+  ChatMessage,
+  ChatMessageRole,
 } from './api/types'
 
 // Errors

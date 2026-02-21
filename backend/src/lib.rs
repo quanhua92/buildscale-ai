@@ -20,6 +20,7 @@ pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use error::{Error, Result, ValidationErrors};
 pub use handlers::{
+    agent_sessions::{list_workspace_sessions, get_session, pause_session, resume_session, cancel_session},
     auth::login, auth::logout, auth::me, auth::register, auth::refresh,
     health::health_check, health::health_cache,
     members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
@@ -29,6 +30,7 @@ pub use handlers::{
     files::semantic_search,
     tools::execute_tool,
     chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat, chat::get_chat_context,
+    chats::list_chats,
     providers::get_providers, providers::get_workspace_providers,
 };
 pub use middleware::auth::AuthenticatedUser;
@@ -54,9 +56,10 @@ pub fn load_config() -> Result<Config> {
 /// ```
 pub fn init_tracing() {
     let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
-    
-    // Always append our desired overrides if they aren't explicitly provided
+
     let mut final_filter = filter;
+
+    // Always set external libraries to warn
     if !final_filter.contains("rig=") {
         final_filter = format!("{},rig=warn", final_filter);
     }
@@ -65,6 +68,17 @@ pub fn init_tracing() {
     }
     if !final_filter.contains("openai=") {
         final_filter = format!("{},openai=warn", final_filter);
+    }
+
+    // Set our modules to debug by default for better visibility
+    if !final_filter.contains("buildscale::handlers::chat=") {
+        final_filter = format!("{},buildscale::handlers::chat=debug", final_filter);
+    }
+    if !final_filter.contains("buildscale::services::chat::actor=") {
+        final_filter = format!("{},buildscale::services::chat::actor=debug", final_filter);
+    }
+    if !final_filter.contains("buildscale::services::chat::registry=") {
+        final_filter = format!("{},buildscale::services::chat::registry=debug", final_filter);
     }
 
     tracing_subscriber::fmt()
@@ -173,6 +187,11 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
                 .route("/health/cache", get(health_cache))
                 .route("/auth/me", get(me))
                 .route("/providers", get(get_providers))
+                // Agent session routes - global (scoped by session ownership)
+                .route("/agent-sessions/{id}", get(crate::handlers::get_session))
+                .route("/agent-sessions/{id}/pause", post(crate::handlers::pause_session))
+                .route("/agent-sessions/{id}/resume", post(crate::handlers::resume_session))
+                .route("/agent-sessions/{id}", delete(crate::handlers::cancel_session))
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     jwt_auth_middleware,
@@ -202,6 +221,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
     use crate::handlers::files as file_handlers;
     use crate::handlers::chat as chat_handlers;
     use crate::handlers::tools as tool_handlers;
+    use crate::handlers::agent_sessions as agent_session_handlers;
     use crate::middleware::workspace_access::workspace_access_middleware;
 
     Router::new()
@@ -370,7 +390,8 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         // Chat routes
         .route(
             "/{id}/chats",
-            post(chat_handlers::create_chat)
+            get(crate::handlers::chats::list_chats)
+                .post(chat_handlers::create_chat)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -405,6 +426,15 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         .route(
             "/{id}/chats/{chat_id}/context",
             get(chat_handlers::get_chat_context)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    workspace_access_middleware,
+                )),
+        )
+        // Agent session routes - workspace scoped
+        .route(
+            "/{id}/agent-sessions",
+            get(agent_session_handlers::list_workspace_sessions)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,

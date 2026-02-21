@@ -1,8 +1,9 @@
 import { Link, useMatches } from '@tanstack/react-router'
 
 import { useState } from 'react'
-import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2, Brain } from 'lucide-react'
+import { Home, LogOut, LogIn, UserPlus, LayoutDashboard, Images, Users, File, Settings, MessageSquare, Trash2, Brain, Bot } from 'lucide-react'
 import { NavigationMenu, ThemeToggle, useAuth } from '@buildscale/sdk'
+import { RecentChats } from './RecentChats'
 import tanstackLogo from '/tanstack-word-logo-white.svg'
 
 export default function Header() {
@@ -32,21 +33,33 @@ export default function Header() {
 
               {workspaceId && (
                 <>
+                  {/* Recent Chats Section */}
+                  <NavigationMenu.Section title="Recent Chats" defaultOpen={true}>
+                    <RecentChats workspaceId={workspaceId} />
+                  </NavigationMenu.Section>
+
                   <NavigationMenu.Section title="Current Workspace" defaultOpen={true}>
-                    <NavigationMenu.Item 
-                      to="/workspaces/$workspaceId" 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId"
                       params={{ workspaceId }}
                       icon={<LayoutDashboard size={20} />}
                     >
                       Overview
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      to="/workspaces/$workspaceId/chat" 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/chat"
                       params={{ workspaceId }}
                       search={{}} // Explicitly clear search params to start a new chat
                       icon={<MessageSquare size={20} />}
                     >
                       Chat
+                    </NavigationMenu.Item>
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/agents"
+                      params={{ workspaceId }}
+                      icon={<Bot size={20} />}
+                    >
+                      Agents
                     </NavigationMenu.Item>
                     <NavigationMenu.Item
                       to="/workspaces/$workspaceId/files"
@@ -68,27 +81,28 @@ export default function Header() {
                     >
                       Images
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      disabled 
+                    <NavigationMenu.Item
+                      disabled
                       icon={<Users size={20} />}
                     >
                       Members
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      to="/workspaces/$workspaceId/settings" 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/settings"
                       params={{ workspaceId }}
                       icon={<Settings size={20} />}
                     >
                       Settings
                     </NavigationMenu.Item>
-                    <NavigationMenu.Item 
-                      to="/workspaces/$workspaceId/deleted" 
+                    <NavigationMenu.Item
+                      to="/workspaces/$workspaceId/deleted"
                       params={{ workspaceId }}
                       icon={<Trash2 size={20} />}
                     >
                       Recently Deleted
                     </NavigationMenu.Item>
                   </NavigationMenu.Section>
+
                   <NavigationMenu.Separator />
                 </>
               )}

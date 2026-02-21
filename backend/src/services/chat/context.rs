@@ -12,9 +12,9 @@ use uuid::Uuid;
 /// Older tool results are truncated to reduce context size since the AI can re-run tools.
 pub const KEEP_RECENT_TOOL_RESULTS: usize = 5;
 
-/// Maximum byte length for truncated old tool results (approximately 50 ASCII characters).
+/// Maximum byte length for truncated old tool results (approximately 1KB).
 /// Truncation is UTF-8 safe - will not split multi-byte characters.
-pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 50;
+pub const TRUNCATED_TOOL_RESULT_PREVIEW: usize = 1024;
 
 /// Identify which tool result indices should be truncated based on age.
 ///

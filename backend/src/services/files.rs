@@ -289,11 +289,7 @@ pub async fn create_file_with_content(
 
 fn truncate_preview(content: &serde_json::Value) -> String {
     let s = content.to_string();
-    if s.len() > 100 {
-        format!("{}...", &s[0..100])
-    } else {
-        s
-    }
+    crate::utils::safe_preview(&s, 100)
 }
 
 /// Creates a new version for an existing file
