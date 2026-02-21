@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, debug, warn, instrument};
+use tracing::{info, warn, instrument};
 use uuid::Uuid;
 
 /// Maximum number of retries for transient AI engine errors
@@ -2122,5 +2122,47 @@ impl ChatActor {
             self.execute_state_action(action).await?;
         }
         Ok(())
+    }
+
+    /// Convert an AgentCommand to an ActorEvent.
+    ///
+    /// This bridges the existing command system with the new state machine.
+    fn command_to_event(&self, command: &AgentCommand) -> Option<ActorEvent> {
+        match command {
+            AgentCommand::ProcessInteraction { user_id } => {
+                Some(ActorEvent::ProcessInteraction { user_id: *user_id })
+            }
+            AgentCommand::Pause { .. } => {
+                Some(ActorEvent::Pause { reason: None })
+            }
+            AgentCommand::Cancel { reason, .. } => {
+                Some(ActorEvent::Cancel { reason: reason.clone() })
+            }
+            AgentCommand::Ping => {
+                Some(ActorEvent::Ping)
+            }
+            AgentCommand::Shutdown => {
+                Some(ActorEvent::Shutdown)
+            }
+        }
+    }
+
+    /// Process a command through the state handler system.
+    ///
+    /// Returns true if the command was fully handled by the state system,
+    /// false if it needs to be processed by the legacy code path.
+    ///
+    /// Note: For now, state handlers are NOT used because they require
+    /// a StateContext which we can't properly construct yet. This method
+    /// is a placeholder for future integration.
+    #[instrument(skip(self, _command), fields(chat_id = %self.chat_id))]
+    async fn process_command_via_state_handler(
+        &mut self,
+        _command: &AgentCommand,
+    ) -> Result<bool, crate::error::Error> {
+        // State handlers require a StateContext with shared_state reference
+        // which we can't properly construct without refactoring the
+        // ChatActorState structure. For now, always use legacy path.
+        Ok(false)
     }
 }
