@@ -5,7 +5,6 @@
 use crate::models::chat::{ChatMessageMetadata, ChatMessageRole};
 use crate::services::chat::ChatService;
 use crate::services::storage::FileStorageService;
-use crate::services::chat::actor::state::ChatActorState;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -15,7 +14,7 @@ use uuid::Uuid;
 /// This function extracts the reasoning buffer from the actor state,
 /// aggregates it, and saves it as a chat message with reasoning metadata.
 pub async fn flush_reasoning_buffer(
-    state: &Arc<Mutex<ChatActorState>>,
+    state: &Arc<Mutex<crate::services::chat::states::SharedActorState>>,
     chat_id: Uuid,
     workspace_id: Uuid,
     storage: &Arc<FileStorageService>,

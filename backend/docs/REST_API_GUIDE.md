@@ -759,7 +759,6 @@ Update chat configuration metadata (mode, plan_file).
 ##### Behavior Notes
 
 - **Mode Switching**: Changing mode triggers a `mode_changed` SSE event to all connected clients
-- **Agent Cache Clearing**: Switching modes clears the agent cache, forcing a new agent to be created
 - **Plan Mode** (`"plan"`): Strategic planning phase, AI asks questions and creates plan files
 - **Build Mode** (`"build"`): Execution phase, AI executes the plan with write/edit/create tools
 - **plan_file requirement**:

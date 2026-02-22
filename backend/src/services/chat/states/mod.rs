@@ -110,6 +110,16 @@ pub struct SharedActorState {
     pub is_actively_processing: bool,
 }
 
+impl SharedActorState {
+    /// Ensures a reasoning ID exists for the current session.
+    /// If one doesn't exist, generates a new UUID v7.
+    pub fn ensure_reasoning_id(&mut self) -> String {
+        self.current_reasoning_id
+            .get_or_insert_with(|| uuid::Uuid::now_v7().to_string())
+            .clone()
+    }
+}
+
 /// Registry of state handlers.
 ///
 /// Provides access to the appropriate handler for each state.

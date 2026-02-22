@@ -23,8 +23,6 @@ use uuid::Uuid;
 
 // Import constants from the constants module
 use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS, STREAM_READ_TIMEOUT_SECS};
-// Import state structs from the state module
-use super::state::ChatActorState;
 // Import state machine utilities
 use super::state_machine::command_to_event;
 // Import stream utilities
@@ -47,14 +45,12 @@ pub struct ChatActor {
     session_id: Option<Uuid>,
     /// Handle for the heartbeat task
     heartbeat_handle: Option<JoinHandle<()>>,
-    /// Consolidated state - single lock for all actor state
-    /// Reduces lock contention and eliminates deadlock risk
-    state: Arc<Mutex<ChatActorState>>,
-    /// Shared state for state handlers (NEW - simplified, no agent cache)
-    shared_state: Arc<Mutex<SharedActorState>>,
-    /// State machine for managing actor lifecycle (NEW)
+    /// Unified state for actor and state handlers
+    /// Consolidated from ChatActorState and SharedActorState
+    state: Arc<Mutex<SharedActorState>>,
+    /// State machine for managing actor lifecycle
     state_machine: StateMachine,
-    /// State handlers for state-specific behavior (NEW)
+    /// State handlers for state-specific behavior
     state_handlers: StateHandlerRegistry,
 }
 
@@ -104,8 +100,7 @@ impl ChatActor {
             inactivity_timeout: args.inactivity_timeout,
             session_id: None,
             heartbeat_handle: None,
-            state: Arc::new(Mutex::new(ChatActorState::default())),
-            shared_state: Arc::new(Mutex::new(SharedActorState::default())),
+            state: Arc::new(Mutex::new(SharedActorState::default())),
             state_machine,
             state_handlers,
         };
@@ -186,7 +181,7 @@ impl ChatActor {
                 }
                 _ = &mut inactivity_timeout => {
                     // Only timeout if NOT actively processing
-                    let is_actively_processing = self.state.lock().await.interaction.is_actively_processing;
+                    let is_actively_processing = self.state.lock().await.is_actively_processing;
 
                     if !is_actively_processing {
                         tracing::info!(
@@ -253,30 +248,10 @@ impl ChatActor {
                             continue;
                         }
 
-                        // Fall back to legacy command processing
-                        match cmd {
-                            // Note: ProcessInteraction is now fully handled by the state machine
-                            // This arm should never be reached since process_command_via_state_handler
-                            // handles it and returns true (command was handled)
-                            AgentCommand::ProcessInteraction { .. } => {
-                                unreachable!("ProcessInteraction should be handled by state machine")
-                            }
-                            AgentCommand::Ping => {
-                                tracing::debug!("ChatActor received ping for chat {}", self.chat_id);
-                            }
-                            // Note: Pause, Cancel, and Shutdown are now fully handled by state handlers
-                            // The following arms should never be reached since process_command_via_state_handler
-                            // handles these commands before we get to this legacy match.
-                            AgentCommand::Pause { .. } => {
-                                unreachable!("Pause should be handled by state handlers")
-                            }
-                            AgentCommand::Cancel { .. } => {
-                                unreachable!("Cancel should be handled by state handlers")
-                            }
-                            AgentCommand::Shutdown => {
-                                unreachable!("Shutdown should be handled by state handlers")
-                            }
-                        }
+                        // Note: All AgentCommand variants are now handled by the state machine via
+                        // command_to_event() and process_command_via_state_handler(). The legacy fallback
+                        // has been removed since process_command_via_state_handler will always handle
+                        // the command (handled_by_state_handler will be true).
                     } else {
                         break;
                     }
@@ -331,7 +306,7 @@ impl ChatActor {
 
         // Create a new cancellation token for this interaction
         let cancellation_token = CancellationToken::new();
-        self.state.lock().await.interaction.current_cancellation_token = Some(cancellation_token.clone());
+        self.state.lock().await.current_cancellation_token = Some(cancellation_token.clone());
 
         let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
@@ -365,7 +340,7 @@ impl ChatActor {
 
         // Set current task for session tracking (truncate if too long)
         let task_preview = crate::utils::safe_preview(&last_message.content, 100);
-        self.state.lock().await.interaction.current_task = Some(task_preview.clone());
+        self.state.lock().await.current_task = Some(task_preview.clone());
 
         tracing::debug!(
             chat_id = %self.chat_id,
@@ -428,7 +403,7 @@ impl ChatActor {
         };
 
         // Store current model for potential cancellation
-        self.state.lock().await.interaction.current_model = Some(session.agent_config.model.clone());
+        self.state.lock().await.current_model = Some(session.agent_config.model.clone());
 
         // 7. Load AI config for reasoning settings
         let ai_config = crate::config::Config::load()?.ai;
@@ -619,13 +594,13 @@ impl ChatActor {
         );
 
         // Clear the cancellation token for this interaction
-        self.state.lock().await.interaction.current_cancellation_token = None;
+        self.state.lock().await.current_cancellation_token = None;
 
         // Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
 
         // Clear current task (interaction complete)
-        let current_task = self.state.lock().await.interaction.current_task.take();
+        let current_task = self.state.lock().await.current_task.take();
         if let Some(task) = current_task {
             tracing::debug!(
                 chat_id = %self.chat_id,
@@ -662,7 +637,7 @@ impl ChatActor {
         self.registry.remove_cancellation(&self.chat_id).await;
 
         // Get current model for metadata
-        let model = self.state.lock().await.interaction.current_model.clone()
+        let model = self.state.lock().await.current_model.clone()
             .unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
 
         // 1. Send Stopped event to all SSE clients
@@ -690,13 +665,13 @@ impl ChatActor {
         self.add_cancellation_marker(conn, reason).await?;
 
         // 4. Clear the cancellation token for this interaction
-        self.state.lock().await.interaction.current_cancellation_token = None;
+        self.state.lock().await.current_cancellation_token = None;
 
         // 5. Clear reasoning ID for next interaction
         self.state.lock().await.current_reasoning_id = None;
 
         // 7. Clear processing flag - actor is no longer actively processing
-        self.state.lock().await.interaction.is_actively_processing = false;
+        self.state.lock().await.is_actively_processing = false;
 
         Ok(())
     }
@@ -992,8 +967,8 @@ impl ChatActor {
                         // Track tool name and arguments for logging when ToolResult arrives
                         {
                             let mut state = self.state.lock().await;
-                            state.tool_tracking.current_tool_name = Some(tool_call.function.name.clone());
-                            state.tool_tracking.current_tool_args = Some(arguments_json);
+                            state.current_tool_name = Some(tool_call.function.name.clone());
+                            state.current_tool_args = Some(arguments_json);
                         }
 
                         let path = tool_call.function.arguments.get("path")
@@ -1223,7 +1198,7 @@ impl ChatActor {
                           {
                               let (tool_name_opt, reasoning_id) = {
                                   let state = self.state.lock().await;
-                                  (state.tool_tracking.current_tool_name.clone(), state.current_reasoning_id.clone())
+                                  (state.current_tool_name.clone(), state.current_reasoning_id.clone())
                               };
                               if let Some(tool_name) = tool_name_opt {
                                   // Summarize output for persistence to avoid DB bloat
@@ -1274,8 +1249,8 @@ impl ChatActor {
                          // Clear current tool name and arguments
                          {
                              let mut state = self.state.lock().await;
-                             state.tool_tracking.current_tool_name = None;
-                             state.tool_tracking.current_tool_args = None;
+                             state.current_tool_name = None;
+                             state.current_tool_args = None;
                          }
                     }
                 }
@@ -1639,7 +1614,7 @@ impl ChatActor {
                     "[ChatActor] Executing SetActivelyProcessing action"
                 );
                 let mut state = self.state.lock().await;
-                state.interaction.is_actively_processing = value;
+                state.is_actively_processing = value;
             }
             StateAction::EmitSse(event) => {
                 tracing::debug!(
@@ -1679,7 +1654,7 @@ impl ChatActor {
                     "[ChatActor] Executing CancelInteraction action"
                 );
                 // Cancel the current interaction token
-                let token = self.state.lock().await.interaction.current_cancellation_token.clone();
+                let token = self.state.lock().await.current_cancellation_token.clone();
                 if let Some(token) = token {
                     tracing::debug!(
                         chat_id = %self.chat_id,
@@ -1821,7 +1796,7 @@ impl ChatActor {
                 // Mark as done processing - actor can now be idle
                 {
                     let mut state = self.state.lock().await;
-                    state.interaction.is_actively_processing = false;
+                    state.is_actively_processing = false;
                 }
             }
         }
@@ -1847,7 +1822,7 @@ impl ChatActor {
             event_tx: self.event_tx.clone(),
             default_persona: self.default_persona.clone(),
             default_context_token_limit: self.default_context_token_limit,
-            shared_state: Some(&self.shared_state),
+            shared_state: Some(&self.state),
             responder: None,
         }
     }
@@ -1866,7 +1841,7 @@ impl ChatActor {
             event_tx: self.event_tx.clone(),
             default_persona: self.default_persona.clone(),
             default_context_token_limit: self.default_context_token_limit,
-            shared_state: Some(&self.shared_state),
+            shared_state: Some(&self.state),
             responder: Some(responder),
         }
     }

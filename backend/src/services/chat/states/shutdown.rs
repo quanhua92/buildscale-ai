@@ -28,7 +28,7 @@ impl Default for ShutdownState {
 
 impl StateHandler for ShutdownState {
     fn state(&self) -> ActorState {
-        ActorState::Idle // Represents "shutting down" internally
+        ActorState::Completed // Shutdown is a terminal state
     }
 
     fn on_enter(&self, _ctx: &mut StateContext) -> Result<Vec<StateAction>> {
@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn test_shutdown_state() {
         let handler = ShutdownState::new();
-        // Shutdown state internally uses Idle as its representation
-        assert_eq!(handler.state(), ActorState::Idle);
+        // Shutdown state returns Completed (terminal state)
+        assert_eq!(handler.state(), ActorState::Completed);
     }
 }
