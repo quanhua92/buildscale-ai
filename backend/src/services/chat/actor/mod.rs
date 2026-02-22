@@ -6,6 +6,7 @@ pub mod constants;
 pub mod session;
 pub mod state;
 pub mod state_machine;
+pub mod stream_utils;
 
 // Re-export public types for backward compatibility
 pub use actor_impl::{ChatActor, ChatActorArgs};

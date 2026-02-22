@@ -27,6 +27,8 @@ use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS, STREAM_READ_TIMEOUT_SEC
 use super::state::ChatActorState;
 // Import state machine utilities
 use super::state_machine::command_to_event;
+// Import stream utilities
+use super::stream_utils::flush_reasoning_buffer;
 
 pub struct ChatActor {
     chat_id: Uuid,
@@ -561,7 +563,7 @@ impl ChatActor {
             let mut final_conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
             // Flush any remaining reasoning buffer before saving final response
-            if let Err(e) = self.flush_reasoning_buffer(&mut final_conn).await {
+            if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, &mut final_conn).await {
                 tracing::error!(
                     chat_id = %self.chat_id,
                     error = %e,
@@ -648,7 +650,7 @@ impl ChatActor {
         );
 
         // Flush any pending reasoning buffer before cancellation persistence
-        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+        if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, conn).await {
             tracing::error!(
                 chat_id = %self.chat_id,
                 error = %e,
@@ -774,7 +776,7 @@ impl ChatActor {
                 match content {
                     rig::streaming::StreamedAssistantContent::Text(text) => {
                         // Flush pending reasoning buffer before text chunk
-                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                        if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, conn).await {
                             tracing::error!(
                                 chat_id = %self.chat_id,
                                 error = %e,
@@ -900,7 +902,7 @@ impl ChatActor {
                         }
 
                         // Flush aggregated reasoning to database
-                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                        if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, conn).await {
                             tracing::error!(
                                 chat_id = %self.chat_id,
                                 error = %e,
@@ -910,7 +912,7 @@ impl ChatActor {
                     }
                     rig::streaming::StreamedAssistantContent::ToolCall(tool_call) => {
                         // Flush pending reasoning buffer before tool call
-                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                        if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, conn).await {
                             tracing::error!(
                                 chat_id = %self.chat_id,
                                 error = %e,
@@ -1030,7 +1032,7 @@ impl ChatActor {
                 match content {
                     rig::streaming::StreamedUserContent::ToolResult(result) => {
                         // Flush reasoning buffer before tool result persistence
-                        if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                        if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, conn).await {
                             tracing::error!(
                                 chat_id = %self.chat_id,
                                 error = %e,
@@ -1280,7 +1282,7 @@ impl ChatActor {
             }
             rig::agent::MultiTurnStreamItem::FinalResponse(final_response) => {
                 // Flush reasoning buffer before final response
-                if let Err(e) = self.flush_reasoning_buffer(conn).await {
+                if let Err(e) = flush_reasoning_buffer(&self.state, self.chat_id, self.workspace_id, &self.storage, conn).await {
                     tracing::error!(
                         chat_id = %self.chat_id,
                         error = %e,
@@ -1443,53 +1445,6 @@ impl ChatActor {
         }
 
         Ok(full_response)
-    }
-
-    async fn flush_reasoning_buffer(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> crate::error::Result<()> {
-        let (buffer, reasoning_id) = {
-            let mut state = self.state.lock().await;
-            if state.reasoning_buffer.is_empty() {
-                return Ok(());
-            }
-            // Atomically take the buffer, leaving an empty one in its place to prevent a race condition.
-            let buffer = std::mem::take(&mut state.reasoning_buffer);
-            let reasoning_id = state.ensure_reasoning_id();
-            (buffer, reasoning_id)
-        };
-
-        let aggregated_reasoning = buffer.join("");
-        if aggregated_reasoning.is_empty() {
-            return Ok(());
-        }
-
-        tracing::debug!(
-            chat_id = %self.chat_id,
-            reasoning_len = aggregated_reasoning.len(),
-            reasoning_id = %reasoning_id,
-            "[ChatActor] Flushing aggregated reasoning buffer to DB"
-        );
-
-        let metadata = ChatMessageMetadata {
-            message_type: Some("reasoning_complete".to_string()),
-            reasoning_id: Some(reasoning_id),
-            ..Default::default()
-        };
-
-        ChatService::save_stream_event(
-            conn,
-            &self.storage,
-            self.workspace_id,
-            self.chat_id,
-            ChatMessageRole::Assistant,
-            aggregated_reasoning,
-            metadata,
-        )
-        .await?;
-
-        Ok(())
     }
 
     async fn get_or_create_agent(
