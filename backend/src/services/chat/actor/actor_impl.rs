@@ -21,75 +21,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn, instrument};
 use uuid::Uuid;
 
-/// Maximum number of retries for transient AI engine errors
-const MAX_AI_RETRIES: u32 = 3;
-/// Initial backoff duration in milliseconds for retries
-const RETRY_BACKOFF_MS: u64 = 1000;
-/// Stream read timeout in seconds - if no data received from API within this time, consider it stalled
-const STREAM_READ_TIMEOUT_SECS: u64 = 120;
-
-/// Consolidated state for ChatActor to reduce lock contention
-/// All state that was previously in separate Arc<Mutex<>> fields is now grouped logically
-struct ChatActorState {
-    /// Tool Tracking (always accessed in pairs)
-    tool_tracking: ToolTracking,
-    /// Interaction Lifecycle (independent access)
-    interaction: InteractionState,
-    /// Current reasoning session tracking (for audit trail)
-    current_reasoning_id: Option<String>,
-    /// Buffer for reasoning chunks (aggregated before DB persistence)
-    reasoning_buffer: Vec<String>,
-}
-
-/// Current tool execution tracking
-/// These fields are always read/written together
-struct ToolTracking {
-    /// Track current tool name for logging when ToolResult arrives
-    current_tool_name: Option<String>,
-    /// Track current tool arguments for logging when ToolResult arrives
-    current_tool_args: Option<serde_json::Value>,
-}
-
-/// Interaction lifecycle management
-/// These fields manage the current interaction's lifecycle
-struct InteractionState {
-    /// Cancellation token for the current interaction
-    current_cancellation_token: Option<CancellationToken>,
-    /// Track current model for cancellation metadata
-    current_model: Option<String>,
-    /// Current task description for session tracking
-    current_task: Option<String>,
-    /// Flag to track if the actor is actively processing an interaction
-    /// Used to prevent inactivity timeout during long-running tasks
-    is_actively_processing: bool,
-}
-
-impl ChatActorState {
-    fn ensure_reasoning_id(&mut self) -> String {
-        self.current_reasoning_id
-            .get_or_insert_with(|| Uuid::now_v7().to_string())
-            .clone()
-    }
-}
-
-impl Default for ChatActorState {
-    fn default() -> Self {
-        Self {
-            tool_tracking: ToolTracking {
-                current_tool_name: None,
-                current_tool_args: None,
-            },
-            interaction: InteractionState {
-                current_cancellation_token: None,
-                current_model: None,
-                current_task: None,
-                is_actively_processing: false,
-            },
-            current_reasoning_id: None,
-            reasoning_buffer: Vec::new(),
-        }
-    }
-}
+// Import constants from the constants module
+use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS, STREAM_READ_TIMEOUT_SECS};
+// Import state structs from the state module
+use super::state::ChatActorState;
 
 pub struct ChatActor {
     chat_id: Uuid,
