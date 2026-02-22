@@ -251,7 +251,8 @@ async fn test_cleanup_stale_sessions() {
     .unwrap();
 
     // Run cleanup - should clean up at least our session
-    let cleaned_count = cleanup_stale_sessions(&mut conn)
+    // Use None to clean up all stale sessions (not test-specific)
+    let cleaned_count = cleanup_stale_sessions(&mut conn, None)
         .await
         .expect("Cleanup should succeed");
 

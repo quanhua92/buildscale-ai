@@ -32,14 +32,22 @@ Agent sessions are persisted in the `agent_sessions` table, providing:
 
 ### Session States
 
-| State | Description | Transitions From |
-|-------|-------------|------------------|
-| `idle` | Agent is ready but not processing | Create, Running, Paused |
-| `running` | Agent is actively processing | Idle, Paused |
-| `paused` | Agent is temporarily paused | Running, Idle |
-| `completed` | Agent finished successfully | Running, Paused |
-| `cancelled` | Agent was cancelled by user | Running, Idle, Paused |
-| `error` | Agent encountered an error | Running |
+| State | Description | Transitions From | Terminal |
+|-------|-------------|------------------|----------|
+| `idle` | Agent is ready but not processing | Create, Running, Paused | No |
+| `running` | Agent is actively processing | Idle, Paused | No |
+| `paused` | Agent is temporarily paused | Running, Idle | No |
+| `completed` | Agent finished successfully (timeout) | Running, Paused, Idle | **Yes** |
+| `cancelled` | Agent was cancelled by user | Running, Idle, Paused | **Yes** |
+| `error` | Agent encountered an error | Running | **Yes** |
+
+**Terminal States**: Once a session enters `completed`, `cancelled`, or `error`:
+- No further state transitions are possible
+- The ChatActor shuts down automatically
+- The session is preserved in the database for audit/history
+- A new interaction spawns a fresh actor
+
+See [Agent State Machine](./AGENT_STATE_MACHINE.md) for complete state transition details.
 
 ### Heartbeat Mechanism
 
@@ -79,12 +87,16 @@ See [REST API Guide](./REST_API_GUIDE.md#agent-sessions-api) for detailed API do
 
 ## ChatActor Integration
 
-The `ChatActor` automatically manages session lifecycle:
+The `ChatActor` automatically manages session lifecycle using a state machine:
 
-1. **Session Creation**: When a chat actor starts, it creates a session record
-2. **Status Updates**: Status changes are persisted (idle → running → completed/cancelled)
+1. **Session Creation**: When a chat actor starts, it creates a session record (status: `idle`)
+2. **Status Updates**: State machine transitions are persisted (idle → running → completed/cancelled/error)
 3. **Heartbeat**: Automatic heartbeat every 30 seconds while running
-4. **Shutdown**: Session persists in last state (idle/running/cancelled)
+4. **Terminal States**: When entering `cancelled`, `error`, or `completed`:
+   - Session status is updated
+   - Actor shuts down automatically
+   - Session record is preserved for audit/history
+5. **Respawning**: New interactions spawn fresh actors that hydrate from database history
 
 ```rust
 // Session creation in ChatActor
@@ -98,14 +110,14 @@ let session = create_session(
     mode.clone(),
 ).await?;
 
-// Status update on state change
+// Status update on state machine transition
 update_session_status(&mut conn, session_id, SessionStatus::Running, user_id).await?;
 
 // Heartbeat while running
 start_heartbeat_task(session_id, pool.clone());
 
-// Shutdown - session persists in last state (no longer marks as completed)
-// Stale sessions will be handled by cleanup worker if not re-activated
+// Terminal state: actor shuts down, session persists
+// Subsequent interactions spawn new actors that hydrate from history
 ```
 
 ## Future: Distributed Agent Swarms
@@ -298,6 +310,7 @@ eventSource.addEventListener('agent_task', (event) => {
 ## Related Documentation
 
 - [REST API Guide](./REST_API_GUIDE.md) - Complete API reference
+- [Agent State Machine](./AGENT_STATE_MACHINE.md) - State machine specification for ChatActor
 - [Agentic Engine](./AGENTIC_ENGINE.md) - Agent architecture details
 - [RIG Integration](./RIG_INTEGRATION.md) - AI provider integration
 - [Chat Persistence](./CHAT_PERSISTENCE_AUDIT.md) - Chat state management

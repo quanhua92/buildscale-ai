@@ -51,6 +51,12 @@ pub enum SseEvent {
         mode: String,
         plan_file: Option<String>,
     },
+    /// State changed event for actor state machine transitions
+    StateChanged {
+        from_state: String,
+        to_state: String,
+        reason: Option<String>,
+    },
 }
 
 /// Question definition for ask_user tool

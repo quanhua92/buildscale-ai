@@ -1559,7 +1559,7 @@ HTTP POST to OpenAI API:
 BuildScale provides a comprehensive wrapper around Rig framework that adds enterprise features: file storage, tool integration, database persistence, SSE streaming, and actor-based concurrency. This section documents how BuildScale's `src/services/chat/` modules integrate with Rig.
 
 **Key BuildScale Files**:
-- `src/services/chat/actor.rs` - Actor-based chat session management
+- `src/services/chat/actor/` - Actor-based chat session management
 - `src/services/chat/rig_engine.rs` - Rig agent creation and configuration
 - `src/services/chat/rig_tools.rs` - Tool adapters for Rig framework
 - `src/services/chat/mod.rs` - Chat service with context/history management
@@ -1572,7 +1572,7 @@ BuildScale provides a comprehensive wrapper around Rig framework that adds enter
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                    BUILDSCALE CHAT SERVICE                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │ ChatActor (actor.rs)                              │   │
+│  │ ChatActor (actor/actor_impl.rs)                              │   │
 │  │  • Manages single chat session lifecycle               │   │
 │  │  • Converts DB messages → Rig format                 │   │
 │  │  • Processes stream events (Text, ToolCall, Reasoning) │   │
@@ -1604,27 +1604,27 @@ BuildScale provides a comprehensive wrapper around Rig framework that adds enter
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.1 ChatActor (`src/services/chat/actor.rs`)
+### 8.1 ChatActor (`src/services/chat/actor/`)
 
 **Purpose**: Actor-based chat session manager that processes user interactions asynchronously using Rig agents.
 
 **Key Responsibilities**:
 - **State Management**: Consolidated `ChatActorState` with grouped fields (agent_state, tool_tracking, interaction)
-- **Agent Caching**: Reuses agents when model/user_id/mode unchanged (see `actor.rs:1214-1215`)
+- **Agent Caching**: Reuses agents when model/user_id/mode unchanged (see `actor/actor_impl.rs:1214-1215`)
 - **Stream Processing**: Generic `process_stream_item()` handles both OpenAI and OpenRouter streams
-- **Reasoning Buffering**: Aggregates reasoning chunks before DB persistence (actor.rs:1158-1203)
-- **Tool Tracking**: Tracks current tool name/args for associating results with calls (actor.rs:779-783)
-- **Cancellation**: Supports graceful shutdown via `CancellationToken` (actor.rs:1096-1107)
+- **Reasoning Buffering**: Aggregates reasoning chunks before DB persistence (actor/actor_impl.rs:1158-1203)
+- **Tool Tracking**: Tracks current tool name/args for associating results with calls (actor/actor_impl.rs:779-783)
+- **Cancellation**: Supports graceful shutdown via `CancellationToken` (actor/actor_impl.rs:1096-1107)
 
 **Key Code References**:
-- `actor.rs:252-457` - `process_interaction()` - Main entry point that builds context and calls agent
-- `actor.rs:337-390` - Agent creation via `get_or_create_agent()` with caching
-- `actor.rs:365-389` - Stream processing with provider-specific handling
-- `actor.rs:577-1075` - Generic `process_stream_item()` - Handles Text, ToolCall, Reasoning, ToolResult
-- `actor.rs:1078-1156` - Generic `process_agent_stream()` - Cancellation-aware stream loop
-- `actor.rs:1158-1203` - `flush_reasoning_buffer()` - Aggregates and persists reasoning chunks
+- `actor/actor_impl.rs:252-457` - `process_interaction()` - Main entry point that builds context and calls agent
+- `actor/actor_impl.rs:337-390` - Agent creation via `get_or_create_agent()` with caching
+- `actor/actor_impl.rs:365-389` - Stream processing with provider-specific handling
+- `actor/actor_impl.rs:577-1075` - Generic `process_stream_item()` - Handles Text, ToolCall, Reasoning, ToolResult
+- `actor/actor_impl.rs:1078-1156` - Generic `process_agent_stream()` - Cancellation-aware stream loop
+- `actor/actor_impl.rs:1158-1203` - `flush_reasoning_buffer()` - Aggregates and persists reasoning chunks
 
-**State Management** (actor.rs:17-30):
+**State Management** (actor/actor_impl.rs:17-30):
 ```rust
 struct ChatActorState {
     agent_state: AgentState,        // Cached agent + validation state
@@ -1783,7 +1783,7 @@ if !is_reasoning {
    ↓
 3. handler.rs: ProcessInteraction → ActorCommand::ProcessInteraction
    ↓
-4. actor.rs:252 - process_interaction()
+4. actor/actor_impl.rs:252 - process_interaction()
    ├── build_context() - Load persona, history, attachments
    ├── get_or_create_agent() - Reuse or create Rig agent
    └── rig_engine.rs:314 - create_agent()
@@ -1791,7 +1791,7 @@ if !is_reasoning {
         ├── Inject persona (builder/plan mode)
         └── add_tools_to_agent() - Register 15 tools
    ↓
-5. actor.rs:371 - stream_chat(&prompt, history)
+5. actor/actor_impl.rs:371 - stream_chat(&prompt, history)
    ↓
 6. rig_engine.rs:548 - convert_history()
    └── Reconstruct ToolCall/ToolResult from DB metadata
@@ -1816,7 +1816,7 @@ if !is_reasoning {
    ↓
 10. Streaming Response Loop
    ↓
-11. actor.rs:577 - process_stream_item()
+11. actor/actor_impl.rs:577 - process_stream_item()
    ├── Text → push to full_response, emit SSE::Chunk
    ├── ReasoningDelta → buffer + emit SSE::Thought
    ├── ToolCall → persist tool_call, emit SSE::Call

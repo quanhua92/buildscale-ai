@@ -4,6 +4,7 @@ Welcome to the BuildScale.ai Backend documentation. This directory contains comp
 
 ## 🌟 The Vision
 - **[The Agentic Engine](./AGENTIC_ENGINE.md)**: The specification for the Agentic Engine backend and workflows.
+- **[Agent State Machine](./AGENT_STATE_MACHINE.md)**: State machine specification for ChatActor lifecycle and state transitions.
 - **[Files Are All You Need](./FILES_ARE_ALL_YOU_NEED.md)**: Our core philosophy on why folders and tools are the future of AI.
 - **[Everything Is A File](./EVERYTHING_IS_A_FILE.md)**: The technical implementation of our unified file-based architecture.
 

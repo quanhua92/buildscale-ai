@@ -570,8 +570,11 @@ export function ChatProvider({
           const newMessages = [...prev]
           let lastMessage = newMessages[newMessages.length - 1]
 
+          // Don't create new assistant message for control events that don't generate content
+          const isControlEvent = ['done', 'error', 'stopped', 'state_changed', 'session_init', 'file_updated', 'question_pending', 'mode_changed'].includes(type)
+
           if (!lastMessage || lastMessage.role !== 'assistant' || lastMessage.status === 'completed') {
-            if (type === 'session_init' || type === 'file_updated') return prev
+            if (isControlEvent) return prev
 
             lastMessage = {
               id: generateId(),
@@ -627,6 +630,13 @@ export function ChatProvider({
               updatedMessage.status = 'streaming'
               break
             case 'done':
+              console.log('[SSE] Done event received', {
+                targetChatId,
+                oldStatus: lastMessage.status,
+                newStatus: 'completed',
+                partsLength: updatedMessage.parts.length,
+                lastPartType: updatedMessage.parts[updatedMessage.parts.length - 1]?.type
+              })
               updatedMessage.status = 'completed'
               // Update per-chat streaming state
               setChatSessions((prev) => {
@@ -685,6 +695,9 @@ export function ChatProvider({
               const modeData: ModeChangedData = data
               setModeState(modeData.mode)
               setPlanFileState(modeData.plan_file)
+              return prev
+            case 'state_changed':
+              // State changed events are for internal tracking, don't create new messages
               return prev
           }
 
@@ -1189,7 +1202,10 @@ export function ChatProvider({
         setMessages(cachedSession.messages)
         // Note: isStreaming is now derived from chatSessions, no need to set it
         setIsLoading(cachedSession.isLoading)
-        setModel(cachedSession.model)
+        // Ensure model is valid - if cached model is undefined, keep current model
+        if (cachedSession.model) {
+          setModel(cachedSession.model)
+        }
         setModeState(cachedSession.mode)
         setPlanFileState(cachedSession.planFile)
         setPendingQuestionSession(cachedSession.pendingQuestionSession)

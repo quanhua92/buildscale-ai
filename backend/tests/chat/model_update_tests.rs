@@ -7,6 +7,7 @@
 //! - New messages use the updated model
 
 use crate::common::{TestApp, TestAppOptions, register_and_login, create_workspace};
+use buildscale::models::chat::DEFAULT_CHAT_MODEL;
 use crate::chat::{create_chat, get_chat, post_message};
 
 #[tokio::test]
@@ -18,9 +19,9 @@ async fn test_chat_created_with_default_model() {
     // Create chat without specifying model
     let chat_id = create_chat(&app, &workspace_id, &token, "Hello").await;
 
-    // Verify default model is openai:gpt-5-mini (multi-provider format includes provider prefix)
+    // Verify default model matches DEFAULT_CHAT_MODEL
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "openai:gpt-5-mini");
+    assert_eq!(chat["agent_config"]["model"], DEFAULT_CHAT_MODEL);
 }
 
 #[tokio::test]
@@ -64,7 +65,7 @@ async fn test_model_updated_on_message() {
     let chat_id = create_chat(&app, &workspace_id, &token, "Start with mini").await;
 
     let chat = get_chat(&app, &workspace_id, &chat_id, &token).await;
-    assert_eq!(chat["agent_config"]["model"], "openai:gpt-5-mini");
+    assert_eq!(chat["agent_config"]["model"], DEFAULT_CHAT_MODEL);
 
     // Send message with model change to gpt-4o
     let response = post_message(

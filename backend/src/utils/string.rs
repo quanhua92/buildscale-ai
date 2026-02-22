@@ -10,8 +10,11 @@ pub const MAX_PREVIEW_LEN: usize = 100;
 ///
 /// # Example
 /// ```
+/// use buildscale::utils::string::safe_preview;
+///
 /// let text = "chiến thắng";
 /// let preview = safe_preview(text, 5); // "chiến..."
+/// assert_eq!(preview, "chiến...");
 /// ```
 pub fn safe_preview(text: &str, max_chars: usize) -> String {
     let preview: String = text.chars().take(max_chars).collect();
@@ -59,7 +62,8 @@ mod tests {
         // Should not panic on emoji
         let emoji = "Hello 🎉 World 🌍";
         let preview = safe_preview(emoji, 8);
-        assert_eq!(preview, "Hello 🎉 W...");
+        // First 8 chars: "Hello 🎉 " (H e l l o space 🎉 space), then "..."
+        assert_eq!(preview, "Hello 🎉 ...");
     }
 
     #[test]
