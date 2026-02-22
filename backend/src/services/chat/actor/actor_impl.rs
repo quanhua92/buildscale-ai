@@ -750,6 +750,10 @@ impl ChatActor {
         Ok(())
     }
 
+    // ===========================================================================
+    // STREAM PROCESSING METHODS
+    // ===========================================================================
+
     /// Process a single stream item from either provider
     /// This method is generic over the stream response type to work with both OpenAI and OpenRouter
     async fn process_stream_item<M>(
@@ -1653,6 +1657,10 @@ impl ChatActor {
             }
         }
     }
+
+    // ===========================================================================
+    // STATE ACTION EXECUTION METHODS
+    // ===========================================================================
 
     /// Execute a state action returned by a state handler.
     #[instrument(skip(self), fields(chat_id = %self.chat_id))]
