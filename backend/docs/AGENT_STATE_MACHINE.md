@@ -206,7 +206,14 @@ backend/src/services/chat/
 │   ├── cancelled.rs        # Cancelled state handler (terminal)
 │   └── completed.rs        # Completed state handler (terminal)
 │
-└── actor.rs                # ChatActor orchestrator
+└── actor/                  # ChatActor modular structure
+    ├── mod.rs              # Module declarations & re-exports
+    ├── actor_impl.rs       # Core ChatActor, spawn, main loop (~2056 lines)
+    ├── constants.rs        # Behavior constants (retries, timeouts)
+    ├── state.rs            # State structs (ChatActorState, ToolTracking, InteractionState)
+    ├── session.rs          # Session management helpers
+    ├── state_machine.rs    # State machine utilities (command_to_event)
+    └── stream_utils.rs     # Stream processing utilities (flush_reasoning_buffer)
 ```
 
 ## Related Documentation
