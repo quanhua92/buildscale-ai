@@ -117,6 +117,9 @@ impl ChatActor {
     }
 
     async fn run(mut self) {
+        // ===========================================================================
+        // MAIN EVENT LOOP
+        // ===========================================================================
         tracing::info!(
             chat_id = %self.chat_id,
             workspace_id = %self.workspace_id,
@@ -303,6 +306,10 @@ impl ChatActor {
             "[ChatActor] EXITED - Actor lifecycle complete"
         );
     }
+
+    // ===========================================================================
+    // AI INTERACTION PROCESSING
+    // ===========================================================================
 
     async fn process_interaction(&self, user_id: Uuid) -> crate::error::Result<()> {
         tracing::info!(
