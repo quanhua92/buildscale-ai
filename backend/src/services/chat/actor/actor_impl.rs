@@ -1552,86 +1552,13 @@ impl ChatActor {
 
     /// Creates a new agent session in the database.
     async fn create_session(&self) -> Result<Uuid> {
-        tracing::info!(
-            chat_id = %self.chat_id,
-            workspace_id = %self.workspace_id,
-            user_id = %self.user_id,
-            persona = %self.default_persona,
-            "[ChatActor] Creating agent session in database"
-        );
-
-        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-
-        // Get the chat file's latest version to extract actual model and mode
-        // This ensures the session is created with the correct values from the chat config
-        let (actual_model, actual_mode) = match queries::files::get_latest_version(&mut conn, self.chat_id).await {
-            Ok(version) => {
-                // Extract model and mode from app_data
-                let model = version.app_data.get("model")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(DEFAULT_CHAT_MODEL)
-                    .to_string();
-
-                let mode = version.app_data.get("mode")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("plan")
-                    .to_string();
-
-                tracing::debug!(
-                    chat_id = %self.chat_id,
-                    model = %model,
-                    mode = %mode,
-                    "[ChatActor] Extracted model and mode from chat file app_data"
-                );
-
-                (model, mode)
-            }
-            Err(e) => {
-                tracing::warn!(
-                    chat_id = %self.chat_id,
-                    error = %e,
-                    "[ChatActor] Failed to get chat file version, using defaults"
-                );
-                (DEFAULT_CHAT_MODEL.to_string(), "plan".to_string())
-            }
-        };
-
-        // Determine agent type from mode (not from persona)
-        let agent_type = match actual_mode.as_str() {
-            "plan" => AgentType::Planner,
-            "build" => AgentType::Builder,
-            _ => AgentType::Assistant,
-        };
-
-        tracing::debug!(
-            chat_id = %self.chat_id,
-            agent_type = %agent_type,
-            model = %actual_model,
-            mode = %actual_mode,
-            "[ChatActor] Session configuration determined from chat file"
-        );
-
-        let session = agent_sessions::get_or_create_session(
-            &mut conn,
+        super::session::create_session(
+            &self.pool,
             self.workspace_id,
             self.chat_id,
             self.user_id,
-            agent_type,
-            actual_model,
-            actual_mode,
-        )
-        .await?;
-
-        tracing::info!(
-            chat_id = %self.chat_id,
-            session_id = %session.id,
-            model = %session.model,
-            mode = %session.mode,
-            agent_type = %session.agent_type,
-            "[ChatActor] Successfully created agent session with correct values"
-        );
-
-        Ok(session.id)
+            &self.default_persona,
+        ).await
     }
 
     /// Updates the session status in the database.
@@ -1641,77 +1568,23 @@ impl ChatActor {
         status: crate::models::agent_session::SessionStatus,
         error_message: Option<String>,
     ) -> Result<()> {
-        tracing::info!(
-            chat_id = %self.chat_id,
-            session_id = %session_id,
-            new_status = %status,
-            error_message = ?error_message,
-            "[ChatActor] update_session_status: Starting update"
-        );
-
-        let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
-
-        let _ = queries::agent_sessions::update_session_status(&mut conn, session_id, status, error_message).await?;
-
-        tracing::info!(
-            chat_id = %self.chat_id,
-            session_id = %session_id,
-            new_status = %status,
-            "[ChatActor] update_session_status: Successfully updated"
-        );
-
-        Ok(())
+        super::session::update_session_status(
+            &self.pool,
+            self.chat_id,
+            session_id,
+            status,
+            error_message,
+        ).await
     }
 
     /// Starts a background task that sends periodic heartbeats to the database.
     /// This keeps the session alive and indicates the agent is actively running.
     fn start_heartbeat_task(&self, session_id: Uuid) -> JoinHandle<()> {
-        tracing::info!(
-            chat_id = %self.chat_id,
-            session_id = %session_id,
-            "[ChatActor] Starting heartbeat task (30s interval)"
-        );
-
-        let pool = self.pool.clone();
-
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-
-            loop {
-                interval.tick().await;
-
-                tracing::trace!(
-                    session_id = %session_id,
-                    "[ChatActor] Heartbeat: sending update"
-                );
-
-                let mut conn = match pool.acquire().await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::warn!(
-                            session_id = %session_id,
-                            error = %e,
-                            "[ChatActor] Heartbeat: failed to acquire database connection"
-                        );
-                        continue;
-                    }
-                };
-
-                // Update heartbeat timestamp
-                if let Err(e) = agent_sessions::update_heartbeat(&mut conn, session_id).await {
-                    tracing::warn!(
-                        session_id = %session_id,
-                        error = %e,
-                        "[ChatActor] Heartbeat: failed to update heartbeat"
-                    );
-                } else {
-                    tracing::trace!(
-                        session_id = %session_id,
-                        "[ChatActor] Heartbeat: successfully updated"
-                    );
-                }
-            }
-        })
+        super::session::start_heartbeat_task(
+            self.chat_id,
+            self.pool.clone(),
+            session_id,
+        )
     }
 
     // ========================================================================
