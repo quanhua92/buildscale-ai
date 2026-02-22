@@ -25,6 +25,8 @@ use uuid::Uuid;
 use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS, STREAM_READ_TIMEOUT_SECS};
 // Import state structs from the state module
 use super::state::ChatActorState;
+// Import state machine utilities
+use super::state_machine::command_to_event;
 
 pub struct ChatActor {
     chat_id: Uuid,
@@ -1871,29 +1873,6 @@ impl ChatActor {
         Ok(())
     }
 
-    /// Convert an AgentCommand to an ActorEvent.
-    ///
-    /// This bridges the existing command system with the new state machine.
-    fn command_to_event(&self, command: &AgentCommand) -> Option<ActorEvent> {
-        match command {
-            AgentCommand::ProcessInteraction { user_id } => {
-                Some(ActorEvent::ProcessInteraction { user_id: *user_id })
-            }
-            AgentCommand::Pause { .. } => {
-                Some(ActorEvent::Pause { reason: None })
-            }
-            AgentCommand::Cancel { reason, .. } => {
-                Some(ActorEvent::Cancel { reason: reason.clone() })
-            }
-            AgentCommand::Ping => {
-                Some(ActorEvent::Ping)
-            }
-            AgentCommand::Shutdown => {
-                Some(ActorEvent::Shutdown)
-            }
-        }
-    }
-
     /// Create a state context for state handlers.
     fn create_state_context(&self) -> StateContext<'_, '_> {
         StateContext {
@@ -1958,7 +1937,7 @@ impl ChatActor {
         };
 
         // Convert command to event
-        let event = match self.command_to_event(command) {
+        let event = match command_to_event(command) {
             Some(e) => e,
             None => {
                 // Command doesn't map to an event, use legacy path
