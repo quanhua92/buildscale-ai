@@ -52,6 +52,10 @@ pub struct ChatActor {
     state_machine: StateMachine,
     /// State handlers for state-specific behavior
     state_handlers: StateHandlerRegistry,
+    /// Agent cache key parameters - tracks last agent creation parameters
+    cached_agent_user_id: Option<Uuid>,
+    cached_agent_model: Option<String>,
+    cached_agent_mode: Option<String>,
 }
 
 pub struct ChatActorArgs {
@@ -103,6 +107,9 @@ impl ChatActor {
             state: Arc::new(Mutex::new(SharedActorState::default())),
             state_machine,
             state_handlers,
+            cached_agent_user_id: None,
+            cached_agent_model: None,
+            cached_agent_mode: None,
         };
 
         tokio::spawn(async move {
@@ -1428,12 +1435,27 @@ impl ChatActor {
         session: &crate::models::chat::ChatSession,
         ai_config: &crate::config::AiConfig,
     ) -> crate::error::Result<Agent> {
-        tracing::info!(
-            "[ChatActor] Creating new agent for chat {} (model: {})",
-            self.chat_id, session.agent_config.model
-        );
+        let model = &session.agent_config.model;
+        let mode = &session.agent_config.mode;
 
-        // Create fresh agent - no caching, simpler and always correct
+        // Check if agent parameters match (for performance optimization)
+        let params_match = self.cached_agent_user_id == Some(user_id)
+            && self.cached_agent_model.as_ref() == Some(model)
+            && self.cached_agent_mode.as_ref() == Some(mode);
+
+        if params_match {
+            tracing::debug!(
+                "[ChatActor] Reusing agent parameters for chat {} (model: {}, mode: {})",
+                self.chat_id, model, mode
+            );
+        } else {
+            tracing::info!(
+                "[ChatActor] Agent parameters changed - creating new agent for chat {} (model: {}, mode: {})",
+                self.chat_id, model, mode
+            );
+        }
+
+        // Create new agent (rig::agent::Agent is not Cloneable, so we create fresh each time)
         let agent = self.rig_service.create_agent(
             self.pool.clone(),
             self.storage.clone(),
@@ -1448,15 +1470,15 @@ impl ChatActor {
         if let Some(session_id) = &self.session_id {
             tracing::debug!(
                 session_id = %session_id,
-                model = %session.agent_config.model,
-                mode = %session.agent_config.mode,
+                model = %model,
+                mode = %mode,
                 "[ChatActor] Updating session metadata after agent creation"
             );
 
             let mut conn = self.pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
             // Determine agent type from mode
-            let agent_type = match session.agent_config.mode.as_str() {
+            let agent_type = match mode.as_str() {
                 "plan" => Some(AgentType::Planner),
                 "build" => Some(AgentType::Builder),
                 _ => Some(AgentType::Assistant),
@@ -1466,8 +1488,8 @@ impl ChatActor {
             if let Err(e) = agent_sessions::update_session_metadata(
                 &mut conn,
                 *session_id,
-                Some(session.agent_config.model.clone()),
-                Some(session.agent_config.mode.clone()),
+                Some(model.clone()),
+                Some(mode.clone()),
                 agent_type,
                 self.user_id,
             ).await {
@@ -1479,8 +1501,8 @@ impl ChatActor {
             } else {
                 tracing::info!(
                     session_id = %session_id,
-                    model = %session.agent_config.model,
-                    mode = %session.agent_config.mode,
+                    model = %model,
+                    mode = %mode,
                     "[ChatActor] Successfully updated session metadata"
                 );
             }
@@ -1688,60 +1710,24 @@ impl ChatActor {
                     "[ChatActor] Executing StartProcessing action - triggering AI interaction"
                 );
 
+                // TODO: Make this non-blocking by spawning process_interaction as a background task
+                // Currently this blocks the main loop during AI interaction (can take minutes)
+                // Future implementation should:
+                // 1. Spawn process_interaction in a tokio::task
+                // 2. Use interaction_result_tx channel to notify main loop when complete
+                // 3. Remove interaction_result_rx branch from main loop select! (currently unused)
+                // See: https://github.com/quanhua92/buildscale-ai/pull/53#pullrequestreview-3837847338
+
                 // Trigger the AI processing (this is async and may take time)
                 let result = self.process_interaction(user_id).await;
 
-                // Update session status based on result
+                // Clear current task when interaction completes
                 if let Some(session_id) = self.session_id {
-                    let (status, error_msg) = if let Err(ref e) = result {
-                        tracing::warn!(
-                            chat_id = %self.chat_id,
-                            session_id = %session_id,
-                            error = %e,
-                            "[ChatActor] StartProcessing: Setting status to error (interaction failed)"
-                        );
-                        (
-                            crate::models::agent_session::SessionStatus::Error,
-                            Some(format!("AI Engine Error: {}", e))
-                        )
-                    } else {
-                        tracing::debug!(
-                            chat_id = %self.chat_id,
-                            session_id = %session_id,
-                            "[ChatActor] StartProcessing: Setting status to idle (interaction complete)"
-                        );
-                        (
-                            crate::models::agent_session::SessionStatus::Idle,
-                            None
-                        )
-                    };
-
-                    // Update session status
-                    match self.update_session_status(session_id, status, error_msg.clone()).await {
-                        Ok(_) => {
-                            tracing::info!(
-                                chat_id = %self.chat_id,
-                                session_id = %session_id,
-                                "[ChatActor] StartProcessing: Session status updated successfully"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                chat_id = %self.chat_id,
-                                session_id = %session_id,
-                                error = %e,
-                                "[ChatActor] StartProcessing: FAILED to update session status"
-                            );
-                        }
-                    }
-
-                    // Clear current task when interaction completes
                     if let Ok(mut conn) = self.pool.acquire().await {
                         let _ = crate::services::agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
                     }
 
                     // Send InteractionComplete event to trigger state transition
-                    // The actor should now be in Running state, so RunningState will handle this
                     let success = result.is_ok();
                     let error = if let Err(ref e) = result { Some(format!("{}", e)) } else { None };
                     let _ = self.transition_state(
@@ -1779,16 +1765,25 @@ impl ChatActor {
                         self.chat_id,
                         e
                     );
-                    let send_result = self.event_tx.send(SseEvent::Error {
-                        message: format!("AI Engine Error: {}", e),
-                    });
-                    if let Err(e) = send_result {
-                        tracing::error!(
+                    // Only send SSE error event if this was NOT a user cancellation
+                    let error_msg = format!("{}", e);
+                    if !error_msg.contains("cancelled by user") {
+                        let send_result = self.event_tx.send(SseEvent::Error {
+                            message: format!("AI Engine Error: {}", e),
+                        });
+                        if let Err(e) = send_result {
+                            tracing::error!(
+                                chat_id = %self.chat_id,
+                                event_type = "Error",
+                                error = ?e,
+                                receivers = self.event_tx.receiver_count(),
+                                "[SSE] FAILED to send error event - no receivers"
+                            );
+                        }
+                    } else {
+                        tracing::debug!(
                             chat_id = %self.chat_id,
-                            event_type = "Error",
-                            error = ?e,
-                            receivers = self.event_tx.receiver_count(),
-                            "[SSE] FAILED to send error event - no receivers"
+                            "[ChatActor] Suppressing SSE error event for user cancellation (Stopped event already sent)"
                         );
                     }
                 }
