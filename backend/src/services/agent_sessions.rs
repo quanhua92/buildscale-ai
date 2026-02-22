@@ -669,22 +669,18 @@ pub async fn delete_session(
 /// Cleans up stale sessions that haven't sent a heartbeat recently.
 ///
 /// This should be called periodically (e.g., every minute) by a background job.
-///
-/// # Arguments
-/// * `conn` - Database connection
-///
-/// # Returns
-/// Number of sessions cleaned up
-pub async fn cleanup_stale_sessions(conn: &mut DbConn) -> Result<u64> {
+pub async fn cleanup_stale_sessions(conn: &mut DbConn, email_prefix: Option<&str>) -> Result<u64> {
     tracing::debug!(
+        prefix = ?email_prefix,
         "[AgentSessions] Service: Checking for stale sessions"
     );
 
-    let count = agent_sessions::cleanup_stale_sessions(conn).await?;
+    let count = agent_sessions::cleanup_stale_sessions(conn, email_prefix).await?;
 
     if count > 0 {
         tracing::info!(
             count,
+            prefix = ?email_prefix,
             "[AgentSessions] Service: Cleaned up stale sessions"
         );
     }

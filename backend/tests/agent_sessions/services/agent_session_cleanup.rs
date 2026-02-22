@@ -1,7 +1,7 @@
 use buildscale::{
     models::agent_session::{AgentType, SessionStatus},
-    queries::agent_sessions::{get_session_by_id},
-    services::agent_sessions::{create_session as service_create_session, cleanup_stale_sessions},
+    queries::agent_sessions::{get_session_by_id, cleanup_stale_sessions},
+    services::agent_sessions::create_session as service_create_session,
 };
 use crate::common::database::TestDb;
 use uuid::Uuid;
@@ -62,11 +62,11 @@ async fn test_service_cleanup_stale_sessions() {
     }
 
     // Run cleanup
-    let cleaned_count = cleanup_stale_sessions(&mut conn)
+    let cleaned_count = cleanup_stale_sessions(&mut conn, Some(test_db.test_prefix()))
         .await
         .expect("Cleanup should succeed");
 
-    // Should clean up 2 stale sessions (the ones with heartbeat > 120 seconds ago)
+    // Should clean up exactly 2 stale sessions (the ones with heartbeat > 120 seconds ago)
     assert_eq!(cleaned_count, 2, "Should clean up 2 stale sessions");
 
     // Verify the fresh session still exists
@@ -87,6 +87,9 @@ async fn test_service_cleanup_stale_sessions() {
 }
 
 /// Test that completed and error sessions are not cleaned up
+///
+/// NOTE: Uses exact assertion (0) because terminal state sessions should never be
+/// cleaned up regardless of parallel test execution.
 #[tokio::test]
 async fn test_service_cleanup_does_not_remove_terminal_states() {
     let test_db = TestDb::new("test_service_cleanup_does_not_remove_terminal_states").await;
@@ -146,7 +149,7 @@ async fn test_service_cleanup_does_not_remove_terminal_states() {
     }
 
     // Run cleanup
-    let cleaned_count = cleanup_stale_sessions(&mut conn)
+    let cleaned_count = cleanup_stale_sessions(&mut conn, Some(test_db.test_prefix()))
         .await
         .expect("Cleanup should succeed");
 
@@ -183,7 +186,7 @@ async fn test_service_cleanup_with_fresh_sessions() {
     .expect("Session creation should succeed");
 
     // Run cleanup
-    let cleaned_count = cleanup_stale_sessions(&mut conn)
+    let cleaned_count = cleanup_stale_sessions(&mut conn, Some(test_db.test_prefix()))
         .await
         .expect("Cleanup should succeed");
 
@@ -197,7 +200,7 @@ async fn test_service_cleanup_empty_database() {
     let mut conn = test_db.get_connection().await;
 
     // Run cleanup on empty database
-    let cleaned_count = cleanup_stale_sessions(&mut conn)
+    let cleaned_count = cleanup_stale_sessions(&mut conn, Some(test_db.test_prefix()))
         .await
         .expect("Cleanup should succeed even with no sessions");
 

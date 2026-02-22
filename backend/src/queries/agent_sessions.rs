@@ -891,27 +891,52 @@ pub async fn delete_session_by_chat(conn: &mut DbConn, chat_id: Uuid) -> Result<
 }
 
 /// Cleans up stale sessions that haven't sent a heartbeat recently.
-pub async fn cleanup_stale_sessions(conn: &mut DbConn) -> Result<u64> {
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `email_prefix` - Optional email prefix to filter sessions. If None, all stale
+///                    sessions are cleaned. If Some(prefix), only sessions for users
+///                    with emails matching this prefix are cleaned up.
+pub async fn cleanup_stale_sessions(conn: &mut DbConn, email_prefix: Option<&str>) -> Result<u64> {
     let threshold = Utc::now() - Duration::seconds(STALE_SESSION_THRESHOLD_SECONDS);
 
-    let result = sqlx::query(
-        r#"
-        DELETE FROM agent_sessions
-        WHERE last_heartbeat < $1
-        AND status NOT IN ('completed', 'error', 'cancelled')
-        RETURNING id
-        "#,
-    )
-    .bind(threshold)
-    .execute(conn)
-    .await
-    .map_err(Error::Sqlx)?;
+    let result = if let Some(prefix) = email_prefix {
+        let pattern = format!("{}%", prefix);
+        sqlx::query(
+            r#"
+            DELETE FROM agent_sessions
+            WHERE last_heartbeat < $1
+            AND status NOT IN ('completed', 'error', 'cancelled')
+            AND user_id IN (SELECT id FROM users WHERE email LIKE $2)
+            RETURNING id
+            "#,
+        )
+        .bind(threshold)
+        .bind(&pattern)
+        .execute(conn)
+        .await
+        .map_err(Error::Sqlx)?
+    } else {
+        sqlx::query(
+            r#"
+            DELETE FROM agent_sessions
+            WHERE last_heartbeat < $1
+            AND status NOT IN ('completed', 'error', 'cancelled')
+            RETURNING id
+            "#,
+        )
+        .bind(threshold)
+        .execute(conn)
+        .await
+        .map_err(Error::Sqlx)?
+    };
 
     let count = result.rows_affected();
 
     if count > 0 {
         tracing::info!(
             count,
+            prefix = ?email_prefix,
             threshold_seconds = STALE_SESSION_THRESHOLD_SECONDS,
             "[AgentSessions] Cleaned up stale sessions"
         );
