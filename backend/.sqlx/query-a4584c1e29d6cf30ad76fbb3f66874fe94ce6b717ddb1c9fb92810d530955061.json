@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE agent_sessions\n                        SET status = 'idle',\n                            updated_at = NOW(),\n                            last_heartbeat = NOW(),\n                            completed_at = NULL,\n                            error_message = NULL,\n                            current_task = NULL\n                        WHERE id = $1\n                        RETURNING id, workspace_id, chat_id, user_id,\n                                  agent_type as \"agent_type: AgentType\",\n                                  status as \"status: SessionStatus\",\n                                  model, mode, current_task, error_message,\n                                  created_at, updated_at, last_heartbeat, completed_at\n                        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "chat_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "agent_type: AgentType",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: SessionStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "current_task",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "last_heartbeat",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a4584c1e29d6cf30ad76fbb3f66874fe94ce6b717ddb1c9fb92810d530955061"
+}

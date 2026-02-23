@@ -59,7 +59,10 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
         ins AS (
             INSERT INTO agent_sessions (workspace_id, chat_id, user_id, agent_type, status, model, mode)
             SELECT $2, $1, $3, $4, 'idle', $5, $6
-            WHERE NOT EXISTS (SELECT 1 FROM existing)
+            WHERE NOT EXISTS (
+                -- Don't insert if there's ANY existing session (will handle rejection below)
+                SELECT 1 FROM existing
+            )
             ON CONFLICT (chat_id) DO UPDATE SET
                 user_id = EXCLUDED.user_id,
                 agent_type = EXCLUDED.agent_type,
@@ -70,7 +73,7 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     WHEN agent_sessions.status IN ('completed', 'error', 'cancelled') THEN 'idle'
                     -- Reuse stale sessions (old heartbeat) by resetting to idle
                     WHEN EXTRACT(EPOCH FROM (NOW() - agent_sessions.last_heartbeat))::bigint > $7 THEN 'idle'
-                    -- Keep active sessions unchanged (will be rejected below)
+                    -- Keep active sessions unchanged (status check happens after)
                     ELSE agent_sessions.status
                 END,
                 updated_at = NOW(),
@@ -127,7 +130,7 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
         new_session.mode,
         STALE_SESSION_THRESHOLD_SECONDS as i64
     )
-    .fetch_one(&mut *conn)
+    .fetch_optional(&mut *conn)
     .await
     .map_err(|e| {
         let error_str = e.to_string().to_lowercase();
@@ -149,35 +152,145 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
         }
     })?;
 
-    // After atomic upsert, check if we have an active session that should be rejected
-    // This check happens AFTER the upsert to ensure consistency
-    match session.status {
-        SessionStatus::Idle | SessionStatus::Running | SessionStatus::Paused => {
-            let heartbeat_age = Utc::now().signed_duration_since(session.last_heartbeat);
-            let heartbeat_age_secs = heartbeat_age.num_seconds();
+    // Handle the case where no session was returned (active session with recent heartbeat)
+    let session = match session {
+        Some(s) => s,
+        None => {
+            // No session returned means there's an active session with recent heartbeat
+            // Fetch it to return proper error
+            let existing = sqlx::query_as!(
+                AgentSession,
+                r#"
+                SELECT
+                    s.id,
+                    s.workspace_id,
+                    s.chat_id,
+                    s.user_id,
+                    s.agent_type as "agent_type: AgentType",
+                    s.status as "status: SessionStatus",
+                    s.model,
+                    s.mode,
+                    s.current_task,
+                    s.error_message,
+                    s.created_at,
+                    s.updated_at,
+                    s.last_heartbeat,
+                    s.completed_at,
+                    f.name as "chat_name?"
+                FROM agent_sessions s
+                LEFT JOIN files f ON s.chat_id = f.id
+                WHERE s.chat_id = $1
+                "#,
+                new_session.chat_id
+            )
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(Error::Sqlx)?;
 
-            if heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
-                // Active session with recent heartbeat - return error
-                // Note: This is a post-facto check; the upsert already updated the session
-                // with new parameters, but we reject the request to prevent concurrent access
-                tracing::warn!(
-                    chat_id = %new_session.chat_id,
-                    existing_status = %session.status,
-                    session_id = %session.id,
-                    heartbeat_age_secs = %heartbeat_age_secs,
-                    "[AgentSessions] Active session already exists for chat (recent heartbeat) - rejecting"
-                );
-                return Err(Error::Conflict(format!(
-                    "An active session already exists for this chat: {} (status: {}, session_id: {})",
-                    new_session.chat_id, session.status, session.id
-                )));
+            match existing {
+                Some(s) => {
+                    let heartbeat_age = Utc::now().signed_duration_since(s.last_heartbeat);
+                    let heartbeat_age_secs = heartbeat_age.num_seconds();
+
+                    // Only reject if heartbeat is recent (session is truly active)
+                    if heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
+                        tracing::warn!(
+                            chat_id = %new_session.chat_id,
+                            existing_status = %s.status,
+                            session_id = %s.id,
+                            heartbeat_age_secs = %heartbeat_age_secs,
+                            "[AgentSessions] Active session already exists for chat (recent heartbeat) - rejecting"
+                        );
+                        return Err(Error::Conflict(format!(
+                            "An active session already exists for this chat: {} (status: {}, session_id: {})",
+                            new_session.chat_id, s.status, s.id
+                        )));
+                    }
+
+                    // Session is stale or in terminal state - reuse it
+                    // Reset the session to idle and return it
+                    tracing::info!(
+                        chat_id = %new_session.chat_id,
+                        existing_status = %s.status,
+                        session_id = %s.id,
+                        heartbeat_age_secs = %heartbeat_age_secs,
+                        "[AgentSessions] Reusing stale/terminal session - resetting to idle"
+                    );
+
+                    // Reset the session to idle status
+                    let updated = sqlx::query!(
+                        r#"
+                        UPDATE agent_sessions
+                        SET status = 'idle',
+                            updated_at = NOW(),
+                            last_heartbeat = NOW(),
+                            completed_at = NULL,
+                            error_message = NULL,
+                            current_task = NULL
+                        WHERE id = $1
+                        RETURNING id, workspace_id, chat_id, user_id,
+                                  agent_type as "agent_type: AgentType",
+                                  status as "status: SessionStatus",
+                                  model, mode, current_task, error_message,
+                                  created_at, updated_at, last_heartbeat, completed_at
+                        "#,
+                        s.id
+                    )
+                    .fetch_one(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            chat_id = %new_session.chat_id,
+                            session_id = %s.id,
+                            error = ?e,
+                            "[AgentSessions] Failed to reset stale session to idle"
+                        );
+                        Error::Sqlx(e)
+                    })?;
+
+                    // Get the chat name for the returned session
+                    let with_name = sqlx::query_as!(
+                        AgentSession,
+                        r#"
+                        SELECT
+                            s.id,
+                            s.workspace_id,
+                            s.chat_id,
+                            s.user_id,
+                            s.agent_type as "agent_type: AgentType",
+                            s.status as "status: SessionStatus",
+                            s.model,
+                            s.mode,
+                            s.current_task,
+                            s.error_message,
+                            s.created_at,
+                            s.updated_at,
+                            s.last_heartbeat,
+                            s.completed_at,
+                            f.name as "chat_name?"
+                        FROM agent_sessions s
+                        LEFT JOIN files f ON s.chat_id = f.id
+                        WHERE s.id = $1
+                        "#,
+                        updated.id
+                    )
+                    .fetch_one(&mut *conn)
+                    .await
+                    .map_err(Error::Sqlx)?;
+
+                    return Ok(with_name);
+                }
+                None => {
+                    // This shouldn't happen - no session exists but we couldn't create one
+                    tracing::error!(
+                        chat_id = %new_session.chat_id,
+                        "[AgentSessions] No session exists and creation failed"
+                    );
+                    return Err(Error::NotFound(format!("Unable to create session for chat: {}", new_session.chat_id)));
+                }
             }
-            // Session is stale, fall through to return it (already reset to idle by upsert)
         }
-        SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled => {
-            // Terminal session was reused (upsert already reset it to idle)
-        }
-    }
+    };
 
     tracing::info!(
         session_id = %session.id,
