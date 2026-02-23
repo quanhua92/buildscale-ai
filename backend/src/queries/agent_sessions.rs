@@ -217,22 +217,39 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         "[AgentSessions] Reusing stale/terminal session - resetting to idle"
                     );
 
-                    // Reset the session to idle status
-                    let updated = sqlx::query!(
+                    // Reset the session to idle status and get chat name in a single query
+                    let with_name = sqlx::query_as!(
+                        AgentSession,
                         r#"
-                        UPDATE agent_sessions
-                        SET status = 'idle',
-                            updated_at = NOW(),
-                            last_heartbeat = NOW(),
-                            completed_at = NULL,
-                            error_message = NULL,
-                            current_task = NULL
-                        WHERE id = $1
-                        RETURNING id, workspace_id, chat_id, user_id,
-                                  agent_type as "agent_type: AgentType",
-                                  status as "status: SessionStatus",
-                                  model, mode, current_task, error_message,
-                                  created_at, updated_at, last_heartbeat, completed_at
+                        WITH updated AS (
+                            UPDATE agent_sessions
+                            SET status = 'idle',
+                                updated_at = NOW(),
+                                last_heartbeat = NOW(),
+                                completed_at = NULL,
+                                error_message = NULL,
+                                current_task = NULL
+                            WHERE id = $1
+                            RETURNING *
+                        )
+                        SELECT
+                            u.id,
+                            u.workspace_id,
+                            u.chat_id,
+                            u.user_id,
+                            u.agent_type as "agent_type: AgentType",
+                            u.status as "status: SessionStatus",
+                            u.model,
+                            u.mode,
+                            u.current_task,
+                            u.error_message,
+                            u.created_at,
+                            u.updated_at,
+                            u.last_heartbeat,
+                            u.completed_at,
+                            f.name as "chat_name?"
+                        FROM updated u
+                        LEFT JOIN files f ON u.chat_id = f.id
                         "#,
                         s.id
                     )
@@ -247,36 +264,6 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         );
                         Error::Sqlx(e)
                     })?;
-
-                    // Get the chat name for the returned session
-                    let with_name = sqlx::query_as!(
-                        AgentSession,
-                        r#"
-                        SELECT
-                            s.id,
-                            s.workspace_id,
-                            s.chat_id,
-                            s.user_id,
-                            s.agent_type as "agent_type: AgentType",
-                            s.status as "status: SessionStatus",
-                            s.model,
-                            s.mode,
-                            s.current_task,
-                            s.error_message,
-                            s.created_at,
-                            s.updated_at,
-                            s.last_heartbeat,
-                            s.completed_at,
-                            f.name as "chat_name?"
-                        FROM agent_sessions s
-                        LEFT JOIN files f ON s.chat_id = f.id
-                        WHERE s.id = $1
-                        "#,
-                        updated.id
-                    )
-                    .fetch_one(&mut *conn)
-                    .await
-                    .map_err(Error::Sqlx)?;
 
                     return Ok(with_name);
                 }
