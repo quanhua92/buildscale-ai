@@ -32,7 +32,7 @@ use super::interaction_processor::{ProcessorContext, process_agent_stream, get_o
 
 /// Result from a background process_interaction task
 enum InteractionResult {
-    Success { partial_response: Option<String> },
+    Success,
     Failed { error: String, is_user_cancellation: bool },
 }
 
@@ -56,9 +56,6 @@ struct InteractionContext {
     default_context_token_limit: usize,
     state: Arc<Mutex<SharedActorState>>,
     event_tx: broadcast::Sender<SseEvent>,
-    cached_agent_user_id: Option<Uuid>,
-    cached_agent_model: Option<String>,
-    cached_agent_mode: Option<String>,
 }
 
 pub struct ChatActor {
@@ -87,10 +84,6 @@ pub struct ChatActor {
     state_handlers: StateHandlerRegistry,
     /// Event processor registry for event-specific logic
     event_processor_registry: Arc<events::EventProcessorRegistry>,
-    /// Agent cache key parameters - tracks last agent creation parameters
-    cached_agent_user_id: Option<Uuid>,
-    cached_agent_model: Option<String>,
-    cached_agent_mode: Option<String>,
     /// Channel for receiving background interaction results
     interaction_result_tx: mpsc::Sender<InteractionResult>,
     interaction_result_rx: mpsc::Receiver<InteractionResult>,
@@ -158,9 +151,6 @@ impl ChatActor {
             state_machine,
             state_handlers,
             event_processor_registry,
-            cached_agent_user_id: None,
-            cached_agent_model: None,
-            cached_agent_mode: None,
             interaction_result_tx,
             interaction_result_rx,
             background_task: None,
@@ -330,7 +320,7 @@ impl ChatActor {
 
                     // Create the InteractionComplete event based on result
                     let (success, error_msg) = match result {
-                        InteractionResult::Success { .. } => (true, None),
+                        InteractionResult::Success => (true, None),
                         InteractionResult::Failed { error, is_user_cancellation } => {
                             // Send error SSE event for non-cancellation failures
                             if !is_user_cancellation {
@@ -459,9 +449,6 @@ impl ChatActor {
             default_context_token_limit: self.default_context_token_limit,
             state: self.state.clone(),
             event_tx: self.event_tx.clone(),
-            cached_agent_user_id: self.cached_agent_user_id,
-            cached_agent_model: self.cached_agent_model.clone(),
-            cached_agent_mode: self.cached_agent_mode.clone(),
         }
     }
 
@@ -1237,7 +1224,5 @@ async fn process_interaction_standalone(
     ctx.state.lock().await.current_reasoning_id = None;
     let _current_task = ctx.state.lock().await.current_task.take();
 
-    InteractionResult::Success {
-        partial_response: if full_response.is_empty() { None } else { Some(full_response) },
-    }
+    InteractionResult::Success
 }
