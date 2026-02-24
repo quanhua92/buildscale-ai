@@ -9,7 +9,19 @@ export interface ChatBubbleProps extends React.HTMLAttributes<HTMLDivElement> {}
 const ChatBubble = React.forwardRef<HTMLDivElement, ChatBubbleProps>(
   ({ className, children, ...props }, ref) => {
     const { message } = useChatMessage()
-    const { role, parts } = message
+    const { role, parts, status } = message
+
+    // Log when cursor is shown (status is streaming)
+    React.useEffect(() => {
+      if (status === 'streaming') {
+        console.log('[ChatBubble] Cursor shown - message is streaming', {
+          messageId: message.id,
+          status,
+          partsLength: parts.length,
+          lastPartType: parts[parts.length - 1]?.type
+        })
+      }
+    }, [status, parts.length, message.id])
 
     // User messages are simple bubbles
     if (role === "user") {
@@ -65,7 +77,7 @@ const ChatBubble = React.forwardRef<HTMLDivElement, ChatBubbleProps>(
                   className="text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground py-1"
                 >
                   {part.content}
-                  {message.status === "streaming" && idx === parts.length - 1 && (
+                  {status === "streaming" && idx === parts.length - 1 && (
                     <span className="inline-block w-1 h-4 bg-primary animate-pulse ml-1 align-middle" />
                   )}
                 </div>
@@ -77,7 +89,7 @@ const ChatBubble = React.forwardRef<HTMLDivElement, ChatBubbleProps>(
         })}
         
         {/* If no parts yet but streaming, show cursor */}
-        {parts.length === 0 && message.status === "streaming" && (
+        {parts.length === 0 && status === "streaming" && (
           <span className="inline-block w-1 h-4 bg-primary animate-pulse align-middle" />
         )}
       </div>

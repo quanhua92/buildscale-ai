@@ -95,9 +95,12 @@
 
 pub mod actor;
 pub mod context;
+pub mod events;
 pub mod registry;
 pub mod rig_engine;
 pub mod rig_tools;
+pub mod state_machine;
+pub mod states;
 pub mod sync;
 
 pub use context::{
@@ -261,14 +264,18 @@ impl ChatService {
             "write" => {
                 // Truncate 'content' field (can be very large)
                 if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
-                    if content.len() > MAX_WRITE_CONTENT_LENGTH {
-                        // Use line-based preview for better readability (like read tool)
-                        let lines: Vec<&str> = content.lines().collect();
+                    // Truncate based on byte size OR line count (whichever comes first)
+                    let lines: Vec<&str> = content.lines().collect();
+                    let needs_truncation = content.len() > MAX_WRITE_CONTENT_LENGTH
+                        || lines.len() > CONTENT_PREVIEW_LINES;
+
+                    if needs_truncation {
                         let preview_lines: Vec<&str> = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect();
                         let preview = preview_lines.join("\n");
+                        let formatted = format!("{}\n... [truncated, {} lines total]", preview, lines.len());
                         obj.insert(
                             "content".to_string(),
-                            serde_json::json!(format!("{}\n... [truncated, {} lines total]", preview, lines.len())),
+                            serde_json::Value::String(formatted),
                         );
                     }
                 }
@@ -277,14 +284,19 @@ impl ChatService {
                 // Truncate 'old_string', 'new_string', and 'insert_content' fields
                 for field in ["old_string", "new_string", "insert_content"] {
                     if let Some(val) = obj.get(field).and_then(|v| v.as_str()) {
-                        if val.len() > MAX_EDIT_DIFF_LENGTH {
+                        // Truncate based on byte size OR line count (whichever comes first)
+                        let lines: Vec<&str> = val.lines().collect();
+                        let needs_truncation = val.len() > MAX_EDIT_DIFF_LENGTH
+                            || lines.len() > CONTENT_PREVIEW_LINES;
+
+                        if needs_truncation {
                             // Use line-based preview for better readability
-                            let lines: Vec<&str> = val.lines().collect();
                             let preview_lines: Vec<&str> = lines.iter().take(CONTENT_PREVIEW_LINES).cloned().collect();
                             let preview = preview_lines.join("\n");
+                            let formatted = format!("{}\n... [truncated, {} lines]", preview, lines.len());
                             obj.insert(
                                 field.to_string(),
-                                serde_json::json!(format!("{}\n... [truncated, {} lines]", preview, lines.len())),
+                                serde_json::Value::String(formatted),
                             );
                         }
                     }
@@ -356,7 +368,12 @@ impl ChatService {
     /// Uses smart semantic truncation for grep/glob/ls to preserve JSON structure.
     pub fn summarize_tool_outputs(tool_name: &str, output: &str) -> String {
         // If output is small, keep it all
-        if output.len() < MAX_TOOL_OUTPUT_LENGTH {
+        // Check both byte size AND line count (whichever threshold is hit first)
+        let line_count = output.lines().count();
+        let needs_truncation = output.len() >= MAX_TOOL_OUTPUT_LENGTH
+            || line_count > CONTENT_PREVIEW_LINES;
+
+        if !needs_truncation {
             return output.to_string();
         }
 
@@ -513,10 +530,11 @@ impl ChatService {
                     let preview_lines: Vec<&str> = content_str.lines().take(CONTENT_PREVIEW_LINES).collect();
                     let preview = preview_lines.join("\n");
                     let line_count = content_str.lines().count();
-                    parsed.content = serde_json::json!(
-                        format!("[{} lines total, showing first {}]\n{}\n... [content truncated]",
-                            line_count, CONTENT_PREVIEW_LINES, preview)
+                    let formatted = format!(
+                        "[{} lines total, showing first {}]\n{}\n... [content truncated]",
+                        line_count, CONTENT_PREVIEW_LINES, preview
                     );
+                    parsed.content = serde_json::Value::String(formatted);
                     if let Ok(truncated) = serde_json::to_string(&parsed) {
                         return truncated;
                     }
@@ -571,10 +589,11 @@ impl ChatService {
                         let preview_lines: Vec<&str> = content_str.lines().take(CONTENT_PREVIEW_LINES).collect();
                         let preview = preview_lines.join("\n");
                         let line_count = content_str.lines().count();
-                        file.content = Some(serde_json::json!(
-                            format!("[{} lines, showing first {}]\n{}\n... [truncated]",
-                                line_count, CONTENT_PREVIEW_LINES, preview)
-                        ));
+                        let formatted = format!(
+                            "[{} lines, showing first {}]\n{}\n... [truncated]",
+                            line_count, CONTENT_PREVIEW_LINES, preview
+                        );
+                        file.content = Some(serde_json::Value::String(formatted));
                         any_truncated = true;
                     }
                 }

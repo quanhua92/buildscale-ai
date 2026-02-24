@@ -372,10 +372,15 @@ impl RigService {
             None,
         )));
 
+        let openrouter = Some(Arc::new(OpenRouterProvider::new(
+            &SecretString::new("sk-dummy".to_string().into()),
+            None,
+        )));
+
         RigService {
             openai,
-            openrouter: None,
-            default_provider: AiProvider::OpenAi,
+            openrouter,
+            default_provider: AiProvider::OpenRouter,
         }
     }
 

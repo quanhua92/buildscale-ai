@@ -114,7 +114,7 @@ After optimization:
 | `context.rs` | `AttachmentValue` with timestamps, `ContextItem` enum |
 | `mod.rs` | `build_context()` populates timestamps from file metadata |
 | `rig_engine.rs` | `convert_history_with_attachments()` interleaves and sorts |
-| `actor.rs` | Passes attachment_manager to history conversion |
+| `actor/actor_impl.rs` | Passes attachment_manager to history conversion |
 
 ### Example: Context Flow
 
@@ -183,7 +183,7 @@ This is a **Rig framework limitation**, not a provider limitation. The providers
 ### 1. No Direct Cache Monitoring
 We cannot log or track exact cache hit ratios because:
 ```rust
-// actor.rs:1038 - Current implementation
+// actor/actor_impl.rs:1038 - Current implementation
 usage = ?final_response.usage();  // Only returns basic token counts
 // Missing: cached_tokens, prompt_tokens_details
 ```
@@ -235,7 +235,7 @@ let mut params = serde_json::json!({
 
 Monitor for Rig updates that expose `cached_tokens` or `prompt_tokens_details`. Once available, add logging to:
 
-**File**: `src/services/chat/actor.rs`
+**File**: `src/services/chat/actor/actor_impl.rs`
 ```rust
 if let Some(cached) = usage.cached_tokens {
     tracing::info!(

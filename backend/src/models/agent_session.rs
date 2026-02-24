@@ -41,6 +41,13 @@ pub enum SessionStatus {
     Cancelled,
 }
 
+impl SessionStatus {
+    /// Returns true if this is a terminal state (no further activity possible)
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Error | Self::Cancelled)
+    }
+}
+
 /// Agent session entity - represents an active AI agent session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSession {

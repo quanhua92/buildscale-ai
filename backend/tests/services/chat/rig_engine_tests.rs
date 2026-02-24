@@ -201,11 +201,11 @@ fn test_rig_service_new_backward_compatibility() {
 
 #[test]
 fn test_rig_service_dummy() {
-    // Test that the dummy() method creates a valid service
+    // Test that the dummy() method creates a valid service with both providers
     let rig_service = RigService::dummy();
     assert!(rig_service.is_provider_configured(AiProvider::OpenAi));
-    assert!(!rig_service.is_provider_configured(AiProvider::OpenRouter));
-    assert_eq!(rig_service.default_provider(), AiProvider::OpenAi);
+    assert!(rig_service.is_provider_configured(AiProvider::OpenRouter));
+    assert_eq!(rig_service.default_provider(), AiProvider::OpenRouter);
 }
 
 #[test]
@@ -325,11 +325,12 @@ fn test_ai_provider_as_str() {
 
 #[test]
 fn test_rig_service_configured_providers_empty() {
-    // Test configured_providers when only OpenAI is configured
+    // Test configured_providers returns all configured providers
     let rig_service = RigService::dummy();
     let providers = rig_service.configured_providers();
-    assert_eq!(providers.len(), 1);
-    assert_eq!(providers[0], AiProvider::OpenAi);
+    assert_eq!(providers.len(), 2);
+    assert!(providers.contains(&AiProvider::OpenAi));
+    assert!(providers.contains(&AiProvider::OpenRouter));
 }
 
 #[test]

@@ -141,7 +141,7 @@ pub async fn save_stream_event(
 
 #### 3.3.3 Actor Modifications
 
-**File**: `src/services/chat/actor.rs`
+**File**: `src/services/chat/actor/actor_impl.rs`
 
 **A. Extend state** (`ChatActorState`):
 
@@ -481,7 +481,7 @@ If load times degrade:
 
 - **Current Architecture**: `docs/AGENTIC_ENGINE.md`, `docs/RIG_INTEGRATION.md`
 - **Schema**: `src/models/chat.rs`
-- **Streaming Processor**: `src/services/chat/actor.rs`
+- **Streaming Processor**: `src/services/chat/actor/actor_impl.rs`
 - **Persistence Layer**: `src/services/chat/mod.rs`
 - **Tool Bridge**: `src/services/chat/rig_tools.rs`
 - **Provider Abstraction**: `src/providers/`, `src/services/chat/rig_engine.rs`

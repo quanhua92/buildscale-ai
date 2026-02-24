@@ -494,14 +494,14 @@ async fn test_service_pause_already_paused() {
         .await
         .unwrap();
 
-    // Try to pause again
+    // Try to pause again - should succeed idempotently (session is already paused)
     let request = PauseSessionRequest {
         reason: None,
     };
 
     let result = pause_session(&mut conn, session.id, request, user_id).await;
 
-    assert!(result.is_err(), "Should not be able to pause an already paused session");
+    assert!(result.is_ok(), "Pausing an already paused session should succeed idempotently");
 }
 
 /// Test resuming a paused session

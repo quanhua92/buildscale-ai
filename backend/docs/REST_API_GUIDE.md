@@ -759,7 +759,6 @@ Update chat configuration metadata (mode, plan_file).
 ##### Behavior Notes
 
 - **Mode Switching**: Changing mode triggers a `mode_changed` SSE event to all connected clients
-- **Agent Cache Clearing**: Switching modes clears the agent cache, forcing a new agent to be created
 - **Plan Mode** (`"plan"`): Strategic planning phase, AI asks questions and creates plan files
 - **Build Mode** (`"build"`): Execution phase, AI executes the plan with write/edit/create tools
 - **plan_file requirement**:
@@ -797,6 +796,7 @@ Connect to the real-time event stream for an agentic session.
 - `chunk`: Incremental text chunks for the response.
 - `done`: Finalization of the execution turn.
 - `stopped`: Graceful cancellation signal (includes `reason` and optional `partial_response`).
+- `state_changed`: State machine transition (includes `from_state`, `to_state`, and optional `reason`).
 
 **Persistence**: All events are automatically persisted to `chat_messages` with structured metadata (`message_type`, `reasoning_id`, `tool_name`, etc.). This creates a complete audit trail and allows reconstructing the full interaction history when reopening chats. See `docs/CHAT_PERSISTENCE_AUDIT.md` for the full specification.
 
@@ -824,10 +824,22 @@ No request body required.
 - **Graceful**: If AI is executing a tool, it completes before stopping
 - **Partial Save**: Any text generated before cancellation is saved to `chat_messages` table
 - **System Marker**: A system message is added for AI context: `[System: Response was interrupted by user (user_cancelled)]`
-- **Actor Continues**: The chat actor remains alive for future interactions
+- **Terminal State**: Actor enters `Cancelled` (terminal) state and shuts down
+- **Session Preserved**: The session record remains in database with status `cancelled` for audit/history
+- **Idempotent**: Multiple stop requests succeed if session is already cancelled
 
-##### SSE Event
+##### SSE Events
 After stopping, the SSE stream sends:
+```json
+{
+  "type": "state_changed",
+  "data": {
+    "from_state": "running",
+    "to_state": "cancelled",
+    "reason": "user_cancelled"
+  }
+}
+```
 ```json
 {
   "type": "stopped",
@@ -838,11 +850,17 @@ After stopping, the SSE stream sends:
 }
 ```
 
+##### Restarting After Cancellation
+- Sending a new message after cancellation spawns a **fresh actor**
+- The new actor is hydrated from the chat history
+- Previous cancelled session is preserved for audit
+- The new session gets a new session record in the database
+
 ##### Error Responses
-**404 Not Found** - Chat actor doesn't exist or timed out:
+**404 Not Found** - Chat doesn't exist:
 ```json
 {
-  "error": "Chat actor not found for chat {chat_id}",
+  "error": "Chat not found",
   "code": "NOT_FOUND"
 }
 ```
