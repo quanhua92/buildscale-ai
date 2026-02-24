@@ -39,13 +39,16 @@ impl EventProcessor for PauseProcessor {
 
         let reason_str = reason.unwrap_or_else(|| "Paused".to_string());
 
-        // Transition to Paused state
+        // Match the logic from IdleState handler
+        // Transition to Paused state with all required actions
         Ok(EventResult::transition_with_reason(
             ActorState::Paused,
             "unknown",
             Some(reason_str),
         )
-        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused)))
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Paused))
+        .with_action(StateAction::CancelInteraction)
+        .with_action(StateAction::SendSuccessResponse))
     }
 }
 

@@ -37,13 +37,15 @@ impl EventProcessor for CancelProcessor {
             return Err(crate::error::Error::Internal("Invalid event type for CancelProcessor".into()));
         };
 
-        // Transition to Cancelled terminal state
+        // Match the logic from IdleState handler
+        // Transition to Cancelled terminal state with all required actions
         Ok(EventResult::transition_with_reason(
             ActorState::Cancelled,
             "unknown",
             Some(reason),
         )
-        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled)))
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Cancelled))
+        .with_action(StateAction::SendSuccessResponse))
     }
 }
 

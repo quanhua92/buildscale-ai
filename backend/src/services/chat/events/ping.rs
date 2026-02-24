@@ -35,6 +35,7 @@ impl EventProcessor for PingProcessor {
 
     fn execute(&self, _event: ActorEvent, _ctx: &mut StateContext<'_, '_>) -> Result<EventResult> {
         // Ping event: acknowledge and reset inactivity timer
+        // State handlers can exclude this action if needed (e.g., RunningState)
         Ok(EventResult {
             new_state: None,
             actions: vec![StateAction::ResetInactivityTimer],

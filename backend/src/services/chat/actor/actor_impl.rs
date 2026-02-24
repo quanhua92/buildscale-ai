@@ -3,6 +3,7 @@ use crate::models::sse::SseEvent;
 use crate::providers::Agent;
 use crate::queries;
 use crate::services::agent_sessions;
+use crate::services::chat::events;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::ChatService;
@@ -83,6 +84,8 @@ pub struct ChatActor {
     state_machine: StateMachine,
     /// State handlers for state-specific behavior
     state_handlers: StateHandlerRegistry,
+    /// Event processor registry for event-specific logic
+    event_processor_registry: Arc<events::EventProcessorRegistry>,
     /// Agent cache key parameters - tracks last agent creation parameters
     cached_agent_user_id: Option<Uuid>,
     cached_agent_model: Option<String>,
@@ -126,6 +129,15 @@ impl ChatActor {
         // Initialize state handlers registry
         let state_handlers = StateHandlerRegistry::new();
 
+        // Initialize event processor registry
+        let event_processor_registry = Arc::new(events::EventProcessorRegistry::new(
+            args.pool.clone(),
+            args.storage.clone(),
+            args.event_tx.clone(),
+            args.default_persona.clone(),
+            args.default_context_token_limit,
+        ));
+
         let actor = Self {
             chat_id: args.chat_id,
             workspace_id: args.workspace_id,
@@ -144,6 +156,7 @@ impl ChatActor {
             state: Arc::new(Mutex::new(SharedActorState::default())),
             state_machine,
             state_handlers,
+            event_processor_registry,
             cached_agent_user_id: None,
             cached_agent_model: None,
             cached_agent_mode: None,
@@ -642,6 +655,7 @@ impl ChatActor {
             default_context_token_limit: self.default_context_token_limit,
             shared_state: Some(&self.state),
             responder: None,
+            event_processor_registry: Some(&self.event_processor_registry),
         }
     }
 
@@ -661,6 +675,7 @@ impl ChatActor {
             default_context_token_limit: self.default_context_token_limit,
             shared_state: Some(&self.state),
             responder: Some(responder),
+            event_processor_registry: Some(&self.event_processor_registry),
         }
     }
 

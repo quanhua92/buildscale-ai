@@ -3,8 +3,9 @@
 //! Handles shutdown events for gracefully shutting down the actor.
 
 use crate::error::Result;
+use crate::models::agent_session::SessionStatus;
 use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, EventResult, StateAction};
+use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
 use crate::services::chat::states::StateContext;
 
 /// Processor for Shutdown events.
@@ -36,12 +37,15 @@ impl EventProcessor for ShutdownProcessor {
             return Err(crate::error::Error::Internal("Invalid event type for ShutdownProcessor".into()));
         }
 
-        // Initiate shutdown
-        Ok(EventResult {
-            new_state: None,
-            actions: vec![StateAction::ShutdownActor],
-            emit_sse: vec![],
-        })
+        // Match the logic from IdleState handler
+        // Transition to Completed terminal state and shutdown
+        Ok(EventResult::transition_with_reason(
+            ActorState::Completed,
+            "unknown",
+            Some("Shutdown requested".to_string()),
+        )
+        .with_action(StateAction::ShutdownActor)
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Completed)))
     }
 }
 

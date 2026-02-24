@@ -54,14 +54,16 @@ impl EventProcessor for ProcessInteractionProcessor {
             return Err(crate::error::Error::Internal("Invalid event type for ProcessInteractionProcessor".into()));
         };
 
-        // Transition to Running state
+        // Match the logic from IdleState handler
+        // Transition to Running state with all required actions
         Ok(EventResult::transition_with_reason(
             ActorState::Running,
             "unknown",
-            Some(format!("Processing interaction for user {}", user_id)),
+            Some("Processing user interaction".to_string()),
         )
         .with_action(StateAction::SetActivelyProcessing(true))
-        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Running)))
+        .with_action(StateAction::UpdateSessionStatus(SessionStatus::Running))
+        .with_action(StateAction::StartProcessing { user_id }))
     }
 }
 

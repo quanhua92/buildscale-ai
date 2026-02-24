@@ -9,6 +9,7 @@
 
 use crate::error::Result;
 use crate::models::sse::SseEvent;
+use crate::services::chat::events;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
 use crate::services::storage::FileStorageService;
 use crate::DbPool;
@@ -87,6 +88,18 @@ pub struct StateContext<'a, 'b> {
 
     /// Optional responder for Pause/Cancel commands
     pub responder: Option<&'b Arc<Mutex<Option<oneshot::Sender<Result<bool>>>>>>,
+
+    /// Optional event processor registry
+    pub event_processor_registry: Option<&'a events::EventProcessorRegistry>,
+}
+
+impl<'a, 'b> StateContext<'a, 'b> {
+    /// Gets the event processor for the given event.
+    pub fn get_event_processor(&self, event: &ActorEvent) -> Result<&'a dyn events::EventProcessor> {
+        self.event_processor_registry
+            .and_then(|registry| registry.get_processor(event))
+            .ok_or_else(|| crate::error::Error::Internal("No event processor found".to_string()))
+    }
 }
 
 /// Shared state for ChatActor (simplified - no agent cache).
