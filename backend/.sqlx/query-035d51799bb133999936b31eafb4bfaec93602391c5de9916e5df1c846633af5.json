@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                        SELECT\n                            s.id,\n                            s.workspace_id,\n                            s.chat_id,\n                            s.user_id,\n                            s.agent_type as \"agent_type: AgentType\",\n                            s.status as \"status: SessionStatus\",\n                            s.model,\n                            s.mode,\n                            s.current_task,\n                            s.error_message,\n                            s.created_at,\n                            s.updated_at,\n                            s.last_heartbeat,\n                            s.completed_at,\n                            f.name as \"chat_name?\"\n                        FROM agent_sessions s\n                        LEFT JOIN files f ON s.chat_id = f.id\n                        WHERE s.id = $1\n                        ",
+  "query": "\n                        WITH updated AS (\n                            UPDATE agent_sessions\n                            SET status = 'idle',\n                                updated_at = NOW(),\n                                last_heartbeat = NOW(),\n                                completed_at = NULL,\n                                error_message = NULL,\n                                current_task = NULL\n                            WHERE id = $1\n                            RETURNING *\n                        )\n                        SELECT\n                            u.id,\n                            u.workspace_id,\n                            u.chat_id,\n                            u.user_id,\n                            u.agent_type as \"agent_type: AgentType\",\n                            u.status as \"status: SessionStatus\",\n                            u.model,\n                            u.mode,\n                            u.current_task,\n                            u.error_message,\n                            u.created_at,\n                            u.updated_at,\n                            u.last_heartbeat,\n                            u.completed_at,\n                            f.name as \"chat_name?\"\n                        FROM updated u\n                        LEFT JOIN files f ON u.chat_id = f.id\n                        ",
   "describe": {
     "columns": [
       {
@@ -99,8 +99,8 @@
       false,
       false,
       true,
-      false
+      true
     ]
   },
-  "hash": "776048a90218128f5be8fdf20fb0e32862cf045f360298ad7c455b4258b3cbb3"
+  "hash": "035d51799bb133999936b31eafb4bfaec93602391c5de9916e5df1c846633af5"
 }

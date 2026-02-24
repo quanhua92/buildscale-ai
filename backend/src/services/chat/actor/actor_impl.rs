@@ -27,6 +27,43 @@ use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS, STREAM_READ_TIMEOUT_SEC
 use super::state_machine::command_to_event;
 // Import stream utilities
 use super::stream_utils::flush_reasoning_buffer;
+// Import interaction processor for background task execution
+use super::interaction_processor::{ProcessorContext, process_agent_stream, get_or_create_agent};
+
+// ============================================================================
+// NON-BLOCKING TASK TYPES
+// ============================================================================
+
+/// Result from a background process_interaction task
+enum InteractionResult {
+    Success { partial_response: Option<String> },
+    Failed { error: String, is_user_cancellation: bool },
+}
+
+/// Handle for a background interaction task
+struct BackgroundInteractionTask {
+    join_handle: JoinHandle<()>,
+    cancellation_token: CancellationToken,
+}
+
+/// Context needed to run process_interaction independently
+struct InteractionContext {
+    chat_id: Uuid,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    pool: DbPool,
+    rig_service: Arc<RigService>,
+    storage: Arc<FileStorageService>,
+    registry: Arc<AgentRegistry>,
+    session_id: Option<Uuid>,
+    default_persona: String,
+    default_context_token_limit: usize,
+    state: Arc<Mutex<SharedActorState>>,
+    event_tx: broadcast::Sender<SseEvent>,
+    cached_agent_user_id: Option<Uuid>,
+    cached_agent_model: Option<String>,
+    cached_agent_mode: Option<String>,
+}
 
 pub struct ChatActor {
     chat_id: Uuid,
@@ -56,6 +93,11 @@ pub struct ChatActor {
     cached_agent_user_id: Option<Uuid>,
     cached_agent_model: Option<String>,
     cached_agent_mode: Option<String>,
+    /// Channel for receiving background interaction results
+    interaction_result_tx: mpsc::Sender<InteractionResult>,
+    interaction_result_rx: mpsc::Receiver<InteractionResult>,
+    /// Handle for the current background interaction task (if any)
+    background_task: Option<BackgroundInteractionTask>,
 }
 
 pub struct ChatActorArgs {
@@ -81,6 +123,7 @@ impl ChatActor {
 
     fn spawn_with_args(args: ChatActorArgs) -> AgentHandle {
         let (command_tx, command_rx) = mpsc::channel(32);
+        let (interaction_result_tx, interaction_result_rx) = mpsc::channel(1);
         let event_tx = args.event_tx.clone();
 
         // Initialize state machine in Idle state
@@ -110,6 +153,9 @@ impl ChatActor {
             cached_agent_user_id: None,
             cached_agent_model: None,
             cached_agent_mode: None,
+            interaction_result_tx,
+            interaction_result_rx,
+            background_task: None,
         };
 
         tokio::spawn(async move {
@@ -263,12 +309,49 @@ impl ChatActor {
                         break;
                     }
                 }
+                // Receive background interaction results
+                Some(result) = self.interaction_result_rx.recv() => {
+                    self.background_task = None;
+
+                    // Clear current_task from session
+                    if let Some(session_id) = self.session_id {
+                        if let Ok(mut conn) = self.pool.acquire().await {
+                            let _ = agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
+                        }
+                    }
+
+                    match result {
+                        InteractionResult::Success { .. } => {
+                            let _ = self.transition_state(
+                                ActorEvent::InteractionComplete { success: true, error: None },
+                                "Interaction completed"
+                            ).await;
+                        }
+                        InteractionResult::Failed { error, is_user_cancellation } => {
+                            let _ = self.transition_state(
+                                ActorEvent::InteractionComplete { success: false, error: Some(error.clone()) },
+                                "Interaction failed"
+                            ).await;
+                            if !is_user_cancellation {
+                                let _ = self.event_tx.send(SseEvent::Error { message: format!("AI Engine Error: {}", error) });
+                            }
+                        }
+                    }
+
+                    self.state.lock().await.is_actively_processing = false;
+                }
             }
         }
 
         // Cleanup: stop heartbeat and mark session as completed
         let heartbeat_handle = self.heartbeat_handle.take();
         let session_id = self.session_id.take();
+
+        // Cancel any background task
+        if let Some(task) = self.background_task.take() {
+            task.cancellation_token.cancel();
+            task.join_handle.abort();
+        }
 
         tracing::info!(
             chat_id = %self.chat_id,
@@ -291,6 +374,27 @@ impl ChatActor {
             session_id = ?session_id,
             "[ChatActor] EXITED - Actor lifecycle complete"
         );
+    }
+
+    /// Captures all state needed to run process_interaction in a background task
+    fn capture_interaction_context(&self) -> InteractionContext {
+        InteractionContext {
+            chat_id: self.chat_id,
+            workspace_id: self.workspace_id,
+            user_id: self.user_id,
+            pool: self.pool.clone(),
+            rig_service: self.rig_service.clone(),
+            storage: self.storage.clone(),
+            registry: self.registry.clone(),
+            session_id: self.session_id,
+            default_persona: self.default_persona.clone(),
+            default_context_token_limit: self.default_context_token_limit,
+            state: self.state.clone(),
+            event_tx: self.event_tx.clone(),
+            cached_agent_user_id: self.cached_agent_user_id,
+            cached_agent_model: self.cached_agent_model.clone(),
+            cached_agent_mode: self.cached_agent_mode.clone(),
+        }
     }
 
     // ===========================================================================
@@ -1675,6 +1779,10 @@ impl ChatActor {
                     chat_id = %self.chat_id,
                     "[ChatActor] Executing CancelInteraction action"
                 );
+                // Cancel any background task
+                if let Some(task) = &self.background_task {
+                    task.cancellation_token.cancel();
+                }
                 // Cancel the current interaction token
                 let token = self.state.lock().await.current_cancellation_token.clone();
                 if let Some(token) = token {
@@ -1707,92 +1815,31 @@ impl ChatActor {
                 tracing::info!(
                     chat_id = %self.chat_id,
                     user_id = %user_id,
-                    "[ChatActor] Executing StartProcessing action - triggering AI interaction"
+                    "[ChatActor] Executing StartProcessing action - spawning background AI interaction task"
                 );
 
-                // TODO: Make this non-blocking by spawning process_interaction as a background task
-                // Currently this blocks the main loop during AI interaction (can take minutes)
-                // Future implementation should:
-                // 1. Spawn process_interaction in a tokio::task
-                // 2. Use interaction_result_tx channel to notify main loop when complete
-                // 3. Remove interaction_result_rx branch from main loop select! (currently unused)
-                // See: https://github.com/quanhua92/buildscale-ai/pull/53#pullrequestreview-3837847338
-
-                // Trigger the AI processing (this is async and may take time)
-                let result = self.process_interaction(user_id).await;
-
-                // Clear current task when interaction completes
-                if let Some(session_id) = self.session_id {
-                    if let Ok(mut conn) = self.pool.acquire().await {
-                        let _ = crate::services::agent_sessions::update_session_task(&mut conn, session_id, None, self.user_id).await;
-                    }
-
-                    // Send InteractionComplete event to trigger state transition
-                    let success = result.is_ok();
-                    let error = if let Err(ref e) = result { Some(format!("{}", e)) } else { None };
-                    let _ = self.transition_state(
-                        ActorEvent::InteractionComplete { success, error },
-                        if success { "Interaction completed successfully" } else { "Interaction failed" }
-                    ).await;
-
-                    // CRITICAL: Send Done event to frontend to stop blinking cursor
-                    if success {
-                        let send_result = self.event_tx.send(SseEvent::Done {
-                            message: "Turn complete".to_string(),
-                        });
-                        if let Err(e) = send_result {
-                            tracing::error!(
-                                chat_id = %self.chat_id,
-                                event_type = "Done",
-                                error = ?e,
-                                receivers = self.event_tx.receiver_count(),
-                                "[SSE] FAILED to send Done event - no receivers"
-                            );
-                        } else {
-                            tracing::debug!(
-                                chat_id = %self.chat_id,
-                                event_type = "Done",
-                                receivers = self.event_tx.receiver_count(),
-                                "[SSE] SENT Done event successfully"
-                            );
-                        }
-                    }
+                // Guard: Don't start if already running
+                if self.background_task.is_some() {
+                    tracing::warn!("StartProcessing called while task running - ignoring");
+                    return Ok(());
                 }
 
-                if let Err(e) = result {
-                    tracing::error!(
-                        "[ChatActor] StartProcessing: Error processing interaction for chat {}: {:?}",
-                        self.chat_id,
-                        e
-                    );
-                    // Only send SSE error event if this was NOT a user cancellation
-                    let error_msg = format!("{}", e);
-                    if !error_msg.contains("cancelled by user") {
-                        let send_result = self.event_tx.send(SseEvent::Error {
-                            message: format!("AI Engine Error: {}", e),
-                        });
-                        if let Err(e) = send_result {
-                            tracing::error!(
-                                chat_id = %self.chat_id,
-                                event_type = "Error",
-                                error = ?e,
-                                receivers = self.event_tx.receiver_count(),
-                                "[SSE] FAILED to send error event - no receivers"
-                            );
-                        }
-                    } else {
-                        tracing::debug!(
-                            chat_id = %self.chat_id,
-                            "[ChatActor] Suppressing SSE error event for user cancellation (Stopped event already sent)"
-                        );
-                    }
-                }
+                let cancellation_token = CancellationToken::new();
+                self.state.lock().await.current_cancellation_token = Some(cancellation_token.clone());
 
-                // Mark as done processing - actor can now be idle
-                {
-                    let mut state = self.state.lock().await;
-                    state.is_actively_processing = false;
-                }
+                let ctx = self.capture_interaction_context();
+                let result_tx = self.interaction_result_tx.clone();
+                let cancellation_token_for_task = cancellation_token.clone();
+
+                let join_handle = tokio::spawn(async move {
+                    let result = process_interaction_standalone(ctx, user_id, cancellation_token_for_task).await;
+                    let _ = result_tx.send(result).await;
+                });
+
+                self.background_task = Some(BackgroundInteractionTask {
+                    join_handle,
+                    cancellation_token,
+                });
             }
         }
         Ok(())
@@ -2022,5 +2069,323 @@ impl ChatActor {
                 Ok(false)
             }
         }
+    }
+}
+
+// ============================================================================
+// STANDALONE FUNCTION FOR BACKGROUND TASK EXECUTION
+// ============================================================================
+
+/// Standalone version that can run in a background task
+/// This is a wrapper that uses the existing ChatActor method but captures its result
+async fn process_interaction_standalone(
+    ctx: InteractionContext,
+    user_id: Uuid,
+    cancellation_token: CancellationToken,
+) -> InteractionResult {
+    use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS};
+    use super::stream_utils::flush_reasoning_buffer;
+
+    tracing::info!(
+        chat_id = %ctx.chat_id,
+        user_id = %user_id,
+        "[ChatActor] [Background] ProcessInteraction STARTED"
+    );
+
+    // Log SSE receiver count
+    tracing::debug!(
+        chat_id = %ctx.chat_id,
+        receivers = ctx.event_tx.receiver_count(),
+        "[ChatActor] [Background] Current SSE receiver count"
+    );
+
+    // Create a new cancellation token for this interaction
+    ctx.state.lock().await.current_cancellation_token = Some(cancellation_token.clone());
+
+    let mut conn = match ctx.pool.acquire().await {
+        Ok(c) => c,
+        Err(e) => {
+            return InteractionResult::Failed {
+                error: format!("Failed to acquire database connection: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    // 1. Build structured context with persona, history, and attachments
+    let context = match ChatService::build_context(
+        &mut conn,
+        &ctx.storage,
+        ctx.workspace_id,
+        ctx.chat_id,
+        &ctx.default_persona,
+        ctx.default_context_token_limit,
+        true, // exclude_last_message for AI context
+    ).await {
+        Ok(ctx_data) => ctx_data,
+        Err(e) => {
+            return InteractionResult::Failed {
+                error: format!("Failed to build context: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    // 2. Get current message (the prompt)
+    let messages = match queries::chat::get_messages_by_file_id(&mut conn, ctx.workspace_id, ctx.chat_id).await {
+        Ok(msgs) => msgs,
+        Err(e) => {
+            return InteractionResult::Failed {
+                error: format!("Failed to get messages: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    let last_message = match messages.last() {
+        Some(msg) => msg,
+        None => {
+            return InteractionResult::Failed {
+                error: "No messages found".to_string(),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    // Set current task for session tracking
+    let task_preview = crate::utils::safe_preview(&last_message.content, 100);
+    ctx.state.lock().await.current_task = Some(task_preview.clone());
+
+    // Update session with current task
+    if let Some(session_id) = ctx.session_id {
+        if let Err(e) = agent_sessions::update_session_task(&mut conn, session_id, Some(task_preview.clone()), ctx.user_id).await {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %e,
+                "[ChatActor] [Background] Failed to update session task"
+            );
+        }
+    }
+
+    // 3. Convert history to Rig format
+    let history = ctx.rig_service.convert_history_with_attachments(&context.history.messages, Some(&context.attachment_manager));
+
+    // 4. Build prompt
+    let prompt = last_message.content.clone();
+
+    // 5. Hydrate session model
+    let file = match queries::files::get_file_by_id(&mut conn, ctx.chat_id).await {
+        Ok(f) => f,
+        Err(e) => {
+            return InteractionResult::Failed {
+                error: format!("Failed to get file: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    let agent_config = if let Some(_version_id) = file.latest_version_id {
+        let version = match queries::files::get_latest_version(&mut conn, ctx.chat_id).await {
+            Ok(v) => v,
+            Err(e) => {
+                return InteractionResult::Failed {
+                    error: format!("Failed to get version: {}", e),
+                    is_user_cancellation: false,
+                };
+            }
+        };
+        match serde_json::from_value(version.app_data) {
+            Ok(config) => config,
+            Err(e) => {
+                return InteractionResult::Failed {
+                    error: format!("Failed to parse agent config: {}", e),
+                    is_user_cancellation: false,
+                };
+            }
+        }
+    } else {
+        tracing::warn!("Chat file {} has no version, using default agent_config", ctx.chat_id);
+        crate::models::chat::AgentConfig {
+            agent_id: None,
+            model: DEFAULT_CHAT_MODEL.to_string(),
+            temperature: 0.7,
+            persona_override: Some(context.persona),
+            previous_response_id: None,
+            mode: "plan".to_string(),
+            plan_file: None,
+        }
+    };
+
+    let session = crate::models::chat::ChatSession {
+        file_id: ctx.chat_id,
+        agent_config,
+        messages: messages.clone(),
+    };
+
+    // Store current model for potential cancellation
+    ctx.state.lock().await.current_model = Some(session.agent_config.model.clone());
+
+    // 6. Load AI config
+    let ai_config = match crate::config::Config::load() {
+        Ok(config) => config.ai,
+        Err(e) => {
+            return InteractionResult::Failed {
+                error: format!("Failed to load AI config: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    // 7. Get or create agent
+    let processor_ctx = ProcessorContext {
+        chat_id: ctx.chat_id,
+        workspace_id: ctx.workspace_id,
+        user_id: ctx.user_id,
+        pool: ctx.pool.clone(),
+        rig_service: ctx.rig_service.clone(),
+        storage: ctx.storage.clone(),
+        registry: ctx.registry.clone(),
+        session_id: ctx.session_id,
+        default_persona: ctx.default_persona.clone(),
+        default_context_token_limit: ctx.default_context_token_limit,
+        state: ctx.state.clone(),
+        event_tx: ctx.event_tx.clone(),
+    };
+
+    let agent = match get_or_create_agent(&processor_ctx, user_id, &session, &ai_config).await {
+        Ok(a) => a,
+        Err(e) => {
+            return InteractionResult::Failed {
+                error: format!("Failed to get or create agent: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    };
+
+    // 8. Register cancellation token
+    ctx.registry.register_cancellation(ctx.chat_id, cancellation_token.clone()).await;
+
+    let mut item_count = 0usize;
+
+    // 9. Process stream with retry logic
+    let mut retry_count = 0u32;
+    let full_response = loop {
+        if cancellation_token.is_cancelled() {
+            return InteractionResult::Failed {
+                error: "Chat cancelled by user".to_string(),
+                is_user_cancellation: true,
+            };
+        }
+
+        let result = match &agent {
+            Agent::OpenAI(openai_agent) => {
+                let stream = openai_agent.stream_chat(&prompt, history.clone()).await;
+                process_agent_stream(&processor_ctx, stream, &cancellation_token, &mut conn, &session, &mut item_count).await
+            }
+            Agent::OpenRouter(openrouter_agent) => {
+                let stream = openrouter_agent.stream_chat(&prompt, history.clone()).await;
+                process_agent_stream(&processor_ctx, stream, &cancellation_token, &mut conn, &session, &mut item_count).await
+            }
+        };
+
+        match result {
+            Ok(response) => break response,
+            Err(e) => {
+                let error_str = format!("{:?}", e);
+                let is_retryable = error_str.contains("Failed to get tool definitions")
+                    || error_str.contains("RequestError")
+                    || error_str.contains("rate limit")
+                    || error_str.contains("timeout")
+                    || error_str.contains("connection")
+                    || error_str.contains("5")
+                    || error_str.contains("overloaded");
+
+                if is_retryable && retry_count < MAX_AI_RETRIES {
+                    retry_count += 1;
+                    let backoff_ms = RETRY_BACKOFF_MS * (1 << (retry_count - 1));
+                    tracing::warn!(
+                        chat_id = %ctx.chat_id,
+                        retry = retry_count,
+                        max_retries = MAX_AI_RETRIES,
+                        backoff_ms = backoff_ms,
+                        error = ?e,
+                        "[ChatActor] [Background] Transient AI error, retrying"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                } else {
+                    return InteractionResult::Failed {
+                        error: format!("AI error: {}", e),
+                        is_user_cancellation: false,
+                    };
+                }
+            }
+        }
+    };
+
+    // 10. Remove cancellation token
+    ctx.registry.remove_cancellation(&ctx.chat_id).await;
+
+    // 11. Save Assistant Response
+    if !full_response.is_empty() {
+        let mut final_conn = match ctx.pool.acquire().await {
+            Ok(c) => c,
+            Err(e) => {
+                return InteractionResult::Failed {
+                    error: format!("Failed to acquire connection for saving: {}", e),
+                    is_user_cancellation: false,
+                };
+            }
+        };
+
+        if let Err(e) = flush_reasoning_buffer(&ctx.state, ctx.chat_id, ctx.workspace_id, &ctx.storage, &mut final_conn).await {
+            tracing::error!(
+                chat_id = %ctx.chat_id,
+                error = %e,
+                "[ChatActor] [Background] Failed to flush reasoning buffer"
+            );
+        }
+
+        let reasoning_id = ctx.state.lock().await.current_reasoning_id.clone();
+
+        if let Err(e) = ChatService::save_message(
+            &mut final_conn,
+            &ctx.storage,
+            ctx.workspace_id,
+            NewChatMessage {
+                file_id: ctx.chat_id,
+                workspace_id: ctx.workspace_id,
+                role: ChatMessageRole::Assistant,
+                content: full_response.clone(),
+                metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
+                    model: Some(session.agent_config.model.clone()),
+                    reasoning_id,
+                    ..Default::default()
+                }),
+            },
+        ).await {
+            return InteractionResult::Failed {
+                error: format!("Failed to save message: {}", e),
+                is_user_cancellation: false,
+            };
+        }
+    }
+
+    // Send Done event
+    let _ = ctx.event_tx.send(SseEvent::Done {
+        message: "Turn complete".to_string(),
+    });
+
+    tracing::info!(
+        chat_id = %ctx.chat_id,
+        "[ChatActor] [Background] ProcessInteraction COMPLETED"
+    );
+
+    // Cleanup
+    ctx.state.lock().await.current_cancellation_token = None;
+    ctx.state.lock().await.current_reasoning_id = None;
+    let _current_task = ctx.state.lock().await.current_task.take();
+
+    InteractionResult::Success {
+        partial_response: if full_response.is_empty() { None } else { Some(full_response) },
     }
 }
