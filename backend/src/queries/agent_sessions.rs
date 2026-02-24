@@ -56,13 +56,6 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
             FROM agent_sessions s
             WHERE s.chat_id = $1
         ),
-        should_reset AS (
-            SELECT
-                s.status IN ('completed', 'error', 'cancelled')
-                OR EXTRACT(EPOCH FROM (NOW() - s.last_heartbeat))::bigint > $7 as reset_needed
-            FROM agent_sessions s
-            WHERE s.chat_id = $1
-        ),
         ins AS (
             INSERT INTO agent_sessions (workspace_id, chat_id, user_id, agent_type, status, model, mode)
             SELECT $2, $1, $3, $4, 'idle', $5, $6
@@ -77,25 +70,36 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                 mode = EXCLUDED.mode,
                 status = CASE
                     -- Reuse terminal/stale sessions by resetting to idle
-                    WHEN (SELECT reset_needed FROM should_reset) THEN 'idle'
+                    -- Evaluate reset condition once: terminal state OR stale heartbeat
+                    WHEN agent_sessions.status IN ('completed', 'error', 'cancelled')
+                        OR EXTRACT(EPOCH FROM (NOW() - agent_sessions.last_heartbeat))::bigint > $7
+                    THEN 'idle'
                     -- Keep active sessions unchanged (status check happens after)
                     ELSE agent_sessions.status
                 END,
                 updated_at = NOW(),
                 last_heartbeat = CASE
-                    WHEN (SELECT reset_needed FROM should_reset) THEN NOW()
+                    WHEN agent_sessions.status IN ('completed', 'error', 'cancelled')
+                        OR EXTRACT(EPOCH FROM (NOW() - agent_sessions.last_heartbeat))::bigint > $7
+                    THEN NOW()
                     ELSE agent_sessions.last_heartbeat
                 END,
                 completed_at = CASE
-                    WHEN (SELECT reset_needed FROM should_reset) THEN NULL
+                    WHEN agent_sessions.status IN ('completed', 'error', 'cancelled')
+                        OR EXTRACT(EPOCH FROM (NOW() - agent_sessions.last_heartbeat))::bigint > $7
+                    THEN NULL
                     ELSE agent_sessions.completed_at
                 END,
                 error_message = CASE
-                    WHEN (SELECT reset_needed FROM should_reset) THEN NULL
+                    WHEN agent_sessions.status IN ('completed', 'error', 'cancelled')
+                        OR EXTRACT(EPOCH FROM (NOW() - agent_sessions.last_heartbeat))::bigint > $7
+                    THEN NULL
                     ELSE agent_sessions.error_message
                 END,
                 current_task = CASE
-                    WHEN (SELECT reset_needed FROM should_reset) THEN NULL
+                    WHEN agent_sessions.status IN ('completed', 'error', 'cancelled')
+                        OR EXTRACT(EPOCH FROM (NOW() - agent_sessions.last_heartbeat))::bigint > $7
+                    THEN NULL
                     ELSE agent_sessions.current_task
                 END
             RETURNING *
