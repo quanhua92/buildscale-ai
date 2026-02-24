@@ -40,7 +40,7 @@ Once an agent enters a terminal state (`Error`, `Cancelled`, `Completed`):
                     ┌─────────────────────────────────────────┐
                     │                                         │
                     ▼                                         │
-┌─────────┐  ProcessInteraction  ┌──────────┐  InteractionComplete  ┌─────────┐
+┌─────────┐  ProcessInteraction  ┌──────────┐  ProcessInteraction  ┌─────────┐
 │ Created │ ──────────────────>  │  Idle    │ ──────────────────────> │ Running │
 └─────────┘                     └──────────┘                      └─────────┘
                                           │                              │
@@ -49,26 +49,28 @@ Once an agent enters a terminal state (`Error`, `Cancelled`, `Completed`):
                                     ┌──────────┐                 InteractionComplete
                                     │  Paused  │ <─────────────────────────────────┐
                                     └──────────┶────────────────────────────────────┤
-                                            │ (resume)                        (success)
+                                            │ (resume)                        (any result)
                                             ▼                                  │
                                           ┌──────────┐                         │
                                           │  Idle    │ <───────────────────────────┘
-                                          └──────────┘
-                                            │
-                                            │ InactivityTimeout
-                                            ▼
-                                      ┌────────────┐
-                                      │ Completed  │ (terminal)
-                                      └────────────┘
-
-                    ┌─────────────┐
-                    │   Error     │ (terminal) - from any state on error
-                    └─────────────┘
-
-                    ┌─────────────┐
-                    │  Cancelled  │ (terminal) - from any state on Cancel
-                    └─────────────┘
+                                          └──────────┘                              │
+                                            │                                     │
+                                            │ InactivityTimeout                     │
+                                            ▼                                     │
+                                      ┌────────────┐                           │
+                                      │ Completed  │ (terminal)                  │
+                                      └────────────┘                           │
+                                                                        │
+                                                                        ▼
+                    ┌─────────────┐                              ┌─────────────┐
+                    │   Error     │ (terminal) - unrecoverable only  │  Cancelled  │ (terminal)
+                    └─────────────┘                              └─────────────┘
 ```
+
+**Key Behaviors:**
+- **InteractionComplete** (success OR error) always returns to `Idle`
+- Transient AI errors (timeout, rate limit) → `Idle` (manual retry allowed)
+- Unrecoverable errors (corrupt data) → `Error` (terminal, requires new session)
 
 ### Transition Rules
 
@@ -79,13 +81,61 @@ Once an agent enters a terminal state (`Error`, `Cancelled`, `Completed`):
 | Idle | Cancel | Cancelled | Terminal - actor shuts down |
 | Idle | InactivityTimeout | Completed | Terminal - actor shuts down |
 | Running | InteractionComplete (success) | Idle | Return to idle after completion |
-| Running | InteractionComplete (error) | Error | Terminal - actor shuts down |
+| Running | InteractionComplete (error) | Idle | Transient error - allows manual retry |
 | Running | Pause | Paused | Pause during processing |
 | Running | Cancel | Cancelled | Terminal - actor shuts down |
 | Paused | ProcessInteraction | Idle | Resume by processing interaction |
 | Paused | InactivityTimeout | Completed | Terminal - actor shuts down |
 | Any | Error | Error | Terminal - actor shuts down |
 | Any | Cancel | Cancelled | Terminal - actor shuts down |
+
+## Error Handling & Retry Behavior
+
+### Transient vs Unrecoverable Errors
+
+The state machine distinguishes between two types of errors:
+
+| Error Type | Examples | State Transition | Retry |
+|------------|----------|------------------|-------|
+| **Transient** | API timeout, rate limit, network error | Running → **Idle** | Manual retry allowed |
+| **Unrecoverable** | Corrupt data, configuration error, critical system failure | Any → **Error** | Terminal - new session required |
+
+### How Retry Works
+
+**Important:** Retry is **manual**, not automatic. When a transient error occurs:
+
+1. **State transitions**: Running → Idle
+2. **Session status updated**: Running → Idle
+3. **Error SSE event sent** to client with error details
+4. **Actor waits** for next command
+5. **User must send** a new `ProcessInteraction` command to retry
+
+There is **no automatic retry loop** or exponential backoff in the current implementation. The client/user decides whether to retry based on the error message.
+
+### Error Event Flow
+
+```
+Background AI Task Fails (Transient)
+        │
+        ▼
+InteractionResult::Failed { error }
+        │
+        ▼
+InteractionComplete { success: false, error: Some(...) }
+        │
+        ▼
+RunningState.handle_event()
+        │
+        ├─ Transition: Running → Idle
+        ├─ Actions: SetActivelyProcessing(false), UpdateSessionStatus(Idle)
+        └─ Emit: SseEvent::Error { message }
+        │
+        ▼
+Session in Idle state, ready for new command
+        │
+        ▼
+User sends ProcessInteraction (manual retry)
+```
 
 ## Events
 
@@ -197,8 +247,16 @@ backend/src/services/chat/
 │   ├── transition.rs       # Transition validation
 │   └── machine.rs          # StateMachine<S,E> implementation
 │
+├── events/                 # Event processors for event-specific logic
+│   ├── mod.rs              # EventProcessor trait, EventProcessorRegistry
+│   ├── process_interaction.rs  # Handles ProcessInteraction events
+│   ├── pause.rs            # Handles Pause events
+│   ├── cancel.rs           # Handles Cancel events
+│   ├── ping.rs             # Handles Ping events
+│   └── shutdown.rs         # Handles Shutdown events
+│
 ├── states/
-│   ├── mod.rs              # StateHandler trait
+│   ├── mod.rs              # StateHandler trait, StateContext, StateHandlerRegistry
 │   ├── idle.rs             # Idle state handler
 │   ├── running.rs          # Running state handler
 │   ├── paused.rs           # Paused state handler
@@ -208,16 +266,18 @@ backend/src/services/chat/
 │
 └── actor/                  # ChatActor modular structure
     ├── mod.rs              # Module declarations & re-exports
-    ├── actor_impl.rs       # Core ChatActor, spawn, main loop (~2056 lines)
+    ├── actor_impl.rs       # Core ChatActor, spawn, main loop (~2200 lines)
     ├── constants.rs        # Behavior constants (retries, timeouts)
     ├── state.rs            # State structs (ChatActorState, ToolTracking, InteractionState)
     ├── session.rs          # Session management helpers
     ├── state_machine.rs    # State machine utilities (command_to_event)
-    └── stream_utils.rs     # Stream processing utilities (flush_reasoning_buffer)
+    ├── stream_utils.rs     # Stream processing utilities (flush_reasoning_buffer)
+    └── interaction_processor.rs  # Background AI task execution
 ```
 
 ## Related Documentation
 
+- [Events System](./EVENTS_SYSTEM.md) - Hybrid architecture combining state handlers and event processors
 - [Agentic Engine](./AGENTIC_ENGINE.md) - Overall agent architecture
 - [REST API Guide](./REST_API_GUIDE.md) - API endpoints for agent control
 - [Agent Swarms](./AGENT_SWARMS.md) - Session management
