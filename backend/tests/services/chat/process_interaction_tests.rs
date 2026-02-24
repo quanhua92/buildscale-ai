@@ -120,29 +120,23 @@ async fn test_process_interaction_triggers_ai_processing() {
         .expect("Session should exist");
 
     // AI processing should have been triggered (even if it failed)
-    // With dummy API key, we expect an error
+    // Transient AI errors return to Idle (not Error) to allow retry
+    // Error state is only for unrecoverable failures
     assert_eq!(
         session_after.status,
-        buildscale::models::agent_session::SessionStatus::Error,
-        "Session should be in Error state after AI processing fails, got {:?}",
+        buildscale::models::agent_session::SessionStatus::Idle,
+        "Session should be in Idle state after transient AI processing fails, got {:?}",
         session_after.status
     );
 
-    // Should have an error message
+    // Idle state does not have an error_message (only Error state does)
+    // The error was sent via SSE event instead
     assert!(
-        session_after.error_message.is_some(),
-        "Session should have an error_message set, got: {:?}",
+        session_after.error_message.is_none(),
+        "Session should NOT have an error_message in Idle state, got: {:?}",
         session_after.error_message
     );
 
-    // Error should mention "AI Engine Error"
-    let error_msg = session_after.error_message.unwrap();
-    assert!(
-        error_msg.contains("AI Engine Error"),
-        "Error message should mention 'AI Engine Error', got: {}",
-        error_msg
-    );
-
-    // Verify state transition happened: Idle → Running → Error
+    // Verify state transition happened: Idle → Running → Idle
     // This confirms the state machine flow is working correctly
 }

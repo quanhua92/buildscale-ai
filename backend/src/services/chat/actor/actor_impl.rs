@@ -1,3 +1,4 @@
+use crate::models::agent_session::SessionStatus;
 use crate::models::chat::{ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::providers::Agent;
@@ -327,20 +328,80 @@ impl ChatActor {
                         }
                     }
 
-                    match result {
-                        InteractionResult::Success { .. } => {
-                            let _ = self.transition_state(
-                                ActorEvent::InteractionComplete { success: true, error: None },
-                                "Interaction completed"
-                            ).await;
-                        }
+                    // Create the InteractionComplete event based on result
+                    let (success, error_msg) = match result {
+                        InteractionResult::Success { .. } => (true, None),
                         InteractionResult::Failed { error, is_user_cancellation } => {
-                            let _ = self.transition_state(
-                                ActorEvent::InteractionComplete { success: false, error: Some(error.clone()) },
-                                "Interaction failed"
-                            ).await;
+                            // Send error SSE event for non-cancellation failures
                             if !is_user_cancellation {
                                 let _ = self.event_tx.send(SseEvent::Error { message: format!("AI Engine Error: {}", error) });
+                            }
+                            (false, Some(error))
+                        }
+                    };
+
+                    let event = ActorEvent::InteractionComplete { success, error: error_msg.clone() };
+
+                    // Clone event for use after handler.move() (for both transition and logging)
+                    let event_for_transition = event.clone();
+                    let event_for_log = event.clone();
+
+                    // Process through state handler (same pattern as commands)
+                    let current_state = self.current_state();
+                    let handler = self.state_handlers.get_handler(current_state);
+                    let mut ctx = self.create_state_context();
+
+                    match handler.handle_event(event, &mut ctx) {
+                        Ok(event_result) => {
+                            // Separate response actions from other actions
+                            let mut other_actions = Vec::new();
+                            for action in event_result.actions {
+                                if matches!(
+                                    action,
+                                    StateAction::SendSuccessResponse | StateAction::SendFailureResponse { .. }
+                                ) {
+                                    // Response actions not applicable for background results
+                                } else {
+                                    other_actions.push(action);
+                                }
+                            }
+
+                            // State transition MUST happen BEFORE executing actions
+                            if let Some(new_state) = event_result.new_state {
+                                let _ = self.transition_state(
+                                    event_for_transition,
+                                    &format!("Background interaction: {:?} → {:?}", current_state, new_state)
+                                ).await;
+                            }
+
+                            // Execute actions AFTER state transition (includes UpdateSessionStatus)
+                            let _ = self.execute_state_actions(other_actions).await;
+
+                            // Emit any SSE events
+                            for sse_event in event_result.emit_sse {
+                                let _ = self.event_tx.send(sse_event);
+                            }
+
+                            // Check if we should break (terminal state)
+                            if event_result.new_state.map_or(false, |s| s.is_terminal()) {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                current_state = %current_state,
+                                event = ?event_for_log,
+                                error = ?e,
+                                "[ChatActor] State handler failed for InteractionComplete, attempting to update session status"
+                            );
+                            // Fallback: try to at least update the session status to Idle
+                            if let Some(session_id) = self.session_id {
+                                let new_status = if success {
+                                    SessionStatus::Idle
+                                } else {
+                                    SessionStatus::Idle // Transient errors return to Idle for retry
+                                };
+                                let _ = self.update_session_status(session_id, new_status, error_msg).await;
                             }
                         }
                     }
