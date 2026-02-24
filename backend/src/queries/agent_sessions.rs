@@ -189,8 +189,11 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     let heartbeat_age = Utc::now().signed_duration_since(s.last_heartbeat);
                     let heartbeat_age_secs = heartbeat_age.num_seconds();
 
-                    // Only reject if heartbeat is recent (session is truly active)
-                    if heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
+                    // Terminal states are always reusable (actor is gone)
+                    let is_terminal_state = matches!(s.status, SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled);
+
+                    // Only reject if: NOT terminal AND heartbeat is recent (session is truly active)
+                    if !is_terminal_state && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
                         tracing::warn!(
                             chat_id = %new_session.chat_id,
                             existing_status = %s.status,
@@ -204,7 +207,7 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         )));
                     }
 
-                    // Session is stale or in terminal state - reuse it
+                    // Session is stale OR in terminal state - reuse it
                     // Reset the session to idle and return it
                     tracing::info!(
                         chat_id = %new_session.chat_id,
