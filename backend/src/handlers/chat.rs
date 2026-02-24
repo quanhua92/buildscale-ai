@@ -531,9 +531,7 @@ pub async fn stop_chat_generation(
             // Actor not found - check if session is already in terminal state
             let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
             if let Ok(Some(session)) = crate::queries::agent_sessions::get_session_by_chat(&mut conn, chat_id).await {
-                use crate::models::agent_session::SessionStatus;
-                let is_terminal = matches!(session.status, SessionStatus::Cancelled | SessionStatus::Error | SessionStatus::Completed);
-                if is_terminal {
+                if session.status.is_terminal() {
                     // Session already in terminal state - return success (idempotent)
                     tracing::info!(
                         "[ChatHandler] Session {} already in terminal state: {}",

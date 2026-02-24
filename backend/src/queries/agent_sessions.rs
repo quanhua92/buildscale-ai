@@ -190,10 +190,8 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     let heartbeat_age_secs = heartbeat_age.num_seconds();
 
                     // Terminal states are always reusable (actor is gone)
-                    let is_terminal_state = matches!(s.status, SessionStatus::Completed | SessionStatus::Error | SessionStatus::Cancelled);
-
                     // Only reject if: NOT terminal AND heartbeat is recent (session is truly active)
-                    if !is_terminal_state && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
+                    if !s.status.is_terminal() && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
                         tracing::warn!(
                             chat_id = %new_session.chat_id,
                             existing_status = %s.status,
