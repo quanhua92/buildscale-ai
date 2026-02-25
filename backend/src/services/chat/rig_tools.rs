@@ -130,6 +130,7 @@ macro_rules! define_rig_tool {
                         crate::tools::ToolConfig {
                             plan_mode: agent_config.mode == "plan",
                             active_plan_path: agent_config.plan_file,
+                            chat_id: Some(chat_id),
                         }
                     } else {
                         tracing::warn!(

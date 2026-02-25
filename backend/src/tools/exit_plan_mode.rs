@@ -1,5 +1,7 @@
 use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, ExitPlanModeArgs}, queries::files as file_queries};
 use crate::services::storage::FileStorageService;
+use crate::services::chat::sync;
+use crate::models::chat::AgentConfig;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -41,14 +43,19 @@ SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must
     async fn execute(
         &self,
         conn: &mut DbConn,
-        _storage: &FileStorageService,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
-        _config: ToolConfig,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         let exit_args: ExitPlanModeArgs = serde_json::from_value(args)?;
         let plan_path = super::normalize_path(&exit_args.plan_file_path);
+
+        // Get chat_id from config
+        let chat_id = config.chat_id.ok_or_else(|| {
+            Error::Internal("exit_plan_mode requires chat_id in ToolConfig".to_string())
+        })?;
 
         // 1. Verify the plan file exists
         let plan_file = file_queries::get_file_by_path(conn, workspace_id, &plan_path).await?
@@ -61,11 +68,32 @@ SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must
             }));
         }
 
-        // 2. Update chat metadata in database immediately
-        // This ensures subsequent tools in the same stream see the updated mode
-        // We need chat_id which is stored in ToolConfig.active_plan_path (hack for now)
-        // Actually, we can't get chat_id from ToolConfig. The ChatActor will still
-        // handle the update, but we'll ensure the update commits immediately.
+        // 2. Get current agent config to preserve model and other settings
+        let current_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_id).await
+            .unwrap_or_else(|_| AgentConfig {
+                agent_id: None,
+                model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: None,
+                previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
+            });
+
+        // 3. Update chat metadata: change mode from "plan" to "build" and set plan_file
+        let updated_config = AgentConfig {
+            mode: "build".to_string(),
+            plan_file: Some(plan_path.clone()),
+            ..current_config
+        };
+
+        sync::update_agent_config_in_file(conn, storage, workspace_id, chat_id, &updated_config).await?;
+
+        tracing::info!(
+            chat_id = %chat_id,
+            plan_file = %plan_path,
+            "[exit_plan_mode] Transitioned chat from plan to build mode"
+        );
 
         let result = crate::models::requests::ExitPlanModeResult {
             mode: "build".to_string(),

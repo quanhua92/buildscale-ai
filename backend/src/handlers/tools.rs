@@ -89,6 +89,7 @@ pub async fn execute_tool(
     let config = tools::ToolConfig {
         plan_mode: request.plan_mode,
         active_plan_path: None, // Public API has no active plan context
+        chat_id: None, // Public API doesn't have chat context
     };
 
     let response = executor

@@ -75,10 +75,10 @@ pub struct ToolConfig {
     /// agent's context.
     pub active_plan_path: Option<String>,
 
-    // Future extensibility:
-    // pub skills: Vec<String>,
-    // pub agent_id: Uuid,
-    // pub session_id: Uuid,
+    /// Chat ID for tools that need to update chat metadata
+    ///
+    /// Used by exit_plan_mode to update the chat file's mode.
+    pub chat_id: Option<Uuid>,
 }
 
 impl Default for ToolConfig {
@@ -86,6 +86,7 @@ impl Default for ToolConfig {
         Self {
             plan_mode: false, // Default to Build Mode for normal operation
             active_plan_path: None,
+            chat_id: None,
         }
     }
 }

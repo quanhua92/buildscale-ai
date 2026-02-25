@@ -483,6 +483,7 @@ impl RigService {
         let tool_config = crate::tools::ToolConfig {
             plan_mode: session.agent_config.mode == "plan",
             active_plan_path: session.agent_config.plan_file.clone(),
+            chat_id: Some(chat_id),
         };
 
         // 5. Build agent based on provider type
