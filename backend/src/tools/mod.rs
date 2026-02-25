@@ -58,6 +58,7 @@ pub const PLAN_MODE_ERROR: &str = "System is in Plan Mode. To switch to Build Mo
 /// let config = ToolConfig {
 ///     plan_mode: true,
 ///     active_plan_path: Some("/plans/project-roadmap.plan".to_string()),
+///     chat_id: None,
 /// };
 /// ```
 #[derive(Debug, Clone)]
