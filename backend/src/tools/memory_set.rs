@@ -15,7 +15,7 @@ use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{
-    generate_memory_path, prepend_memory_frontmatter, MemoryMetadata, MemoryScope,
+    generate_memory_path, prepend_yaml_frontmatter, MemoryMetadata, MemoryScope,
 };
 use crate::DbConn;
 use async_trait::async_trait;
@@ -167,7 +167,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
         };
 
         // Prepend frontmatter to content
-        let content_with_frontmatter = prepend_memory_frontmatter(&metadata, &memory_args.content);
+        let content_with_frontmatter = prepend_yaml_frontmatter(&metadata, &memory_args.content);
 
         // Create or update file
         let result = if let Some(file) = existing_file {

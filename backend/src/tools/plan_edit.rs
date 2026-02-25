@@ -7,7 +7,7 @@ use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_frontmatter, prepend_frontmatter};
+use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, PlanMetadata};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -113,7 +113,7 @@ Same as edit tool but:
         };
 
         // Parse existing frontmatter
-        let (existing_metadata, content_without_frontmatter) = parse_frontmatter(&content_text);
+        let (existing_metadata, content_without_frontmatter) = parse_yaml_frontmatter::<PlanMetadata>(&content_text);
 
         // Determine operation type
         let is_replace = plan_args.old_string.is_some() && plan_args.new_string.is_some();
@@ -192,7 +192,7 @@ Same as edit tool but:
 
         // Re-add frontmatter if it existed
         let final_content = if let Some(metadata) = existing_metadata {
-            prepend_frontmatter(&metadata, &edited_content)
+            prepend_yaml_frontmatter(&metadata, &edited_content)
         } else {
             // No existing frontmatter, just use edited content
             edited_content.to_string()

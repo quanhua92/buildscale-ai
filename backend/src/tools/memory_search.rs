@@ -9,7 +9,7 @@ use crate::models::requests::{
 };
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_memory_frontmatter, parse_memory_path, MemoryScope};
+use crate::utils::{parse_yaml_frontmatter, parse_memory_path, MemoryMetadata, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -175,7 +175,7 @@ Examples:
             };
 
             // Parse frontmatter to get metadata and body content
-            let (metadata, body_content) = parse_memory_frontmatter(&content);
+            let (metadata, body_content) = parse_yaml_frontmatter::<MemoryMetadata>(&content);
 
             // Apply tags filter
             if let Some(ref filter_tags) = search_args.tags {

@@ -8,7 +8,7 @@ use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{generate_memory_path, parse_memory_frontmatter, MemoryScope};
+use crate::utils::{generate_memory_path, parse_yaml_frontmatter, MemoryMetadata, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -117,7 +117,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
         };
 
         // Parse frontmatter
-        let (metadata, remaining_content) = parse_memory_frontmatter(&content_text);
+        let (metadata, remaining_content) = parse_yaml_frontmatter::<MemoryMetadata>(&content_text);
 
         let result = MemoryGetResult {
             path: path.clone(),

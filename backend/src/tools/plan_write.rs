@@ -7,7 +7,7 @@ use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{generate_plan_name, PlanMetadata, PlanStatus, prepend_frontmatter};
+use crate::utils::{generate_plan_name, PlanMetadata, PlanStatus, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -143,7 +143,7 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             status,
             created_at: Utc::now(),
         };
-        let content_with_frontmatter = prepend_frontmatter(&metadata, &plan_args.content);
+        let content_with_frontmatter = prepend_yaml_frontmatter(&metadata, &plan_args.content);
 
         // Check if file exists
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;

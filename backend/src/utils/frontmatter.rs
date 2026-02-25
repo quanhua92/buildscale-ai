@@ -1,4 +1,4 @@
-//! YAML frontmatter parsing and generation for plan files.
+//! Plan file metadata types.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -43,62 +43,10 @@ pub struct PlanMetadata {
     pub created_at: DateTime<Utc>,
 }
 
-/// Parse frontmatter from content, returns (metadata, remaining_content)
-pub fn parse_frontmatter(content: &str) -> (Option<PlanMetadata>, &str) {
-    let content = content.trim_start();
-
-    // Check for YAML frontmatter delimiter
-    if !content.starts_with("---\n") {
-        return (None, content);
-    }
-
-    // Find closing delimiter
-    let rest = &content[4..]; // Skip opening "---\n"
-    if let Some(end_idx) = rest.find("\n---\n") {
-        let yaml_str = &rest[..end_idx];
-        let remaining = &rest[end_idx + 5..]; // Skip "\n---\n"
-
-        match serde_yaml::from_str::<PlanMetadata>(yaml_str) {
-            Ok(metadata) => (Some(metadata), remaining),
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to parse frontmatter");
-                (None, content)
-            }
-        }
-    } else if let Some(end_idx) = rest.find("\n---") {
-        // Handle case where content ends with ---
-        let yaml_str = &rest[..end_idx];
-        let remaining = &rest[end_idx + 4..];
-
-        match serde_yaml::from_str::<PlanMetadata>(yaml_str) {
-            Ok(metadata) => (Some(metadata), remaining),
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to parse frontmatter");
-                (None, content)
-            }
-        }
-    } else {
-        (None, content)
-    }
-}
-
-/// Prepend frontmatter to content
-pub fn prepend_frontmatter(metadata: &PlanMetadata, content: &str) -> String {
-    let yaml = serde_yaml::to_string(metadata).unwrap_or_else(|_| "{}".to_string());
-
-    // serde_yaml adds a trailing newline, so we format carefully
-    let yaml = yaml.trim_end();
-
-    if content.trim().is_empty() {
-        format!("---\n{}\n---\n", yaml)
-    } else {
-        format!("---\n{}\n---\n{}", yaml, content)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::yaml_frontmatter::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
 
     #[test]
     fn test_parse_frontmatter_valid() {
@@ -112,7 +60,7 @@ created_at: 2025-01-15T10:30:00Z
 
 Some content here."#;
 
-        let (metadata, remaining) = parse_frontmatter(content);
+        let (metadata, remaining) = parse_yaml_frontmatter::<PlanMetadata>(content);
         let metadata = metadata.expect("Should parse metadata");
 
         assert_eq!(metadata.title, "My Plan");
@@ -123,7 +71,7 @@ Some content here."#;
     #[test]
     fn test_parse_frontmatter_none() {
         let content = "# Just content\n\nNo frontmatter here.";
-        let (metadata, remaining) = parse_frontmatter(content);
+        let (metadata, remaining) = parse_yaml_frontmatter::<PlanMetadata>(content);
 
         assert!(metadata.is_none());
         assert!(remaining.contains("Just content"));
@@ -140,7 +88,7 @@ Some content here."#;
         };
         let content = "# My Content\n\nBody text.";
 
-        let result = prepend_frontmatter(&metadata, content);
+        let result = prepend_yaml_frontmatter(&metadata, content);
 
         assert!(result.starts_with("---\n"));
         assert!(result.contains("title: Test Plan"));

@@ -13,7 +13,7 @@ use crate::models::requests::{
 };
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_memory_frontmatter, parse_memory_path, MemoryScope};
+use crate::utils::{parse_yaml_frontmatter, parse_memory_path, MemoryMetadata, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -246,7 +246,7 @@ async fn list_tags(
         let files = collect_memory_files(&global_memories_path, category_filter).await?;
         for file_path in files {
             if let Ok(content) = read_file_head(&file_path).await {
-                let (metadata, _) = parse_memory_frontmatter(&content);
+                let (metadata, _) = parse_yaml_frontmatter::<MemoryMetadata>(&content);
                 if let Some(mem_metadata) = metadata {
                     for tag in mem_metadata.tags {
                         *tag_counts.entry(tag).or_insert(0) += 1;
@@ -262,7 +262,7 @@ async fn list_tags(
         let files = collect_memory_files(&user_memories_path, category_filter).await?;
         for file_path in files {
             if let Ok(content) = read_file_head(&file_path).await {
-                let (metadata, _) = parse_memory_frontmatter(&content);
+                let (metadata, _) = parse_yaml_frontmatter::<MemoryMetadata>(&content);
                 if let Some(mem_metadata) = metadata {
                     for tag in mem_metadata.tags {
                         *tag_counts.entry(tag).or_insert(0) += 1;
@@ -355,7 +355,7 @@ async fn list_memories(
                 Err(_) => continue,
             };
 
-            let (metadata, _) = parse_memory_frontmatter(&content);
+            let (metadata, _) = parse_yaml_frontmatter::<MemoryMetadata>(&content);
 
             // Apply tags filter
             if let Some(filter_tags) = tags_filter {

@@ -97,9 +97,9 @@ pub async fn create_chat(
 
     // 5. Create file with content (includes YAML frontmatter)
     use crate::services::chat::sync::ChatFrontmatter;
+    use crate::utils::prepend_yaml_frontmatter;
     let frontmatter = ChatFrontmatter::from_agent_config(&agent_config);
-    let yaml_frontmatter = crate::services::chat::sync::YamlFrontmatter::new(frontmatter, String::new());
-    let content_with_frontmatter = yaml_frontmatter.serialize()?;
+    let content_with_frontmatter = prepend_yaml_frontmatter(&frontmatter, "");
 
     let file_result = crate::services::files::create_file_with_content(
         &mut conn,

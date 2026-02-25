@@ -111,7 +111,7 @@ pub use context::{
     PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM, TRUNCATED_TOOL_RESULT_PREVIEW,
 };
 
-pub use sync::{ChatFrontmatter, YamlFrontmatter};
+pub use sync::ChatFrontmatter;
 
 #[cfg(test)]
 mod tests;
@@ -691,9 +691,10 @@ impl ChatService {
         };
 
         // 3. Parse YAML frontmatter
-        let parsed = YamlFrontmatter::parse(&content)?;
+        use crate::utils::parse_yaml_frontmatter;
+        let (metadata, _) = parse_yaml_frontmatter::<ChatFrontmatter>(&content);
 
-        Ok(Some(parsed.frontmatter))
+        Ok(metadata)
     }
 
     /// Retrieves the full chat session including configuration and message history.
