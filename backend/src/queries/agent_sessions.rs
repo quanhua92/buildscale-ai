@@ -176,15 +176,19 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     let heartbeat_age = Utc::now().signed_duration_since(s.last_heartbeat);
                     let heartbeat_age_secs = heartbeat_age.num_seconds();
 
-                    // Terminal states are always reusable (actor is gone)
-                    // Only reject if: NOT terminal AND heartbeat is recent (session is truly active)
-                    if !s.status.is_terminal() && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
+                    // Terminal states (completed, error, cancelled) are always reusable - actor is gone
+                    // Idle sessions are always reusable - no active processing, actor might have died
+                    // Only reject if: running/paused with recent heartbeat (actor is truly active)
+                    let is_truly_active = matches!(s.status, SessionStatus::Running | SessionStatus::Paused)
+                        && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS;
+
+                    if is_truly_active {
                         tracing::warn!(
                             chat_id = %new_session.chat_id,
                             existing_status = %s.status,
                             session_id = %s.id,
                             heartbeat_age_secs = %heartbeat_age_secs,
-                            "[AgentSessions] Active session already exists for chat (recent heartbeat) - rejecting"
+                            "[AgentSessions] Active session already exists for chat (running/paused with recent heartbeat) - rejecting"
                         );
                         return Err(Error::Conflict(format!(
                             "An active session already exists for this chat: {} (status: {}, session_id: {})",
@@ -192,14 +196,14 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         )));
                     }
 
-                    // Session is stale OR in terminal state - reuse it
+                    // Session is reusable (terminal, idle, or stale) - reuse it
                     // Reset the session to idle and return it
                     tracing::info!(
                         chat_id = %new_session.chat_id,
                         existing_status = %s.status,
                         session_id = %s.id,
                         heartbeat_age_secs = %heartbeat_age_secs,
-                        "[AgentSessions] Reusing stale/terminal session - resetting to idle"
+                        "[AgentSessions] Reusing session - resetting to idle"
                     );
 
                     // Reset the session to idle status
