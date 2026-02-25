@@ -1,5 +1,5 @@
 use crate::models::agent_session::SessionStatus;
-use crate::models::chat::{ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
+use crate::models::chat::{ChatMessageRole, NewChatMessage};
 use crate::models::sse::SseEvent;
 use crate::providers::Agent;
 use crate::queries;
@@ -1028,13 +1028,8 @@ async fn process_interaction_standalone(
                 "Failed to get agent config from file, using defaults"
             );
             crate::models::chat::AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
                 persona_override: Some(context.persona.clone()),
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
+                ..Default::default()
             }
         }
     };

@@ -118,7 +118,7 @@ mod tests;
 
 use crate::{
     error::Result,
-    models::chat::{AgentConfig, ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL},
+    models::chat::{ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage},
     models::requests::{GrepResult, GlobResult, LsResult},
     queries, DbConn,
 };
@@ -624,15 +624,7 @@ impl ChatService {
     ) -> Result<()> {
         // 1. Get current agent config from file
         let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
-            .unwrap_or_else(|_| AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            });
+            .unwrap_or_default();
 
         // 2. Update the model field
         agent_config.model = new_model.clone();
@@ -659,15 +651,7 @@ impl ChatService {
     ) -> Result<()> {
         // 1. Get current agent config from file
         let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
-            .unwrap_or_else(|_| AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            });
+            .unwrap_or_default();
 
         // 2. Update the mode and plan_file fields
         agent_config.mode = mode.clone();
@@ -715,6 +699,7 @@ impl ChatService {
     /// Retrieves the full chat session including configuration and message history.
     pub async fn get_chat_session(
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
     ) -> Result<crate::models::chat::ChatSession> {
@@ -733,18 +718,9 @@ impl ChatService {
         // 2. Fetch all messages
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
-        // 3. Get existing config from file (or default)
-        // Note: We can't read from file here since we don't have storage, so we use default
-        // In the simplified system, config is read directly from file when needed
-        let mut agent_config = crate::models::chat::AgentConfig {
-            agent_id: None,
-            model: DEFAULT_CHAT_MODEL.to_string(),
-            temperature: 0.7,
-            persona_override: None,
-            previous_response_id: None,
-            mode: "plan".to_string(),
-            plan_file: None,
-        };
+        // 3. Get agent config from file's YAML frontmatter
+        let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
+            .unwrap_or_default();
 
         // Runtime migration: Convert legacy model strings to new format
         // Detects legacy format (no colon) and adds "openai:" prefix
@@ -868,16 +844,8 @@ impl ChatService {
         // 1. Get session for model/mode info first (needed to determine token limit)
         let _file = queries::files::get_file_by_id(conn, chat_file_id).await?;
 
-        let agent_config: crate::models::chat::AgentConfig = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
-            .unwrap_or_else(|_| crate::models::chat::AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            });
+        let agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
+            .unwrap_or_default();
 
         // 2. Look up model's context window from database
         let token_limit = Self::get_model_context_window(conn, &agent_config.model)

@@ -39,15 +39,7 @@ async fn get_chat_persona(
         storage,
         workspace_id,
         chat_id,
-    ).await.unwrap_or_else(|_| crate::models::chat::AgentConfig {
-        agent_id: None,
-        model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
-        temperature: 0.7,
-        persona_override: None,
-        previous_response_id: None,
-        mode: "plan".to_string(),
-        plan_file: None,
-    });
+    ).await.unwrap_or_default();
 
     // Extract mode
     let mode = agent_config.mode.as_str();
@@ -97,13 +89,10 @@ pub async fn create_chat(
 
     // 4. Create agent config for YAML frontmatter
     let agent_config = crate::models::chat::AgentConfig {
-        agent_id: None,
-        model: req.model.clone().unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string()),
-        temperature: 0.7,
+        model: req.model.clone().unwrap_or_else(|| crate::models::chat::DEFAULT_CHAT_MODEL.to_string()),
         persona_override: Some(crate::agents::get_persona(req.role.as_deref(), Some(mode), None)),
-        previous_response_id: None,
         mode: mode.to_string(),
-        plan_file: None,
+        ..Default::default()
     };
 
     // 5. Create file with content (includes YAML frontmatter)
@@ -301,15 +290,7 @@ pub async fn post_chat_message(
             &state.storage,
             workspace_id,
             chat_id,
-        ).await.unwrap_or_else(|_| crate::models::chat::AgentConfig {
-            agent_id: None,
-            model: DEFAULT_CHAT_MODEL.to_string(),
-            temperature: 0.7,
-            persona_override: None,
-            previous_response_id: None,
-            mode: "plan".to_string(),
-            plan_file: None,
-        });
+        ).await.unwrap_or_default();
         agent_config.model
     };
 
@@ -393,6 +374,7 @@ pub async fn get_chat(
 
     let session = crate::services::chat::ChatService::get_chat_session(
         &mut conn,
+        &state.storage,
         workspace_id,
         chat_id,
     ).await?;

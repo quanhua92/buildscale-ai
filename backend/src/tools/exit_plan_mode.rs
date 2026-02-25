@@ -70,15 +70,7 @@ SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must
 
         // 2. Get current agent config to preserve model and other settings
         let current_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_id).await
-            .unwrap_or_else(|_| AgentConfig {
-                agent_id: None,
-                model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            });
+            .unwrap_or_default();
 
         // 3. Update chat metadata: change mode from "plan" to "build" and set plan_file
         let updated_config = AgentConfig {
