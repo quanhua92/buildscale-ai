@@ -1,17 +1,115 @@
 //! YAML Frontmatter Sync for Chat Metadata
 //!
 //! This module handles bidirectional synchronization between:
-//! - Database storage (source of truth)
+//! - Database storage (source of truth via file content)
 //! - YAML frontmatter in .chat files (for display/debugging)
 //!
 //! Chat metadata (mode, plan_file, model) is serialized to YAML frontmatter
 //! when saving and parsed when loading to provide human-readable
 //! configuration in .chat files.
+//!
+//! # Simplified Schema
+//!
+//! In the simplified schema, the AgentConfig is stored in the file content
+//! as YAML frontmatter, not in a separate version table. This module provides
+//! helpers to read/write AgentConfig from/to file content.
 
 use crate::models::chat::AgentConfig;
 use crate::error::{Error, Result};
+use crate::services::storage::FileStorageService;
+use crate::queries;
+use crate::DbConn;
 use serde::{Deserialize, Serialize};
 use std::str;
+use uuid::Uuid;
+
+/// Default AgentConfig for new chats
+fn default_agent_config() -> AgentConfig {
+    AgentConfig {
+        agent_id: None,
+        model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
+        temperature: 0.7,
+        persona_override: None,
+        previous_response_id: None,
+        mode: "plan".to_string(),
+        plan_file: None,
+    }
+}
+
+/// Get AgentConfig from a chat file's content
+///
+/// Reads the file content and parses the YAML frontmatter to extract AgentConfig.
+/// Returns default config if file has no frontmatter or parsing fails.
+pub async fn get_agent_config_from_file(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    workspace_id: Uuid,
+    chat_file_id: Uuid,
+) -> Result<AgentConfig> {
+    // 1. Get the file
+    let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+    // 2. Read file content
+    let content_bytes = match storage.read_file(workspace_id, &file.path).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            // File doesn't exist yet, return default config
+            return Ok(default_agent_config());
+        }
+    };
+    let content = String::from_utf8(content_bytes).unwrap_or_default();
+
+    // 3. Parse YAML frontmatter
+    let parsed = YamlFrontmatter::parse(&content)?;
+
+    // 4. Convert to AgentConfig
+    Ok(parsed.frontmatter.to_agent_config())
+}
+
+/// Update AgentConfig in a chat file's content
+///
+/// Reads current file content, updates the YAML frontmatter with new config,
+/// and writes it back. Preserves the body content of the file.
+pub async fn update_agent_config_in_file(
+    conn: &mut DbConn,
+    storage: &FileStorageService,
+    workspace_id: Uuid,
+    chat_file_id: Uuid,
+    new_config: &AgentConfig,
+) -> Result<()> {
+    // 1. Get the file
+    let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+
+    // 2. Read current file content
+    let current_content = match storage.read_file(workspace_id, &file.path).await {
+        Ok(bytes) => String::from_utf8(bytes).unwrap_or_default(),
+        Err(_) => String::new(),
+    };
+
+    // 3. Parse existing content to get body
+    let body_content = if let Ok(parsed) = YamlFrontmatter::parse(&current_content) {
+        parsed.content
+    } else {
+        current_content.clone()
+    };
+
+    // 4. Create new frontmatter with updated config
+    let frontmatter = ChatFrontmatter::from_agent_config(new_config);
+    let yaml_frontmatter = YamlFrontmatter::new(frontmatter, body_content);
+
+    // 5. Serialize and write back
+    let new_content = yaml_frontmatter.serialize()?;
+
+    // 6. Update file content (this creates a new version in the simplified schema)
+    crate::services::files::update_file_content(
+        conn,
+        storage,
+        chat_file_id,
+        serde_json::json!(new_content),
+    ).await?;
+
+    Ok(())
+}
 
 /// YAML frontmatter structure for chat metadata
 ///

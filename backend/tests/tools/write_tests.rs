@@ -37,7 +37,7 @@ async fn test_write_update_existing_file() {
     assert_eq!(response.status(), 200);
     let body: serde_json::Value = response.json().await.unwrap();
     assert!(body["success"].as_bool().unwrap());
-    assert!(!body["result"]["version_id"].as_str().unwrap().is_empty());
+    assert!(!body["result"]["hash"].as_str().unwrap().is_empty());
 
     let read_content = read_file(&app, &workspace_id, &token, "/test.txt").await;
     assert_eq!(read_content.as_str().unwrap(), updated_content);
@@ -71,7 +71,7 @@ async fn test_write_duplicate_content() {
 
     assert_eq!(first_write.status(), 200);
     let first_body: serde_json::Value = first_write.json().await.unwrap();
-    let first_version_id = first_body["result"]["version_id"].as_str().unwrap();
+    let first_hash = first_body["result"]["hash"].as_str().unwrap();
 
     let second_write = execute_tool(&app, &workspace_id, &token, "write", serde_json::json!({
         "path": "/test.txt",
@@ -81,9 +81,10 @@ async fn test_write_duplicate_content() {
 
     assert_eq!(second_write.status(), 200);
     let second_body: serde_json::Value = second_write.json().await.unwrap();
-    let second_version_id = second_body["result"]["version_id"].as_str().unwrap();
+    let second_hash = second_body["result"]["hash"].as_str().unwrap();
 
-    assert_ne!(first_version_id, second_version_id);
+    // Same content should produce same hash (content-addressed)
+    assert_eq!(first_hash, second_hash);
 }
 
 #[tokio::test]

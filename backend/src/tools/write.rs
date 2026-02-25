@@ -1,7 +1,7 @@
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
 use crate::models::requests::{
-    CreateFileRequest, CreateVersionRequest, ToolResponse, WriteArgs, WriteResult,
+    CreateFileRequest, ToolResponse, WriteArgs, WriteResult,
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
@@ -46,13 +46,13 @@ impl Tool for WriteTool {
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
         storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
-        user_id: Uuid,
+        _user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -61,7 +61,7 @@ impl Tool for WriteTool {
 
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
 
-        // Overwrite Protection: Prevent accidental file overwrites
+        // Overwrite Protection
         if existing_file.is_some() && !write_args.overwrite {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "path".to_string(),
@@ -73,14 +73,11 @@ impl Tool for WriteTool {
             }));
         }
 
-        // Plan Mode Guard: Only allow Plan files in plan mode
+        // Plan Mode Guard
         if config.plan_mode {
-            // For new files, check if it's a .plan file
-            // For existing files, check the file type
             let is_plan_file = if let Some(ref file) = existing_file {
                 matches!(file.file_type, FileType::Plan)
             } else {
-                // New file - check extension
                 path.ends_with(".plan")
             };
 
@@ -91,37 +88,22 @@ impl Tool for WriteTool {
                 }));
             }
         }
-        
-        // Virtual File Protection: Prevent direct writes to system-managed files (e.g. Chats)
-        if let Some(ref file) = existing_file {
-            if file.is_virtual {
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "path".to_string(),
-                    message: "Cannot write to a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
-                }));
-            }
-        }
 
         let result = if let Some(file) = existing_file {
-            // Prepare content: validate content type compatibility (content stored as-is)
+            // Update existing file
             let final_content = Self::prepare_content_for_type(file.file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
-            let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-                author_id: Some(user_id),
-                branch: Some("main".to_string()),
-                content: final_content,
-                app_data: None,
-            }).await?;
+            let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
 
             WriteResult {
                 path,
                 file_id: file.id,
-                version_id: version.id,
-                hash: version.hash,
+                hash: updated_file.hash.unwrap_or_default(),
             }
         } else {
+            // Create new file
             let filename = path.rsplit('/').next().unwrap_or("untitled");
-            
+
             let file_type = if let Some(ft_str) = write_args.file_type.as_deref() {
                 FileType::from_str(ft_str).map_err(|_| {
                     Error::Validation(ValidationErrors::Single {
@@ -133,32 +115,24 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
-            // Prepare content: validate content type compatibility (content stored as-is)
             let final_content = Self::prepare_content_for_type(file_type, write_args.content.0, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
-                author_id: user_id,
                 name: filename.to_string(),
-                slug: None,
                 path: Some(path.clone()),
-                is_virtual: None,
-                is_remote: None,
-                permission: None,
                 file_type,
                 content: final_content,
-                app_data: None,
             }).await?;
-            
+
             WriteResult {
                 path,
                 file_id: file_result.file.id,
-                version_id: file_result.latest_version.id,
-                hash: file_result.latest_version.hash,
+                hash: file_result.hash,
             }
         };
-        
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,
@@ -168,20 +142,11 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    /// Validates content type compatibility (no wrapping/transformation).
-    ///
-    /// IMPORTANT: This function does NOT wrap or transform content.
-    /// Content is stored exactly as provided:
-    /// - Raw strings → stored as JSON strings
-    /// - JSON objects → stored as structured JSON
-    ///
-    /// This is consistent with edit.rs which also stores content as raw strings.
     fn prepare_content_for_type(
         actual_type: FileType,
         content: Value,
         requested_type_str: Option<&str>,
     ) -> Result<Value> {
-        // 1. Prevent writing text content to a folder path unless explicitly creating a folder
         if matches!(actual_type, FileType::Folder) && requested_type_str != Some("folder") {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "path".to_string(),
@@ -189,8 +154,6 @@ impl WriteTool {
             }));
         }
 
-        // Content is passed through as-is for all file types
-        // Documents and Chat files can be raw strings or JSON objects
         Ok(content)
     }
 }

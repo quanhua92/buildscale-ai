@@ -7,14 +7,17 @@ use crate::models::agent_session::AgentType;
 use crate::models::chat::DEFAULT_CHAT_MODEL;
 use crate::queries;
 use crate::services::agent_sessions;
+use crate::services::storage::FileStorageService;
 use crate::DbPool;
 use crate::error::Result;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 /// Creates a new agent session in the database.
 pub async fn create_session(
     pool: &DbPool,
+    storage: &Arc<FileStorageService>,
     workspace_id: Uuid,
     chat_id: Uuid,
     user_id: Uuid,
@@ -30,35 +33,29 @@ pub async fn create_session(
 
     let mut conn = pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-    // Get the chat file's latest version to extract actual model and mode
+    // Get the chat file's agent config to extract actual model and mode
     // This ensures the session is created with the correct values from the chat config
-    let (actual_model, actual_mode) = match queries::files::get_latest_version(&mut conn, chat_id).await {
-        Ok(version) => {
-            // Extract model and mode from app_data
-            let model = version.app_data.get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or(DEFAULT_CHAT_MODEL)
-                .to_string();
-
-            let mode = version.app_data.get("mode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("plan")
-                .to_string();
-
+    let (actual_model, actual_mode) = match crate::services::chat::sync::get_agent_config_from_file(
+        &mut conn,
+        &storage,
+        workspace_id,
+        chat_id,
+    ).await {
+        Ok(config) => {
             tracing::debug!(
                 chat_id = %chat_id,
-                model = %model,
-                mode = %mode,
-                "[ChatActor] Extracted model and mode from chat file app_data"
+                model = %config.model,
+                mode = %config.mode,
+                "[ChatActor] Extracted model and mode from chat file"
             );
 
-            (model, mode)
+            (config.model, config.mode)
         }
         Err(e) => {
             tracing::warn!(
                 chat_id = %chat_id,
                 error = %e,
-                "[ChatActor] Failed to get chat file version, using defaults"
+                "[ChatActor] Failed to get chat file config, using defaults"
             );
             (DEFAULT_CHAT_MODEL.to_string(), "plan".to_string())
         }

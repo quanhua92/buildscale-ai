@@ -460,6 +460,7 @@ impl ChatActor {
     async fn create_session(&self) -> Result<Uuid> {
         super::session::create_session(
             &self.pool,
+            &self.storage,
             self.workspace_id,
             self.chat_id,
             self.user_id,
@@ -1012,46 +1013,29 @@ async fn process_interaction_standalone(
     // 4. Build prompt
     let prompt = last_message.content.clone();
 
-    // 5. Hydrate session model
-    let file = match queries::files::get_file_by_id(&mut conn, ctx.chat_id).await {
-        Ok(f) => f,
+    // 5. Get agent config from file
+    let agent_config = match crate::services::chat::sync::get_agent_config_from_file(
+        &mut conn,
+        &ctx.storage,
+        ctx.workspace_id,
+        ctx.chat_id,
+    ).await {
+        Ok(config) => config,
         Err(e) => {
-            return InteractionResult::Failed {
-                error: format!("Failed to get file: {}", e),
-                is_user_cancellation: false,
-            };
-        }
-    };
-
-    let agent_config = if let Some(_version_id) = file.latest_version_id {
-        let version = match queries::files::get_latest_version(&mut conn, ctx.chat_id).await {
-            Ok(v) => v,
-            Err(e) => {
-                return InteractionResult::Failed {
-                    error: format!("Failed to get version: {}", e),
-                    is_user_cancellation: false,
-                };
+            tracing::warn!(
+                chat_id = %ctx.chat_id,
+                error = %e,
+                "Failed to get agent config from file, using defaults"
+            );
+            crate::models::chat::AgentConfig {
+                agent_id: None,
+                model: DEFAULT_CHAT_MODEL.to_string(),
+                temperature: 0.7,
+                persona_override: Some(context.persona.clone()),
+                previous_response_id: None,
+                mode: "plan".to_string(),
+                plan_file: None,
             }
-        };
-        match serde_json::from_value(version.app_data) {
-            Ok(config) => config,
-            Err(e) => {
-                return InteractionResult::Failed {
-                    error: format!("Failed to parse agent config: {}", e),
-                    is_user_cancellation: false,
-                };
-            }
-        }
-    } else {
-        tracing::warn!("Chat file {} has no version, using default agent_config", ctx.chat_id);
-        crate::models::chat::AgentConfig {
-            agent_id: None,
-            model: DEFAULT_CHAT_MODEL.to_string(),
-            temperature: 0.7,
-            persona_override: Some(context.persona),
-            previous_response_id: None,
-            mode: "plan".to_string(),
-            plan_file: None,
         }
     };
 

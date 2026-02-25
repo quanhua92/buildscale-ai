@@ -102,7 +102,7 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
@@ -251,7 +251,7 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
         let result = ReadResult {
             path,
             content,
-            hash: file_with_content.latest_version.hash,
+            hash: file_with_content.hash,
             synced: true,  // Database entry
             total_lines,
             truncated,

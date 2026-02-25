@@ -155,7 +155,7 @@ Returns metadata (title, status, created_at) and content."#
             path: path.clone(),
             metadata,
             content: sliced_content,
-            hash: file_with_content.latest_version.hash,
+            hash: file_with_content.hash,
             total_lines: Some(total_lines),
         };
 

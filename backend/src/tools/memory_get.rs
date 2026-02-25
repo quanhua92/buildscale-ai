@@ -124,7 +124,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
             key: memory_args.key,
             metadata,
             content: remaining_content.to_string(),
-            hash: file_with_content.latest_version.hash,
+            hash: file_with_content.hash,
         };
 
         Ok(ToolResponse {

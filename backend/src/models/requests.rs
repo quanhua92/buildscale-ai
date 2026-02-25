@@ -1,5 +1,5 @@
 use crate::models::{
-    files::{File, FileType, FileVersion},
+    files::{File, FileType},
     roles::Role,
     workspace_members::WorkspaceMember,
     workspaces::Workspace,
@@ -117,25 +117,16 @@ pub struct UpdateWorkspaceRequest {
 pub struct CreateFileRequest {
     pub workspace_id: Uuid,
     pub parent_id: Option<Uuid>,
-    pub author_id: Uuid,
     pub name: String,
-    pub slug: Option<String>,
     pub path: Option<String>,
-    pub is_virtual: Option<bool>,
-    pub is_remote: Option<bool>,
-    pub permission: Option<i32>,
     pub file_type: FileType,
     pub content: serde_json::Value,
-    pub app_data: Option<serde_json::Value>,
 }
 
 /// Request for creating a new version of an existing file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateVersionRequest {
-    pub author_id: Option<Uuid>,
-    pub branch: Option<String>,
     pub content: serde_json::Value,
-    pub app_data: Option<serde_json::Value>,
 }
 
 /// HTTP API request for creating a file
@@ -143,29 +134,22 @@ pub struct CreateVersionRequest {
 pub struct CreateFileHttp {
     pub parent_id: Option<Uuid>,
     pub name: String,
-    pub slug: Option<String>,
     pub path: Option<String>,
-    pub is_virtual: Option<bool>,
-    pub is_remote: Option<bool>,
-    pub permission: Option<i32>,
     pub file_type: FileType,
     pub content: serde_json::Value,
-    pub app_data: Option<serde_json::Value>,
 }
 
 /// HTTP API request for creating a new version
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateVersionHttp {
-    pub branch: Option<String>,
     pub content: serde_json::Value,
-    pub app_data: Option<serde_json::Value>,
 }
 
-/// Combined model for a file and its latest content version
+/// Combined model for a file and its content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileWithContent {
     pub file: File,
-    pub latest_version: FileVersion,
+    pub hash: String,
     pub content: serde_json::Value,
 }
 
@@ -179,10 +163,6 @@ pub struct UpdateFileHttp {
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub parent_id: Option<Option<Uuid>>,
     pub name: Option<String>,
-    pub slug: Option<String>,
-    pub is_virtual: Option<bool>,
-    pub is_remote: Option<bool>,
-    pub permission: Option<i32>,
 }
 
 /// Service request for updating file metadata
@@ -190,10 +170,6 @@ pub struct UpdateFileHttp {
 pub struct UpdateFileRequest {
     pub parent_id: Option<Option<Uuid>>,
     pub name: Option<String>,
-    pub slug: Option<String>,
-    pub is_virtual: Option<bool>,
-    pub is_remote: Option<bool>,
-    pub permission: Option<i32>,
 }
 
 /// Helper to deserialize double options (None = missing, Some(None) = null, Some(Some) = value)
@@ -505,29 +481,6 @@ pub struct AddLinkHttp {
     pub target_file_id: Uuid,
 }
 
-/// Summary of a file's network relationships
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileNetworkSummary {
-    pub tags: Vec<String>,
-    pub outbound_links: Vec<File>,
-    pub backlinks: Vec<File>,
-}
-
-/// Request for semantic search
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemanticSearchHttp {
-    pub query_vector: Vec<f32>,
-    pub limit: Option<i32>,
-}
-
-/// Single result from a semantic search
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub file: File,
-    pub chunk_content: String,
-    pub similarity: f32,
-}
-
 // ============================================================================
 // TOOL REQUEST AND RESPONSE MODELS
 // ============================================================================
@@ -733,7 +686,6 @@ pub struct GlobMatch {
     pub name: String,
     pub synced: bool,       // true = in database, false = filesystem-only
     pub file_type: FileType,
-    pub is_virtual: bool,
     pub size: Option<usize>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -882,7 +834,6 @@ pub struct LsEntry {
     pub display_name: String,
     pub path: String,
     pub file_type: FileType,
-    pub is_virtual: bool,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -991,7 +942,6 @@ pub struct ReadResult {
 pub struct WriteResult {
     pub path: String,
     pub file_id: Uuid,
-    pub version_id: Uuid,
     pub hash: String,
 }
 
@@ -1101,7 +1051,6 @@ pub struct PlanListArgs {
 pub struct PlanWriteResult {
     pub path: String,
     pub file_id: Uuid,
-    pub version_id: Uuid,
     pub hash: String,
     pub metadata: crate::utils::frontmatter::PlanMetadata,
 }
@@ -1174,7 +1123,6 @@ pub struct MemorySetArgs {
 pub struct MemorySetResult {
     pub path: String,
     pub file_id: Uuid,
-    pub version_id: Uuid,
     pub hash: String,
     pub scope: MemoryScope,
     pub category: String,

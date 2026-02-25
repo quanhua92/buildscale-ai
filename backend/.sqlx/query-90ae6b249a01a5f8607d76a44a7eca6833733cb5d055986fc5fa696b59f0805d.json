@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE agent_sessions\n        SET\n            status = 'idle',\n            user_id = $2,\n            agent_type = $3,\n            model = $4,\n            mode = $5,\n            updated_at = NOW(),\n            last_heartbeat = NOW(),\n            completed_at = NULL,\n            error_message = NULL,\n            current_task = NULL\n        WHERE chat_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "90ae6b249a01a5f8607d76a44a7eca6833733cb5d055986fc5fa696b59f0805d"
+}

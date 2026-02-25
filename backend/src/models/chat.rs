@@ -24,7 +24,6 @@ pub enum ChatMessageRole {
 pub enum ChatAttachment {
     File {
         file_id: Uuid,
-        version_id: Option<Uuid>,
     },
     Url {
         url: String,

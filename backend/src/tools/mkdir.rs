@@ -32,13 +32,13 @@ impl Tool for MkdirTool {
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
-        user_id: Uuid,
+        _user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -58,7 +58,6 @@ impl Tool for MkdirTool {
             conn,
             workspace_id,
             &path,
-            user_id
         ).await?;
 
         // Create the actual directory on disk

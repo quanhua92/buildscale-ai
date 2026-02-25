@@ -160,7 +160,6 @@ PARAMETERS: pattern (required), path (default '/')"#
                     name: file.name.clone(),
                     synced: true,  // Database entry
                     file_type: file.file_type,
-                    is_virtual: file.is_virtual,
                     size: None, // Size would require additional storage access
                     updated_at: file.updated_at,
                 });
@@ -179,7 +178,6 @@ PARAMETERS: pattern (required), path (default '/')"#
                     name,
                     synced: false,  // Filesystem-only
                     file_type: crate::models::files::FileType::Document, // Default to document
-                    is_virtual: false,
                     size: None,
                     updated_at: chrono::Utc::now(),
                 });

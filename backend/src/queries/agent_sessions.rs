@@ -44,8 +44,8 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
     // Use INSERT ... ON CONFLICT DO UPDATE for atomic get-or-create
     // This prevents race conditions when multiple concurrent requests
     // try to create/update the same session
-    let session = sqlx::query_as!(
-        AgentSession,
+    // Returns the session id only, then we fetch with join separately
+    let session_id = sqlx::query_scalar!(
         r#"
         WITH existing AS (
             SELECT
@@ -102,26 +102,9 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     THEN NULL
                     ELSE agent_sessions.current_task
                 END
-            RETURNING *
+            RETURNING id
         )
-        SELECT
-            s.id,
-            s.workspace_id,
-            s.chat_id,
-            s.user_id,
-            s.agent_type as "agent_type: AgentType",
-            s.status as "status: SessionStatus",
-            s.model,
-            s.mode,
-            s.current_task,
-            s.error_message,
-            s.created_at,
-            s.updated_at,
-            s.last_heartbeat,
-            s.completed_at,
-            f.name as "chat_name?"
-        FROM ins s
-        LEFT JOIN files f ON s.chat_id = f.id
+        SELECT id FROM ins
         "#,
         new_session.chat_id,
         new_session.workspace_id,
@@ -154,8 +137,8 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
     })?;
 
     // Handle the case where no session was returned (active session with recent heartbeat)
-    let session = match session {
-        Some(s) => s,
+    let session_id = match session_id {
+        Some(id) => id,
         None => {
             // No session returned means there's an active session with recent heartbeat
             // Fetch it to return proper error
@@ -219,43 +202,21 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         "[AgentSessions] Reusing stale/terminal session - resetting to idle"
                     );
 
-                    // Reset the session to idle status and get chat name in a single query
-                    let with_name = sqlx::query_as!(
-                        AgentSession,
+                    // Reset the session to idle status
+                    sqlx::query!(
                         r#"
-                        WITH updated AS (
-                            UPDATE agent_sessions
-                            SET status = 'idle',
-                                updated_at = NOW(),
-                                last_heartbeat = NOW(),
-                                completed_at = NULL,
-                                error_message = NULL,
-                                current_task = NULL
-                            WHERE id = $1
-                            RETURNING *
-                        )
-                        SELECT
-                            u.id,
-                            u.workspace_id,
-                            u.chat_id,
-                            u.user_id,
-                            u.agent_type as "agent_type: AgentType",
-                            u.status as "status: SessionStatus",
-                            u.model,
-                            u.mode,
-                            u.current_task,
-                            u.error_message,
-                            u.created_at,
-                            u.updated_at,
-                            u.last_heartbeat,
-                            u.completed_at,
-                            f.name as "chat_name?"
-                        FROM updated u
-                        LEFT JOIN files f ON u.chat_id = f.id
+                        UPDATE agent_sessions
+                        SET status = 'idle',
+                            updated_at = NOW(),
+                            last_heartbeat = NOW(),
+                            completed_at = NULL,
+                            error_message = NULL,
+                            current_task = NULL
+                        WHERE id = $1
                         "#,
                         s.id
                     )
-                    .fetch_one(&mut *conn)
+                    .execute(&mut *conn)
                     .await
                     .map_err(|e| {
                         tracing::error!(
@@ -267,7 +228,10 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         Error::Sqlx(e)
                     })?;
 
-                    return Ok(with_name);
+                    // Fetch the updated session with chat name
+                    return get_session_by_id(conn, s.id)
+                        .await?
+                        .ok_or_else(|| Error::NotFound(format!("Session {} not found after update", s.id)));
                 }
                 None => {
                     // This shouldn't happen - no session exists but we couldn't create one
@@ -280,6 +244,11 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
             }
         }
     };
+
+    // Fetch the session with chat name
+    let session = get_session_by_id(conn, session_id)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("Session {} not found after creation", session_id)))?;
 
     tracing::info!(
         session_id = %session.id,
@@ -614,59 +583,67 @@ pub async fn update_session_status(
         _ => None,
     };
 
-    // Single query with CTE to UPDATE and fetch with chat_name in one round-trip
-    let session = sqlx::query_as!(
-        AgentSession,
+    // First update the session
+    let rows_affected = sqlx::query!(
         r#"
-        WITH updated AS (
-            UPDATE agent_sessions
-            SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4
-            WHERE id = $1
-            RETURNING *
-        )
-        SELECT
-            u.id,
-            u.workspace_id,
-            u.chat_id,
-            u.user_id,
-            u.agent_type as "agent_type: AgentType",
-            u.status as "status: SessionStatus",
-            u.model,
-            u.mode,
-            u.current_task,
-            u.error_message,
-            u.created_at,
-            u.updated_at,
-            u.last_heartbeat,
-            u.completed_at,
-            f.name as "chat_name?"
-        FROM updated u
-        LEFT JOIN files f ON u.chat_id = f.id
+        UPDATE agent_sessions
+        SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4
+        WHERE id = $1
         "#,
         session_id,
         status as SessionStatus,
         completed_at,
         error_message.clone()
     )
-    .fetch_one(&mut *conn)
+    .execute(&mut *conn)
     .await
     .map_err(|e| {
-        let error_str = e.to_string().to_lowercase();
-        if error_str.contains("no rows") {
-            tracing::error!(
-                session_id = %session_id,
-                "[AgentSessions] Failed to update status - session not found"
-            );
-            Error::NotFound(format!("Session with ID {} not found", session_id))
-        } else {
-            tracing::error!(
-                session_id = %session_id,
-                error = %e,
-                "[AgentSessions] Failed to update session status"
-            );
-            Error::Sqlx(e)
-        }
-    })?;
+        tracing::error!(
+            session_id = %session_id,
+            error = %e,
+            "[AgentSessions] Failed to update session status"
+        );
+        Error::Sqlx(e)
+    })?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        tracing::error!(
+            session_id = %session_id,
+            "[AgentSessions] Failed to update status - session not found"
+        );
+        return Err(Error::NotFound(format!("Session with ID {} not found", session_id)));
+    }
+
+    // Then fetch with chat name
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.error_message,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.id = $1
+        "#,
+        session_id
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)?;
 
     tracing::info!(
         session_id = %session.id,
@@ -877,43 +854,22 @@ pub async fn reset_session_to_idle(
         "[AgentSessions] Resetting session to idle state"
     );
 
-    let session = sqlx::query_as!(
-        AgentSession,
+    // First update the session
+    let rows_affected = sqlx::query!(
         r#"
-        WITH updated AS (
-            UPDATE agent_sessions
-            SET
-                status = 'idle',
-                user_id = $2,
-                agent_type = $3,
-                model = $4,
-                mode = $5,
-                updated_at = NOW(),
-                last_heartbeat = NOW(),
-                completed_at = NULL,
-                error_message = NULL,
-                current_task = NULL
-            WHERE chat_id = $1
-            RETURNING *
-        )
-        SELECT
-            u.id,
-            u.workspace_id,
-            u.chat_id,
-            u.user_id,
-            u.agent_type as "agent_type: AgentType",
-            u.status as "status: SessionStatus",
-            u.model,
-            u.mode,
-            u.current_task,
-            u.error_message,
-            u.created_at,
-            u.updated_at,
-            u.last_heartbeat,
-            u.completed_at,
-            f.name as "chat_name?"
-        FROM updated u
-        LEFT JOIN files f ON u.chat_id = f.id
+        UPDATE agent_sessions
+        SET
+            status = 'idle',
+            user_id = $2,
+            agent_type = $3,
+            model = $4,
+            mode = $5,
+            updated_at = NOW(),
+            last_heartbeat = NOW(),
+            completed_at = NULL,
+            error_message = NULL,
+            current_task = NULL
+        WHERE chat_id = $1
         "#,
         chat_id,
         user_id,
@@ -921,25 +877,55 @@ pub async fn reset_session_to_idle(
         model,
         mode
     )
-    .fetch_one(conn)
+    .execute(&mut *conn)
     .await
     .map_err(|e| {
-        let error_str = e.to_string().to_lowercase();
-        if error_str.contains("no rows") {
-            tracing::error!(
-                chat_id = %chat_id,
-                "[AgentSessions] Failed to reset session - not found"
-            );
-            Error::NotFound(format!("Session for chat {} not found", chat_id))
-        } else {
-            tracing::error!(
-                chat_id = %chat_id,
-                error = %e,
-                "[AgentSessions] Failed to reset session"
-            );
-            Error::Sqlx(e)
-        }
-    })?;
+        tracing::error!(
+            chat_id = %chat_id,
+            error = %e,
+            "[AgentSessions] Failed to reset session"
+        );
+        Error::Sqlx(e)
+    })?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        tracing::error!(
+            chat_id = %chat_id,
+            "[AgentSessions] Failed to reset session - not found"
+        );
+        return Err(Error::NotFound(format!("Session for chat {} not found", chat_id)));
+    }
+
+    // Then fetch with chat name
+    let session = sqlx::query_as!(
+        AgentSession,
+        r#"
+        SELECT
+            s.id,
+            s.workspace_id,
+            s.chat_id,
+            s.user_id,
+            s.agent_type as "agent_type: AgentType",
+            s.status as "status: SessionStatus",
+            s.model,
+            s.mode,
+            s.current_task,
+            s.error_message,
+            s.created_at,
+            s.updated_at,
+            s.last_heartbeat,
+            s.completed_at,
+            f.name as "chat_name?"
+        FROM agent_sessions s
+        LEFT JOIN files f ON s.chat_id = f.id
+        WHERE s.chat_id = $1
+        "#,
+        chat_id
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)?;
 
     tracing::info!(
         session_id = %session.id,

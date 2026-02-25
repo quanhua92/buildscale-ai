@@ -27,13 +27,13 @@ impl Tool for TouchTool {
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
-        user_id: Uuid,
+        _user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -59,7 +59,7 @@ impl Tool for TouchTool {
                 }));
             }
         }
-        
+
         let file_id = if let Some(file) = existing_file {
             // Update timestamp
             file_queries::touch_file(conn, file.id).await?;
@@ -67,32 +67,26 @@ impl Tool for TouchTool {
         } else {
             // Create empty file
             let filename = path.rsplit('/').next().unwrap_or("untitled");
-            let file_type = crate::models::files::FileType::Document; 
-            
+            let file_type = FileType::Document;
+
             let req = crate::models::requests::CreateFileRequest {
                 workspace_id,
                 parent_id: None,
-                author_id: user_id,
                 name: filename.to_string(),
-                slug: None,
                 path: Some(path.clone()),
-                is_virtual: None,
-                is_remote: None,
-                permission: None,
                 file_type,
-                content: serde_json::json!(""), 
-                app_data: None,
+                content: serde_json::json!(""),
             };
-            
+
             let file_with_content = files::create_file_with_content(conn, storage, req).await?;
             file_with_content.file.id
         };
-        
+
         let result = TouchResult {
             path: path.clone(),
             file_id,
         };
-        
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,

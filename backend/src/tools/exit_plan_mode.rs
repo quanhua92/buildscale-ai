@@ -61,10 +61,7 @@ SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must
             }));
         }
 
-        // 2. Get the latest version of the plan file to verify it has content
-        let _plan_version = file_queries::get_latest_version(conn, plan_file.id).await?;
-
-        // 3. Update chat metadata in database immediately
+        // 2. Update chat metadata in database immediately
         // This ensures subsequent tools in the same stream see the updated mode
         // We need chat_id which is stored in ToolConfig.active_plan_path (hack for now)
         // Actually, we can't get chat_id from ToolConfig. The ChatActor will still

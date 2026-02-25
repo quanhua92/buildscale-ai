@@ -132,9 +132,8 @@ EXAMPLE: {"path":"/file.txt"}"#
             None
         };
 
-        // Get content hash
-        let latest_version = file_queries::get_latest_version(conn, file.id).await?;
-        let hash = latest_version.hash;
+        // Get content hash from file
+        let hash = file.hash.clone().unwrap_or_default();
 
         let result = FileInfoResult {
             path,
