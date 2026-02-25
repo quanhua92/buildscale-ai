@@ -7,6 +7,7 @@ use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::helpers;
+use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, DocumentMetadata};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -146,7 +147,15 @@ async fn perform_insert(
         },
     };
 
-    let mut lines: Vec<&str> = content_text.lines().collect();
+    // For markdown documents, parse frontmatter and work on body content
+    let (metadata, body_content) = if matches!(file.file_type, FileType::Document) && path.ends_with(".md") {
+        let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_text);
+        (meta, body.to_string())
+    } else {
+        (None, content_text.clone())
+    };
+
+    let mut lines: Vec<&str> = body_content.lines().collect();
 
     if insert_line > lines.len() {
         return Err(Error::Validation(ValidationErrors::Single {
@@ -156,8 +165,15 @@ async fn perform_insert(
     }
 
     lines.insert(insert_line, &insert_content);
-    let new_content_text = lines.join("\n");
-    let final_content = serde_json::json!(new_content_text);
+    let new_body = lines.join("\n");
+
+    // Re-add frontmatter for documents
+    let final_content = if let Some(mut meta) = metadata {
+        meta.touch();
+        serde_json::json!(prepend_yaml_frontmatter(&meta, &new_body))
+    } else {
+        serde_json::json!(new_body)
+    };
 
     // Update file
     let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
@@ -261,8 +277,16 @@ async fn perform_replace(
         },
     };
 
+    // For markdown documents, parse frontmatter and work on body content
+    let (metadata, body_content) = if matches!(file.file_type, FileType::Document) && path.ends_with(".md") {
+        let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_text);
+        (meta, body.to_string())
+    } else {
+        (None, content_text.clone())
+    };
+
     // Search and validate
-    let matches: Vec<_> = content_text.match_indices(&old_string).collect();
+    let matches: Vec<_> = body_content.match_indices(&old_string).collect();
     let count = matches.len();
 
     if count == 0 {
@@ -280,8 +304,15 @@ async fn perform_replace(
     }
 
     // Replace
-    let new_content_text = content_text.replacen(&old_string, &new_string, 1);
-    let final_content = serde_json::json!(new_content_text);
+    let new_body = body_content.replacen(&old_string, &new_string, 1);
+
+    // Re-add frontmatter for documents
+    let final_content = if let Some(mut meta) = metadata {
+        meta.touch();
+        serde_json::json!(prepend_yaml_frontmatter(&meta, &new_body))
+    } else {
+        serde_json::json!(new_body)
+    };
 
     // Update file
     let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;

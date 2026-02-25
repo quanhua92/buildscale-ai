@@ -916,6 +916,10 @@ pub struct ReadResult {
     pub hash: String,
     pub synced: bool,       // true = in database, false = filesystem-only
 
+    /// Parsed YAML frontmatter metadata (for documents with frontmatter)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+
     /// Total number of lines in the file (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_lines: Option<usize>,

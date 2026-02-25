@@ -5,6 +5,7 @@ use crate::models::requests::{
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
+use crate::utils::{DocumentMetadata, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -91,7 +92,7 @@ impl Tool for WriteTool {
 
         let result = if let Some(file) = existing_file {
             // Update existing file
-            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content.0, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_update(file.file_type, write_args.content.0)?;
 
             let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
 
@@ -115,7 +116,7 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
-            let final_content = Self::prepare_content_for_type(file_type, write_args.content.0, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_create(file_type, filename, write_args.content.0, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
@@ -142,16 +143,69 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    fn prepare_content_for_type(
-        actual_type: FileType,
+    /// Prepare content for creating a new file (adds frontmatter for markdown documents)
+    fn prepare_content_for_create(
+        file_type: FileType,
+        filename: &str,
         content: Value,
         requested_type_str: Option<&str>,
     ) -> Result<Value> {
-        if matches!(actual_type, FileType::Folder) && requested_type_str != Some("folder") {
+        // Only block folder writes if not explicitly requested
+        if matches!(file_type, FileType::Folder) && requested_type_str != Some("folder") {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "path".to_string(),
                 message: "Cannot write text content to a folder path".to_string(),
             }));
+        }
+
+        // For markdown documents, auto-add frontmatter if not present (Obsidian-style)
+        if matches!(file_type, FileType::Document) && filename.ends_with(".md") {
+            let content_str = match &content {
+                Value::String(s) => s.clone(),
+                _ => serde_json::to_string(&content).unwrap_or_default(),
+            };
+
+            // Check if content already has frontmatter
+            if !content_str.trim_start().starts_with("---\n") {
+                // Auto-generate frontmatter from filename
+                let metadata = DocumentMetadata::from_filename(filename);
+                let content_with_frontmatter = prepend_yaml_frontmatter(&metadata, &content_str);
+                return Ok(serde_json::json!(content_with_frontmatter));
+            }
+        }
+
+        Ok(content)
+    }
+
+    /// Prepare content for updating an existing file (updates modified timestamp for markdown documents)
+    fn prepare_content_for_update(
+        file_type: FileType,
+        content: Value,
+    ) -> Result<Value> {
+        // Only block folder writes
+        if matches!(file_type, FileType::Folder) {
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "path".to_string(),
+                message: "Cannot write text content to a folder path".to_string(),
+            }));
+        }
+
+        // For markdown documents, update modified timestamp if frontmatter exists
+        if matches!(file_type, FileType::Document) {
+            let content_str = match &content {
+                Value::String(s) => s.clone(),
+                _ => serde_json::to_string(&content).unwrap_or_default(),
+            };
+
+            use crate::utils::parse_yaml_frontmatter;
+            let (metadata, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_str);
+
+            if let Some(mut meta) = metadata {
+                // Update modified timestamp
+                meta.touch();
+                let content_with_frontmatter = prepend_yaml_frontmatter(&meta, body);
+                return Ok(serde_json::json!(content_with_frontmatter));
+            }
         }
 
         Ok(content)
