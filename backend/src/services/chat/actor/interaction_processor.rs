@@ -13,10 +13,11 @@ use crate::services::chat::registry::AgentRegistry;
 use crate::services::chat::rig_engine::RigService;
 use crate::services::chat::states::SharedActorState;
 use crate::services::storage::FileStorageService;
+use crate::state::TagIndexMessage;
 use crate::DbPool;
 use futures::StreamExt;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -40,6 +41,8 @@ pub struct ProcessorContext {
     pub default_context_token_limit: usize,
     pub state: Arc<Mutex<SharedActorState>>,
     pub event_tx: broadcast::Sender<SseEvent>,
+    /// Channel to signal tag indexer worker when files are modified
+    pub tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
 }
 
 // ============================================================================
@@ -65,6 +68,7 @@ pub async fn get_or_create_agent(
         user_id,
         session,
         ai_config,
+        ctx.tag_index_tx.clone(),
     ).await?;
 
     // Update session metadata with the actual model being used

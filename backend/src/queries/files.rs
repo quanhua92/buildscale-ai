@@ -581,3 +581,37 @@ pub async fn get_file_versions(conn: &mut DbConn, file_id: Uuid) -> Result<(Opti
     let file = get_file_by_id(conn, file_id).await?;
     Ok((file.hash, file.versions.unwrap_or_default()))
 }
+
+/// Gets files by a list of IDs.
+pub async fn get_files_by_ids(conn: &mut DbConn, file_ids: &[Uuid]) -> Result<Vec<File>> {
+    if file_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let files = sqlx::query_as!(
+        File,
+        r#"
+        SELECT
+            id,
+            workspace_id,
+            parent_id,
+            file_type as "file_type: FileType",
+            name,
+            path,
+            hash,
+            versions,
+            deleted_at,
+            created_at,
+            updated_at
+        FROM files
+        WHERE id = ANY($1)
+        ORDER BY updated_at DESC
+        "#,
+        file_ids
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(Error::Sqlx)?;
+
+    Ok(files)
+}

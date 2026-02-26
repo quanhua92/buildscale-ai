@@ -36,7 +36,7 @@ pub use handlers::{
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
-pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker};
+pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker, tag_indexer_worker};
 
 /// Load configuration from environment variables
 pub fn load_config() -> Result<Config> {
@@ -484,9 +484,12 @@ pub async fn run_api_server(
 
     // Spawn cleanup workers
     let (cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);
-    
+
     // Archive cleanup channel
     let (archive_cleanup_tx, archive_cleanup_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Tag indexer channel
+    let (tag_index_tx, tag_index_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Auth Worker
     let pool_auth = pool.clone();
@@ -504,11 +507,19 @@ pub async fn run_api_server(
         archive_cleanup_worker(pool_storage, shutdown_storage, archive_cleanup_rx, worker_config, storage_config).await;
     });
 
+    // Tag Indexer Worker
+    let pool_tags = pool.clone();
+    let shutdown_tags = cleanup_shutdown_tx.subscribe();
+    let storage_config_tags = config.storage.clone();
+    tokio::spawn(async move {
+        tag_indexer_worker(pool_tags, shutdown_tags, tag_index_rx, storage_config_tags).await;
+    });
+
     // Create user cache with configured TTL
     let user_cache = Cache::new_local(CacheConfig::default());
 
     // Build the application state with cache, user_cache, database pool, and config
-    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone(), archive_cleanup_tx);
+    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone(), archive_cleanup_tx, tag_index_tx);
 
     let api_routes = create_api_router(app_state.clone());
 

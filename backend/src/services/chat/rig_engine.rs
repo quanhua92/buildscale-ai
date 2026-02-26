@@ -12,6 +12,7 @@ use crate::services::chat::context::{
     truncate_tool_output, AttachmentManager, ContextItem,
 };
 use crate::services::storage::FileStorageService;
+use crate::state::TagIndexMessage;
 use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
 use crate::config::AiConfig;
 use crate::DbPool;
@@ -20,6 +21,7 @@ use rig::client::CompletionClient;
 use rig::completion::Message;
 use std::sync::Arc;
 use std::str::FromStr;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Maximum number of tool-calling iterations allowed per user message.
@@ -420,6 +422,7 @@ impl RigService {
         user_id: Uuid,
         session: &ChatSession,
         _ai_config: &AiConfig,
+        tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
     ) -> Result<Agent> {
         // 1. Parse model identifier (supports both "provider:model" and legacy "model" formats)
         let model_id = ModelIdentifier::parse(
@@ -484,6 +487,7 @@ impl RigService {
             plan_mode: session.agent_config.mode == "plan",
             active_plan_path: session.agent_config.plan_file.clone(),
             chat_id: Some(chat_id),
+            tag_index_tx: Some(tag_index_tx.clone()),
         };
 
         // 5. Build agent based on provider type

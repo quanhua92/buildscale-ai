@@ -152,6 +152,7 @@ pub async fn create_chat(
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
         inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+        tag_index_tx: state.tag_index_tx.clone(),
     });
     state.agents.register(chat_file.id, handle.clone()).await;
 
@@ -209,6 +210,7 @@ pub async fn get_chat_events(
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx: event_tx.clone(),
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+            tag_index_tx: state.tag_index_tx.clone(),
         });
         state.agents.register(chat_id, handle).await;
     };
@@ -348,6 +350,7 @@ pub async fn post_chat_message(
             default_context_token_limit: state.config.ai.default_context_token_limit,
             event_tx,
             inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
+            tag_index_tx: state.tag_index_tx.clone(),
         });
         state.agents.register(chat_id, handle.clone()).await;
         handle

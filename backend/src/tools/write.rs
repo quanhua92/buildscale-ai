@@ -5,6 +5,7 @@ use crate::models::requests::{
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
+use crate::state::TagIndexMessage;
 use crate::utils::{DocumentMetadata, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
@@ -90,17 +91,21 @@ impl Tool for WriteTool {
             }
         }
 
-        let result = if let Some(file) = existing_file {
+        let (result, is_markdown_document) = if let Some(file) = existing_file {
             // Update existing file
             let final_content = Self::prepare_content_for_update(file.file_type, write_args.content.0)?;
 
             let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
 
-            WriteResult {
-                path,
-                file_id: file.id,
-                hash: updated_file.hash.unwrap_or_default(),
-            }
+            let is_markdown = matches!(file.file_type, FileType::Document) && path.ends_with(".md");
+            (
+                WriteResult {
+                    path,
+                    file_id: file.id,
+                    hash: updated_file.hash.unwrap_or_default(),
+                },
+                is_markdown,
+            )
         } else {
             // Create new file
             let filename = path.rsplit('/').next().unwrap_or("untitled");
@@ -127,12 +132,28 @@ impl Tool for WriteTool {
                 content: final_content,
             }).await?;
 
-            WriteResult {
-                path,
-                file_id: file_result.file.id,
-                hash: file_result.hash,
-            }
+            let is_markdown = matches!(file_type, FileType::Document) && path.ends_with(".md");
+            (
+                WriteResult {
+                    path,
+                    file_id: file_result.file.id,
+                    hash: file_result.hash,
+                },
+                is_markdown,
+            )
         };
+
+        // Signal tag indexer to update tags for markdown documents
+        if is_markdown_document {
+            if let Some(ref tag_index_tx) = config.tag_index_tx {
+                if let Err(e) = tag_index_tx.send(TagIndexMessage {
+                    workspace_id,
+                    file_id: result.file_id,
+                }) {
+                    tracing::warn!("Failed to signal tag indexer: {}", e);
+                }
+            }
+        }
 
         Ok(ToolResponse {
             success: true,

@@ -507,3 +507,12 @@ pub fn extract_text_recursively(value: &serde_json::Value) -> String {
         _ => String::new(),
     }
 }
+
+/// Gets files by a list of IDs.
+pub async fn get_files_by_ids(conn: &mut DbConn, file_ids: &[Uuid]) -> Result<Vec<File>> {
+    if file_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    file_queries::get_files_by_ids(conn, file_ids).await
+}

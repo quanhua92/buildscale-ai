@@ -88,24 +88,9 @@ pub async fn update_agent_config_in_file(
     };
 
     // 3. Parse existing content to get body using shared utility
-    let body_content = if let Some(_) = parse_yaml_frontmatter::<ChatFrontmatter>(&current_content).0 {
-        // Extract body by re-parsing (the shared utility returns remaining content)
-        let content = current_content.trim_start();
-        if content.starts_with("---\n") {
-            let rest = &content[4..];
-            if let Some(end_idx) = rest.find("\n---\n") {
-                rest[end_idx + 5..].to_string()
-            } else if let Some(end_idx) = rest.find("\n---") {
-                rest[end_idx + 4..].to_string()
-            } else {
-                current_content.clone()
-            }
-        } else {
-            current_content.clone()
-        }
-    } else {
-        current_content.clone()
-    };
+    // The tuple (frontmatter, body) returns the remaining content after frontmatter
+    let (_, body_content) = parse_yaml_frontmatter::<ChatFrontmatter>(&current_content);
+    let body_content = body_content.to_string();
 
     // 4. Create new frontmatter with updated config using shared utility
     let frontmatter = ChatFrontmatter::from_agent_config(new_config);

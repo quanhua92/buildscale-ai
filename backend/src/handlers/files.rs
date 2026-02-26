@@ -237,7 +237,7 @@ pub async fn remove_tag(
 
 /// GET /api/v1/workspaces/:id/files/tags/:tag
 ///
-/// Lists files by tag (uses content parsing).
+/// Lists files by tag (uses tags table for fast lookup).
 pub async fn list_files_by_tag(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
@@ -245,37 +245,29 @@ pub async fn list_files_by_tag(
 ) -> Result<Json<Vec<crate::models::files::File>>> {
     let mut conn = acquire_db_connection(&state, "list_files_by_tag").await?;
 
-    // Get all files and filter by tag in content
-    let all_files = file_services::list_all_active_files(&mut conn, workspace_access.workspace_id)
+    let tag_lower = tag.to_lowercase();
+
+    // Use the tags index for fast lookup
+    let file_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT file_id FROM tags WHERE workspace_id = $1 AND tag = $2",
+        workspace_access.workspace_id,
+        tag_lower
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)
+    .inspect_err(|e| log_handler_error("list_files_by_tag", e))?;
+
+    if file_ids.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    // Fetch files by IDs
+    let files = file_services::get_files_by_ids(&mut conn, &file_ids)
         .await
         .inspect_err(|e| log_handler_error("list_files_by_tag", e))?;
 
-    // Filter files that contain the tag
-    use crate::parsers::extract_tags;
-    let tag_lower = tag.to_lowercase();
-    let mut matching_files = Vec::new();
-
-    for file in all_files {
-        if file.hash.is_some() {
-            // Read file content and check for tag
-            if let Ok(file_with_content) = file_services::get_file_with_content(
-                &mut conn,
-                &state.storage,
-                file.id,
-            ).await {
-                let content_text = match file_with_content.content {
-                    serde_json::Value::String(ref s) => s.clone(),
-                    _ => file_services::extract_text_recursively(&file_with_content.content),
-                };
-                let tags = extract_tags(&content_text);
-                if tags.contains(&tag_lower) {
-                    matching_files.push(file);
-                }
-            }
-        }
-    }
-
-    Ok(Json(matching_files))
+    Ok(Json(files))
 }
 
 // ============================================================================

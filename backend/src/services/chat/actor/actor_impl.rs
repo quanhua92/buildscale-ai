@@ -11,6 +11,7 @@ use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
 use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
 use crate::services::storage::FileStorageService;
+use crate::state::TagIndexMessage;
 use crate::DbPool;
 use crate::error::Result;
 use rig::streaming::StreamingChat;
@@ -56,6 +57,8 @@ struct InteractionContext {
     default_context_token_limit: usize,
     state: Arc<Mutex<SharedActorState>>,
     event_tx: broadcast::Sender<SseEvent>,
+    /// Channel to signal tag indexer worker when files are modified
+    tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
 }
 
 pub struct ChatActor {
@@ -89,6 +92,8 @@ pub struct ChatActor {
     interaction_result_rx: mpsc::Receiver<InteractionResult>,
     /// Handle for the current background interaction task (if any)
     background_task: Option<BackgroundInteractionTask>,
+    /// Channel to signal tag indexer worker when files are modified
+    tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
 }
 
 pub struct ChatActorArgs {
@@ -103,6 +108,8 @@ pub struct ChatActorArgs {
     pub default_context_token_limit: usize,
     pub event_tx: broadcast::Sender<SseEvent>,
     pub inactivity_timeout: std::time::Duration,
+    /// Channel to signal tag indexer worker when files are modified
+    pub tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
 }
 
 impl ChatActor {
@@ -154,6 +161,7 @@ impl ChatActor {
             interaction_result_tx,
             interaction_result_rx,
             background_task: None,
+            tag_index_tx: args.tag_index_tx,
         };
 
         tokio::spawn(async move {
@@ -449,6 +457,7 @@ impl ChatActor {
             default_context_token_limit: self.default_context_token_limit,
             state: self.state.clone(),
             event_tx: self.event_tx.clone(),
+            tag_index_tx: self.tag_index_tx.clone(),
         }
     }
 
@@ -1068,6 +1077,7 @@ async fn process_interaction_standalone(
         default_context_token_limit: ctx.default_context_token_limit,
         state: ctx.state.clone(),
         event_tx: ctx.event_tx.clone(),
+        tag_index_tx: ctx.tag_index_tx.clone(),
     };
 
     let agent = match get_or_create_agent(&processor_ctx, user_id, &session, &ai_config).await {

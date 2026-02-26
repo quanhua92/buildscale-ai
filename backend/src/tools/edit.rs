@@ -6,6 +6,7 @@ use crate::models::requests::{
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
+use crate::state::TagIndexMessage;
 use crate::tools::helpers;
 use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, DocumentMetadata};
 use crate::DbConn;
@@ -54,11 +55,35 @@ async fn perform_edit(
         }));
     }
 
-    if is_insert {
-        return perform_insert(conn, storage, workspace_id, config, path, args).await;
+    let result = if is_insert {
+        perform_insert(conn, storage, workspace_id, &config, path, args).await?
+    } else {
+        perform_replace(conn, storage, workspace_id, &config, path, args).await?
+    };
+
+    // Signal tag indexer for markdown documents
+    if result.is_markdown {
+        if let Some(ref tag_index_tx) = config.tag_index_tx {
+            if let Err(e) = tag_index_tx.send(TagIndexMessage {
+                workspace_id,
+                file_id: result.write_result.file_id,
+            }) {
+                tracing::warn!("Failed to signal tag indexer: {}", e);
+            }
+        }
     }
 
-    perform_replace(conn, storage, workspace_id, config, path, args).await
+    Ok(ToolResponse {
+        success: true,
+        result: serde_json::to_value(result.write_result)?,
+        error: None,
+    })
+}
+
+/// Result from edit operations containing both the write result and markdown flag
+struct EditResult {
+    write_result: WriteResult,
+    is_markdown: bool,
 }
 
 /// Perform Insert operation
@@ -66,10 +91,10 @@ async fn perform_insert(
     conn: &mut DbConn,
     storage: &FileStorageService,
     workspace_id: Uuid,
-    config: ToolConfig,
+    config: &ToolConfig,
     path: String,
     args: EditArgs,
-) -> Result<ToolResponse> {
+) -> Result<EditResult> {
     let insert_line = args.insert_line.unwrap();
     let insert_content = args.insert_content.unwrap();
 
@@ -148,7 +173,8 @@ async fn perform_insert(
     };
 
     // For markdown documents, parse frontmatter and work on body content
-    let (metadata, body_content) = if matches!(file.file_type, FileType::Document) && path.ends_with(".md") {
+    let is_markdown = matches!(file.file_type, FileType::Document) && path.ends_with(".md");
+    let (metadata, body_content) = if is_markdown {
         let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_text);
         (meta, body.to_string())
     } else {
@@ -178,16 +204,13 @@ async fn perform_insert(
     // Update file
     let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
 
-    let result = WriteResult {
-        path,
-        file_id: file.id,
-        hash: updated_file.hash.unwrap_or_default(),
-    };
-
-    Ok(ToolResponse {
-        success: true,
-        result: serde_json::to_value(result)?,
-        error: None,
+    Ok(EditResult {
+        write_result: WriteResult {
+            path,
+            file_id: file.id,
+            hash: updated_file.hash.unwrap_or_default(),
+        },
+        is_markdown,
     })
 }
 
@@ -196,10 +219,10 @@ async fn perform_replace(
     conn: &mut DbConn,
     storage: &FileStorageService,
     workspace_id: Uuid,
-    config: ToolConfig,
+    config: &ToolConfig,
     path: String,
     args: EditArgs,
-) -> Result<ToolResponse> {
+) -> Result<EditResult> {
     let old_string = args.old_string.unwrap();
     let new_string = args.new_string.unwrap();
 
@@ -278,7 +301,8 @@ async fn perform_replace(
     };
 
     // For markdown documents, parse frontmatter and work on body content
-    let (metadata, body_content) = if matches!(file.file_type, FileType::Document) && path.ends_with(".md") {
+    let is_markdown = matches!(file.file_type, FileType::Document) && path.ends_with(".md");
+    let (metadata, body_content) = if is_markdown {
         let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_text);
         (meta, body.to_string())
     } else {
@@ -317,16 +341,13 @@ async fn perform_replace(
     // Update file
     let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
 
-    let result = WriteResult {
-        path,
-        file_id: file.id,
-        hash: updated_file.hash.unwrap_or_default(),
-    };
-
-    Ok(ToolResponse {
-        success: true,
-        result: serde_json::to_value(result)?,
-        error: None,
+    Ok(EditResult {
+        write_result: WriteResult {
+            path,
+            file_id: file.id,
+            hash: updated_file.hash.unwrap_or_default(),
+        },
+        is_markdown,
     })
 }
 
