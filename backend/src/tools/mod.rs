@@ -34,7 +34,7 @@ pub mod web_search;
 
 pub mod helpers;
 
-use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService, state::TagIndexMessage};
+use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService, state::TagIndexMessage, state::LinkIndexMessage};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -61,6 +61,7 @@ pub const PLAN_MODE_ERROR: &str = "System is in Plan Mode. To switch to Build Mo
 ///     active_plan_path: Some("/plans/project-roadmap.plan".to_string()),
 ///     chat_id: None,
 ///     tag_index_tx: None,
+///     link_index_tx: None,
 /// };
 /// ```
 #[derive(Debug, Clone)]
@@ -87,6 +88,11 @@ pub struct ToolConfig {
     ///
     /// Used by write/edit tools to trigger tag reindexing for markdown files.
     pub tag_index_tx: Option<mpsc::UnboundedSender<TagIndexMessage>>,
+
+    /// Channel to signal link indexer worker when files are modified
+    ///
+    /// Used by write/edit tools to trigger link reindexing for markdown files.
+    pub link_index_tx: Option<mpsc::UnboundedSender<LinkIndexMessage>>,
 }
 
 impl Default for ToolConfig {
@@ -96,6 +102,7 @@ impl Default for ToolConfig {
             active_plan_path: None,
             chat_id: None,
             tag_index_tx: None,
+            link_index_tx: None,
         }
     }
 }

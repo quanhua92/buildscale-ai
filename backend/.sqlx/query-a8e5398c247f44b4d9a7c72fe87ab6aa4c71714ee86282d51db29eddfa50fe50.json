@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO links (workspace_id, source_file_id, target_name)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (workspace_id, source_file_id, target_name) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a8e5398c247f44b4d9a7c72fe87ab6aa4c71714ee86282d51db29eddfa50fe50"
+}

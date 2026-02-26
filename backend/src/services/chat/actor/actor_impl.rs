@@ -11,7 +11,7 @@ use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
 use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
 use crate::services::storage::FileStorageService;
-use crate::state::TagIndexMessage;
+use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::DbPool;
 use crate::error::Result;
 use rig::streaming::StreamingChat;
@@ -59,6 +59,8 @@ struct InteractionContext {
     event_tx: broadcast::Sender<SseEvent>,
     /// Channel to signal tag indexer worker when files are modified
     tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to signal link indexer worker when files are modified
+    link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 pub struct ChatActor {
@@ -94,6 +96,8 @@ pub struct ChatActor {
     background_task: Option<BackgroundInteractionTask>,
     /// Channel to signal tag indexer worker when files are modified
     tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to signal link indexer worker when files are modified
+    link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 pub struct ChatActorArgs {
@@ -110,6 +114,8 @@ pub struct ChatActorArgs {
     pub inactivity_timeout: std::time::Duration,
     /// Channel to signal tag indexer worker when files are modified
     pub tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to signal link indexer worker when files are modified
+    pub link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 impl ChatActor {
@@ -162,6 +168,7 @@ impl ChatActor {
             interaction_result_rx,
             background_task: None,
             tag_index_tx: args.tag_index_tx,
+            link_index_tx: args.link_index_tx,
         };
 
         tokio::spawn(async move {
@@ -458,6 +465,7 @@ impl ChatActor {
             state: self.state.clone(),
             event_tx: self.event_tx.clone(),
             tag_index_tx: self.tag_index_tx.clone(),
+            link_index_tx: self.link_index_tx.clone(),
         }
     }
 
@@ -1078,6 +1086,7 @@ async fn process_interaction_standalone(
         state: ctx.state.clone(),
         event_tx: ctx.event_tx.clone(),
         tag_index_tx: ctx.tag_index_tx.clone(),
+        link_index_tx: ctx.link_index_tx.clone(),
     };
 
     let agent = match get_or_create_agent(&processor_ctx, user_id, &session, &ai_config).await {

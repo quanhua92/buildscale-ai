@@ -131,8 +131,11 @@ impl TestApp {
         // Initialize tag indexer channel
         let (tag_index_tx, _tag_index_rx) = tokio::sync::mpsc::unbounded_channel();
 
+        // Initialize link indexer channel
+        let (link_index_tx, _link_index_rx) = tokio::sync::mpsc::unbounded_channel();
+
         // Build application state with cache, user_cache, database pool, and config
-        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service, config.clone(), archive_cleanup_tx, tag_index_tx);
+        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service, config.clone(), archive_cleanup_tx, tag_index_tx, link_index_tx);
 
         // Build API v1 routes using the shared router function
         let api_routes = create_api_router(app_state.clone());

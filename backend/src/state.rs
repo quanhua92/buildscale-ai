@@ -20,6 +20,13 @@ pub struct TagIndexMessage {
     pub file_id: uuid::Uuid,
 }
 
+/// Message sent to the link indexer worker
+#[derive(Debug, Clone)]
+pub struct LinkIndexMessage {
+    pub workspace_id: uuid::Uuid,
+    pub file_id: uuid::Uuid,
+}
+
 /// Application state shared across all HTTP handlers
 ///
 /// This struct contains shared resources that need to be accessed
@@ -44,6 +51,8 @@ pub struct AppState {
     pub archive_cleanup_tx: mpsc::UnboundedSender<ArchiveCleanupMessage>,
     /// Channel to notify tag indexer worker
     pub tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to notify link indexer worker
+    pub link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 impl AppState {
@@ -57,6 +66,7 @@ impl AppState {
     /// * `config` - Application configuration
     /// * `archive_cleanup_tx` - Channel sender for archive cleanup
     /// * `tag_index_tx` - Channel sender for tag indexing
+    /// * `link_index_tx` - Channel sender for link indexing
     pub fn new(
         cache: Cache<String>,
         user_cache: Cache<User>,
@@ -65,6 +75,7 @@ impl AppState {
         config: Config,
         archive_cleanup_tx: mpsc::UnboundedSender<ArchiveCleanupMessage>,
         tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+        link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
     ) -> Self {
         let storage = Arc::new(FileStorageService::new(&config.storage.base_path));
         // Note: Storage init is async, so we might want to call it from main before creating AppState,
@@ -81,6 +92,7 @@ impl AppState {
             config,
             archive_cleanup_tx,
             tag_index_tx,
+            link_index_tx,
         }
     }
 }

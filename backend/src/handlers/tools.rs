@@ -91,6 +91,7 @@ pub async fn execute_tool(
         active_plan_path: None, // Public API has no active plan context
         chat_id: None, // Public API doesn't have chat context
         tag_index_tx: Some(state.tag_index_tx.clone()),
+        link_index_tx: Some(state.link_index_tx.clone()),
     };
 
     let response = executor

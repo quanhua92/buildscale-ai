@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT f.name\n        FROM files f\n        INNER JOIN links l ON l.source_file_id = f.id\n        WHERE l.workspace_id = $1\n          AND l.target_name = $2\n          AND f.deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fbad12888f4644293fae4a8b6eb141872092e04c3e3f6a7cf8db2772b8316494"
+}

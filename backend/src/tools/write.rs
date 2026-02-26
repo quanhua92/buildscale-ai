@@ -5,7 +5,7 @@ use crate::models::requests::{
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
-use crate::state::TagIndexMessage;
+use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::utils::{DocumentMetadata, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
@@ -151,6 +151,15 @@ impl Tool for WriteTool {
                     file_id: result.file_id,
                 }) {
                     tracing::warn!("Failed to signal tag indexer: {}", e);
+                }
+            }
+            // Signal link indexer to update links for markdown documents
+            if let Some(ref link_index_tx) = config.link_index_tx {
+                if let Err(e) = link_index_tx.send(LinkIndexMessage {
+                    workspace_id,
+                    file_id: result.file_id,
+                }) {
+                    tracing::warn!("Failed to signal link indexer: {}", e);
                 }
             }
         }

@@ -6,7 +6,7 @@ use crate::models::requests::{
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
-use crate::state::TagIndexMessage;
+use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::tools::helpers;
 use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, DocumentMetadata};
 use crate::DbConn;
@@ -69,6 +69,15 @@ async fn perform_edit(
                 file_id: result.write_result.file_id,
             }) {
                 tracing::warn!("Failed to signal tag indexer: {}", e);
+            }
+        }
+        // Signal link indexer for markdown documents
+        if let Some(ref link_index_tx) = config.link_index_tx {
+            if let Err(e) = link_index_tx.send(LinkIndexMessage {
+                workspace_id,
+                file_id: result.write_result.file_id,
+            }) {
+                tracing::warn!("Failed to signal link indexer: {}", e);
             }
         }
     }

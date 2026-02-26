@@ -118,8 +118,9 @@ macro_rules! define_rig_tool {
 
                     // Read current mode from database to get fresh ToolConfig
                     // This ensures mode changes mid-stream are respected
-                    // Preserve tag_index_tx from initial config
+                    // Preserve tag_index_tx and link_index_tx from initial config
                     let tag_index_tx = initial_tool_config.tag_index_tx.clone();
+                    let link_index_tx = initial_tool_config.link_index_tx.clone();
                     let tool_config = if let Ok(agent_config) = crate::services::chat::sync::get_agent_config_from_file(&mut conn, &storage, workspace_id, chat_id).await {
                         tracing::debug!(
                             tool = $name,
@@ -134,6 +135,7 @@ macro_rules! define_rig_tool {
                             active_plan_path: agent_config.plan_file,
                             chat_id: Some(chat_id),
                             tag_index_tx,
+                            link_index_tx,
                         }
                     } else {
                         tracing::warn!(

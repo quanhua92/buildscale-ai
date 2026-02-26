@@ -327,49 +327,42 @@ pub async fn get_file_network(
     let tags = extract_tags(&content_text);
     let links = extract_links(&content_text);
 
-    // Find backlinks (files that link to this file)
-    let all_files = file_services::list_all_active_files(&mut conn, workspace_access.workspace_id)
-        .await
-        .inspect_err(|e| log_handler_error("get_file_network", e))?;
+    // Find backlinks using links table (fast!)
+    // Query files that have links pointing to this file's name
+    let file_name = file_with_content.file.name.to_lowercase();
 
-    let file_name = file_with_content.file.name.clone();
-    let mut backlinks = Vec::new();
-
-    for other_file in all_files {
-        if other_file.id == file_id {
-            continue;
-        }
-        if let Ok(other_content) = file_services::get_file_with_content(
-            &mut conn,
-            &state.storage,
-            other_file.id,
-        ).await {
-            let other_text = match other_content.content {
-                serde_json::Value::String(ref s) => s.clone(),
-                _ => file_services::extract_text_recursively(&other_content.content),
-            };
-            let other_links = extract_links(&other_text);
-            if other_links.iter().any(|l| l.to_lowercase() == file_name.to_lowercase()) {
-                backlinks.push(other_file);
-            }
-        }
-    }
+    let backlink_names: Vec<String> = sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT f.name
+        FROM files f
+        INNER JOIN links l ON l.source_file_id = f.id
+        WHERE l.workspace_id = $1
+          AND l.target_name = $2
+          AND f.deleted_at IS NULL
+        "#,
+        workspace_access.workspace_id,
+        file_name
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Error::Sqlx)
+    .inspect_err(|e| log_handler_error("get_file_network", e))?;
 
     Ok(Json(serde_json::json!({
         "tags": tags,
         "outbound_links": links,
-        "backlinks": backlinks.iter().map(|f| &f.name).collect::<Vec<_>>(),
+        "backlinks": backlink_names,
     })))
 }
 
 // ============================================================================
-// SEARCH HANDLER (deprecated - no semantic search)
+// SEARCH HANDLER (text-based search)
 // ============================================================================
 
 /// POST /api/v1/workspaces/:id/search
 ///
 /// Performs text search across all files in the workspace.
-pub async fn semantic_search(
+pub async fn text_search(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
     Json(request): Json<serde_json::Value>,
