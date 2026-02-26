@@ -1,10 +1,190 @@
-//! Integration tests for links table and backlink lookups
+//! Integration tests for links table, tags table, and backlink lookups
 
 use serde_json::json;
 use std::time::Duration;
 
 mod common;
 use common::{TestApp, register_and_login, create_workspace};
+
+// ============================================================================
+// TAG TESTS
+// ============================================================================
+
+/// Test that tags are indexed when a file with hashtags is created
+#[tokio::test]
+async fn test_tags_via_tags_table() {
+    let app = TestApp::new().await;
+
+    // 1. Create workspace and authenticate
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Tag Test Workspace").await;
+
+    // 2. Create a file with hashtags
+    let file_response = app.client
+        .post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({
+            "name": "tagged-note.md",
+            "path": "/tagged-note.md",
+            "file_type": "document",
+            "content": "# Tagged Note\n\nThis note has tags: #work #project #important"
+        }))
+        .send()
+        .await
+        .expect("Failed to create file");
+    assert!(file_response.status().is_success());
+    let file: serde_json::Value = file_response.json().await.unwrap();
+    let file_id = file["file"]["id"].as_str().unwrap();
+    println!("File created: id={}, name={}", file_id, file["file"]["name"]);
+
+    // 3. Wait for tag indexer to process (100ms batch interval + buffer)
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // 4. Check the tags table directly
+    let tags: Vec<(String, String)> = sqlx::query_as(
+        "SELECT f.name, t.tag FROM tags t JOIN files f ON f.id = t.file_id WHERE t.workspace_id = $1 ORDER BY t.tag"
+    )
+    .bind(uuid::Uuid::parse_str(&workspace_id).unwrap())
+    .fetch_all(&app.pool)
+    .await
+    .expect("Failed to query tags");
+    println!("Tags in database: {:?}", tags);
+
+    // 5. Verify tags were indexed
+    let tag_names: Vec<&str> = tags.iter().map(|(_, t)| t.as_str()).collect();
+    assert!(tag_names.contains(&"work"), "Should have #work tag");
+    assert!(tag_names.contains(&"project"), "Should have #project tag");
+    assert!(tag_names.contains(&"important"), "Should have #important tag");
+    assert_eq!(tags.len(), 3, "Should have exactly 3 tags");
+}
+
+/// Test that tags update when file content changes
+#[tokio::test]
+async fn test_tags_update_on_edit() {
+    let app = TestApp::new().await;
+
+    // 1. Create workspace and authenticate
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Tag Edit Test Workspace").await;
+
+    // 2. Create file with initial tags
+    let file_response = app.client
+        .post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({
+            "name": "editable-note.md",
+            "path": "/editable-note.md",
+            "file_type": "document",
+            "content": "# Note\n\nTags: #old #tags"
+        }))
+        .send()
+        .await
+        .expect("Failed to create file");
+    assert!(file_response.status().is_success());
+
+    // 3. Wait for initial indexing
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // 4. Verify initial tags
+    let tags1: Vec<String> = sqlx::query_scalar(
+        "SELECT t.tag FROM tags t JOIN files f ON f.id = t.file_id WHERE f.name = 'editable-note.md' AND t.workspace_id = $1 ORDER BY t.tag"
+    )
+    .bind(uuid::Uuid::parse_str(&workspace_id).unwrap())
+    .fetch_all(&app.pool)
+    .await
+    .expect("Failed to query tags");
+    println!("Initial tags: {:?}", tags1);
+    assert!(tags1.contains(&"old".to_string()), "Should have #old tag initially");
+    assert!(tags1.contains(&"tags".to_string()), "Should have #tags tag initially");
+
+    // 5. Edit file to change tags
+    let _edit_response = app.client
+        .post(&app.url(&format!("/api/v1/workspaces/{}/tools", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({
+            "tool": "edit",
+            "args": {
+                "path": "/editable-note.md",
+                "old_string": "Tags: #old #tags",
+                "new_string": "Tags: #new #updated #tags"
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to edit file");
+
+    // 6. Wait for reindexing
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // 7. Verify tags are updated
+    let tags2: Vec<String> = sqlx::query_scalar(
+        "SELECT t.tag FROM tags t JOIN files f ON f.id = t.file_id WHERE f.name = 'editable-note.md' AND t.workspace_id = $1 ORDER BY t.tag"
+    )
+    .bind(uuid::Uuid::parse_str(&workspace_id).unwrap())
+    .fetch_all(&app.pool)
+    .await
+    .expect("Failed to query tags");
+    println!("Updated tags: {:?}", tags2);
+
+    assert!(!tags2.contains(&"old".to_string()), "#old should be removed");
+    assert!(tags2.contains(&"new".to_string()), "Should have #new tag");
+    assert!(tags2.contains(&"updated".to_string()), "Should have #updated tag");
+    assert!(tags2.contains(&"tags".to_string()), "Should still have #tags tag");
+}
+
+/// Test that tags appear in file network response
+#[tokio::test]
+async fn test_tags_in_file_network() {
+    let app = TestApp::new().await;
+
+    // 1. Create workspace and authenticate
+    let token = register_and_login(&app).await;
+    let workspace_id = create_workspace(&app, &token, "Network Tag Test Workspace").await;
+
+    // 2. Create file with tags
+    let file_response = app.client
+        .post(&app.url(&format!("/api/v1/workspaces/{}/files", workspace_id)))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&json!({
+            "name": "networked-note.md",
+            "path": "/networked-note.md",
+            "file_type": "document",
+            "content": "# Networked Note\n\n#testing #network"
+        }))
+        .send()
+        .await
+        .expect("Failed to create file");
+    let file: serde_json::Value = file_response.json().await.unwrap();
+    let file_id = file["file"]["id"].as_str().unwrap();
+
+    // 3. Wait for indexing
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // 4. Get file network
+    let network_response = app.client
+        .get(&app.url(&format!(
+            "/api/v1/workspaces/{}/files/{}/network",
+            workspace_id, file_id
+        )))
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .expect("Failed to get file network");
+
+    assert!(network_response.status().is_success());
+    let network: serde_json::Value = network_response.json().await.unwrap();
+    println!("Network response: {:?}", network);
+
+    // 5. Verify tags in response
+    let tags = network["tags"].as_array().expect("tags should be array");
+    let tag_strs: Vec<&str> = tags.iter().filter_map(|t| t.as_str()).collect();
+    assert!(tag_strs.contains(&"testing"), "Should have 'testing' tag");
+    assert!(tag_strs.contains(&"network"), "Should have 'network' tag");
+}
+
+// ============================================================================
+// LINK TESTS
+// ============================================================================
 
 /// Test that backlinks are found via links table (not file scanning)
 #[tokio::test]
