@@ -13,12 +13,14 @@ use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
+    models::files::FileType,
     models::requests::{
         CreateFileHttp, CreateFileRequest, CreateVersionHttp,
         FileWithContent, UpdateFileHttp,
     },
+    queries::files as file_queries,
     services::files as file_services,
-    state::AppState,
+    state::{AppState, TagIndexMessage, LinkIndexMessage},
 };
 
 // ============================================================================
@@ -49,7 +51,7 @@ pub async fn create_file(
         CreateFileRequest {
             workspace_id: workspace_access.workspace_id,
             parent_id: request.parent_id,
-            name: request.name,
+            name: request.name.clone(),
             path: request.path,
             file_type: request.file_type,
             content: request.content,
@@ -57,6 +59,20 @@ pub async fn create_file(
     )
     .await
     .inspect_err(|e| log_handler_error("create_file", e))?;
+
+    // Signal indexers for markdown documents
+    let is_markdown = request.file_type == FileType::Document &&
+        request.name.ends_with(".md");
+    if is_markdown {
+        let _ = state.tag_index_tx.send(TagIndexMessage {
+            workspace_id: workspace_access.workspace_id,
+            file_id: result.file.id,
+        });
+        let _ = state.link_index_tx.send(LinkIndexMessage {
+            workspace_id: workspace_access.workspace_id,
+            file_id: result.file.id,
+        });
+    }
 
     Ok(Json(result))
 }
@@ -329,7 +345,10 @@ pub async fn get_file_network(
 
     // Find backlinks using links table (fast!)
     // Query files that have links pointing to this file's name
+    // Note: Obsidian-style matching - [[file-b]] matches "file-b.md"
     let file_name = file_with_content.file.name.to_lowercase();
+    // Strip .md extension for comparison
+    let file_name_without_ext = file_name.strip_suffix(".md").unwrap_or(&file_name);
 
     let backlink_names: Vec<String> = sqlx::query_scalar!(
         r#"
@@ -341,7 +360,7 @@ pub async fn get_file_network(
           AND f.deleted_at IS NULL
         "#,
         workspace_access.workspace_id,
-        file_name
+        file_name_without_ext
     )
     .fetch_all(&mut *conn)
     .await
@@ -436,12 +455,17 @@ pub async fn text_search(
 /// Creates a new version for an existing file (updates content).
 pub async fn create_version(
     State(state): State<AppState>,
-    Extension(_workspace_access): Extension<WorkspaceAccess>,
+    Extension(workspace_access): Extension<WorkspaceAccess>,
     Extension(_auth_user): Extension<AuthenticatedUser>,
     Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<CreateVersionHttp>,
 ) -> Result<Json<FileWithContent>> {
     let mut conn = acquire_db_connection(&state, "create_version").await?;
+
+    // Get file to check type
+    let existing_file = file_queries::get_file_by_id(&mut conn, file_id)
+        .await
+        .inspect_err(|e| log_handler_error("create_version", e))?;
 
     // Update file content (this creates a new version in the simplified system)
     let updated_file = file_services::update_file_content(
@@ -452,6 +476,20 @@ pub async fn create_version(
     )
     .await
     .inspect_err(|e| log_handler_error("create_version", e))?;
+
+    // Signal indexers for markdown documents
+    let is_markdown = matches!(existing_file.file_type, FileType::Document) &&
+        existing_file.name.ends_with(".md");
+    if is_markdown {
+        let _ = state.tag_index_tx.send(TagIndexMessage {
+            workspace_id: workspace_access.workspace_id,
+            file_id,
+        });
+        let _ = state.link_index_tx.send(LinkIndexMessage {
+            workspace_id: workspace_access.workspace_id,
+            file_id,
+        });
+    }
 
     Ok(Json(FileWithContent {
         hash: updated_file.hash.clone().unwrap_or_default(),
