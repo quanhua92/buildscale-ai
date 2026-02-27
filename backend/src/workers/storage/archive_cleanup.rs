@@ -1,8 +1,8 @@
 use crate::fs::storage::FileStorageService;
 use crate::state::ArchiveCleanupMessage;
 use std::time::Duration;
-use tokio::time::interval;
 use tokio::sync::mpsc;
+use tokio::time::interval;
 use tracing::{info, warn};
 
 /// Background worker that handles immediate archive blob cleanup

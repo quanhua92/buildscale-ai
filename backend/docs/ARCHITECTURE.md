@@ -143,7 +143,14 @@ src/
 ├── cache/           # Caching layer
 ├── utils/           # Utility functions
 ├── parsers/         # File format parsers
-└── workers/         # Background tasks
+└── workers/         # Background workers (layered architecture)
+    ├── mod.rs       # Module root, re-exports
+    ├── auth/        # Authentication workers
+    │   ├── mod.rs
+    │   └── token_cleanup.rs
+    └── storage/     # Storage workers
+        ├── mod.rs
+        └── archive_cleanup.rs
 ```
 
 ## Layered Architecture Pattern

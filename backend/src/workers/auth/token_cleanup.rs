@@ -2,7 +2,7 @@ use crate::queries::sessions;
 use crate::Config;
 use std::time::Duration;
 use tokio::time::interval;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Background worker that periodically cleans up expired revoked tokens
 ///
