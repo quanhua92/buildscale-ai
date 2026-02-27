@@ -375,12 +375,12 @@ pub async fn get_file_network(
 }
 
 // ============================================================================
-// SEARCH HANDLER (text-based search)
+// SEARCH HANDLER (text-based search using ripgrep)
 // ============================================================================
 
 /// POST /api/v1/workspaces/:id/search
 ///
-/// Performs text search across all files in the workspace.
+/// Performs text search across all files in the workspace using ripgrep.
 pub async fn text_search(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
@@ -398,31 +398,95 @@ pub async fn text_search(
         })));
     }
 
-    let mut conn = acquire_db_connection(&state, "semantic_search").await?;
+    // Use ripgrep for fast search across the workspace
+    let search_path = state.storage.get_workspace_path(workspace_access.workspace_id);
 
-    // Get all files and search in content
-    let all_files = file_services::list_all_active_files(&mut conn, workspace_access.workspace_id)
-        .await
-        .inspect_err(|e| log_handler_error("semantic_search", e))?;
+    // Check if search directory exists
+    if !search_path.exists() {
+        return Ok(Json(serde_json::json!({
+            "results": [],
+            "query": query,
+            "type": "text_search"
+        })));
+    }
 
-    let query_lower = query.to_lowercase();
+    // Build ripgrep command for case-insensitive search
+    let output = tokio::process::Command::new("rg")
+        .arg("--json")                    // JSON output for easy parsing
+        .arg("-i")                        // Case insensitive
+        .arg("--max-count=1")             // One match per file is enough
+        .arg("--no-heading")              // Don't group by file
+        .arg("--")
+        .arg(query)
+        .arg(&search_path)
+        .output()
+        .await;
+
+    let stdout = match output {
+        Ok(o) => {
+            // Exit code 1 means no matches (not an error)
+            if !o.status.success() && o.status.code() != Some(1) {
+                tracing::warn!("ripgrep search failed: {}", String::from_utf8_lossy(&o.stderr));
+                return Ok(Json(serde_json::json!({
+                    "results": [],
+                    "query": query,
+                    "type": "text_search"
+                })));
+            }
+            String::from_utf8_lossy(&o.stdout).to_string()
+        }
+        Err(e) => {
+            tracing::warn!("Failed to run ripgrep: {}, falling back to empty results", e);
+            return Ok(Json(serde_json::json!({
+                "results": [],
+                "query": query,
+                "type": "text_search"
+            })));
+        }
+    };
+
+    // Parse ripgrep JSON output and collect file paths
+    let mut file_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+            if json["type"] == "match" {
+                if let Some(path) = json["data"]["path"]["text"].as_str() {
+                    // Convert absolute path to relative path
+                    let relative = path.strip_prefix(&search_path.to_string_lossy().to_string())
+                        .unwrap_or(path)
+                        .trim_start_matches('/');
+                    file_paths.insert(relative.to_string());
+                }
+            }
+        }
+    }
+
+    // Fetch file metadata from database
+    let mut conn = acquire_db_connection(&state, "text_search").await?;
     let mut results = Vec::new();
 
-    for file in all_files {
-        if let Ok(file_with_content) = file_services::get_file_with_content(
+    for path in file_paths {
+        // Get file by path
+        if let Ok(Some(file)) = file_queries::get_file_by_path(
             &mut conn,
-            &state.storage,
-            file.id,
+            workspace_access.workspace_id,
+            &format!("/{}", path),
         ).await {
-            let content_text = match file_with_content.content {
-                serde_json::Value::String(ref s) => s.clone(),
-                _ => file_services::extract_text_recursively(&file_with_content.content),
-            };
+            // Get file content for preview
+            if let Ok(file_with_content) = file_services::get_file_with_content(
+                &mut conn,
+                &state.storage,
+                file.id,
+            ).await {
+                let content_text = match file_with_content.content {
+                    serde_json::Value::String(ref s) => s.clone(),
+                    _ => file_services::extract_text_recursively(&file_with_content.content),
+                };
 
-            if content_text.to_lowercase().contains(&query_lower) {
                 // Find context around match
-                let idx = content_text.to_lowercase().find(&query_lower);
-                let preview = if let Some(pos) = idx {
+                let query_lower = query.to_lowercase();
+                let content_lower = content_text.to_lowercase();
+                let preview = if let Some(pos) = content_lower.find(&query_lower) {
                     let start = pos.saturating_sub(50);
                     let end = (pos + query.len() + 50).min(content_text.len());
                     format!("...{}...", &content_text[start..end])
