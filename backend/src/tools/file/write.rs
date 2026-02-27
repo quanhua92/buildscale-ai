@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::str::FromStr;
 use uuid::Uuid;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Write file contents tool
 ///
@@ -59,7 +59,7 @@ impl Tool for WriteTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let write_args: WriteArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&write_args.path);
+        let path = crate::tools::normalize_path(&write_args.path);
 
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
 
@@ -86,7 +86,7 @@ impl Tool for WriteTool {
             if !is_plan_file {
                 return Err(Error::Validation(ValidationErrors::Single {
                     field: "path".to_string(),
-                    message: super::PLAN_MODE_ERROR.to_string(),
+                    message: crate::tools::PLAN_MODE_ERROR.to_string(),
                 }));
             }
         }

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::process::Command as StdCommand;
 use tokio::process::Command as TokioCommand;
 use std::path::Path;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Find tool for searching files by metadata using Unix find command
 ///
@@ -90,7 +90,7 @@ EXAMPLES: {"name":"*.txt"} or {"file_type":"folder"} or {"min_size":1048576}"#
 
         // Normalize path pattern if provided
         let base_path = if let Some(ref path_pattern) = args.path {
-            super::normalize_path(path_pattern)
+            crate::tools::normalize_path(path_pattern)
         } else {
             "/".to_string()
         };

@@ -2,7 +2,7 @@ use crate::{DbConn, error::{Error, Result, ValidationErrors}, models::files::Fil
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Update file timestamp or create empty file
 pub struct TouchTool;
@@ -38,7 +38,7 @@ impl Tool for TouchTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let touch_args: TouchArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&touch_args.path);
+        let path = crate::tools::normalize_path(&touch_args.path);
 
         // Check if file exists
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
@@ -55,7 +55,7 @@ impl Tool for TouchTool {
             if !is_plan_file {
                 return Err(Error::Validation(ValidationErrors::Single {
                     field: "path".to_string(),
-                    message: super::PLAN_MODE_ERROR.to_string(),
+                    message: crate::tools::PLAN_MODE_ERROR.to_string(),
                 }));
             }
         }

@@ -8,7 +8,7 @@ use std::process::Command as StdCommand;
 use tokio::process::Command as TokioCommand;
 use std::path::Path;
 use std::collections::HashMap;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// State for tracking context lines across ripgrep JSON events
 struct ContextTracker {

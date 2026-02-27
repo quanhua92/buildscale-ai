@@ -8,7 +8,7 @@ use crate::utils::{parse_yaml_frontmatter, DocumentMetadata};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Default maximum number of lines to read from a file.
 /// This balances token efficiency with coverage - most files are under 500 lines.
@@ -115,7 +115,7 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
         args: Value,
     ) -> Result<ToolResponse> {
         let read_args: ReadArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&read_args.path);
+        let path = crate::tools::normalize_path(&read_args.path);
 
         // Apply defaults
         // Note: limit = 0 means "unlimited" (read all lines)

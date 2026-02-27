@@ -130,7 +130,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
             message: e,
         }))?;
 
-        let path = super::normalize_path(&path);
+        let path = crate::tools::normalize_path(&path);
 
         // Check if file exists for update tracking
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;

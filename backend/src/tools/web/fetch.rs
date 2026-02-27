@@ -4,7 +4,7 @@ use crate::services::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 use std::time::Instant;
 use futures::StreamExt;
 use dom_smoothie::{Readability, Config as ReadabilityConfig};

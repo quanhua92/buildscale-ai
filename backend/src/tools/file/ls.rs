@@ -5,7 +5,7 @@ use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// List directory contents tool
 ///
@@ -66,7 +66,7 @@ impl Tool for LsTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let ls_args: LsArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&ls_args.path.unwrap_or_else(|| "/".to_string()));
+        let path = crate::tools::normalize_path(&ls_args.path.unwrap_or_else(|| "/".to_string()));
         let recursive = ls_args.recursive.unwrap_or(false);
         let limit = ls_args.limit.unwrap_or(50);
 

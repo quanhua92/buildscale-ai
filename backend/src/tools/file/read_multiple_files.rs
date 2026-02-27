@@ -4,7 +4,7 @@ use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Default maximum number of lines to read from each file.
 const DEFAULT_READ_LIMIT: usize = 500;
@@ -71,7 +71,7 @@ impl Tool for ReadMultipleFilesTool {
 
         // Normalize all paths
         let paths: Vec<String> = args.paths.into_iter()
-            .map(|p| super::normalize_path(&p))
+            .map(|p| crate::tools::normalize_path(&p))
             .collect();
 
         // Read all files (sequentially due to DB connection constraints)

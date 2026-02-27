@@ -1,31 +1,31 @@
-//! Memory delete tool - soft deletes memory files by scope, category, and key.
+//! Memory get tool - retrieves memory files by scope, category, and key.
 //!
-//! Supports user-scoped (private) and global (shared) memory deletion.
+//! Supports user-scoped (private) and global (shared) memory retrieval.
 
 use crate::error::{Error, Result};
-use crate::models::requests::{ToolResponse, MemoryDeleteArgs, MemoryDeleteResult};
+use crate::models::requests::{ToolResponse, MemoryGetArgs, MemoryGetResult};
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{generate_memory_path, MemoryScope};
+use crate::utils::{generate_memory_path, parse_yaml_frontmatter, MemoryMetadata, MemoryScope};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
 
-pub struct MemoryDeleteTool;
+pub struct MemoryGetTool;
 
 #[async_trait]
-impl Tool for MemoryDeleteTool {
+impl Tool for MemoryGetTool {
     fn name(&self) -> &'static str {
-        "memory_delete"
+        "memory_get"
     }
 
     fn description(&self) -> &'static str {
-        r#"Deletes a stored memory by scope, category, and key.
+        r#"Retrieves a stored memory by scope, category, and key.
 
-Performs a soft delete - the memory can be recovered from the deleted files view.
+Returns the memory content with metadata (title, tags, timestamps).
 
 Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
     }
@@ -62,7 +62,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
         _config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
-        let memory_args: MemoryDeleteArgs = serde_json::from_value(args)?;
+        let memory_args: MemoryGetArgs = serde_json::from_value(args)?;
 
         // Generate path based on scope
         let user_id_for_path = if matches!(memory_args.scope, MemoryScope::User) {
@@ -81,7 +81,7 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
             message: e,
         }))?;
 
-        let path = super::normalize_path(&path);
+        let path = crate::tools::normalize_path(&path);
 
         // Get file from database
         let file = file_queries::get_file_by_path(conn, workspace_id, &path).await?
@@ -98,16 +98,33 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style"}"#
             }
         }
 
-        // Perform soft delete
-        let file_id = file.id;
-        files::soft_delete_file(conn, storage, file_id).await?;
+        // Get file content
+        let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
 
-        let result = MemoryDeleteResult {
-            path,
-            file_id,
-            scope: memory_args.scope,
-            category: memory_args.category,
+        // Extract content as string
+        let content_text = match &file_with_content.content {
+            Value::String(s) => s.clone(),
+            other => {
+                // Try to extract text from JSON
+                if let Some(s) = other.as_str() {
+                    s.to_string()
+                } else if let Some(text) = other.get("text").and_then(|t| t.as_str()) {
+                    text.to_string()
+                } else {
+                    other.to_string()
+                }
+            }
+        };
+
+        // Parse frontmatter
+        let (metadata, remaining_content) = parse_yaml_frontmatter::<MemoryMetadata>(&content_text);
+
+        let result = MemoryGetResult {
+            path: path.clone(),
             key: memory_args.key,
+            metadata,
+            content: remaining_content.to_string(),
+            hash: file_with_content.hash,
         };
 
         Ok(ToolResponse {

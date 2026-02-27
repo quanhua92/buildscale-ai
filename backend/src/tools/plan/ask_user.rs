@@ -3,7 +3,7 @@ use crate::services::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Ask user tool for human-in-the-loop interactions
 ///

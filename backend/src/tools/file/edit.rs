@@ -13,7 +13,7 @@ use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Helper to get file content with disk fallback
 async fn get_file_content_for_edit(
@@ -34,7 +34,7 @@ async fn perform_edit(
     config: ToolConfig,
     args: EditArgs,
 ) -> Result<ToolResponse> {
-    let path = super::normalize_path(&args.path);
+    let path = crate::tools::normalize_path(&args.path);
 
     // Determine operation type
     let is_replace = args.old_string.is_some() && args.new_string.is_some();
@@ -136,7 +136,7 @@ async fn perform_insert(
     if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "path".to_string(),
-            message: super::PLAN_MODE_ERROR.to_string(),
+            message: crate::tools::PLAN_MODE_ERROR.to_string(),
         }));
     }
 
@@ -264,7 +264,7 @@ async fn perform_replace(
     if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "path".to_string(),
-            message: super::PLAN_MODE_ERROR.to_string(),
+            message: crate::tools::PLAN_MODE_ERROR.to_string(),
         }));
     }
 

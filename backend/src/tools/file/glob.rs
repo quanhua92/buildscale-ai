@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::process::Command as StdCommand;
 use tokio::process::Command as TokioCommand;
 use std::path::Path;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Glob tool for pattern-based file search using ripgrep
 ///
@@ -101,7 +101,7 @@ PARAMETERS: pattern (required), path (default '/')"#
         }
 
         // Normalize base path for ripgrep
-        let base_path = super::normalize_path(&glob_args.path.unwrap_or_else(|| "/".to_string()));
+        let base_path = crate::tools::normalize_path(&glob_args.path.unwrap_or_else(|| "/".to_string()));
 
         // Build ripgrep command for file discovery
         let mut cmd = build_glob_command(normalized_pattern, &base_path, &workspace_path)?;

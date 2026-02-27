@@ -8,7 +8,7 @@ mod tests {
     /// Test that ls tool description is compact and includes key functionality
     #[test]
     fn test_ls_tool_description_includes_examples() {
-        use buildscale::tools::ls::LsTool;
+        use buildscale::tools::file::LsTool;
         use buildscale::tools::Tool;
 
         let tool = LsTool;
@@ -25,7 +25,7 @@ mod tests {
     /// Test that ls tool schema has explicit boolean type hints
     #[test]
     fn test_ls_tool_schema_has_boolean_hints() {
-        use buildscale::tools::ls::LsTool;
+        use buildscale::tools::file::LsTool;
         use buildscale::tools::Tool;
 
         let tool = LsTool;
@@ -56,7 +56,7 @@ mod tests {
     /// Test that grep tool schema has explicit boolean type hints
     #[test]
     fn test_grep_tool_schema_has_boolean_hints() {
-        use buildscale::tools::grep::GrepTool;
+        use buildscale::tools::file::GrepTool;
         use buildscale::tools::Tool;
 
         let tool = GrepTool;
@@ -87,7 +87,7 @@ mod tests {
     /// Test that write tool schema has explicit boolean type hints
     #[test]
     fn test_write_tool_schema_has_boolean_hints() {
-        use buildscale::tools::write::WriteTool;
+        use buildscale::tools::file::WriteTool;
         use buildscale::tools::Tool;
 
         let tool = WriteTool;

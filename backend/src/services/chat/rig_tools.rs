@@ -36,7 +36,7 @@ use uuid::Uuid;
 /// ```text
 /// define_rig_tool!(
 ///     RigLsTool,
-///     tools::ls::LsTool,
+///     tools::file::LsTool,
 ///     LsArgs,
 ///     "ls"
 /// );
@@ -198,63 +198,63 @@ macro_rules! define_rig_tool {
 // Generate all Rig tool wrappers using the macro
 define_rig_tool!(
     RigLsTool,
-    tools::ls::LsTool,
+    tools::file::LsTool,
     LsArgs,
     "ls"
 );
 
 define_rig_tool!(
     RigReadTool,
-    tools::read::ReadTool,
+    tools::file::ReadTool,
     ReadArgs,
     "read"
 );
 
 define_rig_tool!(
     RigWriteTool,
-    tools::write::WriteTool,
+    tools::file::WriteTool,
     WriteArgs,
     "write"
 );
 
 define_rig_tool!(
     RigRmTool,
-    tools::rm::RmTool,
+    tools::file::RmTool,
     RmArgs,
     "rm"
 );
 
 define_rig_tool!(
     RigMvTool,
-    tools::mv::MvTool,
+    tools::file::MvTool,
     MvArgs,
     "mv"
 );
 
 define_rig_tool!(
     RigTouchTool,
-    tools::touch::TouchTool,
+    tools::file::TouchTool,
     TouchArgs,
     "touch"
 );
 
 define_rig_tool!(
     RigEditTool,
-    tools::edit::EditTool,
+    tools::file::EditTool,
     EditArgs,
     "edit"
 );
 
 define_rig_tool!(
     RigGrepTool,
-    tools::grep::GrepTool,
+    tools::file::GrepTool,
     GrepArgs,
     "grep"
 );
 
 define_rig_tool!(
     RigMkdirTool,
-    tools::mkdir::MkdirTool,
+    tools::file::MkdirTool,
     MkdirArgs,
     "mkdir"
 );
@@ -262,14 +262,14 @@ define_rig_tool!(
 // System tools for Plan Mode workflow
 define_rig_tool!(
     RigAskUserTool,
-    tools::ask_user::AskUserTool,
+    tools::plan::AskUserTool,
     AskUserArgs,
     "ask_user"
 );
 
 define_rig_tool!(
     RigExitPlanModeTool,
-    tools::exit_plan_mode::ExitPlanModeTool,
+    tools::plan::ExitPlanModeTool,
     ExitPlanModeArgs,
     "exit_plan_mode"
 );
@@ -277,35 +277,35 @@ define_rig_tool!(
 // Phase 1: glob, file_info
 define_rig_tool!(
     RigGlobTool,
-    tools::glob::GlobTool,
+    tools::file::GlobTool,
     GlobArgs,
     "glob"
 );
 
 define_rig_tool!(
     RigFileInfoTool,
-    tools::file_info::FileInfoTool,
+    tools::file::FileInfoTool,
     FileInfoArgs,
     "file_info"
 );
 
 define_rig_tool!(
     RigReadMultipleFilesTool,
-    tools::read_multiple_files::ReadMultipleFilesTool,
+    tools::file::ReadMultipleFilesTool,
     ReadMultipleFilesArgs,
     "read_multiple_files"
 );
 
 define_rig_tool!(
     RigFindTool,
-    tools::find::FindTool,
+    tools::file::FindTool,
     FindArgs,
     "find"
 );
 
 define_rig_tool!(
     RigCatTool,
-    tools::cat::CatTool,
+    tools::file::CatTool,
     CatArgs,
     "cat"
 );
@@ -313,28 +313,28 @@ define_rig_tool!(
 // Plan management tools
 define_rig_tool!(
     RigPlanWriteTool,
-    tools::plan_write::PlanWriteTool,
+    tools::plan::PlanWriteTool,
     PlanWriteArgs,
     "plan_write"
 );
 
 define_rig_tool!(
     RigPlanReadTool,
-    tools::plan_read::PlanReadTool,
+    tools::plan::PlanReadTool,
     PlanReadArgs,
     "plan_read"
 );
 
 define_rig_tool!(
     RigPlanEditTool,
-    tools::plan_edit::PlanEditTool,
+    tools::plan::PlanEditTool,
     PlanEditArgs,
     "plan_edit"
 );
 
 define_rig_tool!(
     RigPlanListTool,
-    tools::plan_list::PlanListTool,
+    tools::plan::PlanListTool,
     PlanListArgs,
     "plan_list"
 );
@@ -342,35 +342,35 @@ define_rig_tool!(
 // Memory management tools
 define_rig_tool!(
     RigMemorySetTool,
-    tools::memory_set::MemorySetTool,
+    tools::memory::MemorySetTool,
     MemorySetArgs,
     "memory_set"
 );
 
 define_rig_tool!(
     RigMemoryGetTool,
-    tools::memory_get::MemoryGetTool,
+    tools::memory::MemoryGetTool,
     MemoryGetArgs,
     "memory_get"
 );
 
 define_rig_tool!(
     RigMemorySearchTool,
-    tools::memory_search::MemorySearchTool,
+    tools::memory::MemorySearchTool,
     MemorySearchArgs,
     "memory_search"
 );
 
 define_rig_tool!(
     RigMemoryDeleteTool,
-    tools::memory_delete::MemoryDeleteTool,
+    tools::memory::MemoryDeleteTool,
     MemoryDeleteArgs,
     "memory_delete"
 );
 
 define_rig_tool!(
     RigMemoryListTool,
-    tools::memory_list::MemoryListTool,
+    tools::memory::MemoryListTool,
     MemoryListArgs,
     "memory_list"
 );
@@ -378,14 +378,14 @@ define_rig_tool!(
 // Web tools
 define_rig_tool!(
     RigWebFetchTool,
-    tools::web_fetch::WebFetchTool,
+    tools::web::WebFetchTool,
     WebFetchArgs,
     "web_fetch"
 );
 
 define_rig_tool!(
     RigWebSearchTool,
-    tools::web_search::WebSearchTool,
+    tools::web::WebSearchTool,
     WebSearchArgs,
     "web_search"
 );

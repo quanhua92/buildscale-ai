@@ -5,7 +5,7 @@ use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// File info tool for metadata queries
 ///
@@ -45,7 +45,7 @@ EXAMPLE: {"path":"/file.txt"}"#
         args: Value,
     ) -> Result<ToolResponse> {
         let file_info_args: FileInfoArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&file_info_args.path);
+        let path = crate::tools::normalize_path(&file_info_args.path);
 
         // Try database lookup first
         let file = match file_queries::get_file_by_path(conn, workspace_id, &path).await? {

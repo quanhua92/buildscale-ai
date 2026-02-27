@@ -82,7 +82,7 @@ Returns metadata (title, status, created_at) and content."#
             }));
         };
 
-        let path = super::normalize_path(&path);
+        let path = crate::tools::normalize_path(&path);
 
         // Ensure it's a .plan file
         if !path.ends_with(".plan") {

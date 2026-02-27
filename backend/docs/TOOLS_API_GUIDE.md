@@ -2854,6 +2854,35 @@ Response
 
 The Tools API is built on an extensible trait-based architecture.
 
+### Module Organization (Layered Structure)
+
+The tools module is organized into subdirectories by category for better discoverability and maintainability:
+
+```
+src/tools/
+├── mod.rs              # Tool registry, ToolExecutor, Tool trait
+├── helpers.rs          # Shared helper functions
+├── file/               # File system tools (14 tools)
+│   ├── mod.rs
+│   ├── cat.rs, edit.rs, file_info.rs, find.rs, glob.rs, grep.rs
+│   ├── ls.rs, mkdir.rs, mv.rs, read.rs, read_multiple_files.rs
+│   ├── rm.rs, touch.rs, write.rs
+├── memory/             # Memory tools (5 tools)
+│   ├── mod.rs
+│   ├── delete.rs, get.rs, list.rs, search.rs, set.rs
+├── plan/               # Plan mode tools (6 tools)
+│   ├── mod.rs
+│   ├── ask_user.rs, edit.rs, exit_plan_mode.rs, list.rs, read.rs, write.rs
+└── web/                # Web tools (2 tools)
+    ├── mod.rs
+    ├── fetch.rs, search.rs
+```
+
+**Tool names remain unchanged** for AI compatibility - only internal paths changed. For example:
+- Tool name: `ls` (unchanged)
+- Old path: `tools::ls::LsTool`
+- New path: `tools::file::LsTool`
+
 ### Tool Trait
 
 All tools implement the `Tool` trait:
@@ -2931,16 +2960,24 @@ impl ToolExecutor {
 
 ### How to Add a New Tool
 
-#### Step 1: Create Tool Implementation
+#### Step 1: Choose the Appropriate Category
 
-Create a new file in `backend/src/tools/your_tool.rs`:
+Select the appropriate category for your tool:
+- **file/** - File system tools (ls, read, write, etc.)
+- **memory/** - Memory tools (memory_set, memory_get, etc.)
+- **plan/** - Plan mode tools (ask_user, plan_write, etc.)
+- **web/** - Web tools (web_fetch, web_search)
+
+#### Step 2: Create Tool Implementation
+
+Create a new file in the appropriate subdirectory (e.g., `backend/src/tools/file/your_tool.rs` for a file tool):
 
 ```rust
 use crate::{DbConn, error::Result, models::requests::{ToolResponse, YourToolArgs, YourToolResult}};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::Tool;
+use crate::tools::{Tool, ToolConfig};
 
 pub struct YourTool;
 
@@ -2953,8 +2990,10 @@ impl Tool for YourTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
+        storage: &FileStorageService,
         workspace_id: Uuid,
         user_id: Uuid,
+        config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
         // Parse arguments
@@ -2994,25 +3033,26 @@ pub struct YourToolResult {
 }
 ```
 
-#### Step 3: Export Tool Module
+#### Step 3: Add to Subdirectory's mod.rs
 
-In `backend/src/tools/mod.rs`:
+In the appropriate subdirectory (e.g., `backend/src/tools/file/mod.rs` for a file tool):
 
 ```rust
-pub mod your_tool;  // Add this
+mod your_tool;  // Add this
+pub use your_tool::YourTool;  // Re-export for clean imports
 ```
 
-#### Step 4: Update Registry
+#### Step 4: Update Main Registry
 
 In `backend/src/tools/mod.rs`, update `get_tool_executor()`:
 
 ```rust
 pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
     match tool_name {
+        // File tools
         "ls" => Ok(ToolExecutor::Ls),
         "read" => Ok(ToolExecutor::Read),
-        "write" => Ok(ToolExecutor::Write),
-        "rm" => Ok(ToolExecutor::Rm),
+        // ... other tools
         "your_tool" => Ok(ToolExecutor::YourTool),  // Add this
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
     }
@@ -3025,26 +3065,38 @@ In `backend/src/tools/mod.rs`:
 
 ```rust
 pub enum ToolExecutor {
+    // File tools
     Ls,
     Read,
-    Write,
-    Rm,
-    YourTool,  // Add this
+    // ... other tools
+    YourTool,  // Add this (in appropriate category section)
 }
 ```
 
 #### Step 6: Add Execution Case
 
-In `ToolExecutor::execute()`:
+In `ToolExecutor::execute()`, using the re-exported tool name:
 
 ```rust
 match self {
-    ToolExecutor::Ls => ls::LsTool.execute(conn, workspace_id, user_id, args).await,
-    ToolExecutor::Read => read::ReadTool.execute(conn, workspace_id, user_id, args).await,
-    ToolExecutor::Write => write::WriteTool.execute(conn, workspace_id, user_id, args).await,
-    ToolExecutor::Rm => rm::RmTool.execute(conn, workspace_id, user_id, args).await,
-    ToolExecutor::YourTool => your_tool::YourTool.execute(conn, workspace_id, user_id, args).await,  // Add this
+    // File tools
+    ToolExecutor::Ls => file::LsTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+    ToolExecutor::Read => file::ReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+    // ... other tools
+    ToolExecutor::YourTool => file::YourTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,  // Add this
 }
+```
+
+#### Step 7: Add to Tool Definitions
+
+In `get_all_tool_definitions()`:
+
+```rust
+ToolDefinition {
+    name: "your_tool".into(),
+    description: file::YourTool.description().into(),
+    parameters: file::YourTool.definition(),
+},
 ```
 
 ### Source Files Reference
@@ -3053,13 +3105,40 @@ match self {
 |-----------|-----------|
 | Handler | `backend/src/handlers/tools.rs` |
 | Tool trait | `backend/src/tools/mod.rs` |
-| ls implementation | `backend/src/tools/ls.rs` |
-| read implementation | `backend/src/tools/read.rs` |
-| write implementation | `backend/src/tools/write.rs` |
-| rm implementation | `backend/src/tools/rm.rs` |
-| mv implementation | `backend/src/tools/mv.rs` |
-| touch implementation | `backend/src/tools/touch.rs` |
+| **File Tools** | |
+| ls implementation | `backend/src/tools/file/ls.rs` |
+| read implementation | `backend/src/tools/file/read.rs` |
+| write implementation | `backend/src/tools/file/write.rs` |
+| edit implementation | `backend/src/tools/file/edit.rs` |
+| rm implementation | `backend/src/tools/file/rm.rs` |
+| mv implementation | `backend/src/tools/file/mv.rs` |
+| touch implementation | `backend/src/tools/file/touch.rs` |
+| mkdir implementation | `backend/src/tools/file/mkdir.rs` |
+| grep implementation | `backend/src/tools/file/grep.rs` |
+| glob implementation | `backend/src/tools/file/glob.rs` |
+| find implementation | `backend/src/tools/file/find.rs` |
+| cat implementation | `backend/src/tools/file/cat.rs` |
+| file_info implementation | `backend/src/tools/file/file_info.rs` |
+| read_multiple_files implementation | `backend/src/tools/file/read_multiple_files.rs` |
+| **Plan Tools** | |
+| ask_user implementation | `backend/src/tools/plan/ask_user.rs` |
+| exit_plan_mode implementation | `backend/src/tools/plan/exit_plan_mode.rs` |
+| plan_write implementation | `backend/src/tools/plan/write.rs` |
+| plan_read implementation | `backend/src/tools/plan/read.rs` |
+| plan_edit implementation | `backend/src/tools/plan/edit.rs` |
+| plan_list implementation | `backend/src/tools/plan/list.rs` |
+| **Memory Tools** | |
+| memory_set implementation | `backend/src/tools/memory/set.rs` |
+| memory_get implementation | `backend/src/tools/memory/get.rs` |
+| memory_search implementation | `backend/src/tools/memory/search.rs` |
+| memory_delete implementation | `backend/src/tools/memory/delete.rs` |
+| memory_list implementation | `backend/src/tools/memory/list.rs` |
+| **Web Tools** | |
+| web_fetch implementation | `backend/src/tools/web/fetch.rs` |
+| web_search implementation | `backend/src/tools/web/search.rs` |
+| **Shared** | |
 | Request/Response models | `backend/src/models/requests.rs` |
+| Helper functions | `backend/src/tools/helpers.rs` |
 | Route registration | `backend/src/lib.rs:328` |
 
 ---

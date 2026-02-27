@@ -96,7 +96,7 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             while attempts < max_attempts {
                 let name = generate_plan_name();
                 let candidate_path = format!("/plans/{}.plan", name);
-                let candidate_path = super::normalize_path(&candidate_path);
+                let candidate_path = crate::tools::normalize_path(&candidate_path);
 
                 // Check if file already exists
                 let existing = file_queries::get_file_by_path(conn, workspace_id, &candidate_path).await?;
@@ -128,7 +128,7 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             }
         };
 
-        let path = super::normalize_path(&path);
+        let path = crate::tools::normalize_path(&path);
 
         // Parse status
         let status = if let Some(s) = plan_args.status {
@@ -159,7 +159,7 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             if !is_plan_file {
                 return Err(Error::Validation(ValidationErrors::Single {
                     field: "path".to_string(),
-                    message: super::PLAN_MODE_ERROR.to_string(),
+                    message: crate::tools::PLAN_MODE_ERROR.to_string(),
                 }));
             }
         }

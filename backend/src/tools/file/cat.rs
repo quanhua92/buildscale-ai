@@ -4,7 +4,7 @@ use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Converts special characters to visible representations
 mod escape {
@@ -232,7 +232,7 @@ EXAMPLE: {"paths":["/a.txt","/b.txt"],"show_ends":true,"offset":-100,"limit":50}
 
         // Normalize all paths
         let paths: Vec<String> = args.paths.into_iter()
-            .map(|p| super::normalize_path(&p))
+            .map(|p| crate::tools::normalize_path(&p))
             .collect();
 
         // Process each file

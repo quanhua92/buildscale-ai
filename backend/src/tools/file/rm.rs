@@ -4,7 +4,7 @@ use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Delete file tool
 ///
@@ -42,13 +42,13 @@ impl Tool for RmTool {
         args: Value,
     ) -> Result<ToolResponse> {
         let rm_args: RmArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&rm_args.path);
+        let path = crate::tools::normalize_path(&rm_args.path);
 
         // Plan Mode Guard: Only allow /plans/ directory operations
         if config.plan_mode && !path.starts_with("/plans/") {
             return Err(Error::Validation(crate::error::ValidationErrors::Single {
                 field: "path".to_string(),
-                message: super::PLAN_MODE_ERROR.to_string(),
+                message: crate::tools::PLAN_MODE_ERROR.to_string(),
             }));
         }
 

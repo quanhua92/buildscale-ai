@@ -55,7 +55,7 @@ Same as edit tool but:
         args: Value,
     ) -> Result<ToolResponse> {
         let plan_args: PlanEditArgs = serde_json::from_value(args)?;
-        let path = super::normalize_path(&plan_args.path);
+        let path = crate::tools::normalize_path(&plan_args.path);
 
         // Ensure it's a .plan file
         if !path.ends_with(".plan") {
@@ -73,7 +73,7 @@ Same as edit tool but:
         if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "path".to_string(),
-                message: super::PLAN_MODE_ERROR.to_string(),
+                message: crate::tools::PLAN_MODE_ERROR.to_string(),
             }));
         }
 

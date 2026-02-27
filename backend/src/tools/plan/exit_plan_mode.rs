@@ -5,7 +5,7 @@ use crate::models::chat::AgentConfig;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
-use super::{Tool, ToolConfig};
+use crate::tools::{Tool, ToolConfig};
 
 /// Exit plan mode tool for transitioning from Plan to Build mode
 ///
@@ -50,7 +50,7 @@ SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must
         args: Value,
     ) -> Result<ToolResponse> {
         let exit_args: ExitPlanModeArgs = serde_json::from_value(args)?;
-        let plan_path = super::normalize_path(&exit_args.plan_file_path);
+        let plan_path = crate::tools::normalize_path(&exit_args.plan_file_path);
 
         // Get chat_id from config
         let chat_id = config.chat_id.ok_or_else(|| {
