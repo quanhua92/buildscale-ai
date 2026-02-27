@@ -1,21 +1,23 @@
-pub mod agent_sessions;
-pub mod auth;
-pub mod chat;
-pub mod chats;
-pub mod health;
-pub mod workspaces;
-pub mod members;
-pub mod files;
-pub mod tools;
-pub mod providers;
+//! HTTP handlers for BuildScale API
+//!
+//! Handlers are organized by API domain:
+//! - `auth/` - Authentication endpoints
+//! - `workspace/` - Workspace and member management
+//! - `file/` - File system and tool operations
+//! - `chat/` - Chat and AI agent endpoints
 
-pub use agent_sessions::*;
+// Subdirectory modules (layered structure)
+pub mod auth;
+pub mod workspace;
+pub mod file;
+pub mod chat;
+
+// Health check stays at root level
+pub mod health;
+
+// Re-export all handlers for backward compatibility
 pub use auth::*;
+pub use workspace::*;
+pub use file::*;
 pub use chat::*;
-pub use chats::*;
 pub use health::*;
-pub use workspaces::*;
-pub use members::*;
-pub use files::*;
-pub use tools::*;
-pub use providers::*;

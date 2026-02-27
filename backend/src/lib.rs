@@ -22,18 +22,18 @@ pub use config::Config;
 pub use database::{DbConn, DbPool};
 pub use error::{Error, Result, ValidationErrors};
 pub use handlers::{
-    agent_sessions::{list_workspace_sessions, get_session, pause_session, resume_session, cancel_session},
-    auth::login, auth::logout, auth::me, auth::register, auth::refresh,
-    health::health_check, health::health_cache,
-    members::list_members, members::get_my_membership, members::add_member, members::update_member_role, members::remove_member,
-    workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
-    files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::purge_file, files::list_trash,
-    files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
-    files::text_search,
-    tools::execute_tool,
-    chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat, chat::get_chat_context,
-    chats::list_chats,
-    providers::get_providers, providers::get_workspace_providers,
+    list_workspace_sessions, get_session, pause_session, resume_session, cancel_session,
+    login, logout, me, register, refresh,
+    health_check, health_cache,
+    list_members, get_my_membership, add_member, update_member_role, remove_member,
+    create_workspace, list_workspaces, get_workspace, update_workspace, delete_workspace,
+    create_file, get_file, create_version, update_file, delete_file, restore_file, purge_file, list_trash,
+    add_tag, remove_tag, list_files_by_tag, create_link, remove_link, get_file_network,
+    text_search,
+    execute_tool,
+    create_chat, get_chat, post_chat_message, stop_chat_generation, update_chat, get_chat_context, get_chat_events,
+    list_chats,
+    get_providers, get_workspace_providers,
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
@@ -219,22 +219,28 @@ pub fn create_api_router(state: AppState) -> Router<AppState> {
 /// # Returns
 /// A configured Router with workspace routes
 fn create_workspace_router(state: AppState) -> Router<AppState> {
-    use crate::handlers::workspaces as workspace_handlers;
-    use crate::handlers::members as member_handlers;
-    use crate::handlers::files as file_handlers;
-    use crate::handlers::chat as chat_handlers;
-    use crate::handlers::tools as tool_handlers;
-    use crate::handlers::agent_sessions as agent_session_handlers;
+    use crate::handlers::{
+        create_workspace, list_workspaces, get_workspace, update_workspace, delete_workspace,
+        list_members, get_my_membership, add_member, update_member_role, remove_member,
+        create_file, get_file, create_version, update_file, delete_file, restore_file, purge_file, list_trash,
+        add_tag, remove_tag, list_files_by_tag, create_link, remove_link, get_file_network,
+        text_search,
+        execute_tool,
+        create_chat, get_chat, post_chat_message, stop_chat_generation, update_chat, get_chat_context, get_chat_events,
+        list_chats,
+        get_workspace_providers,
+        list_workspace_sessions,
+    };
     use crate::middleware::workspace_access::workspace_access_middleware;
 
     Router::new()
-        .route("/", post(workspace_handlers::create_workspace))
-        .route("/", get(workspace_handlers::list_workspaces))
+        .route("/", post(create_workspace))
+        .route("/", get(list_workspaces))
         .route(
             "/{id}",
-            get(workspace_handlers::get_workspace)
-                .patch(workspace_handlers::update_workspace)
-                .delete(workspace_handlers::delete_workspace)
+            get(get_workspace)
+                .patch(update_workspace)
+                .delete(delete_workspace)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -242,8 +248,8 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/members",
-            get(member_handlers::list_members)
-                .post(member_handlers::add_member)
+            get(list_members)
+                .post(add_member)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -251,7 +257,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/members/me",
-            get(member_handlers::get_my_membership)
+            get(get_my_membership)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -259,8 +265,8 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/members/{user_id}",
-            patch(member_handlers::update_member_role)
-                .delete(member_handlers::remove_member)
+            patch(update_member_role)
+                .delete(remove_member)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -269,7 +275,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         // File routes
         .route(
             "/{id}/files",
-            post(file_handlers::create_file)
+            post(create_file)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -277,9 +283,9 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}",
-            get(file_handlers::get_file)
-                .patch(file_handlers::update_file)
-                .delete(file_handlers::delete_file)
+            get(get_file)
+                .patch(update_file)
+                .delete(delete_file)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -287,7 +293,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/restore",
-            post(file_handlers::restore_file)
+            post(restore_file)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -295,7 +301,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/purge",
-            delete(file_handlers::purge_file)
+            delete(purge_file)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -303,7 +309,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/trash",
-            get(file_handlers::list_trash)
+            get(list_trash)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -311,7 +317,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/search",
-            post(file_handlers::text_search)
+            post(text_search)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -319,7 +325,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/tags/{tag}",
-            get(file_handlers::list_files_by_tag)
+            get(list_files_by_tag)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -327,7 +333,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/tags",
-            post(file_handlers::add_tag)
+            post(add_tag)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -335,7 +341,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/tags/{tag}",
-            delete(file_handlers::remove_tag)
+            delete(remove_tag)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -343,7 +349,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/links",
-            post(file_handlers::create_link)
+            post(create_link)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -351,7 +357,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/links/{target_id}",
-            delete(file_handlers::remove_link)
+            delete(remove_link)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -359,7 +365,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/network",
-            get(file_handlers::get_file_network)
+            get(get_file_network)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -367,7 +373,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/files/{file_id}/versions",
-            post(file_handlers::create_version)
+            post(create_version)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -375,7 +381,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/tools",
-            post(tool_handlers::execute_tool)
+            post(execute_tool)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -384,7 +390,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         // Provider routes
         .route(
             "/{id}/providers",
-            get(crate::handlers::get_workspace_providers)
+            get(get_workspace_providers)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -393,8 +399,8 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         // Chat routes
         .route(
             "/{id}/chats",
-            get(crate::handlers::chats::list_chats)
-                .post(chat_handlers::create_chat)
+            get(list_chats)
+                .post(create_chat)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -402,7 +408,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/chats/{chat_id}/stop",
-            post(chat_handlers::stop_chat_generation)
+            post(stop_chat_generation)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -410,9 +416,9 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/chats/{chat_id}",
-            post(chat_handlers::post_chat_message)
-                .get(chat_handlers::get_chat)
-                .patch(chat_handlers::update_chat)
+            post(post_chat_message)
+                .get(get_chat)
+                .patch(update_chat)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -420,7 +426,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/chats/{chat_id}/events",
-            get(chat_handlers::get_chat_events)
+            get(get_chat_events)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -428,7 +434,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/chats/{chat_id}/context",
-            get(chat_handlers::get_chat_context)
+            get(get_chat_context)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -437,7 +443,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         // Agent session routes - workspace scoped
         .route(
             "/{id}/agent-sessions",
-            get(agent_session_handlers::list_workspace_sessions)
+            get(list_workspace_sessions)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
