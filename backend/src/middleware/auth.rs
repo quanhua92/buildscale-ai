@@ -17,7 +17,7 @@ use crate::{
     error::{Error, Result},
     models::users::User,
     queries,
-    services::jwt::authenticate_jwt_token_from_anywhere,
+    auth::services::jwt::authenticate_jwt_token_from_anywhere,
     state::AppState,
 };
 

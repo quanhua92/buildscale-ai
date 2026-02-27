@@ -1,4 +1,4 @@
-use crate::queries::sessions;
+use crate::auth::queries::sessions;
 use crate::Config;
 use std::time::Duration;
 use tokio::time::interval;

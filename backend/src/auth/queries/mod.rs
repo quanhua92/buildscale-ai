@@ -1,12 +1,8 @@
-pub mod ai_models;
-pub mod invitations;
-pub mod roles;
-pub mod users;
-pub mod workspaces;
-pub mod workspace_members;
+//! Auth queries - Session database operations
 
-// Re-export auth queries for backward compatibility
-pub use crate::auth::queries::{
+pub mod sessions;
+
+pub use sessions::{
     create_revoked_token, create_session, delete_expired_revoked_tokens,
     delete_expired_sessions, delete_revoked_tokens_by_user, delete_session,
     delete_session_by_token_hash, delete_sessions_by_user, get_revoked_token,

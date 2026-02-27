@@ -27,7 +27,7 @@ pub struct Claims {
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::jwt::generate_jwt;
+/// use buildscale::auth::services::jwt::generate_jwt;
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
@@ -66,7 +66,7 @@ pub fn generate_jwt(user_id: Uuid, secret: &str, expiration_minutes: i64) -> Res
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::jwt::{generate_jwt, verify_jwt};
+/// use buildscale::auth::services::jwt::{generate_jwt, verify_jwt};
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
@@ -106,7 +106,7 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims> {
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::jwt::{generate_jwt, get_user_id_from_token};
+/// use buildscale::auth::services::jwt::{generate_jwt, get_user_id_from_token};
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
@@ -132,7 +132,7 @@ pub fn get_user_id_from_token(token: &str, secret: &str) -> Result<Uuid> {
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::jwt::{generate_jwt, authenticate_jwt_token};
+/// use buildscale::auth::services::jwt::{generate_jwt, authenticate_jwt_token};
 /// use uuid::Uuid;
 ///
 /// let user_id = Uuid::now_v7();
@@ -162,7 +162,7 @@ pub fn authenticate_jwt_token(auth_header: Option<&str>, secret: &str) -> Result
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::jwt::authenticate_jwt_token_from_anywhere;
+/// use buildscale::auth::services::jwt::authenticate_jwt_token_from_anywhere;
 ///
 /// let user_id = authenticate_jwt_token_from_anywhere(
 ///     Some("Bearer eyJhbGc..."),
@@ -176,7 +176,7 @@ pub fn authenticate_jwt_token_from_anywhere(
     cookie_value: Option<&str>,
     secret: &str,
 ) -> Result<Uuid> {
-    crate::services::cookies::authenticate_jwt_token_multi_source(
+    super::cookies::authenticate_jwt_token_multi_source(
         auth_header,
         cookie_value,
         secret,

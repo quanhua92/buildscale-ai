@@ -11,15 +11,13 @@ use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
     models::users::{LoginUser, RegisterUser},
-    services::{
-        cookies::{
-            build_access_token_cookie,
-            build_clear_token_cookie,
-            build_refresh_token_cookie,
-            CookieConfig,
-        },
-        users,
+    auth::services::cookies::{
+        build_access_token_cookie,
+        build_clear_token_cookie,
+        build_refresh_token_cookie,
+        CookieConfig,
     },
+    services::users,
     state::AppState,
 };
 

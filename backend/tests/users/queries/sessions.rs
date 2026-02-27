@@ -1,6 +1,6 @@
 use buildscale::{
     models::users::NewUserSession,
-    queries::sessions::{
+    auth::queries::sessions::{
         create_session, get_session_by_token_hash, get_sessions_by_user,
         delete_session, delete_session_by_token_hash, delete_sessions_by_user, delete_expired_sessions,
         is_session_valid, get_valid_session_by_token_hash, refresh_session, hash_session_token

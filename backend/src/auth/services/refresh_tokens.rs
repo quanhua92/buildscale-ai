@@ -18,7 +18,7 @@ use sha2::Sha256;
 /// # Example
 /// ```rust,no_run
 /// use buildscale::Config;
-/// use buildscale::services::refresh_tokens::generate_refresh_token;
+/// use buildscale::auth::services::refresh_tokens::generate_refresh_token;
 ///
 /// let config = Config::load()?;
 /// let token = generate_refresh_token(&config)?;
@@ -63,7 +63,7 @@ pub fn generate_refresh_token(config: &Config) -> Result<String> {
 /// # Example
 /// ```rust,no_run
 /// use buildscale::Config;
-/// use buildscale::services::refresh_tokens::{generate_refresh_token, verify_refresh_token};
+/// use buildscale::auth::services::refresh_tokens::{generate_refresh_token, verify_refresh_token};
 ///
 /// let config = Config::load()?;
 /// let token = generate_refresh_token(&config)?;

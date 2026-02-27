@@ -1,6 +1,6 @@
 use buildscale::{
     services::users::{login_user, logout_user, validate_session, refresh_session, register_user},
-    services::sessions::cleanup_expired_sessions,
+    auth::services::sessions::cleanup_expired_sessions,
     models::users::LoginUser,
 };
 use crate::common::database::TestApp;
@@ -306,7 +306,7 @@ async fn test_cleanup_expired_sessions() {
 
     // Manually expire the session by updating expires_at to past time
     let expired_time = Utc::now() - Duration::hours(1);
-    use buildscale::queries::sessions::hash_session_token;
+    use buildscale::auth::queries::sessions::hash_session_token;
     let token_hash = hash_session_token(&login_result.refresh_token);
     sqlx::query!(
         "UPDATE user_sessions SET expires_at = $1 WHERE token_hash = $2",

@@ -1,6 +1,6 @@
 use buildscale::{
     queries::users::{get_user_by_id, list_users},
-    queries::sessions::hash_session_token,
+    auth::queries::sessions::hash_session_token,
     services::users::{register_user, verify_password, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
     models::users::LoginUser,
 };

@@ -5,8 +5,10 @@ use crate::{
         users::{LoginUser, LoginResult, NewUser, NewUserSession, RefreshTokenResult, RegisterUser, User},
         requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest}
     },
-    queries::{users, sessions},
-    services::{jwt, workspaces},
+    queries::users,
+    auth::queries::sessions,
+    auth::services::jwt,
+    services::workspaces,
     validation::{validate_email, validate_password, validate_full_name, validate_session_token, validate_required_string},
 };
 use argon2::{
@@ -237,7 +239,7 @@ pub async fn login_user(conn: &mut DbConn, login_user: LoginUser) -> Result<Logi
 pub async fn validate_session(conn: &mut DbConn, session_token: &str) -> Result<User> {
     // Verify HMAC signature first (fast fail before DB lookup)
     let config = Config::load()?;
-    crate::services::refresh_tokens::verify_refresh_token(session_token, &config)?;
+    crate::auth::services::refresh_tokens::verify_refresh_token(session_token, &config)?;
 
     // Validate session token format
     validate_session_token(session_token)?;
@@ -457,7 +459,7 @@ pub async fn refresh_access_token(
 /// Generates a secure refresh token using HMAC-signed random bytes
 pub fn generate_session_token() -> Result<String> {
     let config = Config::load()?;
-    crate::services::refresh_tokens::generate_refresh_token(&config)
+    crate::auth::services::refresh_tokens::generate_refresh_token(&config)
 }
 
 /// Updates a user's password with validation
@@ -502,10 +504,10 @@ pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool> 
 
 /// Gets all active sessions for a user
 pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<crate::models::users::UserSession>> {
-    crate::services::sessions::get_user_active_sessions(conn, user_id).await
+    crate::auth::services::sessions::get_user_active_sessions(conn, user_id).await
 }
 
 /// Revokes all sessions for a user
 pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<u64> {
-    crate::services::sessions::revoke_all_user_sessions(conn, user_id).await
+    crate::auth::services::sessions::revoke_all_user_sessions(conn, user_id).await
 }

@@ -1,8 +1,8 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
-    queries::sessions,
 };
+use crate::auth::queries::sessions;
 
 /// Cleans up all expired sessions from the database
 /// This should be called periodically to maintain database performance
@@ -19,7 +19,7 @@ pub async fn revoke_all_user_sessions(conn: &mut DbConn, user_id: uuid::Uuid) ->
 }
 
 /// Gets all active sessions for a user (non-expired)
-pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: uuid::Uuid) -> Result<Vec<crate::models::users::UserSession>> {
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: uuid::Uuid) -> Result<Vec<crate::auth::models::session::UserSession>> {
     let all_sessions = sessions::get_sessions_by_user(conn, user_id).await?;
 
     // Filter out expired sessions

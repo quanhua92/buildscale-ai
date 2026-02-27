@@ -55,34 +55,5 @@ pub struct RefreshTokenResult {
     pub expires_at: DateTime<Utc>,     // When the new access token expires
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserSession {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub token_hash: String,
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewUserSession {
-    pub user_id: Uuid,
-    pub token_hash: String,
-    pub expires_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateUserSession {
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
-/// Revoked refresh token for theft detection
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RevokedRefreshToken {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub token_hash: String,
-    pub revoked_at: DateTime<Utc>,
-    pub reason: String,
-}
+// Re-export session types from auth module for backward compatibility
+pub use crate::auth::models::{UserSession, NewUserSession, UpdateUserSession, RevokedRefreshToken};

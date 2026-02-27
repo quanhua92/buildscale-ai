@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::services::jwt;
+use super::jwt;
 use uuid::Uuid;
 
 /// Cookie names for token storage
@@ -73,7 +73,7 @@ impl Default for CookieConfig {
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::cookies::extract_jwt_token;
+/// use buildscale::auth::services::cookies::extract_jwt_token;
 ///
 /// // Try header first, fallback to cookie
 /// let token = extract_jwt_token(
@@ -113,7 +113,7 @@ pub fn extract_jwt_token(auth_header: Option<&str>, cookie_value: Option<&str>) 
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::cookies::extract_refresh_token;
+/// use buildscale::auth::services::cookies::extract_refresh_token;
 ///
 /// let token = extract_refresh_token(
 ///     Some("a1b2c3d4...")
@@ -144,7 +144,7 @@ pub fn extract_refresh_token(cookie_value: Option<&str>) -> Result<String> {
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::cookies::authenticate_jwt_token_multi_source;
+/// use buildscale::auth::services::cookies::authenticate_jwt_token_multi_source;
 ///
 /// let user_id = authenticate_jwt_token_multi_source(
 ///     Some("Bearer eyJhbGc..."),
@@ -172,7 +172,7 @@ pub fn authenticate_jwt_token_multi_source(
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::cookies::{build_access_token_cookie, CookieConfig, SameSite};
+/// use buildscale::auth::services::cookies::{build_access_token_cookie, CookieConfig, SameSite};
 ///
 /// let config = CookieConfig {
 ///     access_token_name: "access_token".to_string(),
@@ -216,7 +216,7 @@ pub fn build_access_token_cookie(token: &str, config: &CookieConfig) -> String {
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::cookies::{build_refresh_token_cookie, CookieConfig, SameSite};
+/// use buildscale::auth::services::cookies::{build_refresh_token_cookie, CookieConfig, SameSite};
 ///
 /// let config = CookieConfig {
 ///     access_token_name: "access_token".to_string(),
@@ -261,7 +261,7 @@ pub fn build_refresh_token_cookie(token: &str, config: &CookieConfig) -> String 
 ///
 /// # Example
 /// ```rust,no_run
-/// use buildscale::services::cookies::build_clear_token_cookie;
+/// use buildscale::auth::services::cookies::build_clear_token_cookie;
 ///
 /// let cookie = build_clear_token_cookie("access_token");
 /// // Returns: "access_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"

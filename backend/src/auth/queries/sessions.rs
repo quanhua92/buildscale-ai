@@ -1,7 +1,7 @@
 use crate::{
     error::{Error, Result},
-    models::users::{NewUserSession, UpdateUserSession, UserSession, RevokedRefreshToken},
 };
+use crate::auth::models::session::{NewUserSession, UpdateUserSession, UserSession, RevokedRefreshToken};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
