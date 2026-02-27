@@ -1,0 +1,109 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH updated AS (\n            UPDATE agent_sessions\n            SET status = $2, updated_at = NOW(), completed_at = $3, error_message = $4\n            WHERE id = $1\n            RETURNING *\n        )\n        SELECT\n            u.id,\n            u.workspace_id,\n            u.chat_id,\n            u.user_id,\n            u.agent_type as \"agent_type: AgentType\",\n            u.status as \"status: SessionStatus\",\n            u.model,\n            u.mode,\n            u.current_task,\n            u.error_message,\n            u.created_at,\n            u.updated_at,\n            u.last_heartbeat,\n            u.completed_at,\n            f.name as \"chat_name?\"\n        FROM updated u\n        LEFT JOIN files f ON u.chat_id = f.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "chat_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "agent_type: AgentType",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: SessionStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "current_task",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "last_heartbeat",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "chat_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "5c9a71e385001cfe90495161a63741b2bf570e7392a1d32fa3e9350b3420c165"
+}

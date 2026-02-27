@@ -375,12 +375,22 @@ pub async fn get_file_network(
 }
 
 // ============================================================================
-// SEARCH HANDLER (text-based search using ripgrep)
+// SEARCH HANDLER (text-based search using ripgrep with fallback)
 // ============================================================================
+
+/// Check if ripgrep is available on the system
+fn is_ripgrep_available() -> bool {
+    std::process::Command::new("rg")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
 
 /// POST /api/v1/workspaces/:id/search
 ///
-/// Performs text search across all files in the workspace using ripgrep.
+/// Performs text search across all files in the workspace.
+/// Uses ripgrep for fast search when available, falls back to database search otherwise.
 pub async fn text_search(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
@@ -398,10 +408,8 @@ pub async fn text_search(
         })));
     }
 
-    // Use ripgrep for fast search across the workspace
-    let search_path = state.storage.get_workspace_path(workspace_access.workspace_id);
-
     // Check if search directory exists
+    let search_path = state.storage.get_workspace_path(workspace_access.workspace_id);
     if !search_path.exists() {
         return Ok(Json(serde_json::json!({
             "results": [],
@@ -410,6 +418,22 @@ pub async fn text_search(
         })));
     }
 
+    // Try ripgrep first (fast), fall back to database search if unavailable
+    if is_ripgrep_available() {
+        text_search_with_ripgrep(&state, workspace_access.workspace_id, &search_path, query).await
+    } else {
+        tracing::info!("ripgrep not available, using database fallback for text_search");
+        text_search_with_database(&state, workspace_access.workspace_id, query).await
+    }
+}
+
+/// Fast text search using ripgrep
+async fn text_search_with_ripgrep(
+    state: &AppState,
+    workspace_id: Uuid,
+    search_path: &std::path::Path,
+    query: &str,
+) -> Result<Json<serde_json::Value>> {
     // Build ripgrep command for case-insensitive search
     let output = tokio::process::Command::new("rg")
         .arg("--json")                    // JSON output for easy parsing
@@ -418,7 +442,7 @@ pub async fn text_search(
         .arg("--no-heading")              // Don't group by file
         .arg("--")
         .arg(query)
-        .arg(&search_path)
+        .arg(search_path)
         .output()
         .await;
 
@@ -436,12 +460,8 @@ pub async fn text_search(
             String::from_utf8_lossy(&o.stdout).to_string()
         }
         Err(e) => {
-            tracing::warn!("Failed to run ripgrep: {}, falling back to empty results", e);
-            return Ok(Json(serde_json::json!({
-                "results": [],
-                "query": query,
-                "type": "text_search"
-            })));
+            tracing::warn!("Failed to run ripgrep: {}, falling back to database search", e);
+            return text_search_with_database(state, workspace_id, query).await;
         }
     };
 
@@ -462,14 +482,14 @@ pub async fn text_search(
     }
 
     // Fetch file metadata from database
-    let mut conn = acquire_db_connection(&state, "text_search").await?;
+    let mut conn = acquire_db_connection(state, "text_search").await?;
     let mut results = Vec::new();
 
     for path in file_paths {
         // Get file by path
         if let Ok(Some(file)) = file_queries::get_file_by_path(
             &mut conn,
-            workspace_access.workspace_id,
+            workspace_id,
             &format!("/{}", path),
         ).await {
             // Get file content for preview
@@ -484,15 +504,7 @@ pub async fn text_search(
                 };
 
                 // Find context around match
-                let query_lower = query.to_lowercase();
-                let content_lower = content_text.to_lowercase();
-                let preview = if let Some(pos) = content_lower.find(&query_lower) {
-                    let start = pos.saturating_sub(50);
-                    let end = (pos + query.len() + 50).min(content_text.len());
-                    format!("...{}...", &content_text[start..end])
-                } else {
-                    String::new()
-                };
+                let preview = build_preview(&content_text, query);
 
                 results.push(serde_json::json!({
                     "file": file,
@@ -508,6 +520,67 @@ pub async fn text_search(
         "query": query,
         "type": "text_search"
     })))
+}
+
+/// Fallback text search using database (slower but works without ripgrep)
+async fn text_search_with_database(
+    state: &AppState,
+    workspace_id: Uuid,
+    query: &str,
+) -> Result<Json<serde_json::Value>> {
+    let mut conn = acquire_db_connection(state, "text_search_database").await?;
+
+    // Get all active files (limited to prevent excessive I/O)
+    let all_files = file_services::list_all_active_files(&mut conn, workspace_id)
+        .await
+        .inspect_err(|e| log_handler_error("text_search_database", e))?;
+
+    let query_lower = query.to_lowercase();
+    let mut results = Vec::new();
+
+    // Limit search to first 100 files to prevent timeout
+    for file in all_files.into_iter().take(100) {
+        if let Ok(file_with_content) = file_services::get_file_with_content(
+            &mut conn,
+            &state.storage,
+            file.id,
+        ).await {
+            let content_text = match file_with_content.content {
+                serde_json::Value::String(ref s) => s.clone(),
+                _ => file_services::extract_text_recursively(&file_with_content.content),
+            };
+
+            if content_text.to_lowercase().contains(&query_lower) {
+                let preview = build_preview(&content_text, query);
+
+                results.push(serde_json::json!({
+                    "file": file,
+                    "preview": preview,
+                    "type": "text_match"
+                }));
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "results": results,
+        "query": query,
+        "type": "text_search"
+    })))
+}
+
+/// Build a preview snippet around the first match
+fn build_preview(content: &str, query: &str) -> String {
+    let query_lower = query.to_lowercase();
+    let content_lower = content.to_lowercase();
+
+    if let Some(pos) = content_lower.find(&query_lower) {
+        let start = pos.saturating_sub(50);
+        let end = (pos + query.len() + 50).min(content.len());
+        format!("...{}...", &content[start..end])
+    } else {
+        String::new()
+    }
 }
 
 // ============================================================================

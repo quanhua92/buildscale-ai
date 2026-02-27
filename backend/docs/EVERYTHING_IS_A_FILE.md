@@ -13,8 +13,8 @@ In BuildScale.ai, **Identity** and **Content** are unified in a simple, elegant 
 3. **Storage (Hybrid)**: The actual content lives on **Disk** (for speed and tooling compatibility), while the **Database** acts as the index and metadata registry.
 
 **Key Simplifications** (Obsidian-Style):
-- **Links** (`[[wikilinks]]`) and **Tags** (`#hashtags`) are parsed from content on-demand
-- No separate `file_links` or `file_tags` tables
+- **Links** (`[[wikilinks]]`) and **Tags** (`#hashtags`) are parsed from content
+- Background indexers populate `links` and `tags` tables for fast lookups
 - No AI semantic search or vector embeddings
 - Version history tracked via simple `TEXT[]` array
 
@@ -148,11 +148,23 @@ pub fn extract_tags(content: &str) -> Vec<String> {
 ```
 
 ### Backlinks
-To find files that link TO a file:
-1. Get all active files in workspace
-2. Read each file's content
-3. Extract links using `extract_links()`
-4. Filter for links matching target file name
+To find files that link TO a file, use the indexed `links` table:
+
+```sql
+-- Fast O(1) backlink lookup using the links index
+SELECT DISTINCT f.name
+FROM files f
+INNER JOIN links l ON l.source_file_id = f.id
+WHERE l.workspace_id = $1
+  AND l.target_name = 'target-file-name'
+  AND f.deleted_at IS NULL;
+```
+
+**How it works**:
+1. Background worker listens for file changes
+2. Extracts wikilinks using `extract_links()`
+3. Stores `(workspace_id, source_file_id, target_name)` in `links` table
+4. Enables fast backlink lookups without file scanning
 
 ## Common Access Patterns
 
@@ -194,10 +206,21 @@ WHERE id = 'file-uuid';
 -- versions array contains all historical hashes
 ```
 
-### E. Find Files by Tag (Obsidian-Style)
+### E. Find Files by Tag (Indexed)
 "Find all files tagged #important."
 
-1. Get all active files in workspace
-2. Read each file's content
-3. Extract tags using `extract_tags()`
-4. Filter for matching tag
+```sql
+-- Fast lookup using the tags index
+SELECT f.*
+FROM files f
+INNER JOIN tags t ON t.file_id = f.id
+WHERE t.workspace_id = $1
+  AND t.tag = 'important'
+  AND f.deleted_at IS NULL;
+```
+
+**How it works**:
+1. Background worker listens for file changes
+2. Extracts hashtags using `extract_tags()`
+3. Stores `(workspace_id, file_id, tag)` in `tags` table
+4. Enables fast tag-based file lookups without scanning content
