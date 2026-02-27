@@ -111,14 +111,14 @@ pub use context::{
     PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM, TRUNCATED_TOOL_RESULT_PREVIEW,
 };
 
-pub use sync::{ChatFrontmatter, YamlFrontmatter};
+pub use sync::ChatFrontmatter;
 
 #[cfg(test)]
 mod tests;
 
 use crate::{
-    error::{Error, Result},
-    models::chat::{AgentConfig, ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL},
+    error::Result,
+    models::chat::{ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage},
     models::requests::{GrepResult, GlobResult, LsResult},
     queries, DbConn,
 };
@@ -617,40 +617,20 @@ impl ChatService {
     /// Updates the model for a chat session in app_data.
     pub async fn update_chat_model(
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
         new_model: String,
     ) -> Result<()> {
-        // 1. Get current version to extract existing agent_config
-        let version = queries::files::get_latest_version(conn, chat_file_id).await?;
-        let mut agent_config: AgentConfig = serde_json::from_value(version.app_data)
-            .unwrap_or_else(|_| AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            });
+        // 1. Get current agent config from file
+        let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
+            .unwrap_or_default();
 
         // 2. Update the model field
         agent_config.model = new_model.clone();
 
-        // 3. Create new version with updated agent_config
-        let new_app_data = serde_json::to_value(agent_config).map_err(Error::Json)?;
-
-        let new_version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
-            id: None,
-            file_id: chat_file_id,
-            workspace_id,
-            branch: "main".to_string(),
-            app_data: new_app_data,
-            hash: "model-update".to_string(),
-            author_id: None,
-        }).await?;
-
-        queries::files::update_latest_version_id(conn, chat_file_id, new_version.id).await?;
+        // 3. Update agent config in file
+        sync::update_agent_config_in_file(conn, storage, workspace_id, chat_file_id, &agent_config).await?;
 
         tracing::info!("[ChatService] Updated model for chat {} to {}", chat_file_id, new_model);
 
@@ -659,7 +639,7 @@ impl ChatService {
 
     /// Updates chat metadata and syncs to YAML frontmatter in the file.
     ///
-    /// This method updates the AgentConfig in the database (source of truth)
+    /// This method updates the AgentConfig in the file (source of truth)
     /// and also writes YAML frontmatter to the chat file for display/debugging.
     pub async fn update_chat_metadata(
         conn: &mut DbConn,
@@ -669,40 +649,16 @@ impl ChatService {
         mode: String,
         plan_file: Option<String>,
     ) -> Result<()> {
-        // 1. Get current version to extract existing agent_config
-        let version = queries::files::get_latest_version(conn, chat_file_id).await?;
-        let mut agent_config: AgentConfig = serde_json::from_value(version.app_data)
-            .unwrap_or_else(|_| AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            });
+        // 1. Get current agent config from file
+        let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
+            .unwrap_or_default();
 
         // 2. Update the mode and plan_file fields
         agent_config.mode = mode.clone();
         agent_config.plan_file = plan_file.clone();
 
-        // 3. Create new version with updated agent_config
-        let new_app_data = serde_json::to_value(agent_config.clone()).map_err(Error::Json)?;
-
-        let new_version = queries::files::create_version(conn, crate::models::files::NewFileVersion {
-            id: None,
-            file_id: chat_file_id,
-            workspace_id,
-            branch: "main".to_string(),
-            app_data: new_app_data,
-            hash: "metadata-update".to_string(),
-            author_id: None,
-        }).await?;
-
-        queries::files::update_latest_version_id(conn, chat_file_id, new_version.id).await?;
-
-        // 4. Sync YAML frontmatter to file
-        Self::sync_yaml_frontmatter(conn, storage, workspace_id, chat_file_id, &agent_config).await?;
+        // 3. Update agent config in file (this also syncs YAML frontmatter)
+        sync::update_agent_config_in_file(conn, storage, workspace_id, chat_file_id, &agent_config).await?;
 
         tracing::info!(
             "[ChatService] Updated metadata for chat {}: mode={}, plan_file={:?}",
@@ -710,53 +666,6 @@ impl ChatService {
             mode,
             plan_file
         );
-
-        Ok(())
-    }
-
-    /// Syncs chat metadata to YAML frontmatter in the file.
-    ///
-    /// Reads the current file content, wraps it with YAML frontmatter,
-    /// and writes it back. This keeps the file in sync with database metadata.
-    async fn sync_yaml_frontmatter(
-        conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
-        workspace_id: Uuid,
-        chat_file_id: Uuid,
-        agent_config: &AgentConfig,
-    ) -> Result<()> {
-        // 1. Get the file path
-        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
-
-        // 2. Read current file content
-        let current_content = if let Ok(content) = storage.read_file(workspace_id, &file.path).await {
-            String::from_utf8(content).unwrap_or_default()
-        } else {
-            String::new()
-        };
-
-        // 3. Parse existing content to separate frontmatter from body
-        let parsed = YamlFrontmatter::parse(&current_content);
-        let body_content = if let Ok(parsed) = parsed {
-            parsed.content
-        } else {
-            current_content.clone()
-        };
-
-        // 4. Create new frontmatter with updated metadata
-        let frontmatter = ChatFrontmatter::from_agent_config(agent_config);
-        let yaml_frontmatter = YamlFrontmatter::new(frontmatter, body_content);
-
-        // 5. Serialize with YAML frontmatter
-        let new_content = yaml_frontmatter.serialize()?;
-
-        // 6. Write back to file (convert to bytes)
-        storage.write_latest_file(workspace_id, &file.path, new_content.as_bytes()).await?;
-
-        // 7. Touch file to update timestamp
-        queries::files::touch_file(conn, chat_file_id).await?;
-
-        tracing::debug!("[ChatService] Synced YAML frontmatter for chat {}", chat_file_id);
 
         Ok(())
     }
@@ -782,14 +691,16 @@ impl ChatService {
         };
 
         // 3. Parse YAML frontmatter
-        let parsed = YamlFrontmatter::parse(&content)?;
+        use crate::utils::parse_yaml_frontmatter;
+        let (metadata, _) = parse_yaml_frontmatter::<ChatFrontmatter>(&content);
 
-        Ok(Some(parsed.frontmatter))
+        Ok(metadata)
     }
 
     /// Retrieves the full chat session including configuration and message history.
     pub async fn get_chat_session(
         conn: &mut DbConn,
+        storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
     ) -> Result<crate::models::chat::ChatSession> {
@@ -808,40 +719,9 @@ impl ChatService {
         // 2. Fetch all messages
         let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
-        // 3. Get existing config from latest version (or default)
-        let mut agent_config = if let Some(_version_id) = file.latest_version_id {
-            if let Ok(version) = queries::files::get_latest_version(conn, chat_file_id).await {
-                serde_json::from_value(version.app_data).unwrap_or_else(|_| crate::models::chat::AgentConfig {
-                    agent_id: None,
-                    model: DEFAULT_CHAT_MODEL.to_string(),
-                    temperature: 0.7,
-                    persona_override: None,
-                    previous_response_id: None,
-                    mode: "plan".to_string(),
-                    plan_file: None,
-                })
-            } else {
-                 crate::models::chat::AgentConfig {
-                    agent_id: None,
-                    model: DEFAULT_CHAT_MODEL.to_string(),
-                    temperature: 0.7,
-                    persona_override: None,
-                    previous_response_id: None,
-                    mode: "plan".to_string(),
-                    plan_file: None,
-                }
-            }
-        } else {
-             crate::models::chat::AgentConfig {
-                agent_id: None,
-                model: DEFAULT_CHAT_MODEL.to_string(),
-                temperature: 0.7,
-                persona_override: None,
-                previous_response_id: None,
-                mode: "plan".to_string(),
-                plan_file: None,
-            }
-        };
+        // 3. Get agent config from file's YAML frontmatter
+        let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
+            .unwrap_or_default();
 
         // Runtime migration: Convert legacy model strings to new format
         // Detects legacy format (no colon) and adds "openai:" prefix
@@ -965,12 +845,8 @@ impl ChatService {
         // 1. Get session for model/mode info first (needed to determine token limit)
         let _file = queries::files::get_file_by_id(conn, chat_file_id).await?;
 
-        let agent_config: crate::models::chat::AgentConfig = match queries::files::get_latest_version(conn, chat_file_id).await {
-            Ok(version) => serde_json::from_value(version.app_data)?,
-            Err(_) => {
-                return Err(Error::NotFound("Chat has no configuration".into()));
-            }
-        };
+        let agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
+            .unwrap_or_default();
 
         // 2. Look up model's context window from database
         let token_limit = Self::get_model_context_window(conn, &agent_config.model)
@@ -1241,21 +1117,16 @@ impl ChatService {
         // 1. Get current file info
         let current_file = queries::files::get_file_by_id(conn, chat_file_id).await?;
 
-        // 2. Generate new slug and path from name (keep same pattern as creation)
-        let new_slug = format!("chat-{}.chat", chat_file_id);
-        let new_path = format!("/chats/{}", new_slug);
+        // 2. Generate new path from name (keep same pattern as creation)
+        let new_path = format!("/chats/chat-{}.chat", chat_file_id);
 
-        // 3. Update file metadata (name, slug, path)
+        // 3. Update file metadata (name, path)
         queries::files::update_file_metadata(
             conn,
             chat_file_id,
             current_file.parent_id,
             &new_name,
-            &new_slug,
             &new_path,
-            current_file.is_virtual,
-            current_file.is_remote,
-            current_file.permission,
         ).await?;
 
         tracing::info!("[ChatService] Updated chat name for {} to {}", chat_file_id, new_name);

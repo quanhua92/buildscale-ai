@@ -36,13 +36,13 @@ impl Tool for MvTool {
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
-        _user_id: Uuid,
+        user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -58,7 +58,7 @@ impl Tool for MvTool {
                 match helpers::file_exists_on_disk(storage, workspace_id, &source_path).await {
                     Ok(true) => {
                         // File exists on disk - auto-import to database
-                        helpers::import_file_to_database(conn, storage, workspace_id, &source_path, _user_id).await?
+                        helpers::import_file_to_database(conn, storage, workspace_id, &source_path, user_id).await?
                     }
                     Ok(false) => {
                         return Err(Error::NotFound(format!("Source file not found: {}", source_path)));
@@ -97,14 +97,14 @@ impl Tool for MvTool {
                 let dir_file = file_queries::get_file_by_path(conn, workspace_id, dir_path)
                     .await?
                     .ok_or_else(|| Error::NotFound(format!("Destination directory not found: {}", dir_path)))?;
-                    
+
                 if !matches!(dir_file.file_type, crate::models::files::FileType::Folder) {
                     return Err(Error::Validation(crate::error::ValidationErrors::Single {
                         field: "destination".to_string(),
                         message: "Destination path ends with / but is not a directory".to_string(),
                     }));
                 }
-                
+
                 (Some(Some(dir_file.id)), source_file.name.clone())
             }
         } else {
@@ -127,7 +127,7 @@ impl Tool for MvTool {
                 } else {
                     "/"
                 };
-                
+
                 let parent_id = if parent_path == "/" {
                     Some(None)
                 } else {
@@ -136,11 +136,11 @@ impl Tool for MvTool {
                         .ok_or_else(|| Error::NotFound(format!("Destination parent directory not found: {}", parent_path)))?;
                     Some(Some(p.id))
                 };
-                
+
                 (parent_id, filename)
             }
         };
-        
+
         // 3. Safety check: prevent moving a folder into itself or a subfolder
         if source_file.file_type == crate::models::files::FileType::Folder {
             if let Some(Some(parent_id)) = target_parent_id {
@@ -152,23 +152,21 @@ impl Tool for MvTool {
                 }
             }
         }
-        
-        let update_request = crate::models::requests::UpdateFileRequest {
-            parent_id: target_parent_id,
-            name: Some(target_name),
-            slug: None,
-            is_virtual: None,
-            is_remote: None,
-            permission: None,
-        };
-        
-        let updated_file = files::update_file(conn, storage, source_file.id, update_request).await?;
-        
+
+        // Update file using simplified API
+        let updated_file = files::update_file(
+            conn,
+            storage,
+            source_file.id,
+            Some(target_name),
+            target_parent_id,
+        ).await?;
+
         let result = MvResult {
             from_path: source_path,
             to_path: updated_file.path,
         };
-        
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,

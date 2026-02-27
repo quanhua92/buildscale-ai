@@ -16,7 +16,7 @@ Every workspace shares a consistent root structure:
 *   **`/` (Root)**: The container for the entire logical volume.
 *   **`/system/skills/<skill_name>/SKILL.md`**: The "Toolbox." Each subfolder represents a capability (e.g., `github`, `stripe`) with a markdown manifest defining how to use it.
 *   **`/system/agents/<agent_name>/AGENT.md`**: The "Staff." Definitions for agent personas, system prompts, and constraints.
-*   **`/chats/chat-{id}.chat`**: The "Memory." Active and archived conversation logs (virtual files with YAML frontmatter).
+*   **`/chats/chat-{id}.chat`**: The "Memory." Active and archived conversation logs (files with YAML frontmatter).
 *   **`/data/`**: The "Knowledge." Ingested raw documents (PDFs, Videos, CSVs).
 *   **`/users/<user_id>/`**: The "Home Directory." User-specific workspace state (scratchpads, private drafts, personal agent configs).
 *   **`/projects/<project_name>/`**: The "Project." The user's actual codebase and working files.
@@ -28,7 +28,7 @@ Every workspace shares a consistent root structure:
 Agents don't just "open files." They use a standardized, semantic developer toolset to interact with this world.
 
 ### A. Discovery (`ls`, `glob`)
-*   **Purpose**: exploring the environment.
+*   **Purpose**: Exploring the environment.
 *   **Example**: `ls /system/skills` to see what tools are available.
 
 ### B. Ingestion (`read`)
@@ -37,7 +37,7 @@ Agents don't just "open files." They use a standardized, semantic developer tool
 
 ### C. Recall (`grep`)
 *   **Purpose**: Finding specific information across the entire logical volume.
-*   **Mechanism**: High-speed semantic or regex search across the workspace index.
+*   **Mechanism**: High-speed text search across the workspace.
 
 ### D. Action (`edit`, `write`)
 *   **`edit`**: Atomic modifications. Instead of rewriting huge files, agents submit precise "search & replace" blocks.
@@ -57,23 +57,38 @@ Each workspace is **self-contained** within `/app/storage/workspaces/` directory
 ```
 /app/storage/workspaces/{workspace_id}/
 ├── latest/       # Current files (Source of Truth)
-├── archive/      # All file versions (Version-Unique Store)
-...
-2.  **The Archive (`archive/`)**:
-    *   A **Version-Unique Store** containing every file version ever written for this workspace.
-    *   Files are stored by a unique hash salted with the `version_id` (e.g., `./archive/e3/b0/e3b0...`).
-    *   **Benefit**: Guaranteed isolation. Deleting or purging one file or version never affects others, enabling safe and immediate storage reclamation.
-...
-2.  **Archive** (First Write): The content is written to the Archive (`./storage/workspaces/{workspace_id}/archive/`).
-    *   **Purpose**: Version history and point-in-time restoration.
-    *   **Benefit**: Every version has a unique physical blob, preventing race conditions during deletion.
+├── archive/      # Hash-based backup copies
+└── trash/        # Soft-deleted files
+```
 
-3.  **Commit** (Second Write): The content is written to the Latest directory at `{full_path}` (hierarchical storage).
-    *   **Purpose**: Fast O(1) access for reads, grep, and AI tools.
-    *   **Benefit**: No database query needed to read file content.
-4.  **Index**: The database is updated with the new metadata and hash reference.
-    *   **Purpose**: Stores file metadata and version hash references.
-    *   Stores only hash, not content.
+### Storage Layers
+
+1. **The Latest (`latest/`)**:
+   - Hierarchical storage matching logical paths.
+   - Example: `./latest/projects/backend/src/main.rs`
+   - All reads hit this directory for O(1) access.
+
+2. **The Archive (`archive/`)**:
+   - Content-addressed storage for version history.
+   - Files stored by SHA-256 hash with 2-level sharding: `./archive/e3/b0/e3b0...`
+   - **Deduplication**: Same content = same hash = single blob.
+
+3. **The Index (Database)**:
+   - Single `files` table with inline version tracking.
+   - `hash` column: SHA-256 of current content.
+   - `versions TEXT[]` column: Array of historical hashes.
+   - No separate version table needed.
+
+### Write Flow
+
+```
+1. Calculate hash = SHA-256(content)
+2. If file exists:
+   a. Archive current content to archive/{hash}
+   b. Append old hash to versions array
+3. Write new content to latest/{path}
+4. Update hash in database
+```
 
 ### Implications for Tools
 
@@ -84,7 +99,30 @@ Each workspace is **self-contained** within `/app/storage/workspaces/` directory
 
 ---
 
-## 4. Use Cases (Applied Vision)
+## 4. Knowledge Graph (Obsidian-Style)
+
+BuildScale uses Obsidian-style content parsing for links and tags instead of separate database tables.
+
+### Wikilinks
+```markdown
+See [[Project Alpha]] for details.
+See [[meetings/standup|Daily Standup]] for the schedule.
+```
+
+### Hashtags
+```markdown
+This is #important for #project/alpha.
+```
+
+### Benefits
+- **Simplicity**: No separate tables for links and tags
+- **Flexibility**: Links and tags are part of the content itself
+- **Portability**: Files can be exported and links/tags remain valid
+- **Backlinks**: Computed on-demand from content
+
+---
+
+## 5. Use Cases (Applied Vision)
 
 ### Just-in-Time Learning
 1.  Agent is asked to "Open a PR."
@@ -100,18 +138,23 @@ Each workspace is **self-contained** within `/app/storage/workspaces/` directory
 ### Infinite Chat
 1.  Agent needs to know "What did we decide about the database schema last month?"
 2.  It runs `grep "database schema" /chats`.
-3.  **Result**: It finds the relevant conversation log (preserved by the auto-archiving system) without filling its context window with irrelevant history.
+3.  **Result**: It finds the relevant conversation log without filling its context window with irrelevant history.
+
+### Knowledge Navigation
+1.  User asks "What's connected to the Q4 Planning document?"
+2.  System extracts `[[wikilinks]]` from all files.
+3.  **Result**: Shows backlinks - which documents reference the Q4 Planning doc.
 
 ---
 
-## 5. The Platform Layer (Infrastructure & Scale)
+## 6. The Platform Layer (Infrastructure & Scale)
 
-While the agent sees a simple file system, the **Platform** powers it with a massive distributed architecture.
+While the agent sees a simple file system, the **Platform** powers it with a distributed architecture.
 
 ### The Global Shared Surface
 A workspace is not a folder on a disk; it is a **Globally Synchronized State Layer**.
-1.  **PostgreSQL**: Acts as the **High-Speed Index** (Permissions, Metadata, Vector Search, Relationships).
-2.  **S3 / Object Store**: Acts as the **Massive Memory** (Content Blobs, Archives).
+1.  **PostgreSQL**: Acts as the **High-Speed Index** (Permissions, Metadata, Relationships).
+2.  **Disk / Object Store**: Acts as the **Massive Memory** (Content Blobs, Archives).
 
 ### Multi-User Collaboration
 Since a workspace is shared by a team, the file system handles multi-user concurrency naturally:
@@ -122,7 +165,7 @@ Since a workspace is shared by a team, the file system handles multi-user concur
 ### The Sandbox Hydration Pattern (Solving Data Gravity)
 Agents often need to run native tools (`bash`, `python`, `npm`) that expect a local filesystem.
 1.  **Spin Up**: A Docker Sandbox starts in a region near the data.
-2.  **Hydrate**: The platform **actively syncs** the relevant slice of the workspace from S3/Postgres into the container's local volume.
+2.  **Hydrate**: The platform **actively syncs** the relevant slice of the workspace from storage into the container's local volume.
 3.  **Execute**: The AI runs `ls -la` or `python script.py` at native NVMe speeds.
 4.  **Security & State**: The synced workspace files are **read-only** within the container. Temporary work can be done in `/tmp`, but any changes intended for the global workspace must be committed using the **`write`** or **`edit`** tools.
 
@@ -130,7 +173,7 @@ Agents often need to run native tools (`bash`, `python`, `npm`) that expect a lo
 
 ---
 
-## 6. Distributed Agentic Workflows
+## 7. Distributed Agentic Workflows
 
 The File System acts as the **State of Record** for complex, multi-agent pipelines, decoupled from the execution.
 

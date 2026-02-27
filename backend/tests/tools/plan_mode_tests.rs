@@ -17,6 +17,9 @@ fn test_toolconfig_build_mode() {
     let config = ToolConfig {
         plan_mode: false,
         active_plan_path: Some("/plans/my-plan.plan".to_string()),
+        chat_id: None,
+        tag_index_tx: None,
+        link_index_tx: None,
     };
     assert!(!config.plan_mode, "Should be in build mode");
     assert_eq!(
@@ -31,6 +34,9 @@ fn test_toolconfig_plan_mode() {
     let config = ToolConfig {
         plan_mode: true,
         active_plan_path: None,
+        chat_id: None,
+        tag_index_tx: None,
+        link_index_tx: None,
     };
     assert!(config.plan_mode, "Should be in plan mode");
     assert!(config.active_plan_path.is_none(), "Should have no active plan in plan mode");

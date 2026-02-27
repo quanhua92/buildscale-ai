@@ -34,10 +34,11 @@ pub mod web_search;
 
 pub mod helpers;
 
-use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService};
+use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService, state::TagIndexMessage, state::LinkIndexMessage};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
+use tokio::sync::mpsc;
 
 /// Error message shown when tools are restricted in Plan Mode
 ///
@@ -58,6 +59,9 @@ pub const PLAN_MODE_ERROR: &str = "System is in Plan Mode. To switch to Build Mo
 /// let config = ToolConfig {
 ///     plan_mode: true,
 ///     active_plan_path: Some("/plans/project-roadmap.plan".to_string()),
+///     chat_id: None,
+///     tag_index_tx: None,
+///     link_index_tx: None,
 /// };
 /// ```
 #[derive(Debug, Clone)]
@@ -75,10 +79,20 @@ pub struct ToolConfig {
     /// agent's context.
     pub active_plan_path: Option<String>,
 
-    // Future extensibility:
-    // pub skills: Vec<String>,
-    // pub agent_id: Uuid,
-    // pub session_id: Uuid,
+    /// Chat ID for tools that need to update chat metadata
+    ///
+    /// Used by exit_plan_mode to update the chat file's mode.
+    pub chat_id: Option<Uuid>,
+
+    /// Channel to signal tag indexer worker when files are modified
+    ///
+    /// Used by write/edit tools to trigger tag reindexing for markdown files.
+    pub tag_index_tx: Option<mpsc::UnboundedSender<TagIndexMessage>>,
+
+    /// Channel to signal link indexer worker when files are modified
+    ///
+    /// Used by write/edit tools to trigger link reindexing for markdown files.
+    pub link_index_tx: Option<mpsc::UnboundedSender<LinkIndexMessage>>,
 }
 
 impl Default for ToolConfig {
@@ -86,6 +100,9 @@ impl Default for ToolConfig {
         Self {
             plan_mode: false, // Default to Build Mode for normal operation
             active_plan_path: None,
+            chat_id: None,
+            tag_index_tx: None,
+            link_index_tx: None,
         }
     }
 }

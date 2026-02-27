@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_id FROM tags WHERE workspace_id = $1 AND tag = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c3c5af0f29ff3343ee2a91da8d25d0d3cb3eb39d0d6f5ca8b0bf717f3e4b77a0"
+}

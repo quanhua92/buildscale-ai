@@ -218,7 +218,7 @@ pub async fn extract_parent_id(
 /// * `storage` - The file storage service
 /// * `workspace_id` - The workspace ID
 /// * `path` - The file path (with or without leading slash)
-/// * `user_id` - The user ID who will be the author
+/// * `user_id` - The user ID (unused in simplified schema, kept for API compatibility)
 ///
 /// # Returns
 /// * `Ok(file)` - The created database file entry
@@ -228,7 +228,7 @@ pub async fn import_file_to_database(
     storage: &FileStorageService,
     workspace_id: Uuid,
     path: &str,
-    user_id: Uuid,
+    _user_id: Uuid,
 ) -> Result<crate::models::files::File> {
     // Read file from disk
     let (content, _hash) = read_file_from_disk(storage, workspace_id, path).await?;
@@ -256,16 +256,10 @@ pub async fn import_file_to_database(
         CreateFileRequest {
             workspace_id,
             parent_id,
-            author_id: user_id,
             name: name.clone(),
-            slug: Some(name),
             path: Some(path.to_string()),
-            is_virtual: Some(false),
-            is_remote: Some(false),
-            permission: None,
             file_type,
             content: serde_json::json!(content),
-            app_data: None,
         },
     )
     .await?;

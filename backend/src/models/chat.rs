@@ -24,7 +24,6 @@ pub enum ChatMessageRole {
 pub enum ChatAttachment {
     File {
         file_id: Uuid,
-        version_id: Option<Uuid>,
     },
     Url {
         url: String,
@@ -114,6 +113,20 @@ pub struct AgentConfig {
 
 fn default_mode() -> String {
     "plan".to_string()
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            agent_id: None,
+            model: DEFAULT_CHAT_MODEL.to_string(),
+            temperature: 0.7,
+            persona_override: None,
+            previous_response_id: None,
+            mode: "plan".to_string(),
+            plan_file: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

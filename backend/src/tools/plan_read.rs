@@ -6,7 +6,7 @@ use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::parse_frontmatter;
+use crate::utils::{parse_yaml_frontmatter, PlanMetadata};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -115,7 +115,7 @@ Returns metadata (title, status, created_at) and content."#
         };
 
         // Parse frontmatter
-        let (metadata, remaining_content) = parse_frontmatter(&content_text);
+        let (metadata, remaining_content) = parse_yaml_frontmatter::<PlanMetadata>(&content_text);
 
         // Apply offset and limit to remaining content
         let offset = plan_args.offset.unwrap_or(0);
@@ -155,7 +155,7 @@ Returns metadata (title, status, created_at) and content."#
             path: path.clone(),
             metadata,
             content: sliced_content,
-            hash: file_with_content.latest_version.hash,
+            hash: file_with_content.hash,
             total_lines: Some(total_lines),
         };
 

@@ -1,10 +1,12 @@
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
 use crate::models::requests::{
-    CreateFileRequest, CreateVersionRequest, ToolResponse, WriteArgs, WriteResult,
+    CreateFileRequest, ToolResponse, WriteArgs, WriteResult,
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
+use crate::state::{TagIndexMessage, LinkIndexMessage};
+use crate::utils::{DocumentMetadata, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -46,13 +48,13 @@ impl Tool for WriteTool {
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
         storage: &crate::services::storage::FileStorageService,
         workspace_id: Uuid,
-        user_id: Uuid,
+        _user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -61,7 +63,7 @@ impl Tool for WriteTool {
 
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
 
-        // Overwrite Protection: Prevent accidental file overwrites
+        // Overwrite Protection
         if existing_file.is_some() && !write_args.overwrite {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "path".to_string(),
@@ -73,14 +75,11 @@ impl Tool for WriteTool {
             }));
         }
 
-        // Plan Mode Guard: Only allow Plan files in plan mode
+        // Plan Mode Guard
         if config.plan_mode {
-            // For new files, check if it's a .plan file
-            // For existing files, check the file type
             let is_plan_file = if let Some(ref file) = existing_file {
                 matches!(file.file_type, FileType::Plan)
             } else {
-                // New file - check extension
                 path.ends_with(".plan")
             };
 
@@ -91,37 +90,26 @@ impl Tool for WriteTool {
                 }));
             }
         }
-        
-        // Virtual File Protection: Prevent direct writes to system-managed files (e.g. Chats)
-        if let Some(ref file) = existing_file {
-            if file.is_virtual {
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "path".to_string(),
-                    message: "Cannot write to a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
-                }));
-            }
-        }
 
-        let result = if let Some(file) = existing_file {
-            // Prepare content: validate content type compatibility (content stored as-is)
-            let final_content = Self::prepare_content_for_type(file.file_type, write_args.content.0, write_args.file_type.as_deref())?;
+        let (result, is_markdown_document) = if let Some(file) = existing_file {
+            // Update existing file
+            let final_content = Self::prepare_content_for_update(file.file_type, write_args.content.0)?;
 
-            let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-                author_id: Some(user_id),
-                branch: Some("main".to_string()),
-                content: final_content,
-                app_data: None,
-            }).await?;
+            let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
 
-            WriteResult {
-                path,
-                file_id: file.id,
-                version_id: version.id,
-                hash: version.hash,
-            }
+            let is_markdown = matches!(file.file_type, FileType::Document) && path.ends_with(".md");
+            (
+                WriteResult {
+                    path,
+                    file_id: file.id,
+                    hash: updated_file.hash.unwrap_or_default(),
+                },
+                is_markdown,
+            )
         } else {
+            // Create new file
             let filename = path.rsplit('/').next().unwrap_or("untitled");
-            
+
             let file_type = if let Some(ft_str) = write_args.file_type.as_deref() {
                 FileType::from_str(ft_str).map_err(|_| {
                     Error::Validation(ValidationErrors::Single {
@@ -133,32 +121,49 @@ impl Tool for WriteTool {
                 FileType::Document
             };
 
-            // Prepare content: validate content type compatibility (content stored as-is)
-            let final_content = Self::prepare_content_for_type(file_type, write_args.content.0, write_args.file_type.as_deref())?;
+            let final_content = Self::prepare_content_for_create(file_type, filename, write_args.content.0, write_args.file_type.as_deref())?;
 
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
-                author_id: user_id,
                 name: filename.to_string(),
-                slug: None,
                 path: Some(path.clone()),
-                is_virtual: None,
-                is_remote: None,
-                permission: None,
                 file_type,
                 content: final_content,
-                app_data: None,
             }).await?;
-            
-            WriteResult {
-                path,
-                file_id: file_result.file.id,
-                version_id: file_result.latest_version.id,
-                hash: file_result.latest_version.hash,
-            }
+
+            let is_markdown = matches!(file_type, FileType::Document) && path.ends_with(".md");
+            (
+                WriteResult {
+                    path,
+                    file_id: file_result.file.id,
+                    hash: file_result.hash,
+                },
+                is_markdown,
+            )
         };
-        
+
+        // Signal tag indexer to update tags for markdown documents
+        if is_markdown_document {
+            if let Some(ref tag_index_tx) = config.tag_index_tx {
+                if let Err(e) = tag_index_tx.send(TagIndexMessage {
+                    workspace_id,
+                    file_id: result.file_id,
+                }) {
+                    tracing::warn!("Failed to signal tag indexer: {}", e);
+                }
+            }
+            // Signal link indexer to update links for markdown documents
+            if let Some(ref link_index_tx) = config.link_index_tx {
+                if let Err(e) = link_index_tx.send(LinkIndexMessage {
+                    workspace_id,
+                    file_id: result.file_id,
+                }) {
+                    tracing::warn!("Failed to signal link indexer: {}", e);
+                }
+            }
+        }
+
         Ok(ToolResponse {
             success: true,
             result: serde_json::to_value(result)?,
@@ -168,29 +173,71 @@ impl Tool for WriteTool {
 }
 
 impl WriteTool {
-    /// Validates content type compatibility (no wrapping/transformation).
-    ///
-    /// IMPORTANT: This function does NOT wrap or transform content.
-    /// Content is stored exactly as provided:
-    /// - Raw strings → stored as JSON strings
-    /// - JSON objects → stored as structured JSON
-    ///
-    /// This is consistent with edit.rs which also stores content as raw strings.
-    fn prepare_content_for_type(
-        actual_type: FileType,
+    /// Prepare content for creating a new file (adds frontmatter for markdown documents)
+    fn prepare_content_for_create(
+        file_type: FileType,
+        filename: &str,
         content: Value,
         requested_type_str: Option<&str>,
     ) -> Result<Value> {
-        // 1. Prevent writing text content to a folder path unless explicitly creating a folder
-        if matches!(actual_type, FileType::Folder) && requested_type_str != Some("folder") {
+        // Only block folder writes if not explicitly requested
+        if matches!(file_type, FileType::Folder) && requested_type_str != Some("folder") {
             return Err(Error::Validation(ValidationErrors::Single {
                 field: "path".to_string(),
                 message: "Cannot write text content to a folder path".to_string(),
             }));
         }
 
-        // Content is passed through as-is for all file types
-        // Documents and Chat files can be raw strings or JSON objects
+        // For markdown documents, auto-add frontmatter if not present (Obsidian-style)
+        if matches!(file_type, FileType::Document) && filename.ends_with(".md") {
+            let content_str = match &content {
+                Value::String(s) => s.clone(),
+                _ => serde_json::to_string(&content).unwrap_or_default(),
+            };
+
+            // Check if content already has frontmatter
+            if !content_str.trim_start().starts_with("---\n") {
+                // Auto-generate frontmatter from filename
+                let metadata = DocumentMetadata::from_filename(filename);
+                let content_with_frontmatter = prepend_yaml_frontmatter(&metadata, &content_str);
+                return Ok(serde_json::json!(content_with_frontmatter));
+            }
+        }
+
+        Ok(content)
+    }
+
+    /// Prepare content for updating an existing file (updates modified timestamp for markdown documents)
+    fn prepare_content_for_update(
+        file_type: FileType,
+        content: Value,
+    ) -> Result<Value> {
+        // Only block folder writes
+        if matches!(file_type, FileType::Folder) {
+            return Err(Error::Validation(ValidationErrors::Single {
+                field: "path".to_string(),
+                message: "Cannot write text content to a folder path".to_string(),
+            }));
+        }
+
+        // For markdown documents, update modified timestamp if frontmatter exists
+        if matches!(file_type, FileType::Document) {
+            let content_str = match &content {
+                Value::String(s) => s.clone(),
+                _ => serde_json::to_string(&content).unwrap_or_default(),
+            };
+
+            use crate::utils::parse_yaml_frontmatter;
+            let (metadata, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_str);
+
+            if let Some(mut meta) = metadata {
+                // Update modified timestamp
+                meta.touch();
+                let content_with_frontmatter = prepend_yaml_frontmatter(&meta, body);
+                return Ok(serde_json::json!(content_with_frontmatter));
+            }
+        }
+
         Ok(content)
     }
 }

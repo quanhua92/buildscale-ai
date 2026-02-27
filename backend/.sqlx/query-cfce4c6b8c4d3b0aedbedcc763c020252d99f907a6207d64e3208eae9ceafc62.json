@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE agent_sessions\n                        SET status = 'idle',\n                            updated_at = NOW(),\n                            last_heartbeat = NOW(),\n                            completed_at = NULL,\n                            error_message = NULL,\n                            current_task = NULL\n                        WHERE id = $1\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cfce4c6b8c4d3b0aedbedcc763c020252d99f907a6207d64e3208eae9ceafc62"
+}

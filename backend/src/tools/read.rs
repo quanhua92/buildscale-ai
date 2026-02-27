@@ -1,8 +1,10 @@
 use crate::{DbConn, error::{Result, Error}};
+use crate::models::files::FileType;
 use crate::models::requests::{ToolResponse, ReadArgs, ReadResult};
 use crate::services::files;
 use crate::queries::files as file_queries;
 use crate::tools::helpers;
+use crate::utils::{parse_yaml_frontmatter, DocumentMetadata};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -102,7 +104,7 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
             "additionalProperties": false
         })
     }
-    
+
     async fn execute(
         &self,
         conn: &mut DbConn,
@@ -145,12 +147,23 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
 
                         // For disk-only files, return immediately with basic metadata
                         // We can't support scroll mode or line counting for unsynced files
+
+                        // Parse frontmatter for markdown documents
+                        let (display_content, metadata_json) = if path.ends_with(".md") {
+                            let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content);
+                            let meta_json = meta.and_then(|m| serde_json::to_value(m).ok());
+                            (body.to_string(), meta_json)
+                        } else {
+                            (content.clone(), None)
+                        };
+
                         let result = ReadResult {
                             path: path.clone(),
-                            content: serde_json::json!(content),
+                            content: serde_json::json!(display_content),
                             hash,
                             synced: false,  // Filesystem-only
-                            total_lines: Some(content.lines().count()),
+                            metadata: metadata_json,
+                            total_lines: Some(display_content.lines().count()),
                             truncated: Some(false),
                             offset: Some(0),
                             limit: Some(limit),
@@ -213,8 +226,22 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
             (abs_offset, false)
         };
 
+        // Parse frontmatter for markdown documents and extract body content
+        let (body_content, metadata_json) = if matches!(file.file_type, FileType::Document) && path.ends_with(".md") {
+            match &file_with_content.content {
+                serde_json::Value::String(s) => {
+                    let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(s);
+                    let meta_json = meta.and_then(|m| serde_json::to_value(m).ok());
+                    (serde_json::Value::String(body.to_string()), meta_json)
+                }
+                other => (other.clone(), None),
+            }
+        } else {
+            (file_with_content.content.clone(), None)
+        };
+
         // Apply offset/limit for string content
-        let (content, total_lines, truncated) = match &file_with_content.content {
+        let (content, total_lines, truncated) = match &body_content {
             serde_json::Value::String(s) => {
                 let (sliced, total, was_truncated) = if cursor_mode {
                     // Scroll mode: always use positive offset from beginning
@@ -251,8 +278,9 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
         let result = ReadResult {
             path,
             content,
-            hash: file_with_content.latest_version.hash,
+            hash: file_with_content.hash,
             synced: true,  // Database entry
+            metadata: metadata_json,
             total_lines,
             truncated,
             offset: Some(actual_offset),

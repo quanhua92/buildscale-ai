@@ -7,7 +7,7 @@ use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_frontmatter, PlanStatus};
+use crate::utils::{parse_yaml_frontmatter, PlanMetadata, PlanStatus};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -93,7 +93,7 @@ Optionally filter by status."#
                 Ok(fwc) => {
                     match &fwc.content {
                         Value::String(s) => {
-                            let (meta, _) = parse_frontmatter(s);
+                            let (meta, _) = parse_yaml_frontmatter::<PlanMetadata>(s);
                             meta
                         }
                         _ => None,

@@ -128,8 +128,34 @@ impl TestApp {
         // Initialize archive cleanup channel
         let (archive_cleanup_tx, _archive_cleanup_rx) = tokio::sync::mpsc::unbounded_channel();
 
+        // Initialize tag indexer channel and spawn worker
+        let (tag_index_tx, tag_index_rx) = tokio::sync::mpsc::unbounded_channel();
+        let pool_tags = pool.clone();
+        let storage_config_tags = config.storage.clone();
+        tokio::spawn(async move {
+            buildscale::tag_indexer_worker(
+                pool_tags,
+                tokio::sync::broadcast::channel(1).1, // dummy shutdown receiver
+                tag_index_rx,
+                storage_config_tags,
+            ).await;
+        });
+
+        // Initialize link indexer channel and spawn worker
+        let (link_index_tx, link_index_rx) = tokio::sync::mpsc::unbounded_channel();
+        let pool_links = pool.clone();
+        let storage_config_links = config.storage.clone();
+        tokio::spawn(async move {
+            buildscale::link_indexer_worker(
+                pool_links,
+                tokio::sync::broadcast::channel(1).1, // dummy shutdown receiver
+                link_index_rx,
+                storage_config_links,
+            ).await;
+        });
+
         // Build application state with cache, user_cache, database pool, and config
-        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service, config.clone(), archive_cleanup_tx);
+        let app_state = AppState::new(cache.clone(), user_cache, pool.clone(), rig_service, config.clone(), archive_cleanup_tx, tag_index_tx, link_index_tx);
 
         // Build API v1 routes using the shared router function
         let api_routes = create_api_router(app_state.clone());

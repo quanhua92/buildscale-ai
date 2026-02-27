@@ -118,25 +118,10 @@ macro_rules! define_rig_tool {
 
                     // Read current mode from database to get fresh ToolConfig
                     // This ensures mode changes mid-stream are respected
-                    let tool_config = if let Ok(version) = crate::queries::files::get_latest_version(&mut conn, chat_id).await {
-                        let agent_config: crate::models::chat::AgentConfig =
-                            serde_json::from_value(version.app_data).unwrap_or_else(|_| {
-                                tracing::warn!(
-                                    tool = $name,
-                                    chat_id = %chat_id,
-                                    "Failed to parse agent_config, using defaults"
-                                );
-                                crate::models::chat::AgentConfig {
-                                    agent_id: None,
-                                    model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
-                                    temperature: 0.7,
-                                    persona_override: None,
-                                    previous_response_id: None,
-                                    mode: "plan".to_string(),
-                                    plan_file: None,
-                                }
-                            });
-
+                    // Preserve tag_index_tx and link_index_tx from initial config
+                    let tag_index_tx = initial_tool_config.tag_index_tx.clone();
+                    let link_index_tx = initial_tool_config.link_index_tx.clone();
+                    let tool_config = if let Ok(agent_config) = crate::services::chat::sync::get_agent_config_from_file(&mut conn, &storage, workspace_id, chat_id).await {
                         tracing::debug!(
                             tool = $name,
                             chat_id = %chat_id,
@@ -148,12 +133,15 @@ macro_rules! define_rig_tool {
                         crate::tools::ToolConfig {
                             plan_mode: agent_config.mode == "plan",
                             active_plan_path: agent_config.plan_file,
+                            chat_id: Some(chat_id),
+                            tag_index_tx,
+                            link_index_tx,
                         }
                     } else {
                         tracing::warn!(
                             tool = $name,
                             chat_id = %chat_id,
-                            "Failed to read latest version, using initial ToolConfig"
+                            "Failed to read agent config from file, using initial ToolConfig"
                         );
                         initial_tool_config
                     };

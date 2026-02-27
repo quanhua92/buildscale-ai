@@ -209,7 +209,6 @@ async fn read_single_file(
     }
 
     let file_with_content = files::get_file_with_content(conn, storage, file.id).await?;
-    let latest_version = file_queries::get_latest_version(conn, file.id).await?;
 
     // Extract content
     let (content, total_lines, truncated) = match &file_with_content.content {
@@ -234,7 +233,7 @@ async fn read_single_file(
         path,
         success: true,
         content: Some(content),
-        hash: Some(latest_version.hash),
+        hash: Some(file_with_content.hash),
         synced: true,  // Database entry
         error: None,
         total_lines,

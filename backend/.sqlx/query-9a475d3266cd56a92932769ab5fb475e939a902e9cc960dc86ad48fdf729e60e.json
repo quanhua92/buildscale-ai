@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO tags (workspace_id, file_id, tag)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (workspace_id, file_id, tag) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a475d3266cd56a92932769ab5fb475e939a902e9cc960dc86ad48fdf729e60e"
+}

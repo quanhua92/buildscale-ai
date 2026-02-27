@@ -44,8 +44,8 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
     // Use INSERT ... ON CONFLICT DO UPDATE for atomic get-or-create
     // This prevents race conditions when multiple concurrent requests
     // try to create/update the same session
-    let session = sqlx::query_as!(
-        AgentSession,
+    // Returns the session id only, then we fetch with join separately
+    let session_id = sqlx::query_scalar!(
         r#"
         WITH existing AS (
             SELECT
@@ -102,26 +102,9 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     THEN NULL
                     ELSE agent_sessions.current_task
                 END
-            RETURNING *
+            RETURNING id
         )
-        SELECT
-            s.id,
-            s.workspace_id,
-            s.chat_id,
-            s.user_id,
-            s.agent_type as "agent_type: AgentType",
-            s.status as "status: SessionStatus",
-            s.model,
-            s.mode,
-            s.current_task,
-            s.error_message,
-            s.created_at,
-            s.updated_at,
-            s.last_heartbeat,
-            s.completed_at,
-            f.name as "chat_name?"
-        FROM ins s
-        LEFT JOIN files f ON s.chat_id = f.id
+        SELECT id FROM ins
         "#,
         new_session.chat_id,
         new_session.workspace_id,
@@ -154,8 +137,8 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
     })?;
 
     // Handle the case where no session was returned (active session with recent heartbeat)
-    let session = match session {
-        Some(s) => s,
+    let session_id = match session_id {
+        Some(id) => id,
         None => {
             // No session returned means there's an active session with recent heartbeat
             // Fetch it to return proper error
@@ -193,15 +176,19 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                     let heartbeat_age = Utc::now().signed_duration_since(s.last_heartbeat);
                     let heartbeat_age_secs = heartbeat_age.num_seconds();
 
-                    // Terminal states are always reusable (actor is gone)
-                    // Only reject if: NOT terminal AND heartbeat is recent (session is truly active)
-                    if !s.status.is_terminal() && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS {
+                    // Terminal states (completed, error, cancelled) are always reusable - actor is gone
+                    // Idle sessions are always reusable - no active processing, actor might have died
+                    // Only reject if: running/paused with recent heartbeat (actor is truly active)
+                    let is_truly_active = matches!(s.status, SessionStatus::Running | SessionStatus::Paused)
+                        && heartbeat_age_secs <= STALE_SESSION_THRESHOLD_SECONDS;
+
+                    if is_truly_active {
                         tracing::warn!(
                             chat_id = %new_session.chat_id,
                             existing_status = %s.status,
                             session_id = %s.id,
                             heartbeat_age_secs = %heartbeat_age_secs,
-                            "[AgentSessions] Active session already exists for chat (recent heartbeat) - rejecting"
+                            "[AgentSessions] Active session already exists for chat (running/paused with recent heartbeat) - rejecting"
                         );
                         return Err(Error::Conflict(format!(
                             "An active session already exists for this chat: {} (status: {}, session_id: {})",
@@ -209,53 +196,31 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         )));
                     }
 
-                    // Session is stale OR in terminal state - reuse it
+                    // Session is reusable (terminal, idle, or stale) - reuse it
                     // Reset the session to idle and return it
                     tracing::info!(
                         chat_id = %new_session.chat_id,
                         existing_status = %s.status,
                         session_id = %s.id,
                         heartbeat_age_secs = %heartbeat_age_secs,
-                        "[AgentSessions] Reusing stale/terminal session - resetting to idle"
+                        "[AgentSessions] Reusing session - resetting to idle"
                     );
 
-                    // Reset the session to idle status and get chat name in a single query
-                    let with_name = sqlx::query_as!(
-                        AgentSession,
+                    // Reset the session to idle status
+                    sqlx::query!(
                         r#"
-                        WITH updated AS (
-                            UPDATE agent_sessions
-                            SET status = 'idle',
-                                updated_at = NOW(),
-                                last_heartbeat = NOW(),
-                                completed_at = NULL,
-                                error_message = NULL,
-                                current_task = NULL
-                            WHERE id = $1
-                            RETURNING *
-                        )
-                        SELECT
-                            u.id,
-                            u.workspace_id,
-                            u.chat_id,
-                            u.user_id,
-                            u.agent_type as "agent_type: AgentType",
-                            u.status as "status: SessionStatus",
-                            u.model,
-                            u.mode,
-                            u.current_task,
-                            u.error_message,
-                            u.created_at,
-                            u.updated_at,
-                            u.last_heartbeat,
-                            u.completed_at,
-                            f.name as "chat_name?"
-                        FROM updated u
-                        LEFT JOIN files f ON u.chat_id = f.id
+                        UPDATE agent_sessions
+                        SET status = 'idle',
+                            updated_at = NOW(),
+                            last_heartbeat = NOW(),
+                            completed_at = NULL,
+                            error_message = NULL,
+                            current_task = NULL
+                        WHERE id = $1
                         "#,
                         s.id
                     )
-                    .fetch_one(&mut *conn)
+                    .execute(&mut *conn)
                     .await
                     .map_err(|e| {
                         tracing::error!(
@@ -267,7 +232,10 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
                         Error::Sqlx(e)
                     })?;
 
-                    return Ok(with_name);
+                    // Fetch the updated session with chat name
+                    return get_session_by_id(conn, s.id)
+                        .await?
+                        .ok_or_else(|| Error::NotFound(format!("Session {} not found after update", s.id)));
                 }
                 None => {
                     // This shouldn't happen - no session exists but we couldn't create one
@@ -280,6 +248,11 @@ pub async fn get_or_create_session(conn: &mut DbConn, new_session: NewAgentSessi
             }
         }
     };
+
+    // Fetch the session with chat name
+    let session = get_session_by_id(conn, session_id)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("Session {} not found after creation", session_id)))?;
 
     tracing::info!(
         session_id = %session.id,
@@ -877,6 +850,7 @@ pub async fn reset_session_to_idle(
         "[AgentSessions] Resetting session to idle state"
     );
 
+    // Single query with CTE to UPDATE and fetch with chat_name in one round-trip
     let session = sqlx::query_as!(
         AgentSession,
         r#"

@@ -1,5 +1,5 @@
 use crate::models::agent_session::SessionStatus;
-use crate::models::chat::{ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
+use crate::models::chat::{ChatMessageRole, NewChatMessage};
 use crate::models::sse::SseEvent;
 use crate::providers::Agent;
 use crate::queries;
@@ -11,6 +11,7 @@ use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
 use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
 use crate::services::storage::FileStorageService;
+use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::DbPool;
 use crate::error::Result;
 use rig::streaming::StreamingChat;
@@ -56,6 +57,10 @@ struct InteractionContext {
     default_context_token_limit: usize,
     state: Arc<Mutex<SharedActorState>>,
     event_tx: broadcast::Sender<SseEvent>,
+    /// Channel to signal tag indexer worker when files are modified
+    tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to signal link indexer worker when files are modified
+    link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 pub struct ChatActor {
@@ -89,6 +94,10 @@ pub struct ChatActor {
     interaction_result_rx: mpsc::Receiver<InteractionResult>,
     /// Handle for the current background interaction task (if any)
     background_task: Option<BackgroundInteractionTask>,
+    /// Channel to signal tag indexer worker when files are modified
+    tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to signal link indexer worker when files are modified
+    link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 pub struct ChatActorArgs {
@@ -103,6 +112,10 @@ pub struct ChatActorArgs {
     pub default_context_token_limit: usize,
     pub event_tx: broadcast::Sender<SseEvent>,
     pub inactivity_timeout: std::time::Duration,
+    /// Channel to signal tag indexer worker when files are modified
+    pub tag_index_tx: mpsc::UnboundedSender<TagIndexMessage>,
+    /// Channel to signal link indexer worker when files are modified
+    pub link_index_tx: mpsc::UnboundedSender<LinkIndexMessage>,
 }
 
 impl ChatActor {
@@ -154,6 +167,8 @@ impl ChatActor {
             interaction_result_tx,
             interaction_result_rx,
             background_task: None,
+            tag_index_tx: args.tag_index_tx,
+            link_index_tx: args.link_index_tx,
         };
 
         tokio::spawn(async move {
@@ -449,6 +464,8 @@ impl ChatActor {
             default_context_token_limit: self.default_context_token_limit,
             state: self.state.clone(),
             event_tx: self.event_tx.clone(),
+            tag_index_tx: self.tag_index_tx.clone(),
+            link_index_tx: self.link_index_tx.clone(),
         }
     }
 
@@ -460,6 +477,7 @@ impl ChatActor {
     async fn create_session(&self) -> Result<Uuid> {
         super::session::create_session(
             &self.pool,
+            &self.storage,
             self.workspace_id,
             self.chat_id,
             self.user_id,
@@ -1012,46 +1030,24 @@ async fn process_interaction_standalone(
     // 4. Build prompt
     let prompt = last_message.content.clone();
 
-    // 5. Hydrate session model
-    let file = match queries::files::get_file_by_id(&mut conn, ctx.chat_id).await {
-        Ok(f) => f,
+    // 5. Get agent config from file
+    let agent_config = match crate::services::chat::sync::get_agent_config_from_file(
+        &mut conn,
+        &ctx.storage,
+        ctx.workspace_id,
+        ctx.chat_id,
+    ).await {
+        Ok(config) => config,
         Err(e) => {
-            return InteractionResult::Failed {
-                error: format!("Failed to get file: {}", e),
-                is_user_cancellation: false,
-            };
-        }
-    };
-
-    let agent_config = if let Some(_version_id) = file.latest_version_id {
-        let version = match queries::files::get_latest_version(&mut conn, ctx.chat_id).await {
-            Ok(v) => v,
-            Err(e) => {
-                return InteractionResult::Failed {
-                    error: format!("Failed to get version: {}", e),
-                    is_user_cancellation: false,
-                };
+            tracing::warn!(
+                chat_id = %ctx.chat_id,
+                error = %e,
+                "Failed to get agent config from file, using defaults"
+            );
+            crate::models::chat::AgentConfig {
+                persona_override: Some(context.persona.clone()),
+                ..Default::default()
             }
-        };
-        match serde_json::from_value(version.app_data) {
-            Ok(config) => config,
-            Err(e) => {
-                return InteractionResult::Failed {
-                    error: format!("Failed to parse agent config: {}", e),
-                    is_user_cancellation: false,
-                };
-            }
-        }
-    } else {
-        tracing::warn!("Chat file {} has no version, using default agent_config", ctx.chat_id);
-        crate::models::chat::AgentConfig {
-            agent_id: None,
-            model: DEFAULT_CHAT_MODEL.to_string(),
-            temperature: 0.7,
-            persona_override: Some(context.persona),
-            previous_response_id: None,
-            mode: "plan".to_string(),
-            plan_file: None,
         }
     };
 
@@ -1089,6 +1085,8 @@ async fn process_interaction_standalone(
         default_context_token_limit: ctx.default_context_token_limit,
         state: ctx.state.clone(),
         event_tx: ctx.event_tx.clone(),
+        tag_index_tx: ctx.tag_index_tx.clone(),
+        link_index_tx: ctx.link_index_tx.clone(),
     };
 
     let agent = match get_or_create_agent(&processor_ctx, user_id, &session, &ai_config).await {

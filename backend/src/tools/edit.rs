@@ -1,12 +1,14 @@
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
 use crate::models::requests::{
-    CreateVersionRequest, ToolResponse, EditArgs, WriteResult,
+    ToolResponse, EditArgs, WriteResult,
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
+use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::tools::helpers;
+use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, DocumentMetadata};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -28,7 +30,7 @@ async fn perform_edit(
     conn: &mut DbConn,
     storage: &FileStorageService,
     workspace_id: Uuid,
-    user_id: Uuid,
+    _user_id: Uuid,
     config: ToolConfig,
     args: EditArgs,
 ) -> Result<ToolResponse> {
@@ -38,7 +40,7 @@ async fn perform_edit(
     let is_replace = args.old_string.is_some() && args.new_string.is_some();
     let is_insert = args.insert_line.is_some() && args.insert_content.is_some();
 
-    // Validation: must specify either replace or insert
+    // Validation
     if !is_replace && !is_insert {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "operation".to_string(),
@@ -46,7 +48,6 @@ async fn perform_edit(
         }));
     }
 
-    // Validation: cannot specify both operations
     if is_replace && is_insert {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "operation".to_string(),
@@ -54,30 +55,60 @@ async fn perform_edit(
         }));
     }
 
-    if is_insert {
-        return perform_insert(conn, storage, workspace_id, user_id, config, path, args).await;
+    let result = if is_insert {
+        perform_insert(conn, storage, workspace_id, &config, path, args).await?
+    } else {
+        perform_replace(conn, storage, workspace_id, &config, path, args).await?
+    };
+
+    // Signal tag indexer for markdown documents
+    if result.is_markdown {
+        if let Some(ref tag_index_tx) = config.tag_index_tx {
+            if let Err(e) = tag_index_tx.send(TagIndexMessage {
+                workspace_id,
+                file_id: result.write_result.file_id,
+            }) {
+                tracing::warn!("Failed to signal tag indexer: {}", e);
+            }
+        }
+        // Signal link indexer for markdown documents
+        if let Some(ref link_index_tx) = config.link_index_tx {
+            if let Err(e) = link_index_tx.send(LinkIndexMessage {
+                workspace_id,
+                file_id: result.write_result.file_id,
+            }) {
+                tracing::warn!("Failed to signal link indexer: {}", e);
+            }
+        }
     }
 
-    // Original replace logic
-    perform_replace(conn, storage, workspace_id, user_id, config, path, args).await
+    Ok(ToolResponse {
+        success: true,
+        result: serde_json::to_value(result.write_result)?,
+        error: None,
+    })
 }
 
-/// Perform Insert operation (add content at specific line)
+/// Result from edit operations containing both the write result and markdown flag
+struct EditResult {
+    write_result: WriteResult,
+    is_markdown: bool,
+}
+
+/// Perform Insert operation
 async fn perform_insert(
     conn: &mut DbConn,
     storage: &FileStorageService,
     workspace_id: Uuid,
-    user_id: Uuid,
-    config: ToolConfig,
+    config: &ToolConfig,
     path: String,
     args: EditArgs,
-) -> Result<ToolResponse> {
-    let insert_line = args.insert_line.unwrap(); // We know this is Some due to validation
-    let insert_content = args.insert_content.unwrap(); // We know this is Some due to validation
+) -> Result<EditResult> {
+    let insert_line = args.insert_line.unwrap();
+    let insert_content = args.insert_content.unwrap();
 
-    // Validation: insert_content cannot be empty
     if insert_content.is_empty() {
-         return Err(Error::Validation(ValidationErrors::Single {
+        return Err(Error::Validation(ValidationErrors::Single {
             field: "insert_content".to_string(),
             message: "Insert content cannot be empty".to_string(),
         }));
@@ -88,11 +119,9 @@ async fn perform_insert(
     let file = if let Some(f) = existing_file {
         f
     } else {
-        // File not found in database - check if it exists on disk
         match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
             Ok(true) => {
-                // File exists on disk - auto-import to database
-                helpers::import_file_to_database(conn, storage, workspace_id, &path, user_id).await?
+                helpers::import_file_to_database(conn, storage, workspace_id, &path, Uuid::nil()).await?
             }
             Ok(false) => {
                 return Err(Error::NotFound(format!("File not found: {}", path)));
@@ -103,7 +132,7 @@ async fn perform_insert(
         }
     };
 
-    // Plan Mode Guard: Only allow Plan files in plan mode
+    // Plan Mode Guard
     if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "path".to_string(),
@@ -111,46 +140,35 @@ async fn perform_insert(
         }));
     }
 
-    // Virtual File Protection: Prevent direct edits to system-managed files
-    if file.is_virtual {
-        return Err(Error::Validation(ValidationErrors::Single {
-            field: "path".to_string(),
-            message: "Cannot edit a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
-        }));
-    }
-
     // Folders cannot be edited as text
     if matches!(file.file_type, FileType::Folder) {
-         return Err(Error::Validation(ValidationErrors::Single {
+        return Err(Error::Validation(ValidationErrors::Single {
             field: "path".to_string(),
             message: "Cannot edit a folder. Edit tool only works on files with text content.".to_string(),
         }));
     }
 
-    // Get latest content (with disk fallback)
+    // Get current content
     let file_content = get_file_content_for_edit(conn, storage, file.id).await?;
 
-    // Get the version hash for validation
-    let latest_version = file_queries::get_latest_version(conn, file.id).await?;
-
-    // Optional: Reject if not read latest modification
-    if let Some(last_read_hash) = args.last_read_hash
-        && latest_version.hash != last_read_hash
-    {
-        return Err(Error::Conflict(format!(
-            "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
-            last_read_hash, latest_version.hash
-        )));
+    // Hash validation
+    if let Some(last_read_hash) = args.last_read_hash {
+        let current_hash = file.hash.clone().unwrap_or_default();
+        if current_hash != last_read_hash {
+            return Err(Error::Conflict(format!(
+                "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
+                last_read_hash, current_hash
+            )));
+        }
     }
 
-    // Extract text representation for editing
+    // Extract text
     let content_text = match file_content.get("text") {
         Some(Value::String(s)) => s.clone(),
         _ => {
             if let Some(s) = file_content.as_str() {
                 s.to_string()
             } else {
-                // For non-standard types, try recursive extraction
                 let extracted = files::extract_text_recursively(&file_content);
                 if extracted.is_empty() {
                     return Err(Error::Validation(ValidationErrors::Single {
@@ -163,10 +181,17 @@ async fn perform_insert(
         },
     };
 
-    // Convert to lines
-    let mut lines: Vec<&str> = content_text.lines().collect();
+    // For markdown documents, parse frontmatter and work on body content
+    let is_markdown = matches!(file.file_type, FileType::Document) && path.ends_with(".md");
+    let (metadata, body_content) = if is_markdown {
+        let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_text);
+        (meta, body.to_string())
+    } else {
+        (None, content_text.clone())
+    };
 
-    // Validate insert_line is within bounds
+    let mut lines: Vec<&str> = body_content.lines().collect();
+
     if insert_line > lines.len() {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "insert_line".to_string(),
@@ -174,53 +199,44 @@ async fn perform_insert(
         }));
     }
 
-    // Insert content at specified line
     lines.insert(insert_line, &insert_content);
+    let new_body = lines.join("\n");
 
-    // Rejoin lines
-    let new_content_text = lines.join("\n");
-
-    // Store as raw string (not wrapped in {"text": ...})
-    let final_content = serde_json::json!(new_content_text);
-
-    // Save new version
-    let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-        author_id: Some(user_id),
-        branch: Some("main".to_string()),
-        content: final_content,
-        app_data: None,
-    }).await?;
-
-    let result = WriteResult {
-        path,
-        file_id: file.id,
-        version_id: version.id,
-        hash: version.hash,
+    // Re-add frontmatter for documents
+    let final_content = if let Some(mut meta) = metadata {
+        meta.touch();
+        serde_json::json!(prepend_yaml_frontmatter(&meta, &new_body))
+    } else {
+        serde_json::json!(new_body)
     };
 
-    Ok(ToolResponse {
-        success: true,
-        result: serde_json::to_value(result)?,
-        error: None,
+    // Update file
+    let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
+
+    Ok(EditResult {
+        write_result: WriteResult {
+            path,
+            file_id: file.id,
+            hash: updated_file.hash.unwrap_or_default(),
+        },
+        is_markdown,
     })
 }
 
-/// Perform Replace operation (original edit behavior)
+/// Perform Replace operation
 async fn perform_replace(
     conn: &mut DbConn,
     storage: &FileStorageService,
     workspace_id: Uuid,
-    user_id: Uuid,
-    config: ToolConfig,
+    config: &ToolConfig,
     path: String,
     args: EditArgs,
-) -> Result<ToolResponse> {
-    let old_string = args.old_string.unwrap(); // We know this is Some due to validation
-    let new_string = args.new_string.unwrap(); // We know this is Some due to validation
+) -> Result<EditResult> {
+    let old_string = args.old_string.unwrap();
+    let new_string = args.new_string.unwrap();
 
-    // Validation: old_string cannot be empty
     if old_string.is_empty() {
-         return Err(Error::Validation(ValidationErrors::Single {
+        return Err(Error::Validation(ValidationErrors::Single {
             field: "old_string".to_string(),
             message: "Search string cannot be empty".to_string(),
         }));
@@ -231,11 +247,9 @@ async fn perform_replace(
     let file = if let Some(f) = existing_file {
         f
     } else {
-        // File not found in database - check if it exists on disk
         match helpers::file_exists_on_disk(storage, workspace_id, &path).await {
             Ok(true) => {
-                // File exists on disk - auto-import to database
-                helpers::import_file_to_database(conn, storage, workspace_id, &path, user_id).await?
+                helpers::import_file_to_database(conn, storage, workspace_id, &path, Uuid::nil()).await?
             }
             Ok(false) => {
                 return Err(Error::NotFound(format!("File not found: {}", path)));
@@ -246,7 +260,7 @@ async fn perform_replace(
         }
     };
 
-    // Plan Mode Guard: Only allow Plan files in plan mode
+    // Plan Mode Guard
     if config.plan_mode && !matches!(file.file_type, FileType::Plan) {
         return Err(Error::Validation(ValidationErrors::Single {
             field: "path".to_string(),
@@ -254,46 +268,35 @@ async fn perform_replace(
         }));
     }
 
-    // Virtual File Protection: Prevent direct edits to system-managed files (e.g. Chats)
-    if file.is_virtual {
-        return Err(Error::Validation(ValidationErrors::Single {
-            field: "path".to_string(),
-            message: "Cannot edit a virtual file directly. Use specialized system tools (e.g., chat API) to modify this resource.".to_string(),
-        }));
-    }
-
-    // Folders cannot be edited as text
+    // Folders cannot be edited
     if matches!(file.file_type, FileType::Folder) {
-         return Err(Error::Validation(ValidationErrors::Single {
+        return Err(Error::Validation(ValidationErrors::Single {
             field: "path".to_string(),
             message: "Cannot edit a folder. Edit tool only works on files with text content.".to_string(),
         }));
     }
 
-    // Get latest content (with disk fallback)
+    // Get current content
     let file_content = get_file_content_for_edit(conn, storage, file.id).await?;
 
-    // Get the version hash for validation
-    let latest_version = file_queries::get_latest_version(conn, file.id).await?;
-
-    // Optional: Reject if not read latest modification
-    if let Some(last_read_hash) = args.last_read_hash
-        && latest_version.hash != last_read_hash
-    {
-        return Err(Error::Conflict(format!(
-            "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
-            last_read_hash, latest_version.hash
-        )));
+    // Hash validation
+    if let Some(last_read_hash) = args.last_read_hash {
+        let current_hash = file.hash.clone().unwrap_or_default();
+        if current_hash != last_read_hash {
+            return Err(Error::Conflict(format!(
+                "File content has changed since it was last read. Expected hash: {}, but latest is: {}. Please read the file again before editing.",
+                last_read_hash, current_hash
+            )));
+        }
     }
 
-    // Extract text representation for editing
+    // Extract text
     let content_text = match file_content.get("text") {
         Some(Value::String(s)) => s.clone(),
         _ => {
             if let Some(s) = file_content.as_str() {
                 s.to_string()
             } else {
-                // For non-standard types, try recursive extraction
                 let extracted = files::extract_text_recursively(&file_content);
                 if extracted.is_empty() {
                     return Err(Error::Validation(ValidationErrors::Single {
@@ -306,55 +309,58 @@ async fn perform_replace(
         },
     };
 
-    // Search and Count
-    let matches: Vec<_> = content_text.match_indices(&old_string).collect();
+    // For markdown documents, parse frontmatter and work on body content
+    let is_markdown = matches!(file.file_type, FileType::Document) && path.ends_with(".md");
+    let (metadata, body_content) = if is_markdown {
+        let (meta, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_text);
+        (meta, body.to_string())
+    } else {
+        (None, content_text.clone())
+    };
+
+    // Search and validate
+    let matches: Vec<_> = body_content.match_indices(&old_string).collect();
     let count = matches.len();
 
     if count == 0 {
-         return Err(Error::Validation(ValidationErrors::Single {
+        return Err(Error::Validation(ValidationErrors::Single {
             field: "old_string".to_string(),
             message: "Search string not found in file content".to_string(),
         }));
     }
 
     if count > 1 {
-         return Err(Error::Validation(ValidationErrors::Single {
+        return Err(Error::Validation(ValidationErrors::Single {
             field: "old_string".to_string(),
             message: format!("Search string found {} times. Please provide more context to ensure unique match.", count),
         }));
     }
 
     // Replace
-    let new_content_text = content_text.replacen(&old_string, &new_string, 1);
+    let new_body = body_content.replacen(&old_string, &new_string, 1);
 
-    // Store as raw string (not wrapped in {"text": ...})
-    let final_content = serde_json::json!(new_content_text);
-
-    // Save new version
-    let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-        author_id: Some(user_id),
-        branch: Some("main".to_string()),
-        content: final_content,
-        app_data: None,
-    }).await?;
-
-    let result = WriteResult {
-        path,
-        file_id: file.id,
-        version_id: version.id,
-        hash: version.hash,
+    // Re-add frontmatter for documents
+    let final_content = if let Some(mut meta) = metadata {
+        meta.touch();
+        serde_json::json!(prepend_yaml_frontmatter(&meta, &new_body))
+    } else {
+        serde_json::json!(new_body)
     };
 
-    Ok(ToolResponse {
-        success: true,
-        result: serde_json::to_value(result)?,
-        error: None,
+    // Update file
+    let updated_file = files::update_file_content(conn, storage, file.id, final_content).await?;
+
+    Ok(EditResult {
+        write_result: WriteResult {
+            path,
+            file_id: file.id,
+            hash: updated_file.hash.unwrap_or_default(),
+        },
+        is_markdown,
     })
 }
 
 /// Edit file content tool
-///
-/// Supports both Replace and Insert operations for file editing.
 pub struct EditTool;
 
 #[async_trait]

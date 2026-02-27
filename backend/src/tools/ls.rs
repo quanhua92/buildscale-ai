@@ -129,12 +129,9 @@ impl LsTool {
             crate::models::files::File,
             r#"
             SELECT
-                id, workspace_id, parent_id, author_id,
+                id, workspace_id, parent_id,
                 file_type as "file_type: crate::models::files::FileType",
-                status as "status: crate::models::files::FileStatus",
-                name, slug, path,
-                is_virtual, is_remote, permission,
-                latest_version_id,
+                name, path, hash, versions,
                 deleted_at, created_at, updated_at
             FROM files
             WHERE workspace_id = $1
@@ -293,11 +290,10 @@ impl LsTool {
             merged.push(LsEntry {
                 id: Some(file.id),
                 synced: true,  // Database entry
-                name: file.slug.clone(),
+                name: file.name.clone(),
                 display_name: file.name.clone(),
                 path: file.path.clone(),
                 file_type: file.file_type,
-                is_virtual: file.is_virtual,
                 updated_at: file.updated_at,
             });
         }
@@ -330,7 +326,6 @@ impl LsTool {
                 display_name,
                 path: workspace_path_str,
                 file_type: fs_entry.file_type,
-                is_virtual: false,
                 updated_at: fs_entry.updated_at,
             });
         }

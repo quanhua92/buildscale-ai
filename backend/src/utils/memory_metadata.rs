@@ -1,4 +1,4 @@
-//! Memory metadata parsing and generation for memory files.
+//! Memory metadata types and path utilities.
 //!
 //! Memory files store persistent AI agent memories with YAML frontmatter.
 //! They support two scopes:
@@ -62,59 +62,6 @@ pub struct MemoryMetadata {
     pub updated_at: DateTime<Utc>,
     /// Scope of the memory (user or global)
     pub scope: MemoryScope,
-}
-
-/// Parse memory frontmatter from content, returns (metadata, remaining_content)
-pub fn parse_memory_frontmatter(content: &str) -> (Option<MemoryMetadata>, &str) {
-    let content = content.trim_start();
-
-    // Check for YAML frontmatter delimiter
-    if !content.starts_with("---\n") {
-        return (None, content);
-    }
-
-    // Find closing delimiter
-    let rest = &content[4..]; // Skip opening "---\n"
-    if let Some(end_idx) = rest.find("\n---\n") {
-        let yaml_str = &rest[..end_idx];
-        let remaining = &rest[end_idx + 5..]; // Skip "\n---\n"
-
-        match serde_yaml::from_str::<MemoryMetadata>(yaml_str) {
-            Ok(metadata) => (Some(metadata), remaining),
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to parse memory frontmatter");
-                (None, content)
-            }
-        }
-    } else if let Some(end_idx) = rest.find("\n---") {
-        // Handle case where content ends with ---
-        let yaml_str = &rest[..end_idx];
-        let remaining = &rest[end_idx + 4..];
-
-        match serde_yaml::from_str::<MemoryMetadata>(yaml_str) {
-            Ok(metadata) => (Some(metadata), remaining),
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to parse memory frontmatter");
-                (None, content)
-            }
-        }
-    } else {
-        (None, content)
-    }
-}
-
-/// Prepend memory frontmatter to content
-pub fn prepend_memory_frontmatter(metadata: &MemoryMetadata, content: &str) -> String {
-    let yaml = serde_yaml::to_string(metadata).unwrap_or_else(|_| "{}".to_string());
-
-    // serde_yaml adds a trailing newline, so we format carefully
-    let yaml = yaml.trim_end();
-
-    if content.trim().is_empty() {
-        format!("---\n{}\n---\n", yaml)
-    } else {
-        format!("---\n{}\n---\n{}", yaml, content)
-    }
 }
 
 /// Generate memory file path based on scope, category, and key
@@ -192,6 +139,7 @@ pub fn parse_memory_path(path: &str) -> Option<(MemoryScope, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::yaml_frontmatter::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
 
     #[test]
     fn test_parse_memory_frontmatter_valid() {
@@ -210,7 +158,7 @@ scope: user
 
 Some content here."#;
 
-        let (metadata, remaining) = parse_memory_frontmatter(content);
+        let (metadata, remaining) = parse_yaml_frontmatter::<MemoryMetadata>(content);
         let metadata = metadata.expect("Should parse metadata");
 
         assert_eq!(metadata.title, "Meeting Notes");
@@ -233,7 +181,7 @@ scope: global
 
 Configuration content."#;
 
-        let (metadata, _) = parse_memory_frontmatter(content);
+        let (metadata, _) = parse_yaml_frontmatter::<MemoryMetadata>(content);
         let metadata = metadata.expect("Should parse metadata");
 
         assert_eq!(metadata.scope, MemoryScope::Global);
@@ -242,7 +190,7 @@ Configuration content."#;
     #[test]
     fn test_parse_memory_frontmatter_none() {
         let content = "# Just content\n\nNo frontmatter here.";
-        let (metadata, remaining) = parse_memory_frontmatter(content);
+        let (metadata, remaining) = parse_yaml_frontmatter::<MemoryMetadata>(content);
 
         assert!(metadata.is_none());
         assert!(remaining.contains("Just content"));
@@ -264,7 +212,7 @@ Configuration content."#;
         };
         let content = "# My Content\n\nBody text.";
 
-        let result = prepend_memory_frontmatter(&metadata, content);
+        let result = prepend_yaml_frontmatter(&metadata, content);
 
         assert!(result.starts_with("---\n"));
         assert!(result.contains("title: Test Memory"));

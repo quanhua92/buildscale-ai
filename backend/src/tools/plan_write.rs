@@ -2,12 +2,12 @@
 
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
-use crate::models::requests::{CreateFileRequest, CreateVersionRequest, ToolResponse, PlanWriteArgs, PlanWriteResult};
+use crate::models::requests::{CreateFileRequest, ToolResponse, PlanWriteArgs, PlanWriteResult};
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{generate_plan_name, PlanMetadata, PlanStatus, prepend_frontmatter};
+use crate::utils::{generate_plan_name, PlanMetadata, PlanStatus, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -65,7 +65,7 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
         conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
-        user_id: Uuid,
+        _user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -143,7 +143,7 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             status,
             created_at: Utc::now(),
         };
-        let content_with_frontmatter = prepend_frontmatter(&metadata, &plan_args.content);
+        let content_with_frontmatter = prepend_yaml_frontmatter(&metadata, &plan_args.content);
 
         // Check if file exists
         let existing_file = file_queries::get_file_by_path(conn, workspace_id, &path).await?;
@@ -164,30 +164,19 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             }
         }
 
-        // Virtual File Protection
-        if let Some(ref file) = existing_file {
-            if file.is_virtual {
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "path".to_string(),
-                    message: "Cannot write to a virtual file directly. Use specialized system tools to modify this resource.".to_string(),
-                }));
-            }
-        }
-
         let result = if let Some(file) = existing_file {
             // Update existing file
-            let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-                author_id: Some(user_id),
-                branch: Some("main".to_string()),
-                content: serde_json::json!(content_with_frontmatter),
-                app_data: None,
-            }).await?;
+            let updated_file = files::update_file_content(
+                conn,
+                storage,
+                file.id,
+                serde_json::json!(content_with_frontmatter),
+            ).await?;
 
             PlanWriteResult {
                 path: path.clone(),
                 file_id: file.id,
-                version_id: version.id,
-                hash: version.hash,
+                hash: updated_file.hash.unwrap_or_default(),
                 metadata,
             }
         } else {
@@ -197,23 +186,16 @@ Result: Creates /plans/gleeful-tangerine-expedition.plan"##
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
-                author_id: user_id,
                 name: filename.to_string(),
-                slug: None,
                 path: Some(path.clone()),
-                is_virtual: None,
-                is_remote: None,
-                permission: None,
                 file_type: FileType::Plan,
                 content: serde_json::json!(content_with_frontmatter),
-                app_data: None,
             }).await?;
 
             PlanWriteResult {
                 path,
                 file_id: file_result.file.id,
-                version_id: file_result.latest_version.id,
-                hash: file_result.latest_version.hash,
+                hash: file_result.hash,
                 metadata,
             }
         };

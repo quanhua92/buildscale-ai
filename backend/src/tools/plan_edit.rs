@@ -2,12 +2,12 @@
 
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
-use crate::models::requests::{CreateVersionRequest, ToolResponse, PlanEditArgs, WriteResult};
+use crate::models::requests::{ToolResponse, PlanEditArgs, WriteResult};
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
-use crate::utils::{parse_frontmatter, prepend_frontmatter};
+use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, PlanMetadata};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -50,7 +50,7 @@ Same as edit tool but:
         conn: &mut DbConn,
         storage: &FileStorageService,
         workspace_id: Uuid,
-        user_id: Uuid,
+        _user_id: Uuid,
         config: ToolConfig,
         args: Value,
     ) -> Result<ToolResponse> {
@@ -77,14 +77,6 @@ Same as edit tool but:
             }));
         }
 
-        // Virtual File Protection
-        if file.is_virtual {
-            return Err(Error::Validation(ValidationErrors::Single {
-                field: "path".to_string(),
-                message: "Cannot edit a virtual file directly. Use specialized system tools.".to_string(),
-            }));
-        }
-
         // Folders cannot be edited
         if matches!(file.file_type, FileType::Folder) {
             return Err(Error::Validation(ValidationErrors::Single {
@@ -98,10 +90,10 @@ Same as edit tool but:
 
         // Optional: Validate hash
         if let Some(last_read_hash) = &plan_args.last_read_hash {
-            if &file_with_content.latest_version.hash != last_read_hash {
+            if &file_with_content.hash != last_read_hash {
                 return Err(Error::Conflict(format!(
                     "File content has changed. Expected hash: {}, but latest is: {}. Please read the file again.",
-                    last_read_hash, file_with_content.latest_version.hash
+                    last_read_hash, file_with_content.hash
                 )));
             }
         }
@@ -121,7 +113,7 @@ Same as edit tool but:
         };
 
         // Parse existing frontmatter
-        let (existing_metadata, content_without_frontmatter) = parse_frontmatter(&content_text);
+        let (existing_metadata, content_without_frontmatter) = parse_yaml_frontmatter::<PlanMetadata>(&content_text);
 
         // Determine operation type
         let is_replace = plan_args.old_string.is_some() && plan_args.new_string.is_some();
@@ -200,25 +192,24 @@ Same as edit tool but:
 
         // Re-add frontmatter if it existed
         let final_content = if let Some(metadata) = existing_metadata {
-            prepend_frontmatter(&metadata, &edited_content)
+            prepend_yaml_frontmatter(&metadata, &edited_content)
         } else {
             // No existing frontmatter, just use edited content
             edited_content.to_string()
         };
 
-        // Create new version
-        let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-            author_id: Some(user_id),
-            branch: Some("main".to_string()),
-            content: serde_json::json!(final_content),
-            app_data: None,
-        }).await?;
+        // Update file content
+        let updated_file = files::update_file_content(
+            conn,
+            storage,
+            file.id,
+            serde_json::json!(final_content),
+        ).await?;
 
         let result = WriteResult {
             path,
             file_id: file.id,
-            version_id: version.id,
-            hash: version.hash,
+            hash: updated_file.hash.unwrap_or_default(),
         };
 
         Ok(ToolResponse {

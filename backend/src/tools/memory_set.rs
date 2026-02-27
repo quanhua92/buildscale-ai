@@ -8,14 +8,14 @@
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::files::FileType;
 use crate::models::requests::{
-    CreateFileRequest, CreateVersionRequest, ToolResponse, MemorySetArgs, MemorySetResult,
+    CreateFileRequest, ToolResponse, MemorySetArgs, MemorySetResult,
 };
 use crate::queries::files as file_queries;
 use crate::services::files;
 use crate::services::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{
-    generate_memory_path, prepend_memory_frontmatter, MemoryMetadata, MemoryScope,
+    generate_memory_path, prepend_yaml_frontmatter, MemoryMetadata, MemoryScope,
 };
 use crate::DbConn;
 use async_trait::async_trait;
@@ -151,16 +151,6 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
 
         // Memory tools are allowed in plan mode for context persistence
 
-        // Virtual File Protection
-        if let Some(ref file) = existing_file {
-            if file.is_virtual {
-                return Err(Error::Validation(ValidationErrors::Single {
-                    field: "path".to_string(),
-                    message: "Cannot write to a virtual file directly.".to_string(),
-                }));
-            }
-        }
-
         // Preserve original created_at from database when updating
         let old_created_at = existing_file.as_ref().map(|f| f.created_at);
 
@@ -177,23 +167,22 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
         };
 
         // Prepend frontmatter to content
-        let content_with_frontmatter = prepend_memory_frontmatter(&metadata, &memory_args.content);
+        let content_with_frontmatter = prepend_yaml_frontmatter(&metadata, &memory_args.content);
 
         // Create or update file
         let result = if let Some(file) = existing_file {
             // Update existing file
-            let version = files::create_version(conn, storage, file.id, CreateVersionRequest {
-                author_id: Some(user_id),
-                branch: Some("main".to_string()),
-                content: serde_json::json!(content_with_frontmatter),
-                app_data: None,
-            }).await?;
+            let updated_file = files::update_file_content(
+                conn,
+                storage,
+                file.id,
+                serde_json::json!(content_with_frontmatter),
+            ).await?;
 
             MemorySetResult {
                 path: path.clone(),
                 file_id: file.id,
-                version_id: version.id,
-                hash: version.hash,
+                hash: updated_file.hash.unwrap_or_default(),
                 scope: memory_args.scope,
                 category: memory_args.category,
                 key: memory_args.key,
@@ -207,23 +196,16 @@ Example: {"scope": "user", "category": "preferences", "key": "coding-style", "ti
             let file_result = files::create_file_with_content(conn, storage, CreateFileRequest {
                 workspace_id,
                 parent_id: None,
-                author_id: user_id,
                 name: filename,
-                slug: None,
                 path: Some(path.clone()),
-                is_virtual: None,
-                is_remote: None,
-                permission: None,
                 file_type: FileType::Memory,
                 content: serde_json::json!(content_with_frontmatter),
-                app_data: None,
             }).await?;
 
             MemorySetResult {
                 path,
                 file_id: file_result.file.id,
-                version_id: file_result.latest_version.id,
-                hash: file_result.latest_version.hash,
+                hash: file_result.hash,
                 scope: memory_args.scope,
                 category: memory_args.category,
                 key: memory_args.key,

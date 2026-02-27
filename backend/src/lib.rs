@@ -6,6 +6,7 @@ pub mod error;
 pub mod handlers;
 pub mod middleware;
 pub mod models;
+pub mod parsers;
 pub mod providers;
 pub mod queries;
 pub mod services;
@@ -27,7 +28,7 @@ pub use handlers::{
     workspaces::create_workspace, workspaces::list_workspaces, workspaces::get_workspace, workspaces::update_workspace, workspaces::delete_workspace,
     files::create_file, files::get_file, files::create_version, files::update_file, files::delete_file, files::restore_file, files::purge_file, files::list_trash,
     files::add_tag, files::remove_tag, files::list_files_by_tag, files::create_link, files::remove_link, files::get_file_network,
-    files::semantic_search,
+    files::text_search,
     tools::execute_tool,
     chat::create_chat, chat::get_chat, chat::post_chat_message, chat::stop_chat_generation, chat::update_chat, chat::get_chat_context,
     chats::list_chats,
@@ -35,7 +36,7 @@ pub use handlers::{
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
-pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker};
+pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker, tag_indexer_worker, link_indexer_worker};
 
 /// Load configuration from environment variables
 pub fn load_config() -> Result<Config> {
@@ -308,7 +309,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/{id}/search",
-            post(file_handlers::semantic_search)
+            post(file_handlers::text_search)
                 .route_layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     workspace_access_middleware,
@@ -483,9 +484,15 @@ pub async fn run_api_server(
 
     // Spawn cleanup workers
     let (cleanup_shutdown_tx, _) = tokio::sync::broadcast::channel(1);
-    
+
     // Archive cleanup channel
     let (archive_cleanup_tx, archive_cleanup_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Tag indexer channel
+    let (tag_index_tx, tag_index_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Link indexer channel
+    let (link_index_tx, link_index_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Auth Worker
     let pool_auth = pool.clone();
@@ -503,11 +510,27 @@ pub async fn run_api_server(
         archive_cleanup_worker(pool_storage, shutdown_storage, archive_cleanup_rx, worker_config, storage_config).await;
     });
 
+    // Tag Indexer Worker
+    let pool_tags = pool.clone();
+    let shutdown_tags = cleanup_shutdown_tx.subscribe();
+    let storage_config_tags = config.storage.clone();
+    tokio::spawn(async move {
+        tag_indexer_worker(pool_tags, shutdown_tags, tag_index_rx, storage_config_tags).await;
+    });
+
+    // Link Indexer Worker
+    let pool_links = pool.clone();
+    let shutdown_links = cleanup_shutdown_tx.subscribe();
+    let storage_config_links = config.storage.clone();
+    tokio::spawn(async move {
+        link_indexer_worker(pool_links, shutdown_links, link_index_rx, storage_config_links).await;
+    });
+
     // Create user cache with configured TTL
     let user_cache = Cache::new_local(CacheConfig::default());
 
     // Build the application state with cache, user_cache, database pool, and config
-    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone(), archive_cleanup_tx);
+    let app_state = AppState::new(cache, user_cache, pool, rig_service, config.clone(), archive_cleanup_tx, tag_index_tx, link_index_tx);
 
     let api_routes = create_api_router(app_state.clone());
 
