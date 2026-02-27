@@ -6,7 +6,7 @@ use crate::queries;
 use crate::services::agent_sessions;
 use crate::services::chat::events;
 use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
-use crate::services::chat::rig_engine::RigService;
+use crate::chat::services::engine::RigService;
 use crate::services::chat::ChatService;
 use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
 use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
@@ -25,7 +25,7 @@ use uuid::Uuid;
 // Import state machine utilities
 use super::state_machine::command_to_event;
 // Import interaction processor for background task execution
-use super::interaction_processor::{ProcessorContext, process_agent_stream, get_or_create_agent};
+use super::interaction::{ProcessorContext, process_agent_stream, get_or_create_agent};
 
 // ============================================================================
 // NON-BLOCKING TASK TYPES
@@ -941,7 +941,7 @@ async fn process_interaction_standalone(
     cancellation_token: CancellationToken,
 ) -> InteractionResult {
     use super::constants::{MAX_AI_RETRIES, RETRY_BACKOFF_MS};
-    use super::stream_utils::flush_reasoning_buffer;
+    use super::stream::flush_reasoning_buffer;
 
     tracing::info!(
         chat_id = %ctx.chat_id,

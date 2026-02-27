@@ -1,14 +1,14 @@
 //! Chat actor module - Manages AI agent lifecycle and interactions
 
 // Include the main actor implementation
-mod actor_impl;
+mod actor;
 pub mod constants;
-pub mod interaction_processor;
+pub mod interaction;
 pub mod session;
 pub mod state;
 pub mod state_machine;
-pub mod stream_utils;
+pub mod stream;
 
 // Re-export public types for backward compatibility
-pub use actor_impl::{ChatActor, ChatActorArgs};
-pub use interaction_processor::ProcessorContext;
+pub use actor::{ChatActor, ChatActorArgs};
+pub use interaction::ProcessorContext;

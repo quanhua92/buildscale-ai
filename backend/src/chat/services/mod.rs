@@ -75,7 +75,7 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use buildscale::services::chat::{rig_engine::RigService, ChatService};
+//! use buildscale::chat::services::{RigService, ChatService};
 //! use std::sync::Arc;
 //! use uuid::Uuid;
 //!
@@ -97,8 +97,7 @@ pub mod actor;
 pub mod context;
 pub mod events;
 pub mod registry;
-pub mod rig_engine;
-pub mod rig_tools;
+pub mod engine;
 pub mod state_machine;
 pub mod states;
 pub mod sync;
@@ -112,6 +111,9 @@ pub use context::{
 };
 
 pub use sync::ChatFrontmatter;
+
+// Re-export from engine subdirectory for backward compatibility
+pub use engine::RigService;
 
 #[cfg(test)]
 mod tests;

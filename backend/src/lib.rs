@@ -1,4 +1,5 @@
-pub mod agents;
+pub mod agent;
+pub mod chat;
 pub mod cache;
 pub mod config;
 pub mod database;
@@ -17,6 +18,8 @@ pub mod utils;
 pub mod validation;
 pub mod workers;
 
+// Re-export commonly used types
+pub use agent::{get_persona, AgentSession, AgentType, SessionStatus};
 pub use cache::{Cache, CacheConfig, CacheHealthMetrics, run_cache_cleanup};
 pub use config::Config;
 pub use database::{DbConn, DbPool};
@@ -466,7 +469,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
 ///
 /// # Example
 /// ```no_run
-/// use buildscale::{Config, Cache, CacheConfig, run_api_server, services::chat::rig_engine::RigService};
+/// use buildscale::{Config, Cache, CacheConfig, run_api_server, chat::services::RigService};
 /// use std::sync::Arc;
 ///
 /// #[tokio::main]
@@ -481,7 +484,7 @@ fn create_workspace_router(state: AppState) -> Router<AppState> {
 pub async fn run_api_server(
     config: &Config,
     cache: Cache<String>,
-    rig_service: std::sync::Arc<crate::services::chat::rig_engine::RigService>,
+    rig_service: std::sync::Arc<crate::chat::services::RigService>,
 ) -> Result<()> {
     use secrecy::ExposeSecret;
 

@@ -6,7 +6,7 @@
 pub mod cancel;
 pub mod pause;
 pub mod ping;
-pub mod process_interaction;
+pub mod process;
 pub mod shutdown;
 
 use crate::error::Result;
@@ -46,7 +46,7 @@ pub trait EventProcessor: Send + Sync {
 ///
 /// Provides access to the appropriate processor for each event type.
 pub struct EventProcessorRegistry {
-    process_interaction: process_interaction::ProcessInteractionProcessor,
+    process_interaction: process::ProcessInteractionProcessor,
     pause: pause::PauseProcessor,
     cancel: cancel::CancelProcessor,
     ping: ping::PingProcessor,
@@ -63,7 +63,7 @@ impl EventProcessorRegistry {
         default_context_token_limit: usize,
     ) -> Self {
         Self {
-            process_interaction: process_interaction::ProcessInteractionProcessor::new(
+            process_interaction: process::ProcessInteractionProcessor::new(
                 pool.clone(),
                 storage.clone(),
                 event_tx.clone(),

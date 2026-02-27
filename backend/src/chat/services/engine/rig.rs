@@ -1,5 +1,5 @@
 use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
-use crate::services::chat::rig_tools::{
+use super::tools::{
     RigEditTool, RigGrepTool, RigGlobTool, RigFileInfoTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
     RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
     RigAskUserTool, RigExitPlanModeTool,
@@ -464,22 +464,22 @@ impl RigService {
                         ).await {
                             let plan_content = plan_with_content.content.to_string();
                             // Builder persona with plan content
-                            crate::agents::get_persona(Some("builder"), None, Some(&plan_content))
+                            crate::agent::get_persona(Some("builder"), None, Some(&plan_content))
                         } else {
                             // Failed to read plan, use builder without plan
-                            crate::agents::get_persona(Some("builder"), None, Some("# Error: Could not read plan file"))
+                            crate::agent::get_persona(Some("builder"), None, Some("# Error: Could not read plan file"))
                         }
                     } else {
                         // Plan file not found, use builder without plan
-                        crate::agents::get_persona(Some("builder"), None, Some("# Error: Plan file not found"))
+                        crate::agent::get_persona(Some("builder"), None, Some("# Error: Plan file not found"))
                     }
                 } else {
                     // No plan file specified, use builder without plan
-                    crate::agents::get_persona(Some("builder"), None, Some("# Error: No plan file specified in build mode"))
+                    crate::agent::get_persona(Some("builder"), None, Some("# Error: No plan file specified in build mode"))
                 }
             } else {
                 // Plan mode or default
-                crate::agents::get_persona(None, Some(mode), None)
+                crate::agent::get_persona(None, Some(mode), None)
             }
         };
 

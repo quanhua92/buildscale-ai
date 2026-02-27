@@ -51,7 +51,7 @@ async fn get_chat_persona(
         _ => None,
     };
 
-    Ok(crate::agents::get_persona(role, Some(mode), None))
+    Ok(crate::agent::get_persona(role, Some(mode), None))
 }
 
 pub async fn create_chat(
@@ -90,7 +90,7 @@ pub async fn create_chat(
     // 4. Create agent config for YAML frontmatter
     let agent_config = crate::models::chat::AgentConfig {
         model: req.model.clone().unwrap_or_else(|| crate::models::chat::DEFAULT_CHAT_MODEL.to_string()),
-        persona_override: Some(crate::agents::get_persona(req.role.as_deref(), Some(mode), None)),
+        persona_override: Some(crate::agent::get_persona(req.role.as_deref(), Some(mode), None)),
         mode: mode.to_string(),
         ..Default::default()
     };
@@ -148,7 +148,7 @@ pub async fn create_chat(
         rig_service: state.rig_service.clone(),
         storage: state.storage.clone(),
         registry: state.agents.clone(),
-        default_persona: crate::agents::get_persona(req.role.as_deref(), Some(mode), None),
+        default_persona: crate::agent::get_persona(req.role.as_deref(), Some(mode), None),
         default_context_token_limit: state.config.ai.default_context_token_limit,
         event_tx,
         inactivity_timeout: std::time::Duration::from_secs(state.config.ai.actor_inactivity_timeout_seconds),
@@ -581,7 +581,7 @@ pub async fn get_chat_context(
         &state.storage,
         workspace_id,
         chat_id,
-        &crate::agents::get_persona(None, None, None),
+        &crate::agent::get_persona(None, None, None),
         state.config.ai.default_context_token_limit,
     ).await?;
 

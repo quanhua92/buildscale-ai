@@ -10,7 +10,7 @@ use crate::providers::Agent;
 use crate::services::agent_sessions;
 use crate::services::chat::ChatService;
 use crate::services::chat::registry::AgentRegistry;
-use crate::services::chat::rig_engine::RigService;
+use crate::chat::services::engine::RigService;
 use crate::services::chat::states::SharedActorState;
 use crate::services::storage::FileStorageService;
 use crate::state::{TagIndexMessage, LinkIndexMessage};
@@ -24,7 +24,7 @@ use uuid::Uuid;
 // Import constants from the actor module
 use super::constants::STREAM_READ_TIMEOUT_SECS;
 // Import stream utilities
-use super::stream_utils::flush_reasoning_buffer;
+use super::stream::flush_reasoning_buffer;
 
 /// Context needed for interaction processing.
 /// This is a version of InteractionContext with public fields for the processor.

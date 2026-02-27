@@ -1,5 +1,3 @@
-pub mod agent_sessions;
-pub mod chat;
 pub mod cookies;
 pub mod invitations;
 pub mod jwt;
@@ -17,4 +15,14 @@ pub mod files {
 
 pub mod storage {
     pub use crate::fs::storage::FileStorageService;
+}
+
+// Re-export agent services from agent module for backward compatibility
+pub mod agent_sessions {
+    pub use crate::agent::services::*;
+}
+
+// Re-export chat services from chat module for backward compatibility
+pub mod chat {
+    pub use crate::chat::services::*;
 }

@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize Rig AI service using the multi-provider configuration
     let rig_service = std::sync::Arc::new(
-        buildscale::services::chat::rig_engine::RigService::from_config(&config.ai)
+        buildscale::chat::services::RigService::from_config(&config.ai)
             .expect("Failed to initialize AI service from configuration")
     );
 

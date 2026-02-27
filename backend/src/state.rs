@@ -1,6 +1,6 @@
 use crate::{
     cache::Cache, config::Config, database::DbPool, models::users::User,
-    services::chat::registry::AgentRegistry, services::chat::rig_engine::RigService,
+    chat::services::registry::AgentRegistry, chat::services::engine::RigService,
     services::storage::FileStorageService,
 };
 use std::sync::Arc;
