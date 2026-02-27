@@ -1,5 +1,5 @@
 use buildscale::{
-    queries::roles::{create_role, list_roles, list_roles_by_workspace},
+    workspaces::queries::roles::{create_role, list_roles, list_roles_by_workspace},
 };
 use crate::common::database::TestApp;
 

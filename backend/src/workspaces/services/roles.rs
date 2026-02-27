@@ -1,9 +1,9 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
-    models::roles::{NewRole, Role, DEFAULT_ROLES, descriptions},
-    queries::roles,
 };
+use crate::workspaces::models::role::{NewRole, Role, DEFAULT_ROLES, descriptions};
+use crate::workspaces::queries::roles;
 use uuid::Uuid;
 
 /// Creates default roles for a workspace (admin, editor, viewer)

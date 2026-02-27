@@ -1,7 +1,7 @@
 use crate::{
     error::{Error, Result},
-    models::workspace_members::{NewWorkspaceMember, UpdateWorkspaceMember, WorkspaceMember, WorkspaceMemberDetailed},
 };
+use crate::workspaces::models::member::{NewWorkspaceMember, UpdateWorkspaceMember, WorkspaceMember, WorkspaceMemberDetailed};
 use uuid::Uuid;
 
 use crate::DbConn;

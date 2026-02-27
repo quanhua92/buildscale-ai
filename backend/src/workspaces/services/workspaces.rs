@@ -1,19 +1,19 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
-    models::{
-        requests::{
-            CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
-            CompleteWorkspaceResult
-        },
-        workspaces::{NewWorkspace, Workspace},
-        workspace_members::NewWorkspaceMember,
-        roles::ADMIN_ROLE,
+    models::requests::{
+        CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
+        CompleteWorkspaceResult
     },
-    queries::{workspaces, workspace_members},
-    services::roles,
     validation::{validate_workspace_name, validate_required_string},
 };
+use crate::workspaces::models::{
+    workspace::{NewWorkspace, UpdateWorkspace, Workspace},
+    member::{NewWorkspaceMember, UpdateWorkspaceMember},
+    role::ADMIN_ROLE,
+};
+use crate::workspaces::queries::{workspaces, members};
+use super::roles;
 use sqlx::Acquire;
 use uuid::Uuid;
 
@@ -55,7 +55,7 @@ pub async fn create_workspace(conn: &mut DbConn, request: CreateWorkspaceRequest
         user_id: request.owner_id,
         role_id: admin_role.id,
     };
-    let owner_membership = workspace_members::create_workspace_member(&mut tx, owner_membership_data).await?;
+    let owner_membership = members::create_workspace_member(&mut tx, owner_membership_data).await?;
 
     // Commit the transaction - workspace, roles, and membership are now persisted atomically
     tx.commit().await.map_err(|e| {
@@ -107,7 +107,7 @@ pub async fn create_workspace_with_members(conn: &mut DbConn, request: CreateWor
         user_id: request.owner_id,
         role_id: admin_role.id,
     };
-    let owner_membership = workspace_members::create_workspace_member(&mut tx, owner_membership_data).await?;
+    let owner_membership = members::create_workspace_member(&mut tx, owner_membership_data).await?;
     let mut all_members = vec![owner_membership.clone()];
 
     // Add additional members within transaction
@@ -134,7 +134,7 @@ pub async fn create_workspace_with_members(conn: &mut DbConn, request: CreateWor
             user_id: member_request.user_id,
             role_id: role.id,
         };
-        let member = workspace_members::create_workspace_member(&mut tx, member_data).await?;
+        let member = members::create_workspace_member(&mut tx, member_data).await?;
         all_members.push(member);
     }
 
@@ -186,7 +186,7 @@ pub async fn update_workspace_owner(
     let admin_role = roles::get_role_by_name(&mut tx, workspace_id, ADMIN_ROLE).await?;
 
     // Add new owner as admin member if not already a member within transaction
-    let existing_member = workspace_members::get_workspace_member_optional(
+    let existing_member = members::get_workspace_member_optional(
         &mut tx,
         workspace_id,
         new_owner_id,
@@ -199,14 +199,14 @@ pub async fn update_workspace_owner(
             user_id: new_owner_id,
             role_id: admin_role.id,
         };
-        workspace_members::create_workspace_member(&mut tx, new_member_data).await?;
+        members::create_workspace_member(&mut tx, new_member_data).await?;
     } else {
         // Update existing member's role to admin within transaction
-        workspace_members::update_workspace_member(
+        members::update_workspace_member(
             &mut tx,
             workspace_id,
             new_owner_id,
-            crate::models::workspace_members::UpdateWorkspaceMember {
+            UpdateWorkspaceMember {
                 role_id: Some(admin_role.id),
             },
         )
@@ -214,7 +214,7 @@ pub async fn update_workspace_owner(
     }
 
     // Update the workspace owner within transaction
-    let update_workspace = crate::models::workspaces::UpdateWorkspace {
+    let update_workspace = UpdateWorkspace {
         name: None,
         owner_id: Some(new_owner_id),
         ai_provider_override: None, // Don't update provider override
@@ -243,7 +243,7 @@ pub async fn update_workspace(
     validate_workspace_name(&update.name)?;
 
     // Build update struct
-    let workspace_update = crate::models::workspaces::UpdateWorkspace {
+    let workspace_update = UpdateWorkspace {
         name: Some(validate_required_string(&update.name, "Workspace name")?),
         owner_id: None,  // Ownership changes use update_workspace_owner
         ai_provider_override: None, // Don't update provider override
@@ -297,7 +297,7 @@ pub async fn can_access_workspace(
     }
 
     // Check if user is a member
-    let is_member = workspace_members::is_workspace_member(
+    let is_member = members::is_workspace_member(
         conn,
         workspace_id,
         user_id,

@@ -1,8 +1,8 @@
 use crate::fs::models::{File, FileType};
-use crate::models::{
-    roles::Role,
-    workspace_members::WorkspaceMember,
-    workspaces::Workspace,
+use crate::workspaces::models::{
+    Role,
+    WorkspaceMember,
+    Workspace,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

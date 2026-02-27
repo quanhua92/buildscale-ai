@@ -1,7 +1,7 @@
 use crate::{
     error::{Error, Result},
-    models::roles::{NewRole, Role, UpdateRole},
 };
+use crate::workspaces::models::role::{NewRole, Role, UpdateRole};
 use uuid::Uuid;
 
 use crate::DbConn;

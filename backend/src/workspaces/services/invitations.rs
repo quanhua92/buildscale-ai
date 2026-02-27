@@ -1,21 +1,21 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
-    models::{
-        invitations::{
-            WorkspaceInvitation, NewWorkspaceInvitation, UpdateWorkspaceInvitation,
-            CreateInvitationRequest, CreateInvitationResponse, AcceptInvitationRequest,
-            AcceptInvitationResponse, RevokeInvitationRequest, InvitationStatus,
-            InvitationValidator, InvitationUtils, DEFAULT_INVITATION_EXPIRATION_HOURS,
-        },
-        workspace_members::NewWorkspaceMember,
-        permissions::{workspace_permissions, member_permissions},
-    },
-    queries::{
-        invitations, workspaces, roles, workspace_members, users,
-    },
-    services::workspace_members::validate_workspace_permission,
+    queries::users,
+    validation::validate_email,
 };
+use crate::workspaces::models::{
+    invitation::{
+        WorkspaceInvitation, NewWorkspaceInvitation, UpdateWorkspaceInvitation,
+        CreateInvitationRequest, CreateInvitationResponse, AcceptInvitationRequest,
+        AcceptInvitationResponse, RevokeInvitationRequest, InvitationStatus,
+        InvitationValidator, InvitationUtils, DEFAULT_INVITATION_EXPIRATION_HOURS,
+    },
+    member::NewWorkspaceMember,
+    permission::{workspace_permissions, member_permissions},
+};
+use crate::workspaces::queries::{invitations, workspaces, roles, members};
+use super::members::validate_workspace_permission;
 use uuid::Uuid;
 
 /// Creates a new workspace invitation
@@ -64,7 +64,7 @@ pub async fn create_invitation(
     // Check if user is already a member of the workspace
     let user_opt = users::get_user_by_email(conn, &request.invited_email).await?;
     if let Some(user) = user_opt {
-        let existing_member = workspace_members::is_workspace_member(
+        let existing_member = members::is_workspace_member(
             conn,
             request.workspace_id,
             user.id,
@@ -236,7 +236,7 @@ pub async fn accept_invitation(
     }
 
     // Check if user is already a member (shouldn't happen, but let's be safe)
-    let is_already_member = workspace_members::is_workspace_member(
+    let is_already_member = members::is_workspace_member(
         conn,
         invitation.workspace_id,
         user_id,
@@ -263,7 +263,7 @@ pub async fn accept_invitation(
         role_id: invitation.role_id,
     };
 
-    let workspace_member = workspace_members::create_workspace_member(conn, new_member).await?;
+    let workspace_member = members::create_workspace_member(conn, new_member).await?;
 
     // Update invitation status to accepted
     invitation = invitations::update_invitation_status_by_token(

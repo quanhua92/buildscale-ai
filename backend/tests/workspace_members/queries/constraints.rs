@@ -1,6 +1,6 @@
 use buildscale::{
-    models::workspace_members::NewWorkspaceMember,
-    queries::workspace_members::create_workspace_member,
+    workspaces::models::member::NewWorkspaceMember,
+    workspaces::queries::members::create_workspace_member,
 };
 use crate::common::database::TestApp;
 

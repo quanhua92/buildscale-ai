@@ -1,7 +1,8 @@
 pub mod agent;
 pub mod auth;
-pub mod chat;
 pub mod cache;
+pub mod chat;
+pub mod workspaces;
 pub mod config;
 pub mod database;
 pub mod error;

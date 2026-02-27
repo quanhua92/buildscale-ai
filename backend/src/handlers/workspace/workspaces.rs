@@ -14,7 +14,7 @@ use crate::{
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
     models::requests::{CreateWorkspaceHttp, CreateWorkspaceRequest, UpdateWorkspaceRequest},
-    services::workspaces,
+    workspaces::services::workspaces,
     state::AppState,
 };
 

@@ -1,8 +1,8 @@
 use crate::{
     error::{Error, Result},
-    models::invitations::{NewWorkspaceInvitation, UpdateWorkspaceInvitation, WorkspaceInvitation},
     DbConn,
 };
+use crate::workspaces::models::invitation::{NewWorkspaceInvitation, UpdateWorkspaceInvitation, WorkspaceInvitation};
 
 use uuid::Uuid;
 

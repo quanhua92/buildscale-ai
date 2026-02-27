@@ -13,8 +13,8 @@ use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
-    models::workspace_members::{AddMemberRequest, UpdateMemberRoleRequest},
-    services::workspace_members,
+    workspaces::models::member::{AddMemberRequest, UpdateMemberRoleRequest},
+    workspaces::services::members,
     state::AppState,
 };
 
@@ -55,7 +55,7 @@ pub async fn list_members(
 
     let mut conn = acquire_db_connection(&state, "list_members").await?;
 
-    let members = workspace_members::list_members(&mut conn, workspace_id, auth_user.id)
+    let members = members::list_members(&mut conn, workspace_id, auth_user.id)
         .await
         .inspect_err(|e| log_handler_error("list_members", e))?;
 
@@ -108,7 +108,7 @@ pub async fn get_my_membership(
 
     let mut conn = acquire_db_connection(&state, "get_my_membership").await?;
 
-    let membership = workspace_members::get_my_membership(&mut conn, workspace_id, auth_user.id)
+    let membership = members::get_my_membership(&mut conn, workspace_id, auth_user.id)
         .await
         .inspect_err(|e| log_handler_error("get_my_membership", e))?;
 
@@ -172,7 +172,7 @@ pub async fn add_member(
 
     let mut conn = acquire_db_connection(&state, "add_member").await?;
 
-    let member = workspace_members::add_member_by_email(&mut conn, workspace_id, auth_user.id, request)
+    let member = members::add_member_by_email(&mut conn, workspace_id, auth_user.id, request)
         .await
         .inspect_err(|e| log_handler_error("add_member", e))?;
 
@@ -237,7 +237,7 @@ pub async fn update_member_role(
 
     let mut conn = acquire_db_connection(&state, "update_member_role").await?;
 
-    let member = workspace_members::update_member_role(
+    let member = members::update_member_role(
         &mut conn,
         workspace_id,
         target_user_id,
@@ -301,7 +301,7 @@ pub async fn remove_member(
 
     let mut conn = acquire_db_connection(&state, "remove_member").await?;
 
-    workspace_members::remove_member(&mut conn, workspace_id, target_user_id, auth_user.id)
+    members::remove_member(&mut conn, workspace_id, target_user_id, auth_user.id)
         .await
         .inspect_err(|e| log_handler_error("remove_member", e))?;
 

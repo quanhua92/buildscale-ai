@@ -1,9 +1,9 @@
 use buildscale::{
-    services::workspace_members::{create_workspace_member, list_members, add_member_by_email, update_member_role, remove_member},
-    models::workspace_members::{AddMemberRequest, UpdateMemberRoleRequest},
+    workspaces::services::members::{create_workspace_member, list_members, add_member_by_email, update_member_role, remove_member},
+    workspaces::models::member::{AddMemberRequest, UpdateMemberRoleRequest},
 };
 use crate::common::database::TestApp;
-use buildscale::models::roles::MEMBER_ROLE;
+use buildscale::workspaces::models::role::MEMBER_ROLE;
 
 #[tokio::test]
 async fn test_workspace_member_creation_success() {

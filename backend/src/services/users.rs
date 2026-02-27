@@ -8,7 +8,7 @@ use crate::{
     queries::users,
     auth::queries::sessions,
     auth::services::jwt,
-    services::workspaces,
+    workspaces::services::workspaces,
     validation::{validate_email, validate_password, validate_full_name, validate_session_token, validate_required_string},
 };
 use argon2::{

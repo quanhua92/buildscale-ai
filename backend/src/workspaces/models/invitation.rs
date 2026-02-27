@@ -140,7 +140,7 @@ pub struct AcceptInvitationRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcceptInvitationResponse {
     pub invitation: WorkspaceInvitation,
-    pub workspace_member: crate::models::workspace_members::WorkspaceMember,
+    pub workspace_member: super::member::WorkspaceMember,
 }
 
 /// Request to revoke an invitation
