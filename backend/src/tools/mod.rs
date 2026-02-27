@@ -22,7 +22,7 @@ pub mod web;
 // Helpers stay at root level
 pub mod helpers;
 
-use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService, state::TagIndexMessage, state::LinkIndexMessage};
+use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, chat::models::ToolDefinition, fs::storage::FileStorageService, state::TagIndexMessage, state::LinkIndexMessage};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;

@@ -1,7 +1,7 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, ExitPlanModeArgs}, queries::files as file_queries};
-use crate::services::storage::FileStorageService;
-use crate::services::chat::sync;
-use crate::models::chat::AgentConfig;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, ExitPlanModeArgs}, fs::queries as file_queries};
+use crate::fs::storage::FileStorageService;
+use crate::chat::services::sync;
+use crate::chat::models::AgentConfig;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -61,7 +61,7 @@ SAFETY: Only valid after button click. Chat messages are NOT approval. Plan must
         let plan_file = file_queries::get_file_by_path(conn, workspace_id, &plan_path).await?
             .ok_or_else(|| Error::NotFound(format!("Plan file not found: {}", plan_path)))?;
 
-        if !matches!(plan_file.file_type, crate::models::files::FileType::Plan) {
+        if !matches!(plan_file.file_type, crate::fs::models::FileType::Plan) {
             return Err(Error::Validation(crate::error::ValidationErrors::Single {
                 field: "plan_file_path".to_string(),
                 message: format!("File is not a plan file: {}", plan_path),

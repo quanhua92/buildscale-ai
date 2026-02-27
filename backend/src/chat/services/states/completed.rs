@@ -3,9 +3,9 @@
 //! The Completed state is a terminal state representing when the actor completed naturally.
 
 use crate::error::Result;
-use crate::models::agent_session::SessionStatus;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
-use crate::services::chat::states::{StateContext, StateHandler};
+use crate::agent::models::SessionStatus;
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::chat::services::states::{StateContext, StateHandler};
 
 /// Handler for the Completed (terminal) state.
 ///

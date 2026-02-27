@@ -3,10 +3,10 @@
 //! Handles shutdown events for gracefully shutting down the actor.
 
 use crate::error::Result;
-use crate::models::agent_session::SessionStatus;
-use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
-use crate::services::chat::states::StateContext;
+use crate::agent::models::SessionStatus;
+use crate::chat::services::events::EventProcessor;
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::chat::services::states::StateContext;
 
 /// Processor for Shutdown events.
 ///

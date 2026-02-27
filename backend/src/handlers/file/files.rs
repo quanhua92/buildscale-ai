@@ -13,13 +13,13 @@ use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
-    models::files::FileType,
+    fs::models::FileType,
     models::requests::{
         CreateFileHttp, CreateFileRequest, CreateVersionHttp,
         FileWithContent, UpdateFileHttp,
     },
-    queries::files as file_queries,
-    services::files as file_services,
+    fs::queries as file_queries,
+    fs::services as file_services,
     state::{AppState, TagIndexMessage, LinkIndexMessage},
 };
 
@@ -110,7 +110,7 @@ pub async fn update_file(
     Extension(_workspace_access): Extension<WorkspaceAccess>,
     Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<UpdateFileHttp>,
-) -> Result<Json<crate::models::files::File>> {
+) -> Result<Json<crate::fs::models::File>> {
     let mut conn = acquire_db_connection(&state, "update_file").await?;
 
     let result = file_services::update_file(
@@ -158,7 +158,7 @@ pub async fn restore_file(
     State(state): State<AppState>,
     Extension(_workspace_access): Extension<WorkspaceAccess>,
     Path((_workspace_id, file_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<crate::models::files::File>> {
+) -> Result<Json<crate::fs::models::File>> {
     let mut conn = acquire_db_connection(&state, "restore_file").await?;
 
     let result = file_services::restore_file(&mut conn, &state.storage, file_id)
@@ -209,7 +209,7 @@ pub async fn purge_file(
 pub async fn list_trash(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
-) -> Result<Json<Vec<crate::models::files::File>>> {
+) -> Result<Json<Vec<crate::fs::models::File>>> {
     let mut conn = acquire_db_connection(&state, "list_trash").await?;
 
     let result = file_services::list_trash(&mut conn, workspace_access.workspace_id)
@@ -258,7 +258,7 @@ pub async fn list_files_by_tag(
     State(state): State<AppState>,
     Extension(workspace_access): Extension<WorkspaceAccess>,
     Path((_workspace_id, tag)): Path<(Uuid, String)>,
-) -> Result<Json<Vec<crate::models::files::File>>> {
+) -> Result<Json<Vec<crate::fs::models::File>>> {
     let mut conn = acquire_db_connection(&state, "list_files_by_tag").await?;
 
     let tag_lower = tag.to_lowercase();
@@ -339,7 +339,7 @@ pub async fn get_file_network(
     };
 
     // Extract tags and links from content
-    use crate::parsers::{extract_tags, extract_links};
+    use crate::fs::parsers::{extract_tags, extract_links};
     let tags = extract_tags(&content_text);
     let links = extract_links(&content_text);
 

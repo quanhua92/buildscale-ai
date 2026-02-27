@@ -3,7 +3,7 @@
 //! This module defines the ActorEvent enum which represents all events
 //! that can trigger state transitions in a ChatActor.
 
-use crate::models::agent_session::SessionStatus;
+use crate::agent::models::SessionStatus;
 use crate::models::sse::SseEvent;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

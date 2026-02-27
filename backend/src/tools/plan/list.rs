@@ -1,11 +1,11 @@
 //! Plan list tool - lists plan files with metadata.
 
 use crate::error::Result;
-use crate::models::files::FileType;
+use crate::fs::models::FileType;
 use crate::models::requests::{ToolResponse, PlanListArgs, PlanListResult, PlanListItem};
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{parse_yaml_frontmatter, PlanMetadata, PlanStatus};
 use crate::DbConn;

@@ -3,11 +3,10 @@
 //! Helper functions for creating and managing agent sessions,
 //! including database tracking and heartbeat tasks.
 
-use crate::models::agent_session::AgentType;
-use crate::models::chat::DEFAULT_CHAT_MODEL;
-use crate::queries;
-use crate::services::agent_sessions;
-use crate::services::storage::FileStorageService;
+use crate::agent::models::AgentType;
+use crate::chat::models::DEFAULT_CHAT_MODEL;
+use crate::agent::services as agent_sessions;
+use crate::fs::storage::FileStorageService;
 use crate::DbPool;
 use crate::error::Result;
 use std::sync::Arc;
@@ -35,7 +34,7 @@ pub async fn create_session(
 
     // Get the chat file's agent config to extract actual model and mode
     // This ensures the session is created with the correct values from the chat config
-    let (actual_model, actual_mode) = match crate::services::chat::sync::get_agent_config_from_file(
+    let (actual_model, actual_mode) = match crate::chat::services::sync::get_agent_config_from_file(
         &mut conn,
         &storage,
         workspace_id,
@@ -104,7 +103,7 @@ pub async fn update_session_status(
     pool: &DbPool,
     chat_id: Uuid,
     session_id: Uuid,
-    status: crate::models::agent_session::SessionStatus,
+    status: crate::agent::models::SessionStatus,
     error_message: Option<String>,
 ) -> Result<()> {
     tracing::info!(
@@ -117,7 +116,7 @@ pub async fn update_session_status(
 
     let mut conn = pool.acquire().await.map_err(crate::error::Error::Sqlx)?;
 
-    let _ = queries::agent_sessions::update_session_status(&mut conn, session_id, status, error_message).await?;
+    let _ = crate::agent::queries::update_session_status(&mut conn, session_id, status, error_message).await?;
 
     tracing::info!(
         chat_id = %chat_id,

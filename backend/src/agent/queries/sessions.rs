@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    models::agent_session::{AgentSession, AgentType, NewAgentSession, SessionStatus},
+    agent::models::{AgentSession, AgentType, NewAgentSession, SessionStatus},
 };
 use chrono::{Duration, Utc};
 use uuid::Uuid;

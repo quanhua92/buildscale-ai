@@ -11,7 +11,7 @@ use crate::models::requests::{
     CategoryInfo, TagInfo, MemoryListItem,
     MemoryListCategoriesResult, MemoryListTagsResult, MemoryListMemoriesResult,
 };
-use crate::services::storage::FileStorageService;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{parse_yaml_frontmatter, parse_memory_path, MemoryMetadata, MemoryScope};
 use crate::DbConn;

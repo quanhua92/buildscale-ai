@@ -2,9 +2,9 @@
 
 use crate::error::{Error, Result, ValidationErrors};
 use crate::models::requests::{ToolResponse, PlanReadArgs, PlanReadResult};
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{parse_yaml_frontmatter, PlanMetadata};
 use crate::DbConn;

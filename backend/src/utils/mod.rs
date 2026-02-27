@@ -16,16 +16,3 @@ pub use crate::fs::utils::{
     DocumentMetadata, PlanMetadata, PlanStatus,
     parse_yaml_frontmatter, prepend_yaml_frontmatter,
 };
-
-// Backward compatible module re-exports for code using crate::utils::frontmatter:: etc.
-pub mod document_metadata {
-    pub use crate::fs::utils::DocumentMetadata;
-}
-
-pub mod frontmatter {
-    pub use crate::fs::utils::{PlanMetadata, PlanStatus};
-}
-
-pub mod yaml_frontmatter {
-    pub use crate::fs::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
-}

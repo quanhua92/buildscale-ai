@@ -1,6 +1,6 @@
 //! Tests for FileStorageService, focusing on security and correctness
 
-use buildscale::services::storage::FileStorageService;
+use buildscale::fs::storage::FileStorageService;
 use uuid::Uuid;
 
 #[tokio::test]

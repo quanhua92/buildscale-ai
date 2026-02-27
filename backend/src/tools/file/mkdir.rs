@@ -1,7 +1,7 @@
 use crate::{DbConn, error::{Error, Result}};
 use crate::models::requests::{ToolResponse, MkdirArgs, MkdirResult};
-use crate::services::files as file_services;
-use crate::services::storage::FileStorageService;
+use crate::fs::services as file_services;
+use crate::fs::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;

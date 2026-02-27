@@ -1,16 +1,15 @@
-use crate::models::agent_session::SessionStatus;
-use crate::models::chat::{ChatMessageRole, NewChatMessage};
+use crate::agent::models::SessionStatus;
+use crate::chat::models::{ChatMessageRole, NewChatMessage};
 use crate::models::sse::SseEvent;
 use crate::providers::Agent;
-use crate::queries;
-use crate::services::agent_sessions;
-use crate::services::chat::events;
-use crate::services::chat::registry::{AgentCommand, AgentHandle, AgentRegistry};
+use crate::agent::services as agent_sessions;
+use crate::chat::services::events;
+use crate::chat::services::registry::{AgentCommand, AgentHandle, AgentRegistry};
 use crate::chat::services::engine::RigService;
-use crate::services::chat::ChatService;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
-use crate::services::chat::states::{SharedActorState, StateContext, StateHandlerRegistry};
-use crate::services::storage::FileStorageService;
+use crate::chat::services::ChatService;
+use crate::chat::services::state_machine::{ActorEvent, ActorState, StateMachine, StateAction};
+use crate::chat::services::states::{SharedActorState, StateContext, StateHandlerRegistry};
+use crate::fs::storage::FileStorageService;
 use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::DbPool;
 use crate::error::Result;
@@ -266,7 +265,7 @@ impl ChatActor {
                         if let Some(session_id) = self.session_id {
                             let _ = self.update_session_status(
                                 session_id,
-                                crate::models::agent_session::SessionStatus::Completed,
+                                crate::agent::models::SessionStatus::Completed,
                                 None,
                             ).await;
                             tracing::debug!(
@@ -489,7 +488,7 @@ impl ChatActor {
     async fn update_session_status(
         &self,
         session_id: Uuid,
-        status: crate::models::agent_session::SessionStatus,
+        status: crate::agent::models::SessionStatus,
         error_message: Option<String>,
     ) -> Result<()> {
         super::session::update_session_status(
@@ -989,7 +988,7 @@ async fn process_interaction_standalone(
     };
 
     // 2. Get current message (the prompt)
-    let messages = match queries::chat::get_messages_by_file_id(&mut conn, ctx.workspace_id, ctx.chat_id).await {
+    let messages = match crate::chat::queries::get_messages_by_file_id(&mut conn, ctx.workspace_id, ctx.chat_id).await {
         Ok(msgs) => msgs,
         Err(e) => {
             return InteractionResult::Failed {
@@ -1031,7 +1030,7 @@ async fn process_interaction_standalone(
     let prompt = last_message.content.clone();
 
     // 5. Get agent config from file
-    let agent_config = match crate::services::chat::sync::get_agent_config_from_file(
+    let agent_config = match crate::chat::services::sync::get_agent_config_from_file(
         &mut conn,
         &ctx.storage,
         ctx.workspace_id,
@@ -1044,14 +1043,14 @@ async fn process_interaction_standalone(
                 error = %e,
                 "Failed to get agent config from file, using defaults"
             );
-            crate::models::chat::AgentConfig {
+            crate::chat::models::AgentConfig {
                 persona_override: Some(context.persona.clone()),
                 ..Default::default()
             }
         }
     };
 
-    let session = crate::models::chat::ChatSession {
+    let session = crate::chat::models::ChatSession {
         file_id: ctx.chat_id,
         agent_config,
         messages: messages.clone(),
@@ -1193,7 +1192,7 @@ async fn process_interaction_standalone(
                 workspace_id: ctx.workspace_id,
                 role: ChatMessageRole::Assistant,
                 content: full_response.clone(),
-                metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
+                metadata: sqlx::types::Json(crate::chat::models::ChatMessageMetadata {
                     model: Some(session.agent_config.model.clone()),
                     reasoning_id,
                     ..Default::default()

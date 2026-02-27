@@ -3,10 +3,10 @@
 //! The Paused state represents when the actor has been temporarily paused.
 
 use crate::error::Result;
-use crate::models::agent_session::SessionStatus;
+use crate::agent::models::SessionStatus;
 use crate::models::sse::SseEvent;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
-use crate::services::chat::states::{StateContext, StateHandler};
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::chat::services::states::{StateContext, StateHandler};
 
 /// Handler for the Paused state.
 ///

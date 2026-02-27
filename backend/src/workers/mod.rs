@@ -3,6 +3,3 @@ pub mod archive_cleanup;
 
 pub use revoked_token_cleanup::revoked_token_cleanup_worker;
 pub use archive_cleanup::archive_cleanup_worker;
-
-// Re-export file system workers from fs module
-pub use crate::fs::workers::{tag_indexer_worker, link_indexer_worker};

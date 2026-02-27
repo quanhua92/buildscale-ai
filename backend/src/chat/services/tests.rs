@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::services::chat::context::{
+    use crate::chat::services::context::{
         AttachmentKey, AttachmentManager, AttachmentValue, PRIORITY_ESSENTIAL, PRIORITY_HIGH,
         PRIORITY_LOW, PRIORITY_MEDIUM, ESTIMATED_CHARS_PER_TOKEN, truncate_tool_output,
     };
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_tool_output_summarization_read() {
-        use crate::services::chat::ChatService;
+        use crate::chat::services::ChatService;
 
         // Generate 1000 real lines as plain text (simulating non-JSON fallback case)
         let mut long_content = String::new();
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_tool_input_summarization_write() {
-        use crate::services::chat::ChatService;
+        use crate::chat::services::ChatService;
 
         // Use content with many lines to ensure truncation triggers
         let mut long_content = String::new();
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_tool_input_summarization_edit() {
-        use crate::services::chat::ChatService;
+        use crate::chat::services::ChatService;
 
         // Use content with many lines (line-based truncation is used now)
         let mut long_string = String::new();
@@ -244,9 +244,9 @@ mod tests {
     /// even though only ~50 characters were actually used after truncation.
     #[test]
     fn test_token_count_uses_truncated_content_not_original() {
-        use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
-        use crate::services::chat::context::KEEP_RECENT_TOOL_RESULTS;
-        use crate::services::chat::ChatService;
+        use crate::chat::models::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
+        use crate::chat::services::context::KEEP_RECENT_TOOL_RESULTS;
+        use crate::chat::services::ChatService;
 
         // 1. Create a long tool result message that will be truncated.
         let original_content = "x".repeat(12000);

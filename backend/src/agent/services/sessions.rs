@@ -6,11 +6,11 @@
 
 use crate::{
     error::{Error, Result},
-    models::agent_session::{
+    agent::models::{
         AgentSession, AgentSessionInfo, AgentSessionsListResponse, NewAgentSession,
         PauseSessionRequest, SessionActionResponse, SessionStatus,
     },
-    queries::agent_sessions,
+    agent::queries as agent_sessions,
     DbConn,
 };
 use uuid::Uuid;
@@ -46,7 +46,7 @@ pub async fn get_or_create_session(
     workspace_id: Uuid,
     chat_id: Uuid,
     user_id: Uuid,
-    agent_type: crate::models::agent_session::AgentType,
+    agent_type: crate::agent::models::AgentType,
     model: String,
     mode: String,
 ) -> Result<AgentSession> {
@@ -98,7 +98,7 @@ pub async fn create_session(
     workspace_id: Uuid,
     chat_id: Uuid,
     user_id: Uuid,
-    agent_type: crate::models::agent_session::AgentType,
+    agent_type: crate::agent::models::AgentType,
     model: String,
     mode: String,
 ) -> Result<AgentSession> {
@@ -348,7 +348,7 @@ pub async fn update_session_metadata(
     session_id: Uuid,
     model: Option<String>,
     mode: Option<String>,
-    agent_type: Option<crate::models::agent_session::AgentType>,
+    agent_type: Option<crate::agent::models::AgentType>,
     user_id: Uuid,
 ) -> Result<AgentSession> {
     tracing::debug!(

@@ -6,18 +6,24 @@
 //! - `file/` - File system and tool operations
 //! - `chat/` - Chat and AI agent endpoints
 
+//! - `agent/` - AI Agent Session endpoints
+
 // Subdirectory modules (layered structure)
 pub mod auth;
 pub mod workspace;
 pub mod file;
-pub mod chat;
-
-// Health check stays at root level
 pub mod health;
 
 // Re-export all handlers for backward compatibility
 pub use auth::*;
 pub use workspace::*;
 pub use file::*;
-pub use chat::*;
 pub use health::*;
+
+// Re-export chat handlers from chat module
+pub use crate::chat::handlers::chat::*;
+pub use crate::chat::handlers::message::*;
+pub use crate::chat::handlers::providers::*;
+
+// Re-export agent handlers from agent module
+pub use crate::agent::handlers::*;

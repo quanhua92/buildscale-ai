@@ -3,16 +3,16 @@
 //! This module contains all the logic for processing AI interactions in a background task.
 //! It extracts methods from ChatActor that need to run independently of the main event loop.
 
-use crate::models::agent_session::AgentType;
-use crate::models::chat::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
+use crate::agent::models::AgentType;
+use crate::chat::models::{ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
 use crate::models::sse::SseEvent;
 use crate::providers::Agent;
-use crate::services::agent_sessions;
-use crate::services::chat::ChatService;
-use crate::services::chat::registry::AgentRegistry;
+use crate::agent::services as agent_sessions;
+use crate::chat::services::ChatService;
+use crate::chat::services::registry::AgentRegistry;
 use crate::chat::services::engine::RigService;
-use crate::services::chat::states::SharedActorState;
-use crate::services::storage::FileStorageService;
+use crate::chat::services::states::SharedActorState;
+use crate::fs::storage::FileStorageService;
 use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::DbPool;
 use futures::StreamExt;
@@ -55,7 +55,7 @@ pub struct ProcessorContext {
 pub async fn get_or_create_agent(
     ctx: &ProcessorContext,
     user_id: Uuid,
-    session: &crate::models::chat::ChatSession,
+    session: &crate::chat::models::ChatSession,
     ai_config: &crate::config::AiConfig,
 ) -> crate::error::Result<Agent> {
     let model = &session.agent_config.model;
@@ -129,7 +129,7 @@ pub async fn process_agent_stream<S, M, E>(
     mut stream: S,
     cancellation_token: &CancellationToken,
     conn: &mut sqlx::PgConnection,
-    session: &crate::models::chat::ChatSession,
+    session: &crate::chat::models::ChatSession,
     item_count: &mut usize,
 ) -> crate::error::Result<String>
 where
@@ -247,7 +247,7 @@ async fn process_stream_item<M>(
     has_started_responding: &mut bool,
     item_count: usize,
     conn: &mut sqlx::PgConnection,
-    _session: &crate::models::chat::ChatSession,
+    _session: &crate::chat::models::ChatSession,
     _cancellation_token: &CancellationToken,
 ) -> crate::error::Result<()>
 where
@@ -822,7 +822,7 @@ pub async fn save_partial_response(
             workspace_id: ctx.workspace_id,
             role: ChatMessageRole::Assistant,
             content,
-            metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata {
+            metadata: sqlx::types::Json(crate::chat::models::ChatMessageMetadata {
                 model: Some(model),
                 ..Default::default()
             }),
@@ -852,7 +852,7 @@ pub async fn add_cancellation_marker(
             workspace_id: ctx.workspace_id,
             role: ChatMessageRole::System,
             content: marker_content,
-            metadata: sqlx::types::Json(crate::models::chat::ChatMessageMetadata::default()),
+            metadata: sqlx::types::Json(crate::chat::models::ChatMessageMetadata::default()),
         },
     )
     .await?;

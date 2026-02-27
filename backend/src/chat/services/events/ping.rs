@@ -4,9 +4,9 @@
 
 use crate::error::Result;
 use crate::models::sse::SseEvent;
-use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, EventResult, StateAction};
-use crate::services::chat::states::StateContext;
+use crate::chat::services::events::EventProcessor;
+use crate::chat::services::state_machine::{ActorEvent, EventResult, StateAction};
+use crate::chat::services::states::StateContext;
 
 /// Processor for Ping events.
 ///

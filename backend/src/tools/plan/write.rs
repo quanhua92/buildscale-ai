@@ -1,11 +1,11 @@
 //! Plan write tool - wraps write tool with auto-naming and frontmatter.
 
 use crate::error::{Error, Result, ValidationErrors};
-use crate::models::files::FileType;
+use crate::fs::models::FileType;
 use crate::models::requests::{CreateFileRequest, ToolResponse, PlanWriteArgs, PlanWriteResult};
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{generate_plan_name, PlanMetadata, PlanStatus, prepend_yaml_frontmatter};
 use crate::DbConn;

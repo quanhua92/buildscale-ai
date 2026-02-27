@@ -6,13 +6,13 @@
 //! - Global scope: Shared across workspace (`/memories/{category}/{key}.md`)
 
 use crate::error::{Error, Result, ValidationErrors};
-use crate::models::files::FileType;
+use crate::fs::models::FileType;
 use crate::models::requests::{
     CreateFileRequest, ToolResponse, MemorySetArgs, MemorySetResult,
 };
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{
     generate_memory_path, prepend_yaml_frontmatter, MemoryMetadata, MemoryScope,

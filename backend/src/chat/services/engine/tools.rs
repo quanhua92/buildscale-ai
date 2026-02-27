@@ -7,7 +7,7 @@ use crate::models::requests::{
     MemorySetArgs, MemoryGetArgs, MemorySearchArgs, MemoryDeleteArgs, MemoryListArgs,
     WebFetchArgs, WebSearchArgs,
 };
-use crate::services::storage::FileStorageService;
+use crate::fs::storage::FileStorageService;
 use crate::tools;
 
 use crate::DbPool;
@@ -121,7 +121,7 @@ macro_rules! define_rig_tool {
                     // Preserve tag_index_tx and link_index_tx from initial config
                     let tag_index_tx = initial_tool_config.tag_index_tx.clone();
                     let link_index_tx = initial_tool_config.link_index_tx.clone();
-                    let tool_config = if let Ok(agent_config) = crate::services::chat::sync::get_agent_config_from_file(&mut conn, &storage, workspace_id, chat_id).await {
+                    let tool_config = if let Ok(agent_config) = crate::chat::services::sync::get_agent_config_from_file(&mut conn, &storage, workspace_id, chat_id).await {
                         tracing::debug!(
                             tool = $name,
                             chat_id = %chat_id,

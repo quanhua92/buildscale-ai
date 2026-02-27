@@ -1,4 +1,4 @@
-use crate::models::chat::{ChatMessage, ChatMessageRole, ChatSession};
+use crate::chat::models::{ChatMessage, ChatMessageRole, ChatSession};
 use super::tools::{
     RigEditTool, RigGrepTool, RigGlobTool, RigFileInfoTool, RigLsTool, RigMkdirTool, RigMvTool, RigReadTool,
     RigRmTool, RigTouchTool, RigWriteTool, RigReadMultipleFilesTool, RigFindTool, RigCatTool,
@@ -7,11 +7,11 @@ use super::tools::{
     RigMemorySetTool, RigMemoryGetTool, RigMemorySearchTool, RigMemoryDeleteTool, RigMemoryListTool,
     RigWebFetchTool, RigWebSearchTool,
 };
-use crate::services::chat::context::{
+use crate::chat::services::context::{
     build_sorted_context_items, get_indices_to_truncate, render_attachment_for_ai,
     truncate_tool_output, AttachmentManager, ContextItem,
 };
-use crate::services::storage::FileStorageService;
+use crate::fs::storage::FileStorageService;
 use crate::state::{TagIndexMessage, LinkIndexMessage};
 use crate::providers::{AiProvider, Agent, ModelIdentifier, OpenAiProvider, OpenRouterProvider};
 use crate::config::AiConfig;
@@ -456,10 +456,10 @@ impl RigService {
                     let mut conn = pool.acquire().await.map_err(|e| Error::Internal(format!("Database error: {}", e)))?;
 
                     // Get plan file
-                    if let Ok(Some(plan_file)) = crate::queries::files::get_file_by_path(
+                    if let Ok(Some(plan_file)) = crate::fs::queries::get_file_by_path(
                         &mut conn, workspace_id, plan_file_path
                     ).await {
-                        if let Ok(plan_with_content) = crate::services::files::get_file_with_content(
+                        if let Ok(plan_with_content) = crate::fs::services::get_file_with_content(
                             &mut conn, &storage, plan_file.id
                         ).await {
                             let plan_content = plan_with_content.content.to_string();
@@ -588,7 +588,7 @@ impl RigService {
     /// to avoid duplicating this logic across multiple match arms.
     fn reconstruct_tool_call_from_metadata(
         &self,
-        metadata: &crate::models::chat::ChatMessageMetadata,
+        metadata: &crate::chat::models::ChatMessageMetadata,
     ) -> Option<Message> {
         use rig::completion::AssistantContent;
         use rig::message::{ToolCall, ToolFunction};
@@ -626,7 +626,7 @@ impl RigService {
     /// to avoid duplicating this logic across multiple match arms.
     fn reconstruct_tool_result_from_metadata(
         &self,
-        metadata: &crate::models::chat::ChatMessageMetadata,
+        metadata: &crate::chat::models::ChatMessageMetadata,
         include_note: bool,
     ) -> Option<Message> {
         use rig::message::{UserContent, ToolResult, ToolResultContent};
@@ -744,7 +744,7 @@ impl RigService {
     fn convert_single_message(
         role: ChatMessageRole,
         content: String,
-        metadata: crate::models::chat::ChatMessageMetadata,
+        metadata: crate::chat::models::ChatMessageMetadata,
         service: &RigService,
     ) -> Option<Message> {
         match role {
@@ -820,7 +820,7 @@ impl RigService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
+    use crate::chat::models::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
     use chrono::Utc;
     use rig::message::{UserContent, AssistantContent};
     use rig::completion::message::ToolResultContent;

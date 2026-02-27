@@ -1,4 +1,4 @@
-use crate::{DbConn, error::{Error, Result, ValidationErrors}, models::files::FileType, models::requests::{ToolResponse, TouchArgs, TouchResult}, services::files, services::storage::FileStorageService, queries::files as file_queries};
+use crate::{DbConn, error::{Error, Result, ValidationErrors}, fs::models::FileType, models::requests::{ToolResponse, TouchArgs, TouchResult}, fs::services as files, fs::storage::FileStorageService, fs::queries as file_queries};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;

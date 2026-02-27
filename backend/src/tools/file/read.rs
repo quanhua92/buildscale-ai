@@ -1,10 +1,10 @@
 use crate::{DbConn, error::{Result, Error}};
-use crate::models::files::FileType;
+use crate::fs::models::FileType;
 use crate::models::requests::{ToolResponse, ReadArgs, ReadResult};
-use crate::services::files;
-use crate::queries::files as file_queries;
+use crate::fs::services as files;
+use crate::fs::queries as file_queries;
 use crate::tools::helpers;
-use crate::utils::{parse_yaml_frontmatter, DocumentMetadata};
+use crate::fs::utils::{parse_yaml_frontmatter, DocumentMetadata};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -108,7 +108,7 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
     async fn execute(
         &self,
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         _config: ToolConfig,
@@ -190,7 +190,7 @@ EXAMPLES: {"path":"/f"} or {"path":"/f","offset":-100,"limit":100}"#
             }
         };
 
-        if matches!(file.file_type, crate::models::files::FileType::Folder) {
+        if matches!(file.file_type, crate::fs::models::FileType::Folder) {
             return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
                 field: "path".to_string(),
                 message: "Cannot read content of a folder".to_string(),

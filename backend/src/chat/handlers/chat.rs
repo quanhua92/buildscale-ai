@@ -1,10 +1,10 @@
 use crate::error::{Error, Result};
-use crate::models::chat::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
-use crate::models::files::FileType;
+use crate::chat::models::{ChatAttachment, ChatMessageMetadata, ChatMessageRole, NewChatMessage, DEFAULT_CHAT_MODEL};
+use crate::fs::models::FileType;
 use crate::models::requests::{CreateChatRequest, PostChatMessageRequest, UpdateChatRequest};
 use crate::models::sse::SseEvent;
-use crate::services::chat::actor::ChatActor;
-use crate::services::chat::registry::AgentCommand;
+use crate::chat::services::actor::ChatActor;
+use crate::chat::services::registry::AgentCommand;
 use crate::state::AppState;
 use crate::middleware::auth::AuthenticatedUser;
 use axum::extract::{Path, State};
@@ -29,12 +29,12 @@ const CHAT_NAME_GOAL_SNIPPET_LENGTH: usize = 80;
 /// persona (role) for the agent.
 async fn get_chat_persona(
     conn: &mut sqlx::PgConnection,
-    storage: &crate::services::storage::FileStorageService,
+    storage: &crate::fs::storage::FileStorageService,
     workspace_id: Uuid,
     chat_id: Uuid,
 ) -> Result<String> {
     // Get the agent config to determine the mode
-    let agent_config = crate::services::chat::sync::get_agent_config_from_file(
+    let agent_config = crate::chat::services::sync::get_agent_config_from_file(
         conn,
         storage,
         workspace_id,
@@ -64,7 +64,7 @@ pub async fn create_chat(
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
     // 1. Ensure the /chats folder exists
-    let chats_folder_id = crate::services::files::ensure_path_exists(
+    let chats_folder_id = crate::fs::services::ensure_path_exists(
         &mut conn,
         workspace_id,
         "chats",
@@ -88,20 +88,20 @@ pub async fn create_chat(
     };
 
     // 4. Create agent config for YAML frontmatter
-    let agent_config = crate::models::chat::AgentConfig {
-        model: req.model.clone().unwrap_or_else(|| crate::models::chat::DEFAULT_CHAT_MODEL.to_string()),
+    let agent_config = crate::chat::models::AgentConfig {
+        model: req.model.clone().unwrap_or_else(|| crate::chat::models::DEFAULT_CHAT_MODEL.to_string()),
         persona_override: Some(crate::agent::get_persona(req.role.as_deref(), Some(mode), None)),
         mode: mode.to_string(),
         ..Default::default()
     };
 
     // 5. Create file with content (includes YAML frontmatter)
-    use crate::services::chat::sync::ChatFrontmatter;
+    use crate::chat::services::sync::ChatFrontmatter;
     use crate::utils::prepend_yaml_frontmatter;
     let frontmatter = ChatFrontmatter::from_agent_config(&agent_config);
     let content_with_frontmatter = prepend_yaml_frontmatter(&frontmatter, "");
 
-    let file_result = crate::services::files::create_file_with_content(
+    let file_result = crate::fs::services::create_file_with_content(
         &mut conn,
         &state.storage,
         crate::models::requests::CreateFileRequest {
@@ -118,7 +118,7 @@ pub async fn create_chat(
     tracing::info!("[ChatHandler] Chat file created: {} (ID: {})", chat_file.path, chat_file.id);
 
     // 6. Persist initial goal message via Service (triggers write-through snapshot)
-    use crate::services::chat::ChatService;
+    use crate::chat::services::ChatService;
 
     let model_for_metadata = req.model.clone()
         .unwrap_or_else(|| DEFAULT_CHAT_MODEL.to_string());
@@ -140,7 +140,7 @@ pub async fn create_chat(
     // 7. Trigger Actor immediately for the initial goal
     let event_tx = state.agents.get_or_create_bus(chat_file.id).await;
 
-    let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
+    let handle = ChatActor::spawn(crate::chat::services::actor::ChatActorArgs {
         chat_id: chat_file.id,
         workspace_id,
         user_id: user.id,
@@ -196,7 +196,7 @@ pub async fn get_chat_events(
     // 2. Ensure actor is alive (rehydrate if needed)
     if state.agents.get_handle(&chat_id).await.is_none() {
         tracing::info!("[ChatHandler] Rehydrating ChatActor for chat {}", chat_id);
-        let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
+        let handle = ChatActor::spawn(crate::chat::services::actor::ChatActorArgs {
             chat_id,
             workspace_id,
             user_id: _user.id,
@@ -282,14 +282,14 @@ pub async fn post_chat_message(
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
     // 1. Append message to DB (Persistence first!) via Service for Write-Through
-    use crate::services::chat::ChatService;
+    use crate::chat::services::ChatService;
 
     // Get model for metadata (from request or current chat config)
     let model_for_metadata = if let Some(ref model) = req.model {
         model.clone()
     } else {
         // Get from current chat config
-        let agent_config = crate::services::chat::sync::get_agent_config_from_file(
+        let agent_config = crate::chat::services::sync::get_agent_config_from_file(
             &mut conn,
             &state.storage,
             workspace_id,
@@ -322,7 +322,7 @@ pub async fn post_chat_message(
     let content_trimmed = req.content.trim();
     if !content_trimmed.is_empty() {
         // Get current message count to limit name updates
-        let messages = crate::queries::chat::get_messages_by_file_id(&mut conn, workspace_id, chat_id).await?;
+        let messages = crate::chat::queries::get_messages_by_file_id(&mut conn, workspace_id, chat_id).await?;
         // Only update name for the first few user messages to refine the topic
         if messages.len() < 2 {
             let new_chat_name = ChatService::generate_chat_name(content_trimmed, CHAT_NAME_GOAL_SNIPPET_LENGTH);
@@ -340,7 +340,7 @@ pub async fn post_chat_message(
         // Rehydrate actor
         let event_tx = state.agents.get_or_create_bus(chat_id).await;
         let default_persona = get_chat_persona(&mut conn, &state.storage, workspace_id, chat_id).await?;
-        let handle = ChatActor::spawn(crate::services::chat::actor::ChatActorArgs {
+        let handle = ChatActor::spawn(crate::chat::services::actor::ChatActorArgs {
             chat_id,
             workspace_id,
             user_id: user.id,
@@ -375,10 +375,10 @@ pub async fn get_chat(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<crate::models::chat::ChatSession>> {
+) -> Result<Json<crate::chat::models::ChatSession>> {
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    let session = crate::services::chat::ChatService::get_chat_session(
+    let session = crate::chat::services::ChatService::get_chat_session(
         &mut conn,
         &state.storage,
         workspace_id,
@@ -429,7 +429,7 @@ pub async fn update_chat(
     }
 
     // Get current mode to check for mode transition
-    let old_mode = if let Ok(agent_config) = crate::services::chat::sync::get_agent_config_from_file(
+    let old_mode = if let Ok(agent_config) = crate::chat::services::sync::get_agent_config_from_file(
         &mut conn,
         &state.storage,
         workspace_id,
@@ -441,7 +441,7 @@ pub async fn update_chat(
     };
 
     // Update chat metadata
-    use crate::services::chat::ChatService;
+    use crate::chat::services::ChatService;
     ChatService::update_chat_metadata(
         &mut conn,
         &state.storage,
@@ -514,7 +514,7 @@ pub async fn stop_chat_generation(
         None => {
             // Actor not found - check if session is already in terminal state
             let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
-            if let Ok(Some(session)) = crate::queries::agent_sessions::get_session_by_chat(&mut conn, chat_id).await {
+            if let Ok(Some(session)) = crate::agent::queries::get_session_by_chat(&mut conn, chat_id).await {
                 if session.status.is_terminal() {
                     // Session already in terminal state - return success (idempotent)
                     tracing::info!(
@@ -568,7 +568,7 @@ pub async fn get_chat_context(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthenticatedUser>,
     Path((workspace_id, chat_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<crate::models::chat::ChatContextResponse>> {
+) -> Result<Json<crate::chat::models::ChatContextResponse>> {
     tracing::info!(
         "[ChatHandler] Getting context for chat {} in workspace {}",
         chat_id, workspace_id
@@ -576,7 +576,7 @@ pub async fn get_chat_context(
 
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    let context_response = crate::services::chat::ChatService::get_context_info(
+    let context_response = crate::chat::services::ChatService::get_context_info(
         &mut conn,
         &state.storage,
         workspace_id,

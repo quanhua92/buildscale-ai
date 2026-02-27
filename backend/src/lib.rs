@@ -8,7 +8,6 @@ pub mod fs;
 pub mod handlers;
 pub mod middleware;
 pub mod models;
-pub mod parsers;
 pub mod providers;
 pub mod queries;
 pub mod services;

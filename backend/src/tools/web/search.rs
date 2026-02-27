@@ -2,7 +2,7 @@ use crate::{DbConn, error::{Error, Result}};
 use crate::models::requests::{
     ToolResponse, WebSearchArgs, WebSearchResult, SearchResultItem,
 };
-use crate::services::storage::FileStorageService;
+use crate::fs::storage::FileStorageService;
 use crate::utils::safe_preview;
 use uuid::Uuid;
 use serde_json::Value;

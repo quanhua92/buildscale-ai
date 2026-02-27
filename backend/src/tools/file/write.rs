@@ -1,12 +1,12 @@
 use crate::error::{Error, Result, ValidationErrors};
-use crate::models::files::FileType;
+use crate::fs::models::FileType;
 use crate::models::requests::{
     CreateFileRequest, ToolResponse, WriteArgs, WriteResult,
 };
-use crate::queries::files as file_queries;
-use crate::services::files;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
 use crate::state::{TagIndexMessage, LinkIndexMessage};
-use crate::utils::{DocumentMetadata, prepend_yaml_frontmatter};
+use crate::fs::utils::{DocumentMetadata, prepend_yaml_frontmatter};
 use crate::DbConn;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -52,7 +52,7 @@ impl Tool for WriteTool {
     async fn execute(
         &self,
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         _user_id: Uuid,
         config: ToolConfig,
@@ -227,7 +227,7 @@ impl WriteTool {
                 _ => serde_json::to_string(&content).unwrap_or_default(),
             };
 
-            use crate::utils::parse_yaml_frontmatter;
+            use crate::fs::utils::parse_yaml_frontmatter;
             let (metadata, body) = parse_yaml_frontmatter::<DocumentMetadata>(&content_str);
 
             if let Some(mut meta) = metadata {

@@ -1,6 +1,6 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FileInfoArgs, FileInfoResult}, queries::files as file_queries};
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FileInfoArgs, FileInfoResult}, fs::queries as file_queries};
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
@@ -72,7 +72,7 @@ EXAMPLE: {"path":"/file.txt"}"#
 
                         let result = FileInfoResult {
                             path,
-                            file_type: crate::models::files::FileType::Document,  // Default for disk files
+                            file_type: crate::fs::models::FileType::Document,  // Default for disk files
                             size: Some(size),
                             line_count,
                             synced: false,  // Filesystem-only
@@ -104,7 +104,7 @@ EXAMPLE: {"path":"/file.txt"}"#
         let relative_path = path.strip_prefix('/').unwrap_or(&path);
         let file_path = workspace_path.join(relative_path);
 
-        let size = if !matches!(file.file_type, crate::models::files::FileType::Folder) {
+        let size = if !matches!(file.file_type, crate::fs::models::FileType::Folder) {
             tokio::fs::metadata(&file_path).await
                 .map(|metadata| Some(metadata.len() as usize))
                 .unwrap_or(None)
@@ -113,7 +113,7 @@ EXAMPLE: {"path":"/file.txt"}"#
         };
 
         // Get line count for text files only
-        let line_count = if matches!(file.file_type, crate::models::files::FileType::Document) {
+        let line_count = if matches!(file.file_type, crate::fs::models::FileType::Document) {
             // Only attempt to get content for document files, not folders
             match files::get_file_with_content(conn, storage, file.id).await {
                 Ok(file_with_content) => {

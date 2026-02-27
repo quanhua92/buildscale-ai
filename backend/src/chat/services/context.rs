@@ -1,4 +1,4 @@
-use crate::models::chat::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
+use crate::chat::models::{ChatMessage, ChatMessageMetadata, ChatMessageRole};
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -217,7 +217,7 @@ pub const ESTIMATED_CHARS_PER_TOKEN: usize = 4;
 /// # Example
 ///
 /// ```text,no_run
-/// use buildscale::services::chat::{AttachmentManager, AttachmentKey, AttachmentValue, PRIORITY_MEDIUM};
+/// use buildscale::chat::services::{AttachmentManager, AttachmentKey, AttachmentValue, PRIORITY_MEDIUM};
 /// use uuid::Uuid;
 ///
 /// let mut manager = AttachmentManager::new();
@@ -298,7 +298,7 @@ impl AttachmentManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use buildscale::services::chat::AttachmentManager;
+    /// # use buildscale::chat::services::AttachmentManager;
     /// let mut manager = AttachmentManager::new();
     /// // ... add attachments ...
     /// manager.optimize_for_limit(4000);  // Keep under 4000 tokens
@@ -551,7 +551,7 @@ pub fn format_history_fragment(messages: &[ChatMessage]) -> String {
 /// # Example
 ///
 /// ```text,no_run
-/// use buildscale::services::chat::HistoryManager;
+/// use buildscale::chat::services::HistoryManager;
 ///
 /// // Create from existing message vector
 /// let manager = HistoryManager::new(vec![msg1, msg2, msg3]);

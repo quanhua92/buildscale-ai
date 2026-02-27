@@ -63,7 +63,7 @@ fn inline_code_regex() -> &'static Regex {
 ///
 /// # Examples
 /// ```
-/// use buildscale::parsers::extract_tags;
+/// use buildscale::fs::parsers::extract_tags;
 ///
 /// let content = "This has a #tag and #another/tag";
 /// let tags = extract_tags(content);

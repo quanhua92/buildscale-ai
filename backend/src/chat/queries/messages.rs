@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    models::chat::{ChatMessage, ChatMessageRole, NewChatMessage, ChatMessageMetadata},
+    chat::models::{ChatMessage, ChatMessageRole, NewChatMessage, ChatMessageMetadata},
     DbConn,
 };
 use sqlx::types::Json;

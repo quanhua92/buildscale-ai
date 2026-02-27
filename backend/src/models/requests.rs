@@ -1,5 +1,5 @@
+use crate::fs::models::{File, FileType};
 use crate::models::{
-    files::{File, FileType},
     roles::Role,
     workspace_members::WorkspaceMember,
     workspaces::Workspace,
@@ -1056,14 +1056,14 @@ pub struct PlanWriteResult {
     pub path: String,
     pub file_id: Uuid,
     pub hash: String,
-    pub metadata: crate::utils::frontmatter::PlanMetadata,
+    pub metadata: crate::fs::utils::PlanMetadata,
 }
 
 /// Result for plan_read tool
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanReadResult {
     pub path: String,
-    pub metadata: Option<crate::utils::frontmatter::PlanMetadata>,
+    pub metadata: Option<crate::fs::utils::PlanMetadata>,
     pub content: String,
     pub hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1075,7 +1075,7 @@ pub struct PlanReadResult {
 pub struct PlanListItem {
     pub path: String,
     pub name: String,
-    pub metadata: Option<crate::utils::frontmatter::PlanMetadata>,
+    pub metadata: Option<crate::fs::utils::PlanMetadata>,
 }
 
 /// Result for plan_list tool

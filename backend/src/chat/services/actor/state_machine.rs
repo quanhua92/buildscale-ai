@@ -3,8 +3,8 @@
 //! This module contains standalone helper functions for state machine operations
 //! that don't require access to ChatActor's internal state.
 
-use crate::services::chat::registry::AgentCommand;
-use crate::services::chat::state_machine::ActorEvent;
+use crate::chat::services::registry::AgentCommand;
+use crate::chat::services::state_machine::ActorEvent;
 
 /// Convert an AgentCommand to an ActorEvent.
 ///

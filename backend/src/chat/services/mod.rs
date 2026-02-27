@@ -120,7 +120,7 @@ mod tests;
 
 use crate::{
     error::Result,
-    models::chat::{ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage},
+    chat::models::{ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage},
     models::requests::{GrepResult, GlobResult, LsResult},
     queries, DbConn,
 };
@@ -179,14 +179,14 @@ impl ChatService {
     /// for audit purposes but NOT written to .chat files to avoid cluttering them.
     pub async fn save_message(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         new_msg: NewChatMessage,
     ) -> Result<ChatMessage> {
         let file_id = new_msg.file_id;
 
         // 1. Insert message into Source of Truth (chat_messages)
-        let msg = queries::chat::insert_chat_message(conn, new_msg).await?;
+        let msg = crate::chat::queries::insert_chat_message(conn, new_msg).await?;
 
         // 2. Append to Disk (File View)
         // Skip writing reasoning messages to .chat file - they're only for audit/debug in DB
@@ -196,14 +196,14 @@ impl ChatService {
 
         if !is_reasoning {
             // Retrieve file path first
-            let file = queries::files::get_file_by_id(conn, file_id).await?;
+            let file = crate::fs::queries::get_file_by_id(conn, file_id).await?;
 
             let markdown_entry = format_message_as_markdown(&msg);
             // Use full hierarchical path for consistency with file storage
             storage.append_to_file(workspace_id, &file.path, &markdown_entry).await?;
 
             // 3. Touch file to update timestamp
-            queries::files::touch_file(conn, file_id).await?;
+            crate::fs::queries::touch_file(conn, file_id).await?;
         }
 
         Ok(msg)
@@ -225,7 +225,7 @@ impl ChatService {
     /// * `metadata` - Structured metadata (message_type, reasoning_id, tool_* fields)
     pub async fn save_stream_event(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         file_id: Uuid,
         role: ChatMessageRole,
@@ -619,7 +619,7 @@ impl ChatService {
     /// Updates the model for a chat session in app_data.
     pub async fn update_chat_model(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
         new_model: String,
@@ -645,7 +645,7 @@ impl ChatService {
     /// and also writes YAML frontmatter to the chat file for display/debugging.
     pub async fn update_chat_metadata(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
         mode: String,
@@ -679,12 +679,12 @@ impl ChatService {
     /// or has no frontmatter.
     pub async fn get_yaml_frontmatter(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
     ) -> Result<Option<ChatFrontmatter>> {
         // 1. Get the file path
-        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        let file = crate::fs::queries::get_file_by_id(conn, chat_file_id).await?;
 
         // 2. Read file content
         let content = match storage.read_file(workspace_id, &file.path).await {
@@ -702,16 +702,16 @@ impl ChatService {
     /// Retrieves the full chat session including configuration and message history.
     pub async fn get_chat_session(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
-    ) -> Result<crate::models::chat::ChatSession> {
+    ) -> Result<crate::chat::models::ChatSession> {
         // 1. Verify file exists and is a chat
-        let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        let file = crate::fs::queries::get_file_by_id(conn, chat_file_id).await?;
         if file.workspace_id != workspace_id {
             return Err(crate::error::Error::NotFound(format!("Chat not found: {}", chat_file_id)));
         }
-        if !matches!(file.file_type, crate::models::files::FileType::Chat) {
+        if !matches!(file.file_type, crate::fs::models::FileType::Chat) {
             return Err(crate::error::Error::Validation(crate::error::ValidationErrors::Single {
                 field: "chat_id".to_string(),
                 message: "File is not a chat".to_string(),
@@ -719,7 +719,7 @@ impl ChatService {
         }
 
         // 2. Fetch all messages
-        let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
+        let messages = crate::chat::queries::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
         // 3. Get agent config from file's YAML frontmatter
         let mut agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
@@ -736,7 +736,7 @@ impl ChatService {
             agent_config.model = format!("openai:{}", agent_config.model);
         }
 
-        Ok(crate::models::chat::ChatSession {
+        Ok(crate::chat::models::ChatSession {
             file_id: chat_file_id,
             agent_config,
             messages,
@@ -750,7 +750,7 @@ impl ChatService {
     ///   last message is the user's prompt). If false, includes all messages (used for Context UI).
     pub async fn build_context(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
         default_persona: &str,
@@ -758,7 +758,7 @@ impl ChatService {
         exclude_last_message: bool,
     ) -> Result<BuiltContext> {
         // 1. Load Session Identity & History
-        let messages = queries::chat::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
+        let messages = crate::chat::queries::get_messages_by_file_id(conn, workspace_id, chat_file_id).await?;
 
         // 2. Hydrate Persona
         let persona = default_persona.to_string();
@@ -781,7 +781,7 @@ impl ChatService {
             for attachment in &metadata.attachments {
                 if let ChatAttachment::File { file_id, .. } = attachment
                     && let Ok(file_with_content) =
-                        crate::services::files::get_file_with_content(conn, storage, *file_id).await
+                        crate::fs::services::get_file_with_content(conn, storage, *file_id).await
                 {
                     // Security check: Ensure file belongs to the same workspace
                     if file_with_content.file.workspace_id == workspace_id {
@@ -838,14 +838,14 @@ impl ChatService {
     /// character counts, token estimates, and helpful statistics.
     pub async fn get_context_info(
         conn: &mut DbConn,
-        storage: &crate::services::storage::FileStorageService,
+        storage: &crate::fs::storage::FileStorageService,
         workspace_id: Uuid,
         chat_file_id: Uuid,
         default_persona: &str,
         fallback_token_limit: usize,
-    ) -> Result<crate::models::chat::ChatContextResponse> {
+    ) -> Result<crate::chat::models::ChatContextResponse> {
         // 1. Get session for model/mode info first (needed to determine token limit)
-        let _file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        let _file = crate::fs::queries::get_file_by_id(conn, chat_file_id).await?;
 
         let agent_config = sync::get_agent_config_from_file(conn, storage, workspace_id, chat_file_id).await
             .unwrap_or_default();
@@ -872,7 +872,7 @@ impl ChatService {
             &system_prompt, &history, &tools, &attachments, &agent_config.model, token_limit
         );
 
-        Ok(crate::models::chat::ChatContextResponse {
+        Ok(crate::chat::models::ChatContextResponse {
             system_prompt,
             history,
             tools,
@@ -891,12 +891,12 @@ impl ChatService {
         ai_model.context_window.map(|cw| cw as usize)
     }
 
-    fn build_system_prompt_section(persona: &str, mode: &str) -> crate::models::chat::SystemPromptSection {
+    fn build_system_prompt_section(persona: &str, mode: &str) -> crate::chat::models::SystemPromptSection {
         let persona_type = if persona.contains("Planner") { "planner" }
             else if persona.contains("Builder") { "builder" }
             else { "assistant" };
 
-        crate::models::chat::SystemPromptSection {
+        crate::chat::models::SystemPromptSection {
             content: persona.to_string(),
             char_count: persona.len(),
             token_count: persona.len() / ESTIMATED_CHARS_PER_TOKEN,
@@ -908,7 +908,7 @@ impl ChatService {
     fn build_history_section(
         messages: &[ChatMessage],
         attachment_manager: &AttachmentManager,
-    ) -> crate::models::chat::HistorySection {
+    ) -> crate::chat::models::HistorySection {
         // Use centralized context building from context.rs (single source of truth)
         // Pass None for render_fn since Context UI doesn't need rendered attachments
         let items = build_sorted_context_items::<fn(&AttachmentKey, &AttachmentValue) -> String>(
@@ -946,7 +946,7 @@ impl ChatService {
 
         // Build history messages with truncation applied (using centralized filtering)
         let filtered_messages = filter_messages_for_context(messages);
-        let history_messages: Vec<crate::models::chat::HistoryMessageInfo> = filtered_messages
+        let history_messages: Vec<crate::chat::models::HistoryMessageInfo> = filtered_messages
             .iter()
             .map(|msg| {
                 let mut content = msg.content.clone();
@@ -967,12 +967,12 @@ impl ChatService {
                     content
                 };
 
-                crate::models::chat::HistoryMessageInfo {
+                crate::chat::models::HistoryMessageInfo {
                     role: msg.role.to_string().to_lowercase(),
                     content_preview: preview,
                     content_length: original_length,
                     token_count: truncated_length / ESTIMATED_CHARS_PER_TOKEN,
-                    metadata: Some(crate::models::chat::HistoryMessageMetadata {
+                    metadata: Some(crate::chat::models::HistoryMessageMetadata {
                         message_type: msg.metadata.message_type.clone(),
                         reasoning_id: msg.metadata.reasoning_id.clone(),
                         tool_name: msg.metadata.tool_name.clone(),
@@ -983,28 +983,28 @@ impl ChatService {
             })
             .collect();
 
-        crate::models::chat::HistorySection {
+        crate::chat::models::HistorySection {
             message_count: history_messages.len(),
             total_tokens: history_messages.iter().map(|m| m.token_count).sum(),
             messages: history_messages,
         }
     }
 
-    fn build_tools_section() -> crate::models::chat::ToolsSection {
+    fn build_tools_section() -> crate::chat::models::ToolsSection {
         // Get all tool definitions
         let tools = crate::tools::get_all_tool_definitions();
         let schema_json = serde_json::to_string(&tools).unwrap_or_default();
         let tool_count = tools.len();
 
-        crate::models::chat::ToolsSection {
+        crate::chat::models::ToolsSection {
             tools,
             tool_count,
             estimated_schema_tokens: schema_json.len() / ESTIMATED_CHARS_PER_TOKEN,
         }
     }
 
-    fn build_attachments_section(manager: &AttachmentManager) -> crate::models::chat::AttachmentsSection {
-        let attachments: Vec<crate::models::chat::AttachmentInfo> = manager.map.iter().map(|(key, value)| {
+    fn build_attachments_section(manager: &AttachmentManager) -> crate::chat::models::AttachmentsSection {
+        let attachments: Vec<crate::chat::models::AttachmentInfo> = manager.map.iter().map(|(key, value)| {
             let (attachment_type, id) = match key {
                 AttachmentKey::WorkspaceFile(fid) => ("workspace_file", *fid),
                 AttachmentKey::ActiveSkill(sid) => ("skill", *sid),
@@ -1020,7 +1020,7 @@ impl ChatService {
                 value.content.clone()
             };
 
-            crate::models::chat::AttachmentInfo {
+            crate::chat::models::AttachmentInfo {
                 attachment_type: attachment_type.to_string(),
                 id,
                 content_preview: preview,
@@ -1033,7 +1033,7 @@ impl ChatService {
             }
         }).collect();
 
-        crate::models::chat::AttachmentsSection {
+        crate::chat::models::AttachmentsSection {
             attachment_count: attachments.len(),
             total_tokens: attachments.iter().map(|a| a.token_count).sum(),
             attachments,
@@ -1041,14 +1041,14 @@ impl ChatService {
     }
 
     fn build_context_summary(
-        system_prompt: &crate::models::chat::SystemPromptSection,
-        history: &crate::models::chat::HistorySection,
-        tools: &crate::models::chat::ToolsSection,
-        attachments: &crate::models::chat::AttachmentsSection,
+        system_prompt: &crate::chat::models::SystemPromptSection,
+        history: &crate::chat::models::HistorySection,
+        tools: &crate::chat::models::ToolsSection,
+        attachments: &crate::chat::models::AttachmentsSection,
         model: &str,
         token_limit: usize,
-    ) -> crate::models::chat::ContextSummary {
-        let breakdown = crate::models::chat::TokenBreakdown {
+    ) -> crate::chat::models::ContextSummary {
+        let breakdown = crate::chat::models::TokenBreakdown {
             system_prompt_tokens: system_prompt.token_count,
             history_tokens: history.total_tokens,
             tools_tokens: tools.estimated_schema_tokens,
@@ -1062,7 +1062,7 @@ impl ChatService {
             (total as f64 / token_limit as f64) * 100.0
         } else { 0.0 };
 
-        crate::models::chat::ContextSummary {
+        crate::chat::models::ContextSummary {
             total_tokens: total,
             utilization_percent: utilization,
             model: model.to_string(),
@@ -1117,13 +1117,13 @@ impl ChatService {
         new_name: String,
     ) -> Result<()> {
         // 1. Get current file info
-        let current_file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+        let current_file = crate::fs::queries::get_file_by_id(conn, chat_file_id).await?;
 
         // 2. Generate new path from name (keep same pattern as creation)
         let new_path = format!("/chats/chat-{}.chat", chat_file_id);
 
         // 3. Update file metadata (name, path)
-        queries::files::update_file_metadata(
+        crate::fs::queries::update_file_metadata(
             conn,
             chat_file_id,
             current_file.parent_id,
@@ -1140,10 +1140,10 @@ impl ChatService {
 fn format_message_as_markdown(msg: &ChatMessage) -> String {
     let timestamp = msg.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
     let role = match msg.role {
-        crate::models::chat::ChatMessageRole::User => "User",
-        crate::models::chat::ChatMessageRole::Assistant => "Assistant",
-        crate::models::chat::ChatMessageRole::System => "System",
-        crate::models::chat::ChatMessageRole::Tool => "Tool",
+        crate::chat::models::ChatMessageRole::User => "User",
+        crate::chat::models::ChatMessageRole::Assistant => "Assistant",
+        crate::chat::models::ChatMessageRole::System => "System",
+        crate::chat::models::ChatMessageRole::Tool => "Tool",
     };
     
     format!("\n\n### {} ({})\n\n{}\n", role, timestamp, msg.content)

@@ -1,6 +1,6 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FindArgs, FindResult, FindMatch}, queries::files};
-use crate::services::storage::FileStorageService;
-use crate::models::files::FileType;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, FindArgs, FindResult, FindMatch}, fs::queries as files};
+use crate::fs::storage::FileStorageService;
+use crate::fs::models::FileType;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -236,7 +236,7 @@ EXAMPLES: {"name":"*.txt"} or {"file_type":"folder"} or {"min_size":1048576}"#
                     path: full_path.clone(),
                     name,
                     synced: false,  // Filesystem-only
-                    file_type: crate::models::files::FileType::Document, // Default to document
+                    file_type: crate::fs::models::FileType::Document, // Default to document
                     size,
                     updated_at: chrono::Utc::now(),
                 });

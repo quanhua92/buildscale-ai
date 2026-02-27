@@ -13,8 +13,8 @@ use crate::{
     error::Result,
     middleware::auth::AuthenticatedUser,
     middleware::workspace_access::WorkspaceAccess,
-    models::agent_session::{PauseSessionRequest, SessionActionResponse},
-    services::agent_sessions,
+    agent::models::{PauseSessionRequest, SessionActionResponse},
+    agent::services as agent_sessions,
     state::AppState,
 };
 
@@ -187,7 +187,7 @@ pub async fn pause_session(
 
         // Send the Pause command to the actor
         let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
-        let pause_cmd = crate::services::chat::registry::AgentCommand::Pause {
+        let pause_cmd = crate::chat::services::registry::AgentCommand::Pause {
             reason: request.reason.clone(),
             responder: std::sync::Arc::new(tokio::sync::Mutex::new(Some(responder_tx))),
         };
@@ -259,7 +259,7 @@ pub async fn resume_session(
     State(state): State<AppState>,
     Path(session_id): Path<Uuid>,
     Extension(auth_user): Extension<AuthenticatedUser>,
-    Json(request): Json<crate::models::agent_session::ResumeSessionRequest>,
+    Json(request): Json<crate::agent::models::ResumeSessionRequest>,
 ) -> Result<Json<SessionActionResponse>> {
     tracing::info!(
         operation = "resume_session",
@@ -342,7 +342,7 @@ pub async fn cancel_session(
 
         // Send the Cancel command to the actor
         let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
-        let cancel_cmd = crate::services::chat::registry::AgentCommand::Cancel {
+        let cancel_cmd = crate::chat::services::registry::AgentCommand::Cancel {
             reason: "Session cancelled by user".to_string(),
             responder: std::sync::Arc::new(tokio::sync::Mutex::new(Some(responder_tx))),
         };

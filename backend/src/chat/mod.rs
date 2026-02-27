@@ -15,4 +15,8 @@ pub mod handlers;
 pub use models::{ChatMessage, NewChatMessage, ChatAttachment};
 pub use services::{ChatService, RigService, BuiltContext, ChatFrontmatter};
 pub use services::actor::ChatActor;
-pub use handlers::{create_chat, get_chat, post_chat_message, list_chats, get_providers};
+
+// Re-export handlers
+pub use handlers::chat::{create_chat, get_chat, post_chat_message};
+pub use handlers::message::list_chats;
+pub use handlers::providers::get_providers;

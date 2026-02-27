@@ -1,5 +1,5 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, GlobArgs, GlobResult, GlobMatch}, queries::files};
-use crate::services::storage::FileStorageService;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, GlobArgs, GlobResult, GlobMatch}, fs::queries as files};
+use crate::fs::storage::FileStorageService;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -177,7 +177,7 @@ PARAMETERS: pattern (required), path (default '/')"#
                     path: full_path.clone(),
                     name,
                     synced: false,  // Filesystem-only
-                    file_type: crate::models::files::FileType::Document, // Default to document
+                    file_type: crate::fs::models::FileType::Document, // Default to document
                     size: None,
                     updated_at: chrono::Utc::now(),
                 });

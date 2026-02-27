@@ -1,5 +1,5 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, CatArgs, CatResult, CatFileEntry}, queries::files as file_queries, services::files};
-use crate::services::storage::FileStorageService;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, CatArgs, CatResult, CatFileEntry}, fs::queries as file_queries, fs::services as files};
+use crate::fs::storage::FileStorageService;
 use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;
@@ -364,7 +364,7 @@ async fn read_single_file(
         }
     };
 
-    if matches!(file.file_type, crate::models::files::FileType::Folder) {
+    if matches!(file.file_type, crate::fs::models::FileType::Folder) {
         return Err(Error::Validation(crate::error::ValidationErrors::Single {
             field: "path".to_string(),
             message: "Cannot read a folder".to_string(),

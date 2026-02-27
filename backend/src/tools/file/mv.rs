@@ -1,8 +1,8 @@
 use crate::error::{Error, Result};
 use crate::models::requests::{MvArgs, MvResult, ToolResponse};
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::helpers;
 use crate::DbConn;
 use async_trait::async_trait;
@@ -71,7 +71,7 @@ impl Tool for MvTool {
         };
 
         // Plan Mode Guard: Check source file type
-        if config.plan_mode && !matches!(source_file.file_type, crate::models::files::FileType::Plan) {
+        if config.plan_mode && !matches!(source_file.file_type, crate::fs::models::FileType::Plan) {
             return Err(Error::Validation(crate::error::ValidationErrors::Single {
                 field: "source".to_string(),
                 message: crate::tools::PLAN_MODE_ERROR.to_string(),
@@ -98,7 +98,7 @@ impl Tool for MvTool {
                     .await?
                     .ok_or_else(|| Error::NotFound(format!("Destination directory not found: {}", dir_path)))?;
 
-                if !matches!(dir_file.file_type, crate::models::files::FileType::Folder) {
+                if !matches!(dir_file.file_type, crate::fs::models::FileType::Folder) {
                     return Err(Error::Validation(crate::error::ValidationErrors::Single {
                         field: "destination".to_string(),
                         message: "Destination path ends with / but is not a directory".to_string(),
@@ -110,7 +110,7 @@ impl Tool for MvTool {
         } else {
             // Case B: Check if destination exists and is a directory
             if let Some(dest_file) = file_queries::get_file_by_path(conn, workspace_id, &destination_path).await? {
-                if matches!(dest_file.file_type, crate::models::files::FileType::Folder) {
+                if matches!(dest_file.file_type, crate::fs::models::FileType::Folder) {
                     (Some(Some(dest_file.id)), source_file.name.clone())
                 } else {
                     // It's a file. This is a conflict.
@@ -142,7 +142,7 @@ impl Tool for MvTool {
         };
 
         // 3. Safety check: prevent moving a folder into itself or a subfolder
-        if source_file.file_type == crate::models::files::FileType::Folder {
+        if source_file.file_type == crate::fs::models::FileType::Folder {
             if let Some(Some(parent_id)) = target_parent_id {
                 if file_queries::is_descendant_of(conn, parent_id, source_file.id).await? {
                     return Err(Error::Validation(crate::error::ValidationErrors::Single {

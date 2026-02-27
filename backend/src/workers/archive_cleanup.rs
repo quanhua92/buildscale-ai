@@ -1,4 +1,4 @@
-use crate::services::storage::FileStorageService;
+use crate::fs::storage::FileStorageService;
 use crate::state::ArchiveCleanupMessage;
 use std::time::Duration;
 use tokio::time::interval;

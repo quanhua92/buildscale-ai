@@ -36,7 +36,7 @@ fn wikilink_full_regex() -> &'static Regex {
 ///
 /// # Examples
 /// ```
-/// use buildscale::parsers::extract_links;
+/// use buildscale::fs::parsers::extract_links;
 ///
 /// let content = "See [[other note]] and [[third|with display]]";
 /// let links = extract_links(content);

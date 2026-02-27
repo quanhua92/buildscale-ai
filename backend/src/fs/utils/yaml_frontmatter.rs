@@ -44,7 +44,7 @@ use serde::{de::DeserializeOwned, Serialize};
 ///
 /// Body content"#;
 ///
-/// let (metadata, body) = buildscale::utils::yaml_frontmatter::parse_yaml_frontmatter::<MyMetadata>(content);
+/// let (metadata, body) = buildscale::fs::utils::parse_yaml_frontmatter::<MyMetadata>(content);
 /// assert!(metadata.is_some());
 /// assert!(body.contains("Body content"));
 /// ```
@@ -113,7 +113,7 @@ pub fn parse_yaml_frontmatter<T: DeserializeOwned>(content: &str) -> (Option<T>,
 /// let metadata = MyMetadata { title: "My Doc".to_string() };
 /// let body = "Content here";
 ///
-/// let result = buildscale::utils::yaml_frontmatter::prepend_yaml_frontmatter(&metadata, body);
+/// let result = buildscale::fs::utils::prepend_yaml_frontmatter(&metadata, body);
 /// assert!(result.starts_with("---\n"));
 /// assert!(result.contains("title: My Doc"));
 /// assert!(result.contains("Content here"));

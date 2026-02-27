@@ -1,11 +1,11 @@
 //! Plan edit tool - wraps edit tool while preserving frontmatter.
 
 use crate::error::{Error, Result, ValidationErrors};
-use crate::models::files::FileType;
+use crate::fs::models::FileType;
 use crate::models::requests::{ToolResponse, PlanEditArgs, WriteResult};
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter, PlanMetadata};
 use crate::DbConn;

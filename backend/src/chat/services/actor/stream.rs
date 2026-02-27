@@ -2,9 +2,9 @@
 //!
 //! This module contains standalone helper functions for stream processing operations.
 
-use crate::models::chat::{ChatMessageMetadata, ChatMessageRole};
-use crate::services::chat::ChatService;
-use crate::services::storage::FileStorageService;
+use crate::chat::models::{ChatMessageMetadata, ChatMessageRole};
+use crate::chat::services::ChatService;
+use crate::fs::storage::FileStorageService;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -14,7 +14,7 @@ use uuid::Uuid;
 /// This function extracts the reasoning buffer from the actor state,
 /// aggregates it, and saves it as a chat message with reasoning metadata.
 pub async fn flush_reasoning_buffer(
-    state: &Arc<Mutex<crate::services::chat::states::SharedActorState>>,
+    state: &Arc<Mutex<crate::chat::services::states::SharedActorState>>,
     chat_id: Uuid,
     workspace_id: Uuid,
     storage: &Arc<FileStorageService>,

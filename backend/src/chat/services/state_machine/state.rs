@@ -52,7 +52,7 @@ impl ActorState {
     /// # Example
     ///
     /// ```rust
-    /// use buildscale::services::chat::state_machine::ActorState;
+    /// use buildscale::chat::services::state_machine::ActorState;
     ///
     /// assert!(!ActorState::Idle.is_terminal());
     /// assert!(!ActorState::Running.is_terminal());
@@ -80,7 +80,7 @@ impl ActorState {
     /// # Example
     ///
     /// ```rust
-    /// use buildscale::services::chat::state_machine::ActorState;
+    /// use buildscale::chat::services::state_machine::ActorState;
     ///
     /// assert!(ActorState::Idle.can_transition_to(ActorState::Running));
     /// assert!(ActorState::Running.can_transition_to(ActorState::Idle));

@@ -3,8 +3,8 @@
 //! The Shutdown state represents when the actor is gracefully shutting down.
 
 use crate::error::Result;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
-use crate::services::chat::states::{StateContext, StateHandler};
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::chat::services::states::{StateContext, StateHandler};
 
 /// Handler for the Shutdown state.
 ///

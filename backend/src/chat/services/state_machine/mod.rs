@@ -55,7 +55,7 @@
 //! # Example
 //!
 //! ```rust
-//! use buildscale::services::chat::state_machine::{StateMachine, ActorState, ActorEvent};
+//! use buildscale::chat::services::state_machine::{StateMachine, ActorState, ActorEvent};
 //! use uuid::Uuid;
 //!
 //! let mut machine = StateMachine::new(ActorState::Idle);

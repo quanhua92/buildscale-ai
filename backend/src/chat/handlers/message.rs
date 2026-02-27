@@ -4,8 +4,8 @@
 //! including listing recent chats and managing chat metadata.
 
 use crate::error::{Error, Result};
-use crate::models::files::FileType;
-use crate::queries;
+use crate::fs::models::FileType;
+use crate::fs::queries;
 use crate::state::AppState;
 use crate::middleware::workspace_access::WorkspaceAccess;
 use axum::extract::{Extension, Path, State};
@@ -28,7 +28,7 @@ pub async fn list_chats(
 ) -> Result<Json<Vec<serde_json::Value>>> {
     let mut conn = state.pool.acquire().await.map_err(Error::Sqlx)?;
 
-    let chat_files = queries::files::get_files_by_type(
+    let chat_files = queries::get_files_by_type(
         &mut conn,
         workspace_access.workspace_id,
         FileType::Chat,

@@ -11,9 +11,9 @@ pub mod shutdown;
 
 use crate::error::Result;
 use crate::models::sse::SseEvent;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult};
-use crate::services::chat::states::StateContext;
-use crate::services::storage::FileStorageService;
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult};
+use crate::chat::services::states::StateContext;
+use crate::fs::storage::FileStorageService;
 use crate::DbPool;
 use std::sync::Arc;
 use tokio::sync::broadcast;

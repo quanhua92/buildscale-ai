@@ -1,6 +1,6 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, LsArgs, LsResult, LsEntry}, queries::files};
-use crate::services::storage::FileStorageService;
-use crate::models::files::FileType;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, LsArgs, LsResult, LsEntry}, fs::queries as files};
+use crate::fs::storage::FileStorageService;
+use crate::fs::models::FileType;
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -124,13 +124,13 @@ impl LsTool {
         conn: &mut DbConn,
         workspace_id: Uuid,
         path_prefix: &str,
-    ) -> Result<Vec<crate::models::files::File>> {
+    ) -> Result<Vec<crate::fs::models::File>> {
         let files = sqlx::query_as!(
-            crate::models::files::File,
+            crate::fs::models::File,
             r#"
             SELECT
                 id, workspace_id, parent_id,
-                file_type as "file_type: crate::models::files::FileType",
+                file_type as "file_type: crate::fs::models::FileType",
                 name, path, hash, versions,
                 deleted_at, created_at, updated_at
             FROM files
@@ -267,14 +267,14 @@ impl LsTool {
     /// 2. Filesystem-only entries added with minimal metadata
     /// 3. Deduplication by path
     async fn merge_entries(
-        db_files: Vec<crate::models::files::File>,
+        db_files: Vec<crate::fs::models::File>,
         fs_entries: Vec<FilesystemEntry>,
         workspace_path: &Path,
     ) -> Result<Vec<LsEntry>> {
         use std::collections::{HashMap, HashSet};
 
         // Build lookup: path -> database file
-        let mut db_lookup: HashMap<String, crate::models::files::File> = HashMap::new();
+        let mut db_lookup: HashMap<String, crate::fs::models::File> = HashMap::new();
         for file in db_files {
             db_lookup.insert(file.path.clone(), file);
         }

@@ -1,5 +1,5 @@
-use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, RmArgs, RmResult}, services::files, queries::files as file_queries};
-use crate::services::storage::FileStorageService;
+use crate::{DbConn, error::{Result, Error}, models::requests::{ToolResponse, RmArgs, RmResult}, fs::services as files, fs::queries as file_queries};
+use crate::fs::storage::FileStorageService;
 use crate::tools::helpers;
 use uuid::Uuid;
 use serde_json::Value;

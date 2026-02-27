@@ -3,12 +3,12 @@
 //! Handles user interaction events which trigger AI processing.
 
 use crate::error::Result;
-use crate::models::agent_session::SessionStatus;
+use crate::agent::models::SessionStatus;
 use crate::models::sse::SseEvent;
-use crate::services::chat::events::EventProcessor;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
-use crate::services::chat::states::StateContext;
-use crate::services::storage::FileStorageService;
+use crate::chat::services::events::EventProcessor;
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::chat::services::states::StateContext;
+use crate::fs::storage::FileStorageService;
 use crate::DbPool;
 use std::sync::Arc;
 use tokio::sync::broadcast;

@@ -14,11 +14,11 @@
 //! as YAML frontmatter, not in a separate version table. This module provides
 //! helpers to read/write AgentConfig from/to file content.
 
-use crate::models::chat::AgentConfig;
+use crate::chat::models::AgentConfig;
 use crate::error::Result;
-use crate::services::storage::FileStorageService;
-use crate::queries;
-use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
+use crate::fs::storage::FileStorageService;
+use crate::fs::queries;
+use crate::fs::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
 use crate::DbConn;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -27,7 +27,7 @@ use uuid::Uuid;
 fn default_agent_config() -> AgentConfig {
     AgentConfig {
         agent_id: None,
-        model: crate::models::chat::DEFAULT_CHAT_MODEL.to_string(),
+        model: crate::chat::models::DEFAULT_CHAT_MODEL.to_string(),
         temperature: 0.7,
         persona_override: None,
         previous_response_id: None,
@@ -47,7 +47,7 @@ pub async fn get_agent_config_from_file(
     chat_file_id: Uuid,
 ) -> Result<AgentConfig> {
     // 1. Get the file
-    let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+    let file = queries::get_file_by_id(conn, chat_file_id).await?;
 
     // 2. Read file content
     let content_bytes = match storage.read_file(workspace_id, &file.path).await {
@@ -79,7 +79,7 @@ pub async fn update_agent_config_in_file(
     new_config: &AgentConfig,
 ) -> Result<()> {
     // 1. Get the file
-    let file = queries::files::get_file_by_id(conn, chat_file_id).await?;
+    let file = queries::get_file_by_id(conn, chat_file_id).await?;
 
     // 2. Read current file content
     let current_content = match storage.read_file(workspace_id, &file.path).await {
@@ -97,7 +97,7 @@ pub async fn update_agent_config_in_file(
     let new_content = prepend_yaml_frontmatter(&frontmatter, &body_content);
 
     // 5. Update file content (this creates a new version in the simplified schema)
-    crate::services::files::update_file_content(
+    crate::fs::services::update_file_content(
         conn,
         storage,
         chat_file_id,

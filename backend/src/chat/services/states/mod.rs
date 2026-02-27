@@ -9,9 +9,9 @@
 
 use crate::error::Result;
 use crate::models::sse::SseEvent;
-use crate::services::chat::events;
-use crate::services::chat::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
-use crate::services::storage::FileStorageService;
+use crate::chat::services::events;
+use crate::chat::services::state_machine::{ActorEvent, ActorState, EventResult, StateAction};
+use crate::fs::storage::FileStorageService;
 use crate::DbPool;
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot, Mutex};

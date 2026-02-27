@@ -4,9 +4,9 @@
 
 use crate::error::{Error, Result};
 use crate::models::requests::{ToolResponse, MemoryGetArgs, MemoryGetResult};
-use crate::queries::files as file_queries;
-use crate::services::files;
-use crate::services::storage::FileStorageService;
+use crate::fs::queries as file_queries;
+use crate::fs::services as files;
+use crate::fs::storage::FileStorageService;
 use crate::tools::{Tool, ToolConfig};
 use crate::utils::{generate_memory_path, parse_yaml_frontmatter, MemoryMetadata, MemoryScope};
 use crate::DbConn;
