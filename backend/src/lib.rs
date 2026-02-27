@@ -3,6 +3,7 @@ pub mod cache;
 pub mod config;
 pub mod database;
 pub mod error;
+pub mod fs;
 pub mod handlers;
 pub mod middleware;
 pub mod models;
@@ -36,7 +37,8 @@ pub use handlers::{
 };
 pub use middleware::auth::AuthenticatedUser;
 pub use state::AppState;
-pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker, tag_indexer_worker, link_indexer_worker};
+pub use workers::{revoked_token_cleanup_worker, archive_cleanup_worker};
+pub use fs::workers::{tag_indexer_worker, link_indexer_worker};
 
 /// Load configuration from environment variables
 pub fn load_config() -> Result<Config> {

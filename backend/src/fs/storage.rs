@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::services::files::slugify;
+use super::services::slugify;
 use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;

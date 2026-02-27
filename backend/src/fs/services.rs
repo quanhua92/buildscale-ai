@@ -1,15 +1,11 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result},
-    models::{
-        files::{File, FileType, NewFile},
-        requests::{
-            CreateFileRequest, FileWithContent,
-        },
-    },
-    queries::files as file_queries,
+    models::requests::{CreateFileRequest, FileWithContent},
 };
-use crate::services::storage::FileStorageService;
+use super::models::{File, FileType, NewFile};
+use super::queries as file_queries;
+use super::storage::FileStorageService;
 use sha2::{Digest, Sha256};
 use sqlx::Acquire;
 use uuid::Uuid;

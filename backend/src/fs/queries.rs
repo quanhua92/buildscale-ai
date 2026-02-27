@@ -1,8 +1,8 @@
 use crate::{
     error::{Error, Result},
-    models::files::{File, FileType, NewFile},
     DbConn,
 };
+use super::models::{File, FileType, NewFile};
 use uuid::Uuid;
 
 /// Creates a new file in the database.

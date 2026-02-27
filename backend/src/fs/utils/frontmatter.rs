@@ -46,7 +46,7 @@ pub struct PlanMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::yaml_frontmatter::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
+    use crate::utils::{parse_yaml_frontmatter, prepend_yaml_frontmatter};
 
     #[test]
     fn test_parse_frontmatter_valid() {

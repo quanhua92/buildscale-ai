@@ -3,9 +3,10 @@
 //! This worker listens for file change messages and updates the links table.
 //! Uses batch processing: accumulates messages and processes in batches for efficiency.
 
-use crate::services::storage::FileStorageService;
 use crate::state::LinkIndexMessage;
-use crate::parsers::extract_links;
+use crate::config::StorageConfig;
+use super::super::storage::FileStorageService;
+use super::super::parsers::extract_links;
 use sqlx::Acquire;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -22,7 +23,7 @@ pub async fn link_indexer_worker(
     pool: sqlx::PgPool,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     mut link_index_rx: mpsc::UnboundedReceiver<LinkIndexMessage>,
-    storage_config: crate::config::StorageConfig,
+    storage_config: StorageConfig,
 ) {
     let storage = FileStorageService::new(&storage_config.base_path);
     let mut batch_interval = interval(Duration::from_millis(100)); // Process batch every 100ms

@@ -3,9 +3,10 @@
 //! This worker listens for file change messages and updates the tags table.
 //! Uses batch processing: accumulates messages and processes in batches for efficiency.
 
-use crate::services::storage::FileStorageService;
 use crate::state::TagIndexMessage;
-use crate::parsers::extract_tags;
+use crate::config::StorageConfig;
+use super::super::storage::FileStorageService;
+use super::super::parsers::extract_tags;
 use sqlx::Acquire;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -22,7 +23,7 @@ pub async fn tag_indexer_worker(
     pool: sqlx::PgPool,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     mut tag_index_rx: mpsc::UnboundedReceiver<TagIndexMessage>,
-    storage_config: crate::config::StorageConfig,
+    storage_config: StorageConfig,
 ) {
     let storage = FileStorageService::new(&storage_config.base_path);
     let mut batch_interval = interval(Duration::from_millis(100)); // Process batch every 100ms
