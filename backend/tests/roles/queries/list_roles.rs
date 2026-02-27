@@ -97,17 +97,17 @@ async fn test_list_roles_all() {
     let (_, workspace2) = test_app.create_test_workspace_with_user().await.unwrap();
 
     // Create roles in both workspaces using custom names that include test prefix
-    let role1_data = buildscale::models::roles::NewRole {
+    let role1_data = buildscale::workspaces::models::role::NewRole {
         workspace_id: workspace1.id,
         name: format!("{}_admin", test_app.test_prefix()),
         description: Some("Test role description".to_string()),
     };
-    let role2_data = buildscale::models::roles::NewRole {
+    let role2_data = buildscale::workspaces::models::role::NewRole {
         workspace_id: workspace1.id,
         name: format!("{}_editor", test_app.test_prefix()),
         description: Some("Test role description".to_string()),
     };
-    let role3_data = buildscale::models::roles::NewRole {
+    let role3_data = buildscale::workspaces::models::role::NewRole {
         workspace_id: workspace2.id,
         name: format!("{}_viewer", test_app.test_prefix()),
         description: Some("Test role description".to_string()),

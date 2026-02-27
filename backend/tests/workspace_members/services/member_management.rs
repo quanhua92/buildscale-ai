@@ -75,7 +75,7 @@ async fn test_workspace_member_removal() {
 
     // Add the user as a workspace member
     let member_data = test_app.generate_test_workspace_member(workspace.id, user.id, role.id);
-    buildscale::services::workspace_members::create_workspace_member(&mut conn, member_data).await.unwrap();
+    buildscale::workspaces::services::members::create_workspace_member(&mut conn, member_data).await.unwrap();
 
     // Verify member exists
     assert!(
@@ -84,7 +84,7 @@ async fn test_workspace_member_removal() {
     );
 
     // Remove the member (not the owner)
-    let result = buildscale::services::workspace_members::remove_workspace_member(
+    let result = buildscale::workspaces::services::members::remove_workspace_member(
         &mut conn,
         workspace.id,
         user.id,
@@ -123,7 +123,7 @@ async fn test_add_member_by_email_success() {
     // Use comprehensive creation to get default roles
     let user_data = test_app.generate_test_user();
     let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
-    let workspace_result = buildscale::services::workspaces::create_workspace(
+    let workspace_result = buildscale::workspaces::services::workspaces::create_workspace(
         &mut conn,
         buildscale::models::requests::CreateWorkspaceRequest {
             name: "Default Roles Workspace".to_string(),
@@ -160,7 +160,7 @@ async fn test_update_member_role_success() {
     // Create workspace with default roles
     let user_data = test_app.generate_test_user();
     let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
-    let workspace_result = buildscale::services::workspaces::create_workspace(
+    let workspace_result = buildscale::workspaces::services::workspaces::create_workspace(
         &mut conn,
         buildscale::models::requests::CreateWorkspaceRequest {
             name: "Update Role Workspace".to_string(),
@@ -198,7 +198,7 @@ async fn test_remove_member_self_success() {
 
     let user_data = test_app.generate_test_user();
     let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
-    let workspace_result = buildscale::services::workspaces::create_workspace(
+    let workspace_result = buildscale::workspaces::services::workspaces::create_workspace(
         &mut conn,
         buildscale::models::requests::CreateWorkspaceRequest {
             name: "Leave Workspace".to_string(),
@@ -219,6 +219,6 @@ async fn test_remove_member_self_success() {
     let result = remove_member(&mut conn, workspace.id, new_user.id, new_user.id).await;
     assert!(result.is_ok());
     
-    let is_member = buildscale::queries::workspace_members::is_workspace_member(&mut conn, workspace.id, new_user.id).await.unwrap();
+    let is_member = buildscale::workspaces::queries::members::is_workspace_member(&mut conn, workspace.id, new_user.id).await.unwrap();
     assert!(!is_member);
 }
