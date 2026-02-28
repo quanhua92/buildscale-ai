@@ -4,7 +4,7 @@ use reqwest::{Client, redirect::Policy};
 use secrecy::ExposeSecret;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
-use buildscale::models::users::User;
+use buildscale::users::models::User;
 
 /// Configuration options for TestApp
 ///

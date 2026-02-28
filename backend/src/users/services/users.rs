@@ -1,16 +1,15 @@
 use crate::{Config, DbConn};
 use crate::{
     error::{Error, Result, ValidationErrors},
-    models::{
-        users::{LoginUser, LoginResult, NewUser, NewUserSession, RefreshTokenResult, RegisterUser, User},
-        requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest}
-    },
-    queries::users,
+    users::models::{LoginUser, LoginResult, NewUser, RefreshTokenResult, RegisterUser, User},
+    auth::models::NewUserSession,
+    models::requests::{UserWorkspaceRegistrationRequest, UserWorkspaceResult, CreateWorkspaceRequest},
     auth::queries::sessions,
     auth::services::jwt,
     workspaces::services::workspaces,
     validation::{validate_email, validate_password, validate_full_name, validate_session_token, validate_required_string},
 };
+use crate::users::queries as users;
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
@@ -475,7 +474,7 @@ pub async fn update_password(conn: &mut DbConn, user_id: Uuid, new_password: &st
 }
 
 /// Gets session information without user validation
-pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<crate::models::users::UserSession>> {
+pub async fn get_session_info(conn: &mut DbConn, session_token: &str) -> Result<Option<crate::auth::models::UserSession>> {
     // Validate token format
     if session_token.trim().is_empty() {
         return Err(Error::Validation(ValidationErrors::Single {
@@ -503,7 +502,7 @@ pub async fn is_email_available(conn: &mut DbConn, email: &str) -> Result<bool> 
 }
 
 /// Gets all active sessions for a user
-pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<crate::models::users::UserSession>> {
+pub async fn get_user_active_sessions(conn: &mut DbConn, user_id: Uuid) -> Result<Vec<crate::auth::models::UserSession>> {
     crate::auth::services::sessions::get_user_active_sessions(conn, user_id).await
 }
 

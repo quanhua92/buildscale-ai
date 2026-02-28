@@ -1,8 +1,7 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
-    queries::users,
-    validation::validate_email,
+    users::queries as users,
 };
 use crate::workspaces::models::{
     invitation::{

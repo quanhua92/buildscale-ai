@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, workspace_id, parent_id,\n                file_type as \"file_type: crate::models::files::FileType\",\n                name, path, hash, versions,\n                deleted_at, created_at, updated_at\n            FROM files\n            WHERE workspace_id = $1\n              AND path LIKE $2 || '%'\n              AND path != $2\n              AND deleted_at IS NULL\n            ORDER BY path ASC\n            ",
+  "query": "\n            SELECT\n                id, workspace_id, parent_id,\n                file_type as \"file_type: crate::fs::models::FileType\",\n                name, path, hash, versions,\n                deleted_at, created_at, updated_at\n            FROM files\n            WHERE workspace_id = $1\n              AND path LIKE $2 || '%'\n              AND path != $2\n              AND deleted_at IS NULL\n            ORDER BY path ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
       },
       {
         "ordinal": 3,
-        "name": "file_type: crate::models::files::FileType",
+        "name": "file_type: crate::fs::models::FileType",
         "type_info": "Text"
       },
       {
@@ -79,5 +79,5 @@
       false
     ]
   },
-  "hash": "f9e43d8c767c2a7e50ae42f53d2ca06e8eb949d70aa9f6c2df2ef54c5cef62fd"
+  "hash": "1f156e55fe3b64b142d55f001fdc1d505e18c772458f7818798657e43aa9a071"
 }

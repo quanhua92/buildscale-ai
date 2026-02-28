@@ -15,7 +15,7 @@ async fn test_workspace_member_creation_success() {
 
     // Create a new user to add as member
     let user_data = test_app.generate_test_user();
-    let new_user = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let new_user = buildscale::users::services::register_user(&mut conn, user_data).await.unwrap();
 
     // Add the new user as a workspace member
     let member_data = test_app.generate_test_workspace_member(workspace.id, new_user.id, role.id);
@@ -71,7 +71,7 @@ async fn test_workspace_member_removal() {
 
     // Create a separate user to add as a member (not the owner)
     let user_data = test_app.generate_test_user();
-    let user = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let user = buildscale::users::services::register_user(&mut conn, user_data).await.unwrap();
 
     // Add the user as a workspace member
     let member_data = test_app.generate_test_workspace_member(workspace.id, user.id, role.id);
@@ -122,7 +122,7 @@ async fn test_add_member_by_email_success() {
 
     // Use comprehensive creation to get default roles
     let user_data = test_app.generate_test_user();
-    let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let owner = buildscale::users::services::register_user(&mut conn, user_data).await.unwrap();
     let workspace_result = buildscale::workspaces::services::workspaces::create_workspace(
         &mut conn,
         buildscale::models::requests::CreateWorkspaceRequest {
@@ -137,7 +137,7 @@ async fn test_add_member_by_email_success() {
     // New user to add
     let new_user_data = test_app.generate_test_user();
     let new_user_email = new_user_data.email.clone();
-    buildscale::services::users::register_user(&mut conn, new_user_data).await.unwrap();
+    buildscale::users::services::register_user(&mut conn, new_user_data).await.unwrap();
 
     let request = AddMemberRequest {
         email: new_user_email.clone(),
@@ -159,7 +159,7 @@ async fn test_update_member_role_success() {
 
     // Create workspace with default roles
     let user_data = test_app.generate_test_user();
-    let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let owner = buildscale::users::services::register_user(&mut conn, user_data).await.unwrap();
     let workspace_result = buildscale::workspaces::services::workspaces::create_workspace(
         &mut conn,
         buildscale::models::requests::CreateWorkspaceRequest {
@@ -171,7 +171,7 @@ async fn test_update_member_role_success() {
 
     // Add a member
     let new_user_data = test_app.generate_test_user();
-    let new_user = buildscale::services::users::register_user(&mut conn, new_user_data).await.unwrap();
+    let new_user = buildscale::users::services::register_user(&mut conn, new_user_data).await.unwrap();
     
     add_member_by_email(&mut conn, workspace.id, owner.id, AddMemberRequest {
         email: new_user.email.clone(),
@@ -197,7 +197,7 @@ async fn test_remove_member_self_success() {
     let mut conn = test_app.get_connection().await;
 
     let user_data = test_app.generate_test_user();
-    let owner = buildscale::services::users::register_user(&mut conn, user_data).await.unwrap();
+    let owner = buildscale::users::services::register_user(&mut conn, user_data).await.unwrap();
     let workspace_result = buildscale::workspaces::services::workspaces::create_workspace(
         &mut conn,
         buildscale::models::requests::CreateWorkspaceRequest {
@@ -208,7 +208,7 @@ async fn test_remove_member_self_success() {
     let workspace = workspace_result.workspace;
 
     let new_user_data = test_app.generate_test_user();
-    let new_user = buildscale::services::users::register_user(&mut conn, new_user_data).await.unwrap();
+    let new_user = buildscale::users::services::register_user(&mut conn, new_user_data).await.unwrap();
     
     add_member_by_email(&mut conn, workspace.id, owner.id, AddMemberRequest {
         email: new_user.email.clone(),

@@ -1,7 +1,7 @@
 use buildscale::{
-    services::users::{login_user, logout_user, validate_session, refresh_session, register_user},
+    users::services::{login_user, logout_user, validate_session, refresh_session, register_user},
     auth::services::sessions::cleanup_expired_sessions,
-    models::users::LoginUser,
+    users::models::LoginUser,
 };
 use crate::common::database::TestApp;
 use chrono::{Duration, Utc};

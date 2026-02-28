@@ -1,2 +1,2 @@
 pub mod ai_models;
-pub mod users;
+// users moved to src/users/

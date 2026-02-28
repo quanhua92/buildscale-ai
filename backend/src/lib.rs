@@ -2,6 +2,7 @@ pub mod agent;
 pub mod auth;
 pub mod cache;
 pub mod chat;
+pub mod users;
 pub mod workspaces;
 pub mod config;
 pub mod database;

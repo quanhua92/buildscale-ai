@@ -54,6 +54,3 @@ pub struct RefreshTokenResult {
     pub refresh_token: Option<String>, // New refresh token (rotated), None if within grace period
     pub expires_at: DateTime<Utc>,     // When the new access token expires
 }
-
-// Re-export session types from auth module for backward compatibility
-pub use crate::auth::models::{UserSession, NewUserSession, UpdateUserSession, RevokedRefreshToken};

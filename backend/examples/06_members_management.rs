@@ -1,11 +1,11 @@
 use buildscale::{
     load_config,
     models::{
-        users::RegisterUser,
         requests::CreateWorkspaceRequest,
     },
+    users::models::RegisterUser,
     workspaces::models::member::{AddMemberRequest, UpdateMemberRoleRequest},
-    services::users::register_user,
+    users::services::register_user,
     workspaces::services::{
         workspaces::create_workspace,
         members::{add_member_by_email, list_members, update_member_role, remove_member, get_my_membership},

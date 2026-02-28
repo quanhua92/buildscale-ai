@@ -1,4 +1,5 @@
 use crate::fs::models::{File, FileType};
+use crate::users::models::User;
 use crate::workspaces::models::{
     Role,
     WorkspaceMember,
@@ -102,7 +103,7 @@ pub struct CompleteWorkspaceResult {
 /// Result of user registration with workspace
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserWorkspaceResult {
-    pub user: super::users::User,
+    pub user: User,
     pub workspace: CompleteWorkspaceResult,
 }
 

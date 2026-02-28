@@ -10,14 +10,14 @@ use axum::{
 use crate::{
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
-    models::users::{LoginUser, RegisterUser},
+    users::models::{LoginUser, RegisterUser},
     auth::services::cookies::{
         build_access_token_cookie,
         build_clear_token_cookie,
         build_refresh_token_cookie,
         CookieConfig,
     },
-    services::users,
+    users::services as users,
     state::AppState,
 };
 

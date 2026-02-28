@@ -475,7 +475,7 @@ BUILDSCALE__COOKIES__DOMAIN=.example.com
 grep -n "password.len() < 12" src/validation.rs
 
 # Check session extension limits
-grep -n "Cannot extend session by more than" src/services/users.rs
+grep -n "Cannot extend session by more than" src/users/services/users.rs
 
 # Check session management functions
 grep -n "pub async fn.*session" src/services/sessions.rs
@@ -490,8 +490,8 @@ grep -n "validate_workspace_name" src/validation.rs
 ### Session Management Configuration
 Session management settings are typically found in:
 - `src/validation.rs`: Password validation requirements (12+ characters)
-- `src/services/sessions.rs`: Session cleanup and management
-- `src/services/users.rs`: Authentication logic
+- `src/auth/services/sessions.rs`: Session cleanup and management
+- `src/users/services/users.rs`: Authentication logic
 
 ### Security Configuration
 - **Token Generation**: Random HMAC-signed tokens generated in `src/services/refresh_tokens.rs`

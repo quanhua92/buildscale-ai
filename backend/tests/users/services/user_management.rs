@@ -1,8 +1,8 @@
 use buildscale::{
-    queries::users::{get_user_by_id, list_users},
+    users::queries::{get_user_by_id, list_users},
     auth::queries::sessions::hash_session_token,
-    services::users::{register_user, verify_password, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
-    models::users::LoginUser,
+    users::services::{register_user, verify_password, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
+    users::models::LoginUser,
 };
 use crate::common::database::TestApp;
 
@@ -150,7 +150,7 @@ async fn test_update_password_success() {
         password: new_password.to_string(),
     };
 
-    let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
+    let login_result = buildscale::users::services::login_user(&mut conn, login_data).await.unwrap();
     assert_eq!(login_result.user.id, registered_user.id);
 
     // Verify the old password no longer works
@@ -159,7 +159,7 @@ async fn test_update_password_success() {
         password: original_password,
     };
 
-    let result = buildscale::services::users::login_user(&mut conn, old_login_data).await;
+    let result = buildscale::users::services::login_user(&mut conn, old_login_data).await;
     assert!(result.is_err());
 }
 
@@ -208,7 +208,7 @@ async fn test_get_session_info_success() {
         password,
     };
 
-    let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
+    let login_result = buildscale::users::services::login_user(&mut conn, login_data).await.unwrap();
 
     // Get session info
     let session_info = get_session_info(&mut conn, &login_result.refresh_token).await.unwrap();
@@ -317,7 +317,7 @@ async fn test_get_user_active_sessions() {
             password: password.clone(),
         };
 
-        let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
+        let login_result = buildscale::users::services::login_user(&mut conn, login_data).await.unwrap();
         session_tokens.push(login_result.refresh_token);
     }
 
@@ -352,7 +352,7 @@ async fn test_revoke_all_user_sessions() {
             password: password.clone(),
         };
 
-        let login_result = buildscale::services::users::login_user(&mut conn, login_data).await.unwrap();
+        let login_result = buildscale::users::services::login_user(&mut conn, login_data).await.unwrap();
         session_tokens.push(login_result.refresh_token);
     }
 
@@ -370,7 +370,7 @@ async fn test_revoke_all_user_sessions() {
 
     // Verify tokens are no longer valid
     for token in session_tokens {
-        let result = buildscale::services::users::validate_session(&mut conn, &token).await;
+        let result = buildscale::users::services::validate_session(&mut conn, &token).await;
         assert!(result.is_err());
     }
 }

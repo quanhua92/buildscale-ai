@@ -1,7 +1,7 @@
 use crate::DbConn;
 use crate::{
     error::{Error, Result, ValidationErrors},
-    queries::users,
+    users::queries as users,
 };
 use crate::workspaces::models::{
     member::{WorkspaceMember, WorkspaceMemberDetailed, AddMemberRequest, UpdateMemberRoleRequest},

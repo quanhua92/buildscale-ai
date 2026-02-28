@@ -1,5 +1,5 @@
 use buildscale::{
-    services::users::register_user_with_workspace,
+    users::services::register_user_with_workspace,
     models::requests::UserWorkspaceRegistrationRequest,
     workspaces::services::workspaces::get_workspace,
     workspaces::services::roles::list_workspace_roles,

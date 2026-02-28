@@ -15,8 +15,8 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     error::{Error, Result},
-    models::users::User,
-    queries,
+    users::models::User,
+    users::queries,
     auth::services::jwt::authenticate_jwt_token_from_anywhere,
     state::AppState,
 };
@@ -121,7 +121,7 @@ pub async fn jwt_auth_middleware(
 
     // 3. Cache miss - query database for user info
     let mut conn = state.pool.acquire().await?;
-    let user = queries::users::get_user_by_id(&mut conn, user_id)
+    let user = queries::get_user_by_id(&mut conn, user_id)
         .await?
         .ok_or_else(|| Error::Authentication("User not found".to_string()))?;
 

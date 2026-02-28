@@ -245,9 +245,9 @@ impl TestApp {
     }
 
     /// Generate a unique test user data with proper prefix
-    pub fn generate_test_user(&self) -> buildscale::models::users::RegisterUser {
+    pub fn generate_test_user(&self) -> buildscale::users::models::RegisterUser {
         let email = self.generate_test_email();
-        buildscale::models::users::RegisterUser {
+        buildscale::users::models::RegisterUser {
             email,
             password: "TestSecurePass123!".to_string(),
             confirm_password: "TestSecurePass123!".to_string(),
@@ -260,7 +260,7 @@ impl TestApp {
     pub fn generate_test_user_with_password(
         &self,
         password: &str,
-    ) -> buildscale::models::users::RegisterUser {
+    ) -> buildscale::users::models::RegisterUser {
         let mut user = self.generate_test_user();
         user.password = password.to_string();
         user.confirm_password = password.to_string();
@@ -272,7 +272,7 @@ impl TestApp {
     pub fn generate_test_user_with_email(
         &self,
         email: &str,
-    ) -> buildscale::models::users::RegisterUser {
+    ) -> buildscale::users::models::RegisterUser {
         let mut user = self.generate_test_user();
         user.email = email.to_string();
         user
@@ -283,7 +283,7 @@ impl TestApp {
     pub fn generate_list_test_users(
         &self,
         count: usize,
-    ) -> Vec<buildscale::models::users::RegisterUser> {
+    ) -> Vec<buildscale::users::models::RegisterUser> {
         (0..count)
             .map(|i| {
                 let mut user = self.generate_test_user();
@@ -295,7 +295,7 @@ impl TestApp {
 
     /// Generate test users for edge case email testing
     #[allow(dead_code)] // Actually used in user_services_tests.rs, clippy false positive
-    pub fn generate_edge_case_users(&self) -> Vec<buildscale::models::users::RegisterUser> {
+    pub fn generate_edge_case_users(&self) -> Vec<buildscale::users::models::RegisterUser> {
         vec![
             format!("{}_user+tag@example.com", self.test_prefix()),
             format!("{}_user.name@example.com", self.test_prefix()),
@@ -318,17 +318,17 @@ impl TestApp {
     }
 
     /// Create a test user
-    pub async fn create_test_user(&self, email: &str) -> Result<(buildscale::models::users::User, sqlx::PgPool), sqlx::Error> {
+    pub async fn create_test_user(&self, email: &str) -> Result<(buildscale::users::models::User, sqlx::PgPool), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
-        let user_data = buildscale::models::users::RegisterUser {
+        let user_data = buildscale::users::models::RegisterUser {
             email: email.to_string(),
             password: "TestSecurePass123!".to_string(),
             confirm_password: "TestSecurePass123!".to_string(),
             full_name: Some("Test User".to_string()),
         };
 
-        let user = buildscale::services::users::register_user(&mut conn, user_data).await
+        let user = buildscale::users::services::register_user(&mut conn, user_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
 
         Ok((user, self.test_db.pool.clone()))
@@ -355,12 +355,12 @@ impl TestApp {
     // Workspace helpers
 
     /// Create a test workspace with proper prefix and create the owner user
-    pub async fn create_test_workspace_with_user(&self) -> Result<(buildscale::models::users::User, buildscale::workspaces::models::workspace::Workspace), sqlx::Error> {
+    pub async fn create_test_workspace_with_user(&self) -> Result<(buildscale::users::models::User, buildscale::workspaces::models::workspace::Workspace), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create the owner user first
         let user_data = self.generate_test_user();
-        let user = buildscale::services::users::register_user(&mut conn, user_data).await
+        let user = buildscale::users::services::register_user(&mut conn, user_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
 
         // Create workspace with real user as owner
@@ -410,8 +410,8 @@ impl TestApp {
     /// Create a test workspace with existing user (returns both user and workspace)
     pub async fn create_test_workspace_with_existing_user(
         &self,
-        user: buildscale::models::users::User,
-    ) -> Result<(buildscale::models::users::User, buildscale::workspaces::models::workspace::Workspace), sqlx::Error> {
+        user: buildscale::users::models::User,
+    ) -> Result<(buildscale::users::models::User, buildscale::workspaces::models::workspace::Workspace), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create workspace with existing user as owner
@@ -548,12 +548,12 @@ impl TestApp {
     }
 
     /// Create a complete test scenario: user + workspace + role + member
-    pub async fn create_complete_test_scenario(&self) -> Result<(buildscale::models::users::User, buildscale::workspaces::models::workspace::Workspace, buildscale::workspaces::models::role::Role, buildscale::workspaces::models::member::WorkspaceMember), sqlx::Error> {
+    pub async fn create_complete_test_scenario(&self) -> Result<(buildscale::users::models::User, buildscale::workspaces::models::workspace::Workspace, buildscale::workspaces::models::role::Role, buildscale::workspaces::models::member::WorkspaceMember), sqlx::Error> {
         let mut conn = self.get_connection().await;
 
         // Create user
         let user_data = self.generate_test_user();
-        let user = buildscale::services::users::register_user(&mut conn, user_data).await
+        let user = buildscale::users::services::register_user(&mut conn, user_data).await
             .map_err(|e| sqlx::Error::Protocol(format!("User creation failed: {}", e)))?;
 
         // Create workspace with user as owner

@@ -1,7 +1,7 @@
 use crate::{
     error::{Error, Result, ValidationErrors},
-    models::users::{NewUser, User},
 };
+use crate::users::models::{NewUser, User};
 use uuid::Uuid;
 
 use crate::DbConn;
