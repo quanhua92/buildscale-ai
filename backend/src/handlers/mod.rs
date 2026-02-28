@@ -12,13 +12,13 @@
 pub mod auth;
 pub mod workspace;
 pub mod file;
-pub mod health;
+pub mod system;
 
 // Re-export all handlers for backward compatibility
 pub use auth::*;
 pub use workspace::*;
 pub use file::*;
-pub use health::*;
+pub use system::*;
 
 // Re-export chat handlers from chat module
 pub use crate::chat::handlers::chat::*;

@@ -13,7 +13,6 @@ pub mod handlers;
 pub mod middleware;
 pub mod models;
 pub mod providers;
-pub mod queries;
 pub mod state;
 pub mod tools;
 pub mod utils;
