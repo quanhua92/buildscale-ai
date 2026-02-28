@@ -1,4 +1,3 @@
-pub mod ai_models;
 pub mod requests;
 pub mod sse;
-// users moved to src/users/
+// ai_models moved to src/ai/models/

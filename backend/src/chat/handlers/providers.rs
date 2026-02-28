@@ -8,10 +8,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    ai::{AiModel, get_models_by_provider, get_workspace_models_by_provider},
     error::{Error, Result},
     middleware::auth::AuthenticatedUser,
-    models::ai_models::AiModel,
-    queries::ai_models::{get_models_by_provider, get_workspace_models_by_provider},
     state::AppState,
 };
 

@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod ai;
 pub mod auth;
 pub mod cache;
 pub mod chat;
@@ -13,7 +14,6 @@ pub mod middleware;
 pub mod models;
 pub mod providers;
 pub mod queries;
-pub mod services;
 pub mod state;
 pub mod tools;
 pub mod utils;
@@ -82,11 +82,11 @@ pub fn init_tracing() {
     if !final_filter.contains("buildscale::handlers::chat=") {
         final_filter = format!("{},buildscale::handlers::chat=debug", final_filter);
     }
-    if !final_filter.contains("buildscale::services::chat::actor=") {
-        final_filter = format!("{},buildscale::services::chat::actor=debug", final_filter);
+    if !final_filter.contains("buildscale::chat::services::actor=") {
+        final_filter = format!("{},buildscale::chat::services::actor=debug", final_filter);
     }
-    if !final_filter.contains("buildscale::services::chat::registry=") {
-        final_filter = format!("{},buildscale::services::chat::registry=debug", final_filter);
+    if !final_filter.contains("buildscale::chat::services::registry=") {
+        final_filter = format!("{},buildscale::chat::services::registry=debug", final_filter);
     }
 
     tracing_subscriber::fmt()

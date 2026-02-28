@@ -1,2 +1,1 @@
-pub mod ai_models;
-// users moved to src/users/
+// ai_models moved to src/ai/queries/

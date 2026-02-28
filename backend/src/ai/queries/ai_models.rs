@@ -1,6 +1,6 @@
 //! Database queries for AI models and workspace model access control
 
-use crate::models::ai_models::{
+use crate::ai::models::{
     AiModel, NewAiModel, UpdateAiModel, WorkspaceAiModel, NewWorkspaceAiModel,
     UpdateWorkspaceAiModel,
 };

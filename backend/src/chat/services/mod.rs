@@ -122,7 +122,7 @@ use crate::{
     error::Result,
     chat::models::{ChatAttachment, ChatMessage, ChatMessageMetadata, ChatMessageRole, NewChatMessage},
     models::requests::{GrepResult, GlobResult, LsResult},
-    queries, DbConn,
+    DbConn,
 };
 use uuid::Uuid;
 
@@ -885,7 +885,7 @@ impl ChatService {
     /// Model string format: "provider:model_name" (e.g., "openai:gpt-4o")
     async fn get_model_context_window(conn: &mut DbConn, model: &str) -> Option<usize> {
         let (provider, model_name) = model.split_once(':')?;
-        let ai_model = queries::ai_models::get_model_by_provider_and_name_conn(
+        let ai_model = crate::ai::get_model_by_provider_and_name_conn(
             conn, provider, model_name
         ).await.ok()??;
         ai_model.context_window.map(|cw| cw as usize)
