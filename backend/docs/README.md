@@ -6,6 +6,7 @@ Welcome to the BuildScale.ai Backend documentation. This directory contains comp
 
 | Document | Description |
 |----------|-------------|
+| [LINEAR_LEARNING_GUIDE.md](./LINEAR_LEARNING_GUIDE.md) | **START HERE** 📘 - Learn from first principles to implementation |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture and layered module structure |
 | [API_REFERENCE.md](./API_REFERENCE.md) | Complete API reference (REST, Tools, Services) |
 | [AI_SYSTEM.md](./AI_SYSTEM.md) | AI agents, context engineering, providers, Rig integration |
@@ -73,7 +74,9 @@ src/
 
 ## Getting Started
 
-1. **Architecture Overview**: Start with [ARCHITECTURE.md](./ARCHITECTURE.md)
+**New to BuildScale?** Start with the [Linear Learning Guide](./LINEAR_LEARNING_GUIDE.md) for a comprehensive tutorial from first principles to implementation details.
+
+1. **Architecture Overview**: Continue with [ARCHITECTURE.md](./ARCHITECTURE.md)
 2. **API Usage**: See [API_REFERENCE.md](./API_REFERENCE.md)
 3. **Configuration**: Check [CONFIGURATION.md](./CONFIGURATION.md)
 4. **Authentication**: Read [AUTHENTICATION.md](./AUTHENTICATION.md)
