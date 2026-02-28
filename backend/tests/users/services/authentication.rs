@@ -1,6 +1,6 @@
 use buildscale::{
-    queries::users::get_user_by_email,
-    services::users::{register_user, verify_password},
+    users::queries::get_user_by_email,
+    users::services::{register_user, verify_password},
 };
 use crate::common::database::TestApp;
 

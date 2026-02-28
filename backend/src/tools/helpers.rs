@@ -4,9 +4,9 @@
 //! particularly for files that may not be in the database (e.g., files created
 //! via SSH, migration scripts, or external tools).
 
-use crate::{DbConn, error::Result, models::files::FileType};
+use crate::{DbConn, error::Result, fs::models::FileType};
 use crate::models::requests::CreateFileRequest;
-use crate::services::storage::FileStorageService;
+use crate::fs::storage::FileStorageService;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use std::path::Path;
@@ -192,7 +192,7 @@ pub async fn extract_parent_id(
     };
 
     // Query database for parent folder
-    let parent_file = crate::queries::files::get_file_by_path(
+    let parent_file = crate::fs::queries::get_file_by_path(
         conn,
         workspace_id,
         &parent_path_str,
@@ -229,7 +229,7 @@ pub async fn import_file_to_database(
     workspace_id: Uuid,
     path: &str,
     _user_id: Uuid,
-) -> Result<crate::models::files::File> {
+) -> Result<crate::fs::models::File> {
     // Read file from disk
     let (content, _hash) = read_file_from_disk(storage, workspace_id, path).await?;
 
@@ -250,7 +250,7 @@ pub async fn import_file_to_database(
     let parent_id = extract_parent_id(conn, workspace_id, path).await?;
 
     // Create database entry
-    let file_with_content = crate::services::files::create_file_with_content(
+    let file_with_content = crate::fs::services::create_file_with_content(
         conn,
         storage,
         CreateFileRequest {

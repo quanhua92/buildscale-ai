@@ -1,10 +1,10 @@
 use buildscale::{
     load_config,
-    models::users::{LoginUser, RegisterUser, UpdateUser},
-    queries::users::{
+    users::models::{LoginUser, RegisterUser, UpdateUser},
+    users::queries::{
         create_user, delete_user, get_user_by_email, get_user_by_id, list_users, update_user,
     },
-    services::users::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
+    users::services::{login_user, logout_user, validate_session, refresh_session, register_user, verify_password, generate_password_hash, update_password, get_session_info, is_email_available, get_user_active_sessions, revoke_all_user_sessions},
 };
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
@@ -474,7 +474,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create user directly using query layer
     let direct_user = create_user(
         &mut conn,
-        buildscale::models::users::NewUser {
+        buildscale::users::models::NewUser {
             email: format!("{}_direct@{}", EXAMPLE_PREFIX, "example.com"),
             password_hash: Some("direct_hash_12345".to_string()),
             full_name: Some("Direct User".to_string()),

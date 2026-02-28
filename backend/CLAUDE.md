@@ -4,948 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Common Development Commands
 
-### Building and Testing
 ```bash
-# Build the project
+# Build
 cargo build
 
-# Build with optimizations for production
-cargo build --release
-
-# Run all tests
+# Run tests
 cargo test
 
-# Run tests with output
-cargo test -- --nocapture
-
-# Run a specific test module
-cargo test users::services::user_registration
-
-# Run a specific test
+# Run specific test
 cargo test test_user_registration_success
 
 # Run examples
 cargo run --example 01_hello
-cargo run --example 02_users_management
-cargo run --example 03_workspaces_management
-```
 
-### Database Operations
-```bash
-# Run database migrations
+# Database migrations
 sqlx migrate run
-
-# Reset database (use with caution)
-sqlx migrate revert
-
-# Check migration status
 sqlx migrate info
-
-# Install sqlx CLI (if not installed)
-cargo install sqlx-cli --no-default-features --features rustls,postgres
-```
-
-### Development Setup
-```bash
-# Copy environment configuration
-cp .env.example .env
-
-# Edit .env with your database configuration
-# Required: BUILDSCALE__DATABASE__USER, PASSWORD, HOST, PORT, DATABASE
 ```
 
 ## Architecture Overview
 
-This is a Rust backend implementing a **multi-tenant workspace-based RBAC system** with the following core characteristics:
+Multi-tenant workspace-based RBAC system with layered architecture:
 
-### System Architecture
-- **Multi-tenant Architecture**: Complete workspace isolation with shared users
-- **Role-Based Access Control (RBAC)**: Four-tier role hierarchy (Admin > Editor > Member > Viewer)
-- **Single Owner Model**: Each workspace has exactly one owner with full control
-- **Three-Layer Architecture**: Clear separation of concerns across Service → Query → Model layers
-  - **Service Layer**: Business logic, validation, authentication workflows
-  - **Query Layer**: Type-safe database operations, CRUD functionality
-  - **Model Layer**: Data structures, validation rules, type definitions
-
-### Core Entities and Relationships
 ```
-Users (1) ←→ (N) Workspaces
-   ↓                   ↓
-   └── Workspace Members ──→ Roles (per workspace)
-   ↓
-   └── User Sessions (authentication tokens)
+src/
+├── users/           # User management (layered)
+├── workspaces/      # Workspace management (layered)
+├── auth/            # Authentication (layered)
+├── ai/              # AI providers and models (layered)
+├── chat/            # Chat and agent services (layered)
+├── tools/           # Core tools (layered)
+│   ├── file/        # File system tools (14 tools)
+│   ├── memory/      # Memory tools (5 tools)
+│   ├── plan/        # Plan mode tools (6 tools)
+│   └── web/         # Web tools (2 tools)
+├── fs/              # File system core (layered)
+├── workers/         # Background workers (layered)
+└── middleware/      # HTTP middleware
 ```
 
-- **Users**: Global accounts that can belong to multiple workspaces
-- **Workspaces**: Isolated containers with exactly one owner
-- **Roles**: Workspace-scoped permission definitions (default + custom)
-- **Workspace Members**: Many-to-many relationship with specific role assignments
-- **User Sessions**: Authentication tokens for user login sessions with expiration
+### Layer Pattern
 
-### Module Structure
+Each domain module follows the three-layer pattern:
+- **Models**: Data structures, validation rules, type definitions
+- **Queries**: Type-safe database operations
+- **Services**: Business logic, validation, workflows
+- **Handlers**: Thin HTTP orchestration (3-5 lines max)
 
-#### `/src/models/`
-Data models and type definitions:
-- `users.rs`: User entities (`User`, `NewUser`, `RegisterUser`, `UpdateUser`, `LoginUser`, `LoginResult`, `UserSession`, `NewUserSession`, `UpdateUserSession`)
-- `workspaces.rs`: Workspace entities (`Workspace`, `NewWorkspace`, `UpdateWorkspace`)
-- `roles.rs`: Role definitions and constants (`Role`, `WorkspaceRole` enum)
-- `workspace_members.rs`: Member assignment entities
-- `requests.rs`: API request models for complex operations
+## Key Design Patterns
 
-#### `/src/services/`
-Business logic layer:
-- `users.rs`: User registration, login, logout, session validation, password hashing, authentication, user management utilities
-- `workspaces.rs`: Workspace creation, ownership transfer, access control
-- `roles.rs`: Role creation, default role setup, role management
-- `workspace_members.rs`: Member assignment and role validation
-- `sessions.rs`: Session management, cleanup of expired sessions
+### Handler vs Service
 
-#### `/src/queries/`
-Data access layer:
-- Direct database operations using SQLx
-- CRUD operations for all entities
-- `sessions.rs`: Session CRUD operations, validation, cleanup, user session queries
-  - `create_session()`, `get_session_by_token_hash()`, `get_sessions_by_user()`
-  - `delete_session()`, `delete_session_by_token_hash()`, `delete_sessions_by_user()`
-  - `delete_expired_sessions()`, `is_session_valid()`, `get_valid_session_by_token_hash()`
-  - `refresh_session()`, `hash_session_token()` - all session database operations
-- Transaction handling for complex operations
-
-#### `/tests/`
-Comprehensive test suite with isolated test data management:
-- `common/database.rs`: Test database setup with automatic cleanup
-- Individual test modules for each service layer
-- Parallel-safe test execution with unique prefixes
-
-### Key Design Patterns
-
-#### Simplified Workspace Creation
-The system provides simplified APIs that handle complex multi-step operations:
+**Handler (Thin)**: Extract → Validate → Call Service → Return
 ```rust
-// Creates workspace + default roles + owner as admin in one transaction
-let result = create_workspace(&mut conn, request).await?;
-// Returns: CompleteWorkspaceResult with workspace, roles, owner_membership, members
-```
-
-#### Role System with Type Safety
-- Uses `WorkspaceRole` enum for type-safe role handling
-- Centralized role constants: `ADMIN_ROLE`, `EDITOR_ROLE`, `MEMBER_ROLE`, `VIEWER_ROLE`
-- Automatic default role creation for all workspaces
-- Support for custom workspace-specific roles
-
-#### Test Isolation System
-Tests use a sophisticated isolation system:
-- Each test gets unique database namespace: `"test_{test_name}"`
-- Automatic cleanup before/after each test
-- Parallel-safe test execution
-- Helper methods for creating test data with proper prefixes
-
-#### Password Security
-- Argon2 password hashing with unique salts
-- Minimum 8-character password requirement
-- Secure password verification with constant-time comparison
-- Password confirmation required during registration
-
-#### Session Security (Current Implementation)
-- Cryptographically secure random session tokens (256-bit randomness)
-- **SHA-256 hashing** before database storage for security
-- Configurable session expiration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
-- Automatic session cleanup for expired tokens
-- Case-insensitive email lookup for user convenience
-- Session invalidation on logout
-- Session refresh functionality for extending sessions
-- Constant-time comparison prevents timing attacks on token verification
-
-#### Security Limitations and Considerations
-- **Session Storage**: Sessions stored in database with SHA-256 hashed tokens
-- **Token Hashing**: Tokens are one-way hashed (SHA-256) before storage, preventing token exposure in database backups
-- **Token Security**: Plaintext tokens never stored in database, only transmitted securely to clients
-- **Session Hijacking**: Tokens should be transmitted over HTTPS only
-- **Concurrent Sessions**: Users can have multiple active sessions simultaneously
-- **No Session Revocation on Password Change**: Manual revocation required for security operations
-- **Database Dependency**: Session validation requires database connectivity
-
-#### File System Implementation Patterns
-- **Transactional Services**: Use `conn.begin().await?` in services; pass `&mut tx` to queries for atomicity.
-- **Content Addressing**: Use `sha2::Sha256` + `hex::encode` for all content hashing (consistent with session tokens).
-- **Three-Layer Flow**: `Request Model` → `Validation` → `Service (Transaction)` → `Query`.
-- **Folders First**: Always sort file listings with `(file_type = 'folder') DESC`.
-
-#### Handler Implementation Patterns
-- **Thin Handlers**: 3-5 lines maximum. Orchestrate extraction, validation, service call, and response.
-- **Locality Rule**: Keep `log_handler_error` and `acquire_db_connection` helpers inside each handler file to maintain modularity.
-- **Explicit Extraction**: Use `Extension<AuthenticatedUser>` for user context and `Extension<WorkspaceAccess>` for workspace permissions.
-- **Decoupling**: Use dedicated `Http` request models (e.g., `CreateFileHttp`) to separate API surface from internal service logic.
-- **Instrumentation**: Use `tracing` spans and `.inspect_err()` for idiomatic side-effect logging.
-
-## Database Schema
-
-### Core Tables
-- `users`: Global user accounts with unique emails and hashed passwords
-- `workspaces`: Workspace containers with single owner
-- `roles`: Workspace-scoped role definitions
-- `workspace_members`: Many-to-many user-workspace relationships with roles
-- `user_sessions`: Authentication session tokens (SHA-256 hashed) with expiration tracking
-
-### Key Constraints
-- `users.email`: Globally unique
-- `roles(workspace_id, name)`: Unique role names per workspace
-- `workspace_members(workspace_id, user_id)`: One membership per user per workspace
-- `user_sessions.token_hash`: Unique SHA-256 hashed session tokens
-- Foreign key cascades: Deleting workspace deletes all roles and members; deleting user deletes all sessions
-
-### Migration System
-Uses SQLx migrations in `/migrations/` directory:
-- `20251009102916_extensions.up.sql`: Database extensions setup
-- `20251009103739_users_and_workspaces.up.sql`: Core tables and relationships
-- `20251016221509_user_sessions.up.sql`: User authentication sessions table
-
-## Service Layer APIs
-
-### User Management
-```rust
-// Basic user registration with password hashing
-register_user(&mut conn, RegisterUser) -> Result<User>
-
-// User authentication and session creation
-login_user(&mut conn, LoginUser) -> Result<LoginResult>
-
-// Session validation and user retrieval
-validate_session(&mut conn, session_token: &str) -> Result<User>
-
-// Session termination
-logout_user(&mut conn, session_token: &str) -> Result<()>
-
-// Session expiration extension
-refresh_session(&mut conn, session_token: &str, hours_to_extend: i64) -> Result<String>
-
-// Advanced session management functions
-cleanup_expired_sessions(&mut conn) -> Result<u64>
-revoke_all_user_sessions(&mut conn, user_id: Uuid) -> Result<u64>
-get_user_active_sessions(&mut conn, user_id: Uuid) -> Result<Vec<UserSession>>
-user_has_active_sessions(&mut conn, user_id: Uuid) -> Result<bool>
-revoke_session_by_token(&mut conn, session_token: &str) -> Result<()>
-extend_all_user_sessions(&mut conn, user_id: Uuid, hours_to_extend: i64) -> Result<u64>
-
-// Password utility functions
-generate_password_hash(password: &str) -> Result<String>
-verify_password(password: &str, hash: &str) -> Result<bool>
-generate_session_token() -> Result<String>
-
-// Combined user + workspace creation in single transaction
-register_user_with_workspace(&mut conn, UserWorkspaceRegistrationRequest) -> Result<UserWorkspaceResult>
-
-// Enhanced user utility methods
-get_user_by_id(&mut conn, user_id: Uuid) -> Result<Option<User>>
-update_password(&mut conn, user_id: Uuid, new_password: &str) -> Result<()>
-is_email_available(&mut conn, email: &str) -> Result<bool>
-
-// Session information access
-get_session_info(&mut conn, session_token: &str) -> Result<Option<UserSession>>
-
-// User session management convenience methods
-get_user_active_sessions(&mut conn, user_id: Uuid) -> Result<Vec<UserSession>>
-revoke_all_user_sessions(&mut conn, user_id: Uuid) -> Result<u64>
-
-// JWT access token management
-refresh_access_token(&mut conn, refresh_token: &str) -> Result<RefreshTokenResult>
-```
-
-### Session Query Layer (Database Operations)
-The query layer provides type-safe database operations for session management:
-
-```rust
-// Core session CRUD operations
-create_session(&mut conn, NewUserSession) -> Result<UserSession>
-get_session_by_token_hash(&mut conn, token_hash: &str) -> Result<Option<UserSession>>
-get_sessions_by_user(&mut conn, user_id: Uuid) -> Result<Vec<UserSession>>
-refresh_session(&mut conn, session_id: Uuid, new_expires_at: DateTime<Utc>) -> Result<UserSession>
-
-// Session deletion operations
-delete_session(&mut conn, session_id: Uuid) -> Result<u64>
-delete_session_by_token_hash(&mut conn, token_hash: &str) -> Result<u64>
-delete_sessions_by_user(&mut conn, user_id: Uuid) -> Result<u64>
-delete_expired_sessions(&mut conn) -> Result<u64>
-
-// Session validation operations
-is_session_valid(&mut conn, token_hash: &str) -> Result<bool>
-get_valid_session_by_token_hash(&mut conn, token_hash: &str) -> Result<Option<UserSession>>
-
-// Token hashing utility
-hash_session_token(token: &str) -> String  // SHA-256 hash
-```
-
-### Authentication and Session Management
-The authentication system provides secure user login with dual-token authentication (JWT access tokens + session refresh tokens):
-
-#### Authentication Flow
-1. **User Registration**: Users register with email and password (hashed with Argon2)
-2. **Login**: Users authenticate with email/password credentials
-3. **Token Generation**: Successful login generates two tokens:
-   - **Access Token (JWT)**: Short-lived token (default: 15 minutes) used for API requests
-   - **Refresh Token (Session)**: Long-lived token (default: 30 days) used to get new access tokens
-4. **Token Storage**: Refresh token is hashed with SHA-256 before database storage for security
-5. **API Authentication**: Each API call uses the JWT access token (via `Authorization: Bearer <token>` header)
-6. **Token Refresh**: When access token expires, use refresh token to get a new access token
-7. **Logout**: Refresh token hash is invalidated on logout
-
-#### Authentication Models
-```rust
-// Login request
-pub struct LoginUser {
-    pub email: String,
-    pub password: String,
-}
-
-// Login response with dual-token authentication
-pub struct LoginResult {
-    pub user: User,
-    pub access_token: String,              // JWT access token (15 minutes)
-    pub refresh_token: String,             // Session token (30 days)
-    pub access_token_expires_at: DateTime<Utc>,  // JWT expiration
-    pub refresh_token_expires_at: DateTime<Utc>,  // Session expiration
-}
-
-// Refresh token response
-pub struct RefreshTokenResult {
-    pub access_token: String,                      // New JWT access token
-    pub refresh_token: Option<String>,             // New refresh token (rotated), None if within grace period
-    pub expires_at: DateTime<Utc>,                 // When the new access token expires
-}
-
-// User session entity
-pub struct UserSession {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub token_hash: String,  // SHA-256 hashed session token
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-// Session creation entity
-pub struct NewUserSession {
-    pub user_id: Uuid,
-    pub token_hash: String,  // SHA-256 hashed session token
-    pub expires_at: DateTime<Utc>,
-}
-
-// Session update entity
-pub struct UpdateUserSession {
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
-// User registration entity
-pub struct RegisterUser {
-    pub email: String,
-    pub password: String,
-    pub confirm_password: String,
-    pub full_name: Option<String>,
-}
-
-// User creation entity
-pub struct NewUser {
-    pub email: String,
-    pub password_hash: String,
-    pub full_name: Option<String>,
-}
-
-// User update entity
-pub struct UpdateUser {
-    pub password_hash: Option<String>,
-    pub full_name: Option<String>,
-}
-```
-
-#### JWT Authentication Features
-- **JSON Web Tokens (JWT)**: Short-lived access tokens for API authentication (default: 15 minutes)
-- **Bearer Token Authentication**: Standard `Authorization: Bearer <token>` header format
-- **Automatic Token Expiration**: Access tokens expire quickly to enhance security
-- **Token Refresh**: Use refresh token to get new access tokens without re-login
-- **Configurable Expiration**: JWT expiration configurable via BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES
-- **Secure Token Storage**: JWT secret key stored in environment (BUILDSCALE__JWT__SECRET)
-
-#### Session Management Features
-- **Random HMAC-Signed Tokens**: 256-bit randomness with tamper-evident signature
-- **Automatic Expiration**: Refresh tokens expire after configured duration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
-- **Session Refresh**: Extend session duration before expiration
-- **Cleanup Service**: Automatic removal of expired sessions
-- **Case-Insensitive Email**: Users can login with any email case variation
-- **Secure Logout**: Immediate refresh token invalidation
-- **Advanced Session Control**: Revoke all user sessions, extend multiple sessions, active session monitoring
-- **Session Utilities**: Check for active sessions, retrieve user session list, token-based session revocation
-
-### JWT Service
-The JWT service module provides JSON Web Token generation and verification:
-
-```rust
-// Generate JWT access token
-generate_jwt(user_id: Uuid, secret: &str, expiration_minutes: i64) -> Result<String>
-
-// Verify JWT token and return claims
-verify_jwt(token: &str, secret: &str) -> Result<Claims>
-
-// Extract user_id from JWT token
-get_user_id_from_token(token: &str, secret: &str) -> Result<Uuid>
-
-// Authenticate JWT from Authorization header
-authenticate_jwt_token(auth_header: Option<&str>, secret: &str) -> Result<Uuid>
-```
-
-**JWT Claims Structure**:
-```rust
-pub struct Claims {
-    pub sub: String,  // user_id as string
-    pub exp: i64,     // expiration time as Unix timestamp
-    pub iat: i64,     // issued at time as Unix timestamp
-}
-```
-
-#### Cookie-Based Authentication (Browser Support)
-
-For web browser clients, the system supports cookie-based token storage and retrieval:
-
-**Multi-Source Token Extraction**:
-```rust
-use backend::services::cookies::{
-    extract_jwt_token,
-    extract_refresh_token,
-    CookieConfig,
-};
-use backend::services::jwt::authenticate_jwt_token_from_anywhere;
-
-// Extract JWT from header OR cookie (priority: header > cookie)
-let token = extract_jwt_token(
-    Some("Bearer eyJhbGc..."),  // Authorization header
-    Some("cookie_value"),        // Cookie fallback
-)?;
-
-// Authenticate from multiple sources
-let user_id = authenticate_jwt_token_from_anywhere(
-    auth_header,
-    cookie_value,
-    &secret,
-)?;
-```
-
-**Cookie Building**:
-```rust
-use backend::services::cookies::{
-    build_access_token_cookie,
-    build_refresh_token_cookie,
-    build_clear_token_cookie,
-};
-
-let config = CookieConfig::default();
-
-// Build Set-Cookie headers
-let access_cookie = build_access_token_cookie(&token, &config);
-// Returns: "access_token=<token>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=900"
-
-let refresh_cookie = build_refresh_token_cookie(&refresh_token, &config);
-// Returns: "refresh_token=<token>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000"
-
-// Clear cookies (logout)
-let clear_access = build_clear_token_cookie("access_token");
-let clear_refresh = build_clear_token_cookie("refresh_token");
-```
-
-**Cookie Security Configuration**:
-```rust
-pub struct CookieConfig {
-    pub access_token_name: String,      // "access_token"
-    pub refresh_token_name: String,     // "refresh_token"
-    pub http_only: bool,                // true (XSS protection)
-    pub secure: bool,                   // true in production (HTTPS only)
-    pub same_site: SameSite,            // Lax (default, allows links from emails/OAuth)
-    pub path: String,                   // "/"
-    pub domain: Option<String>,         // Optional (e.g., ".example.com")
-}
-```
-
-**Default**: `SameSite::Lax` - Allows top-level navigations from external sites (emails, Slack, OAuth) while blocking CSRF attacks from embedded content (forms, AJAX, images).
-
-**Cookie Service Module** (`src/services/cookies.rs`):
-- `extract_jwt_token()`: Extract from header or cookie with priority
-- `extract_refresh_token()`: Extract refresh token from cookie
-- `authenticate_jwt_token_multi_source()`: Validate JWT from header or cookie
-- `build_access_token_cookie()`: Create Set-Cookie header for JWT
-- `build_refresh_token_cookie()`: Create Set-Cookie header for refresh token
-- `build_clear_token_cookie()`: Create Set-Cookie header to clear token
-- `CookieConfig`: Cookie security configuration
-
-**Token Storage Options**:
-- **Mobile/API clients**: Use `Authorization: Bearer <token>` header
-- **Browser clients**: Use cookies with `HttpOnly`, `Secure`, `SameSite=Lax` flags
-- **Priority**: Header takes precedence over cookie for backward compatibility
-
-
-### Workspace Management
-```rust
-// Simplified workspace creation with automatic setup
-create_workspace(&mut conn, CreateWorkspaceRequest) -> Result<CompleteWorkspaceResult>
-
-// Workspace creation with initial team members
-create_workspace_with_members(&mut conn, CreateWorkspaceWithMembersRequest) -> Result<CompleteWorkspaceResult>
-
-// Ownership transfer with role management
-update_workspace_owner(&mut conn, workspace_id, current_owner_id, new_owner_id) -> Result<Workspace>
-```
-
-### Role Management
-```rust
-// Create default roles (admin, editor, member, viewer) for workspace
-create_default_roles(&mut conn, workspace_id) -> Result<Vec<Role>>
-
-// Create custom workspace-specific role
-create_single_role(&mut conn, NewRole) -> Result<Role>
-```
-
-## Configuration
-
-### Environment Variables
-Uses `BUILDSCALE_` prefix with double underscore separators:
-- `BUILDSCALE__DATABASE__USER`: Database username
-- `BUILDSCALE__DATABASE__PASSWORD`: Database password
-- `BUILDSCALE__DATABASE__HOST`: Database host
-- `BUILDSCALE__DATABASE__PORT`: Database port
-- `BUILDSCALE__DATABASE__DATABASE`: Database name
-- `BUILDSCALE__SESSIONS__EXPIRATION_HOURS`: Session expiration time in hours (default: 720 = 30 days)
-  - Used for both initial session expiration AND maximum extension time
-- `BUILDSCALE__JWT__SECRET`: Secret key for signing JWT tokens (minimum 32 characters recommended)
-- `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES`: JWT access token expiration in minutes (default: 15)
-
-### Configuration Loading
-- Loads from `.env` file if present
-- Overrides with environment variables
-- Provides sensible defaults for development
-- Supports `DATABASE_URL` for sqlx CLI
-
-## Error Handling
-
-### Error Hierarchy
-```rust
-pub enum Error {
-    Sqlx(#[from] sqlx::Error),           // Database errors
-    Validation(ValidationErrors),         // Input validation errors with field-level details
-    NotFound(String),                      // Resource not found
-    Forbidden(String),                    // Permission denied
-    Conflict(String),                      // Resource conflicts
-    Authentication(String),               // Authentication failures (invalid credentials)
-    InvalidToken(String),                 // Invalid or expired session tokens
-    SessionExpired(String),               // Session expiration errors
-    TokenTheftDetected(String),           // Stolen refresh token used after rotation
-    Internal(String),                      // System errors
-    Config(#[from] ConfigError),          // Configuration errors
-    Cache(String),                         // Cache operation errors
-    CacheSerialization(String),           // Cache serialization errors
-    Io(#[from] std::io::Error),          // IO errors
-}
-
-pub enum ValidationErrors {
-    Single { field: String, message: String },
-    Multiple { fields: HashMap<String, String> },
-}
-```
-
-### Error Response Format
-
-All error responses include an `error` message and a `code` field for programmatic handling:
-
-#### Standard Error Format
-```json
-{
-  "error": "Descriptive error message",
-  "code": "ERROR_CODE"
-}
-```
-
-#### Validation Errors (with field-level errors)
-Validation errors return structured field-level errors:
-
-**Single Field Error:**
-```json
-{
-  "error": "Validation failed",
-  "code": "VALIDATION_ERROR",
-  "fields": {
-    "email": "Email cannot be empty"
-  }
-}
-```
-
-**Multiple Field Errors:**
-```json
-{
-  "error": "Validation failed",
-  "code": "VALIDATION_ERROR",
-  "fields": {
-    "email": "Invalid email format",
-    "password": "Password must be at least 12 characters long",
-    "confirm_password": "Passwords do not match"
-  }
-}
-```
-
-### Error Codes
-
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | Field validation failed with field-specific errors |
-| `NOT_FOUND` | 404 | Resource not found |
-| `FORBIDDEN` | 403 | Access denied (insufficient permissions) |
-| `CONFLICT` | 409 | Resource already exists or state conflict |
-| `AUTHENTICATION_FAILED` | 401 | Invalid credentials |
-| `INVALID_TOKEN` | 401 | Invalid or malformed token |
-| `SESSION_EXPIRED` | 401 | Session token expired |
-| `TOKEN_THEFT` | 403 | Stolen refresh token used after rotation |
-| `INTERNAL_ERROR` | 500 | Internal server error |
-| `CONFIG_ERROR` | 500 | Configuration error |
-| `CACHE_ERROR` | 500 | Cache operation error |
-
-### Field Names
-Common field names used in validation errors:
-- `email` - Email address validation
-- `password` - Password strength validation
-- `confirm_password` - Password confirmation matching
-- `full_name` - Full name validation
-- `workspace_name` - Workspace name validation
-- `role_name` - Role name validation
-- `session_token` - Session token validation
-- `invitation_token` - Invitation token validation
-- `hours_to_extend` - Session extension time validation
-- `permission` - Permission string validation
-- `invited_email` - Invitation email validation
-- `expires_in_hours` - Invitation expiration validation
-- `user_id` - User ID validation
-- `role_id` - Role ID validation
-- `new_owner_id` - New owner ID validation
-
-### Frontend SDK Usage
-
-The frontend SDK can check error codes for programmatic error handling:
-
-```typescript
-// Check error code in frontend SDK
-if (response.status === 403 && data.code === 'TOKEN_THEFT') {
-  // Handle token theft
-  throw new TokenTheftError(data.message || 'Token theft detected')
-}
-
-// Access field-level validation errors
-if (data.code === 'VALIDATION_ERROR') {
-  // Display field-specific errors
-  for (const [field, message] of Object.entries(data.fields)) {
-    showFieldError(field, message)
-  }
-}
-```
-
-### Validation Rules
-- **Users**: Email uniqueness, 12+ character passwords (up from 8), password confirmation, case-insensitive email lookup
-- **Authentication**: Email and password required, session tokens must be valid and non-expired, JWT tokens must be valid and non-expired
-- **Workspaces**: 1-100 character names, owner must exist
-- **Roles**: Unique names per workspace, 100 char name limit, 500 char description limit
-- **Sessions**: Unique tokens, required expiration time, automatic cleanup of expired sessions
-- **JWT**: Tokens must have valid signature, non-expired expiration time, valid UUID in sub field
-- **Invitations**: Email format validation, token format validation, expiration time limits (max 168 hours = 7 days)
-
-## Testing Strategy
-
-### Test Organization
-- Unit tests for individual service functions
-- Integration tests for complete workflows
-- Database constraint testing
-- Error scenario coverage
-- Authentication flow testing (login, logout, session validation, refresh)
-
-### Test Data Management
-Uses `TestApp` and `TestDb` utilities in `/tests/common/database.rs`:
-- Automatic test database initialization
-- Unique test prefixes for isolation
-- Helper methods for creating test entities
-- Automatic cleanup on test completion
-
-### Running Tests
-```bash
-# Run all tests
-cargo test
-
-# Run specific test file
-cargo test tests/users/services/
-
-# Run with output for debugging
-cargo test -- --nocapture
-
-# Run single test
-cargo test test_user_registration_success
-```
-
-## Examples
-
-### Available Examples
-- `01_hello.rs`: Basic configuration loading
-- `02_users_management.rs`: User registration, authentication, login, logout, and session management
-- `03_workspaces_management.rs`: Complete workspace creation with roles and members
-
-### Running Examples
-```bash
-cargo run --example 01_hello
-cargo run --example 02_users_management
-cargo run --example 03_workspaces_management
-```
-
-## Development Workflow: Code → Tests → Examples → Documentation
-
-This codebase follows a strict 4-step development workflow for all features:
-
-### 1. Code Implementation
-- **Models**: Define data structures and validation in `/src/models/`
-- **Services**: Implement business logic in `/src/services/`
-- **Queries**: Add data access layer in `/src/queries/`
-- **Error Handling**: Add comprehensive error types and validation
-
-### 2. Test Coverage
-- **Unit Tests**: Test individual service functions
-- **Integration Tests**: Test complete workflows across services
-- **Edge Cases**: Test validation rules and error scenarios
-- **Test Isolation**: Use unique prefixes for parallel-safe testing
-- **Location**: `/tests/` mirrors the `/src/` structure
-
-### 3. Example Implementation
-- **Demonstration**: Create practical examples showing feature usage
-- **Real-world Scenarios**: Show common patterns and workflows
-- **Verification**: Examples should run successfully and validate functionality
-- **Location**: `/examples/` with clear naming (01_hello, 02_users_management, etc.)
-
-### 4. Documentation Updates
-- **API Documentation**: Update docstrings for all public functions
-- **System Documentation**: Update `/docs/USERS_ROLES_WORKSPACES.md` with architectural changes
-- **Usage Examples**: Add code examples to documentation
-- **Role Constant Updates**: Include new roles in all relevant documentation sections
-
-### 5. Final Comprehensive Test Workflow
-After completing the 4-step development workflow, run the final validation:
-
-```bash
-# 1. Final Test Suite - Ensure all tests pass
-cargo test
-
-# 2. All Examples - Verify examples work correctly
-cargo run --example 01_hello
-cargo run --example 02_users_management
-cargo run --example 03_workspaces_management
-
-# 3. Project Build - Ensure no compilation errors
-cargo build --release
-
-# 4. Commit Changes - Save completed work
-git add .
-git commit -m "Commit message describing the completed feature"
-```
-
-### Quality Gates
-- **All tests must pass** before proceeding to next step
-- **Examples must run successfully** before documentation
-- **Documentation must be comprehensive** before considering feature complete
-- **No step should be skipped** - each builds on the previous
-
-### Workflow Example: Member Role Implementation
-```bash
-# 1. Code: Added MEMBER_ROLE constant and WorkspaceRole::Member variant
-# 2. Tests: Updated all tests to expect 4 default roles instead of 3
-# 3. Examples: Updated workspace_management example to demonstrate Member role
-# 4. Documentation: Updated comprehensive system documentation
-```
-
-### Quality Gates
-- **All tests must pass** before proceeding to next step
-- **Examples must run successfully** before documentation
-- **Documentation must be comprehensive** before considering feature complete
-- **No step should be skipped** - each builds on the previous
-
-## Development Guidelines
-
-## Code Quality Guidelines
-
-### Explicit Match Statements
-
-**Always prefer explicit match cases over catch-all patterns.**
-
-**Why:** Catch-all patterns (`_ => {}`) silently handle future additions, creating maintenance traps where developers don't realize new cases need special handling.
-
-**Bad - Silent catch-all:**
-```rust
-match tool_name {
-    "write" => { /* truncate content */ }
-    "edit" => { /* truncate diffs */ }
-    _ => {} // Silent fallback - future tools pass through without review!
-}
-```
-
-**Good - Explicit cases with warnings:**
-```rust
-match tool_name {
-    "write" => {
-        // Truncate 'content' field (can be very large)
-        if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
-            if content.len() > MAX_WRITE_CONTENT_LENGTH {
-                let preview = Self::extract_string_preview(content, WRITE_ARG_PREVIEW_WORDS);
-                obj.insert("content".to_string(), serde_json::json!(...));
-            }
-        }
-    }
-    "edit" => {
-        // Truncate 'old_string' and 'new_string' fields
-        for field in ["old_string", "new_string"] {
-            // ... truncation logic
-        }
-    }
-    // Tools that don't need input truncation (arguments are small):
-    "ls" => {
-        // No truncation needed - arguments are small (path, recursive flag)
-    }
-    "read" => {
-        // No truncation needed - only path argument
-    }
-    // ... list all other tools explicitly with comments
-    unknown_tool => {
-        // Future tool: Explicitly documented that no truncation is applied
-        // When adding new tools, update this match to add explicit handling
-        tracing::warn!(
-            tool = %unknown_tool,
-            "Unknown tool '{}' in summarize_tool_inputs, no input truncation applied. \
-             If this tool has large inputs, add explicit truncation logic.",
-            unknown_tool
-        );
-    }
-}
-```
-
-**Guidelines:**
-1. **List all enum variants explicitly** - Don't use `_ => {}` unless it's an external/non-exhaustive enum
-2. **Add comments** for each case explaining why it doesn't need special handling
-3. **Use named catch-all** - Replace `_ => {}` with `unknown_thing =>` to make it intentional
-4. **Add appropriate logs** - Use correct log levels based on risk severity:
-   - **ERROR-level**: Critical risks (data loss, database bloat, security issues)
-   - **WARN-level**: Suboptimal but working cases (generic truncation, missing optimizations)
-   - **INFO-level**: Expected behavior that should be monitored
-   - **DEBUG-level**: Detailed diagnostics for troubleshooting
-5. **Document intent** - Add comments explaining what the catch-all does and why
-6. **Remove dead code** - Delete unreachable catch-alls (e.g., after exhaustive matches)
-
-**Log level strategy:**
-- **ERROR** (use for critical risks):
-  - Unknown tools in `summarize_tool_inputs` - can cause database bloat
-  - Unknown message_type in `convert_history` - causes data loss in AI context
-- **WARN** (use for suboptimal but working):
-  - Unknown tools in `summarize_tool_outputs` - generic truncation works, but might be suboptimal
-  - External enum variants (Rig framework additions)
-- **No logging** (acceptable fallbacks):
-  - Explicitly handled cases with comments explaining why no special handling needed
-
-**When catch-alls are acceptable:**
-- External enums (Rig, third-party libraries) that are marked `#[non_exhaustive]`
-- Generic fallback logic that is explicitly documented and logged
-- Enums that you control and can guarantee won't have new variants added
-
-**Example: Dead code removal:**
-```rust
-// BEFORE (bad - unreachable)
-match default_provider {
-    AiProvider::OpenAi if openai.is_none() => return Err(...),
-    AiProvider::OpenRouter if openrouter.is_none() => return Err(...),
-    _ => {} // UNREACHABLE!
-}
-
-// AFTER (good - exhaustive)
-match default_provider {
-    AiProvider::OpenAi if openai.is_none() => return Err(...),
-    AiProvider::OpenRouter if openrouter.is_none() => return Err(...),
-    AiProvider::OpenAi | AiProvider::OpenRouter => {
-        // Valid, continue
-    }
-}
-```
-
-### UTF-8 Safe String Slicing
-
-**Never use byte indexing on strings - it will panic on multi-byte UTF-8 characters.**
-
-**Why:** Rust strings are UTF-8 encoded. Characters like Vietnamese (`chiến`), Chinese (`你好`), or emoji (`🎉`) use multiple bytes. Slicing at byte position 50 may land in the middle of a character, causing a runtime panic.
-
-**Bad - Panics on multi-byte UTF-8:**
-```rust
-// Will panic if byte 50 is mid-character
-let preview = &text[..text.len().min(50)];
-
-// Also dangerous
-let preview = &text[..50];
-```
-
-**Good - Character-aware slicing:**
-```rust
-// Use the safe_preview utility function
-use crate::utils::safe_preview;
-let preview = safe_preview(&text, 50); // Returns "first 50 chars..."
-
-// Or manually with chars()
-let preview: String = text.chars().take(50).collect();
-```
-
-**Available utilities in `src/utils/string.rs`:**
-- `safe_preview(text: &str, max_chars: usize) -> String` - Returns preview with "..." if truncated
-- `truncate_safe(text: &str, max_chars: usize) -> &str` - Returns truncated slice without owning
-
-**When logging text previews:**
-```rust
-// ALWAYS use safe_preview for logging user/AI generated content
-tracing::debug!(
-    text_preview = %safe_preview(&text, 50),
-    "Received text chunk"
-);
-```
-
-**Common locations where this bug occurs:**
-- `actor.rs` - AI response streaming logs
-- `web_search.rs` - HTTP response previews
-- Any code that logs user-generated content
-
-## Architecture Rules
-
-### Handler vs Service Responsibility
-
-**Handler Layer (Thin)**:
-- Pure orchestration: extract → validate → call service → return response
-- 3-5 lines maximum
-- NO business logic
-- NO authorization logic (use middleware or services)
-
-**Service Layer (Thick)**:
-- ALL business logic
-- ALL authorization logic (can be called by middleware or handlers)
-- Reusable across HTTP, CLI, tests
-- Can call other services
-
-**Middleware Layer**:
-- Extracts context (auth, workspace access)
-- Calls service methods for authorization
-- Adds authorization context to request extensions
-
-**Example**:
-```rust
-// ❌ BAD: Business logic in handler
-pub async fn update_workspace(...) {
-    if !workspace_access.is_owner {
-        return Err(Error::Forbidden(...));  // Business logic in handler
-    }
-    let workspace = workspaces::update_workspace(...).await?;
-    Ok(Json(...))
-}
-
-// ✅ GOOD: Handler is pure orchestration
 pub async fn update_workspace(
-    Extension(access): Extension<WorkspaceAccess>,  // Middleware provided
+    Extension(access): Extension<WorkspaceAccess>,
     DbConnection(mut conn): DbConnection,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateRequest>,
@@ -955,172 +68,102 @@ pub async fn update_workspace(
 }
 ```
 
-### AI & Tool Architecture
+**Service (Thick)**: ALL business logic, ALL authorization logic
 
-**Core Tools (`src/tools/`)**:
-- **Thick Layer**: Contains ALL execution logic, input normalization, and validation.
-- **Single Source of Truth**: Used by API handlers, CLI, and AI agents alike.
-- **Polymorphic Inputs**: Must handle diverse input shapes (strings and objects) to ensure consistency across all callers.
+### Tool Architecture
 
-**AI Adapters (`src/services/chat/rig_tools.rs`)**:
-- **Thin Layer**: Pure translation from LLM frameworks (e.g., Rig.rs) to Core Tool arguments.
-- **No Hidden Logic**: Should strictly call `Tool::execute` after basic type conversion.
-- **Interface Owner**: Defines the JSON Schema exposed to the AI, but delegates implementation details to the core tools.
+- **Core Tools (`src/tools/`)**: Thick layer with ALL execution logic
+- **AI Adapters (`src/chat/services/`)**: Thin translation layer to Rig framework
 
-### CRITICAL: Flexible Deserializers for All Tool Parameters
+### Flexible Deserializers (CRITICAL)
 
-**⚠️ MANDATORY REQUIREMENT**: ALL tool parameters that accept numeric or boolean values MUST use flexible deserializers.
+ALL tool parameters accepting numeric/boolean values MUST use flexible deserializers:
 
-**Why**: AI agents often pass parameters as strings (e.g., `"50"` instead of `50`, `"true"` instead of `true`). Without flexible deserializers, this causes `ToolCallError: JsonError`.
-
-**Required Deserializers** (defined in `/src/models/requests.rs`):
-- `deserialize_flexible_bool` / `deserialize_flexible_bool_option` - for `bool` or `Option<bool>`
-- `deserialize_flexible_usize` / `deserialize_flexible_usize_option` - for `usize` or `Option<usize>`
-- `deserialize_flexible_isize` / `deserialize_flexible_isize_option` - for `isize` or `Option<isize>`
-
-**Implementation Pattern**:
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct YourToolArgs {
-    // ✅ CORRECT: Use flexible deserializer for boolean parameter
-    #[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
-    pub your_flag: Option<bool>,
+#[serde(default, deserialize_with = "deserialize_flexible_bool_option")]
+pub recursive: Option<bool>,
 
-    // ✅ CORRECT: Use flexible deserializer for numeric parameter
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flexible_usize_option")]
-    pub your_limit: Option<usize>,
+#[serde(default, deserialize_with = "deserialize_flexible_usize_option")]
+pub limit: Option<usize>,
+```
 
-    // ❌ WRONG: Will fail when AI passes string values
-    #[serde(default)]
-    pub your_limit: Option<usize>,
+## Code Quality Guidelines
+
+### Explicit Match Statements
+
+Always prefer explicit match cases over catch-all patterns:
+
+```rust
+// GOOD - Explicit with warning for unknown
+match tool_name {
+    "write" => { /* handle */ }
+    "read" => { /* handle */ }
+    unknown => {
+        tracing::warn!("Unknown tool '{}'", unknown);
+    }
 }
 ```
 
-**JSON Schema Requirements**:
-In the tool's `definition()` method, all numeric/boolean parameters MUST accept strings:
+### UTF-8 Safe String Slicing
+
+Never use byte indexing on strings. Use character-aware methods:
+
 ```rust
-fn definition(&self) -> Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "your_flag": {
-                // ✅ CORRECT: Accept boolean OR string
-                "type": ["boolean", "string", "null"],
-                "description": "Accepts boolean or string (e.g., true or 'true')"
-            },
-            "your_limit": {
-                // ✅ CORRECT: Accept integer OR string
-                "type": ["integer", "string", "null"],
-                "description": "Accepts integer or string (e.g., 100 or '100')"
-            },
-            // ❌ WRONG: Only accepts integer, will fail with string values
-            "your_limit": {
-                "type": ["integer", "null"],
-                "description": "..."
-            }
-        }
-    })
+use crate::utils::safe_preview;
+let preview = safe_preview(&text, 50);
+```
+
+## Configuration
+
+Environment variables use `BUILDSCALE__` prefix:
+
+| Variable | Description |
+|----------|-------------|
+| `BUILDSCALE__DATABASE__*` | Database connection |
+| `BUILDSCALE__JWT__SECRET` | JWT signing key (min 32 chars) |
+| `BUILDSCALE__JWT__ACCESS_TOKEN_EXPIRATION_MINUTES` | JWT expiration (default: 15) |
+| `BUILDSCALE__SESSIONS__EXPIRATION_HOURS` | Session expiration (default: 720) |
+
+## Error Handling
+
+```rust
+pub enum Error {
+    Sqlx(#[from] sqlx::Error),
+    Validation(ValidationErrors),
+    NotFound(String),
+    Forbidden(String),
+    Conflict(String),
+    Authentication(String),
+    InvalidToken(String),
+    SessionExpired(String),
+    Internal(String),
 }
 ```
 
-**Examples of Tools Using Flexible Deserializers**:
-- `ls`: `recursive` uses `deserialize_flexible_bool_option`
-- `read`: `offset`, `limit`, `cursor` use `deserialize_flexible_isize_option` / `deserialize_flexible_usize_option`
-- `grep`: `case_sensitive`, `before_context`, `after_context`, `context` use flexible deserializers
-- `cat`: `offset`, `limit` use flexible deserializers
-- `find`: `recursive`, `min_size`, `max_size` use flexible deserializers
-- `read_multiple_files`: `limit` uses `deserialize_flexible_usize_option`
+All errors include `error` message and `code` field for programmatic handling.
 
-**Verification Checklist** for New Tools:
-- [ ] All `bool`/`Option<bool>` fields use `deserialize_flexible_bool` or `deserialize_flexible_bool_option`
-- [ ] All `usize`/`Option<usize>` fields use `deserialize_flexible_usize` or `deserialize_flexible_usize_option`
-- [ ] All `isize`/`Option<isize>` fields use `deserialize_flexible_isize` or `deserialize_flexible_isize_option`
-- [ ] JSON schema accepts `["boolean", "string", "null"]` for booleans
-- [ ] JSON schema accepts `["integer", "string", "null"]` for numbers
-- [ ] Tests verify both numeric and string parameter values work correctly
+## Documentation
 
-### Workflow: Adding a New Workspace Tool
+Comprehensive documentation is in `docs/`:
 
-Follow these 6 steps to ensure consistency across code, documentation, and AI orchestration:
+| Document | Content |
+|----------|---------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture |
+| [API_REFERENCE.md](docs/API_REFERENCE.md) | REST, Tools, Services APIs |
+| [AI_SYSTEM.md](docs/AI_SYSTEM.md) | AI agents, context, providers |
+| [AUTHENTICATION.md](docs/AUTHENTICATION.md) | Auth, RBAC, invitations |
+| [FILE_SYSTEM.md](docs/FILE_SYSTEM.md) | File system architecture |
+| [PLAN_SYSTEM.md](docs/PLAN_SYSTEM.md) | Plan mode workflow |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration reference |
 
-1.  **Define Models** (`src/models/requests.rs`): Create `Args` and `Result` structs. Deriving `JsonSchema` is mandatory for AI visibility.
-2.  **Implement Core Logic** (`src/tools/`): Implement the `Tool` trait in the **Thick Layer**. This layer must handle all validation and input normalization.
-3.  **Register Core Tool** (`src/tools/mod.rs`): Add the new tool to the `ToolExecutor` enum and registry.
-4.  **Implement AI Adapter** (`src/services/chat/rig_tools.rs`): Create a **Thin** Rig adapter (`Rig*Tool`) that simply delegates to the core tool. Use the `enforce_strict_schema` helper.
-5.  **Register AI Tool** (`src/services/chat/rig_engine.rs`): Add the adapter to the Rig agent builder.
-6.  **Test & Document** (`tests/tools/` & `docs/TOOLS_API_GUIDE.md`): Write integration tests and provide full HTTP REST specifications.
+## Development Workflow
 
-### Code Organization
-- Separate concerns: models (data), services (business logic), queries (data access)
-- Use type-safe enums for role management
-- Centralized constants for role names
-- Comprehensive error handling with specific error types
+1. **Code**: Models → Services → Queries → Handlers
+2. **Test**: Unit tests, integration tests, edge cases
+3. **Example**: Create practical examples in `/examples/`
+4. **Document**: Update relevant docs
 
-### Database Patterns
-- Use transactions for multi-step operations
-- Parameterized queries to prevent SQL injection
-- Database constraints for data integrity
-- Cascade operations for data consistency
-
-### Testing Patterns
-- Use test prefixes for data isolation
-- Clean up test data automatically
-- Test both success and failure scenarios
-- Use helper methods for common test setup
-
-### Security Considerations
-- Argon2 password hashing with unique salts
-- Workspace data isolation
-- Role-based access control
-- Input validation and sanitization
-
-## Frontend Development Guidelines
-
-### Component Architecture Pattern
-When building React components for the frontend, **prefer the Compound Component Pattern** for complex, interactive components.
-
-**Why this pattern?**
-- **Declarative API**: More intuitive and flexible component composition
-- **Less prop drilling**: Child components automatically access parent state via Context
-- **Better composability**: Users can arrange and combine child components as needed
-- **Cleaner usage**: More readable component code
-
-**When to use it:**
-- Components with multiple related parts (Tabs, Modals, Dropdowns, Cards)
-- Components with shared state (Toggle, Listbox, Select, Forms)
-- Complex UI components that need flexible composition
-
-**Basic example structure:**
-```jsx
-// Parent manages state
-function Card({ children }) {
-  const [isOpen, setIsOpen] = useState(false);
-  return (
-    <CardContext.Provider value={{ isOpen, setIsOpen }}>
-      {children}
-    </CardContext.Provider>
-  );
-}
-
-// Children consume state
-Card.Header = function CardHeader({ children }) {
-  return <div className="card-header">{children}</div>;
-};
-
-Card.Body = function CardBody({ children }) {
-  return <div className="card-body">{children}</div>;
-};
-
-Card.Footer = function CardFooter({ children }) {
-  return <div className="card-footer">{children}</div>;
-};
-
-// Usage
-<Card>
-  <Card.Header>Title</Card.Header>
-  <Card.Body>Content goes here</Card.Body>
-  <Card.Footer>
-    <button>Action</button>
-  </Card.Footer>
-</Card>
+Final validation:
+```bash
+cargo test && cargo build --release
 ```

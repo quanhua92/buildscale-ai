@@ -1,7 +1,7 @@
 use crate::{
-    cache::Cache, config::Config, database::DbPool, models::users::User,
-    services::chat::registry::AgentRegistry, services::chat::rig_engine::RigService,
-    services::storage::FileStorageService,
+    cache::Cache, config::Config, database::DbPool, users::models::User,
+    chat::services::registry::AgentRegistry, chat::services::engine::RigService,
+    fs::storage::FileStorageService,
 };
 use std::sync::Arc;
 use tokio::sync::mpsc;

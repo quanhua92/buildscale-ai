@@ -440,6 +440,113 @@ echo "Found $ROLE_COUNT role constants in code"
 3. Update installation instructions in README.md
 4. Update this configuration document
 
+## Cache System
+
+The cache module provides a Redis-like API with TTL support, thread-safe operations, and automatic cleanup.
+
+### Configuration
+
+```rust
+let cache = Cache::new_local(CacheConfig {
+    cleanup_interval_seconds: 60,  // Run cleanup every minute
+    default_ttl_seconds: Some(3600), // Default 1 hour TTL
+});
+```
+
+### Key Operations
+
+| Operation | Description |
+|-----------|-------------|
+| `set` / `set_ex` | Set value (with optional TTL) |
+| `get` / `mget` | Get value(s) |
+| `delete` / `mdelete` | Delete value(s) |
+| `ttl` / `expire` / `persist` | TTL management |
+| `exists` / `keys` | Existence checks |
+| `set_nx` | Set if not exists (distributed locking) |
+| `get_and_set` | Atomic get-and-set |
+| `clear` | Clear all entries |
+
+### Use Cases
+
+- User sessions with auto-logout
+- Rate limiting windows
+- Cached API responses
+- Distributed locking
+- Leader election
+
+---
+
+## Events System
+
+The Events System provides a **hybrid architecture** for handling ChatActor events by combining **state handlers** and **event processors**.
+
+### Architecture
+
+| Component | Responsibility | Location |
+|-----------|---------------|----------|
+| **State Handlers** | State entry/exit hooks, validation, overrides | `src/chat/services/states/` |
+| **Event Processors** | Event-specific logic, transitions, actions | `src/chat/services/events/` |
+
+### Event Processors
+
+| Processor | Event Type | Responsibility |
+|-----------|------------|---------------|
+| `ProcessInteractionProcessor` | `ProcessInteraction` | Start AI processing |
+| `PauseProcessor` | `Pause` | Cancel interaction, transition to Paused |
+| `CancelProcessor` | `Cancel` | Cancel interaction, transition to Cancelled |
+| `PingProcessor` | `Ping` | Reset inactivity timer |
+| `ShutdownProcessor` | `Shutdown` | Transition to Completed |
+
+### State Context
+
+```rust
+pub struct StateContext<'a, 'b> {
+    pub chat_id: Uuid,
+    pub workspace_id: Uuid,
+    pub user_id: Uuid,
+    pub pool: DbPool,
+    pub storage: Arc<FileStorageService>,
+    pub event_tx: broadcast::Sender<SseEvent>,
+}
+```
+
+---
+
+## Chat Persistence & Audit Trail
+
+All streaming events are persisted to the `chat_messages` table for a complete audit trail.
+
+### Message Type Mapping
+
+| Stream Item | Role | `message_type` | Key Metadata |
+|-------------|------|----------------|--------------|
+| Buffered Reasoning | `Assistant` | `reasoning_complete` | `reasoning_id` |
+| Tool Call | `Tool` | `tool_call` | `tool_name`, `tool_arguments` |
+| Tool Result | `Tool` | `tool_result` | `tool_name`, `tool_output`, `tool_success` |
+
+### Metadata Fields
+
+```rust
+pub struct ChatMessageMetadata {
+    pub message_type: Option<String>,
+    pub reasoning_id: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_arguments: Option<serde_json::Value>,
+    pub tool_output: Option<String>,
+    pub tool_success: Option<bool>,
+}
+```
+
+### Data Minimization
+
+To prevent database bloat, tool inputs and outputs are summarized:
+- `read`: Truncated with stats and preview
+- `ls`, `grep`: Limited number of items/matches
+- `write`: Content truncated if > 10MB
+- `edit`: Diff fields truncated if > 1MB
+
+---
+
 ## Best Practices
 
 1. **Centralize Configuration**: Keep configurable values in one place
@@ -447,6 +554,14 @@ echo "Found $ROLE_COUNT role constants in code"
 3. **Document Ranges**: Use ranges instead of exact numbers when possible
 4. **Validate Constraints**: Ensure constraints are enforced at both database and application level
 5. **Test Limits**: Include tests for boundary conditions and limits
+
+---
+
+## Related Documentation
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture overview
+- [AI_SYSTEM.md](./AI_SYSTEM.md) - AI agent system architecture
+- [API_REFERENCE.md](./API_REFERENCE.md) - Complete API reference
 
 ---
 

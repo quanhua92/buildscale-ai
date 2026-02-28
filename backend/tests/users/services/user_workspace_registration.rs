@@ -1,9 +1,9 @@
 use buildscale::{
-    services::users::register_user_with_workspace,
+    users::services::register_user_with_workspace,
     models::requests::UserWorkspaceRegistrationRequest,
-    services::workspaces::get_workspace,
-    services::roles::list_workspace_roles,
-    models::roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
+    workspaces::services::workspaces::get_workspace,
+    workspaces::services::roles::list_workspace_roles,
+    workspaces::models::role::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
 };
 use crate::common::database::TestApp;
 

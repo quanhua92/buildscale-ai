@@ -459,13 +459,152 @@ BUILDSCALE__COOKIES__SAME_SITE=Strict
 BUILDSCALE__COOKIES__DOMAIN=.example.com
 ```
 
+## Role-Based Access Control (RBAC)
+
+Multi-tier role hierarchy with comprehensive permissions across workspace, content, and member management categories.
+
+### Role Hierarchy
+
+| Role | Description | Scope |
+|------|-------------|-------|
+| **Admin** | Full workspace control | All permissions |
+| **Editor** | Content creation and editing | Content management + workspace access |
+| **Member** | Basic content participation | Own content + workspace access |
+| **Viewer** | Read-only access | View-only permissions |
+
+### Permission Categories
+
+#### Workspace Permissions
+- `workspace:read` - View workspace
+- `workspace:write` - Modify workspace
+- `workspace:delete` - Delete workspace
+- `workspace:manage_members` - Manage members
+- `workspace:manage_settings` - Manage settings
+- `workspace:invite_members` - Invite members
+- `workspace:view_activity_log` - View activity log
+- `workspace:export_data` - Export data
+
+#### Content Permissions
+- `content:create` - Create content
+- `content:read_own` / `content:read_all` - Read content
+- `content:update_own` / `content:update_all` - Update content
+- `content:delete_own` / `content:delete_all` - Delete content
+- `content:comment` - Comment on content
+
+#### Member Permissions
+- `members:add` - Add members
+- `members:remove` - Remove members
+- `members:update_roles` - Update roles
+- `members:view` - View members
+
+### Role Permission Matrix
+
+| Permission | Admin | Editor | Member | Viewer |
+|------------|--------|--------|--------|--------|
+| `workspace:read` | ✓ | ✓ | ✓ | ✓ |
+| `workspace:write` | ✓ | ✓ | ✗ | ✗ |
+| `workspace:delete` | ✓ | ✗ | ✗ | ✗ |
+| `workspace:manage_members` | ✓ | ✗ | ✗ | ✗ |
+| `content:create` | ✓ | ✓ | ✓ | ✗ |
+| `content:update_all` | ✓ | ✓ | ✗ | ✗ |
+| `members:add` | ✓ | ✗ | ✗ | ✗ |
+
+### Core APIs
+
+```rust
+// Create default 4-tier role system for workspace
+pub async fn create_default_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>>
+
+// Permission validation
+pub fn role_has_permission(role: &str, permission: &str) -> bool
+pub async fn validate_workspace_permission(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    permission: &str,
+) -> Result<()>
+
+// Role lookup
+pub async fn get_role_by_name(conn: &mut DbConn, workspace_id: Uuid, role_name: &str) -> Result<Role>
+pub async fn list_workspace_roles(conn: &mut DbConn, workspace_id: Uuid) -> Result<Vec<Role>>
+```
+
+---
+
+## Workspace Invitation System
+
+Secure token-based invitation system with role assignments for workspace member onboarding.
+
+### Key Features
+
+- **UUID v7 Tokens**: Secure invitation tokens with configurable expiration
+- **Role Assignment**: Direct role assignment on invitation acceptance
+- **Permission Validation**: Requires `INVITE_MEMBERS` permission
+- **State Management**: pending → accepted/expired/revoked lifecycle
+- **Bulk Operations**: Support for inviting multiple users
+
+### Invitation Status
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Awaiting user response |
+| `accepted` | User joined workspace |
+| `expired` | Past expiration date |
+| `revoked` | Cancelled by sender/admin |
+
+### Core APIs
+
+```rust
+// Create invitation with role assignment
+pub async fn create_invitation(
+    conn: &mut DbConn,
+    request: CreateInvitationRequest,
+    inviter_id: Uuid,
+) -> Result<CreateInvitationResponse>
+
+// Accept invitation and create membership
+pub async fn accept_invitation(
+    conn: &mut DbConn,
+    request: AcceptInvitationRequest,
+    user_id: Uuid,
+) -> Result<AcceptInvitationResponse>
+
+// Revoke pending invitation
+pub async fn revoke_invitation(
+    conn: &mut DbConn,
+    request: RevokeInvitationRequest,
+    revoker_id: Uuid,
+) -> Result<WorkspaceInvitation>
+
+// Bulk create invitations (up to 100 users)
+pub async fn bulk_create_invitations(
+    conn: &mut DbConn,
+    workspace_id: Uuid,
+    emails: Vec<String>,
+    role_name: String,
+    inviter_id: Uuid,
+    expires_in_hours: Option<i64>,
+) -> Result<Vec<CreateInvitationResponse>>
+
+// Cleanup expired invitations
+pub async fn cleanup_expired_invitations(conn: &mut DbConn) -> Result<u64>
+```
+
+### Security Features
+
+- **UUID v7 Tokens**: Time-based sortable unique tokens, single-use
+- **Expiration Handling**: Configurable duration with maximum limits
+- **Case-Insensitive Email**: Stored in lowercase
+- **Duplicate Prevention**: One pending invitation per email per workspace
+- **Access Control**: Requires `INVITE_MEMBERS` permission
+
+---
+
 ## Related Documentation
 
-- **[Architecture Overview](./ARCHITECTURE.md)** - System design and database schema
-- **[User & Workspace Management](./USER_WORKSPACE_MANAGEMENT.md)** - User registration and management APIs
-- **[Role Management](./ROLE_MANAGEMENT.md)** - RBAC system and permissions
-- **[API Guide](./API_GUIDE.md)** - Complete API reference with error handling
-- **[Installation Guide](./README.md#installation--setup)** - Development setup and troubleshooting
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture overview
+- [API_REFERENCE.md](./API_REFERENCE.md) - Complete API reference
+- [FILE_SYSTEM.md](./FILE_SYSTEM.md) - File system architecture
 
 ## For Developers
 
@@ -475,7 +614,7 @@ BUILDSCALE__COOKIES__DOMAIN=.example.com
 grep -n "password.len() < 12" src/validation.rs
 
 # Check session extension limits
-grep -n "Cannot extend session by more than" src/services/users.rs
+grep -n "Cannot extend session by more than" src/users/services/users.rs
 
 # Check session management functions
 grep -n "pub async fn.*session" src/services/sessions.rs
@@ -490,8 +629,8 @@ grep -n "validate_workspace_name" src/validation.rs
 ### Session Management Configuration
 Session management settings are typically found in:
 - `src/validation.rs`: Password validation requirements (12+ characters)
-- `src/services/sessions.rs`: Session cleanup and management
-- `src/services/users.rs`: Authentication logic
+- `src/auth/services/sessions.rs`: Session cleanup and management
+- `src/users/services/users.rs`: Authentication logic
 
 ### Security Configuration
 - **Token Generation**: Random HMAC-signed tokens generated in `src/services/refresh_tokens.rs`

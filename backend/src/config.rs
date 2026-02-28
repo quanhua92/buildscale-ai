@@ -9,7 +9,7 @@ pub struct Config {
     pub sessions: SessionsConfig,
     pub jwt: JwtConfig,
     pub cache: CacheConfig,
-    pub cookies: crate::services::cookies::CookieConfig,
+    pub cookies: crate::auth::services::cookies::CookieConfig,
     pub server: ServerConfig,
     pub ai: AiConfig,
     pub storage: StorageConfig,

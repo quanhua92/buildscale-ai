@@ -1,6 +1,6 @@
 use buildscale::{
-    models::users::NewUser,
-    queries::users::{create_user, list_users},
+    users::models::NewUser,
+    users::queries::{create_user, list_users},
 };
 use crate::common::database::TestDb;
 

@@ -35,10 +35,10 @@
 
 ### ✅ 2. Enable Secure Cookies by Default - COMPLETED
 **Severity:** HIGH
-**File:** `src/services/cookies.rs:42-58`
+**File:** `src/auth/services/cookies.rs:42-58`
 **Impact:** Cookies automatically use HTTPS in production
 **Status:** ✅ Done
-**Implementation Note:** Changed location to `src/services/cookies.rs` (not `src/config.rs` as originally planned)
+**Implementation Note:** Changed location to `src/auth/services/cookies.rs` (not `src/config.rs` as originally planned)
 **Severity:** HIGH
 **File:** `src/config.rs:93-100`
 **Impact:** Cookies automatically use HTTPS in production
@@ -71,15 +71,15 @@ impl Default for CookieConfig {
 
 ### ✅ 3. Fix User Enumeration - COMPLETED
 **Severity:** HIGH
-**Files:** `src/queries/users.rs:24-36`
+**Files:** `src/users/queries/users.rs:24-36`
 **Impact:** Prevents email harvesting via registration endpoint
 **Status:** ✅ Done
 **Implementation Note:** Also changed error type from `Error::Conflict` to `Error::Validation`
 **Severity:** HIGH
-**Files:** `src/queries/users.rs:24-36`, `src/handlers/auth.rs`
+**Files:** `src/users/queries/users.rs:24-36`, `src/handlers/auth/auth.rs`
 **Impact:** Prevents email harvesting via registration endpoint
 
-**Change error message in `src/queries/users.rs`:**
+**Change error message in `src/users/queries/users.rs`:**
 ```rust
 Err(sqlx::Error::Database(err)) => {
     if err.code().as_deref() == Some("23505") {
@@ -97,14 +97,14 @@ Err(sqlx::Error::Database(err)) => {
 
 ### ✅ 4. Add Constant-Time Password Comparison - COMPLETED
 **Severity:** HIGH
-**Files:** `src/services/users.rs:26-37, 72-84`
+**Files:** `src/users/services/users.rs:26-37, 72-84`
 **Impact:** Prevents timing attacks on password confirmation
 **Status:** ✅ Done
 **Implementation Note:**
 - Applied to both `register_user()` and `register_user_with_workspace()`
 - Used `subtle` crate's `ct_eq()` with `.unwrap_u8() == 0` for comparison
 **Severity:** HIGH
-**File:** `src/services/users.rs:26-28`
+**File:** `src/users/services/users.rs:26-28`
 **Impact:** Prevents timing attacks on password confirmation
 
 **Note:** `subtle` crate already in dependencies!
@@ -277,7 +277,7 @@ pub fn validate_password(password: &str) -> Result<(), String> {
 
 ### ✅ 8. Remove Tokens from Browser JSON Responses - COMPLETED
 **Severity:** HIGH
-**File:** `src/handlers/auth.rs:139-188`
+**File:** `src/handlers/auth/auth.rs:139-188`
 **Impact:** Prevents XSS attacks from accessing tokens
 **Status:** ✅ Done
 **Implementation Note:**
@@ -343,7 +343,7 @@ fn is_browser_client(user_agent: &str) -> bool {
 
 ### ✅ 9. Hash Session Tokens in Database - **COMPLETED**
 **Severity:** CRITICAL
-**Files:** `migrations/`, `src/queries/sessions.rs`, `src/models/users.rs`, `src/services/users.rs`
+**Files:** `migrations/`, `src/auth/queries/sessions.rs`, `src/users/models/mod.rs`, `src/users/services/users.rs`
 **Impact:** Database breach no longer exposes session tokens
 **Status:** ✅ **COMPLETED** - All 271 tests passing
 
@@ -366,7 +366,7 @@ CREATE INDEX idx_user_sessions_token_hash ON user_sessions(token_hash);
 
 **Code Changes:**
 ```rust
-// src/queries/sessions.rs
+// src/auth/queries/sessions.rs
 use sha2::{Sha256, Digest};
 
 pub fn hash_session_token(token: &str) -> String {
@@ -418,7 +418,7 @@ pub async fn get_session_by_token_hash(
 
 **Service Layer Updates:**
 ```rust
-// src/services/users.rs - login_user()
+// src/users/services/users.rs - login_user()
 let refresh_token = generate_session_token()?;
 let token_hash = sessions::hash_session_token(&refresh_token);
 

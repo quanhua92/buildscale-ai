@@ -3,38 +3,26 @@
 //! This module provides an extensible toolset that operates on files in workspaces.
 //! Tools follow the "Everything is a File" philosophy, providing filesystem-like
 //! operations (ls, read, write, rm, mv, touch) backed by the database.
+//!
+//! ## Module Organization
+//!
+//! The tools are organized into subdirectories by category:
+//!
+//! - `file/` - File system tools (ls, read, write, edit, rm, mv, touch, mkdir, grep, glob, find, cat, file_info, read_multiple_files)
+//! - `memory/` - Memory tools (memory_set, memory_get, memory_search, memory_delete, memory_list)
+//! - `plan/` - Plan mode tools (ask_user, exit_plan_mode, plan_write, plan_read, plan_edit, plan_list)
+//! - `web/` - Web tools (web_fetch, web_search)
 
-pub mod ls;
-pub mod read;
-pub mod write;
-pub mod rm;
-pub mod mv;
-pub mod touch;
-pub mod edit;
-pub mod grep;
-pub mod mkdir;
-pub mod ask_user;
-pub mod exit_plan_mode;
-pub mod glob;
-pub mod file_info;
-pub mod read_multiple_files;
-pub mod find;
-pub mod cat;
-pub mod plan_write;
-pub mod plan_read;
-pub mod plan_edit;
-pub mod plan_list;
-pub mod memory_set;
-pub mod memory_get;
-pub mod memory_search;
-pub mod memory_delete;
-pub mod memory_list;
-pub mod web_fetch;
-pub mod web_search;
+// Subdirectory modules (layered structure)
+pub mod file;
+pub mod memory;
+pub mod plan;
+pub mod web;
 
+// Helpers stay at root level
 pub mod helpers;
 
-use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, models::chat::ToolDefinition, services::storage::FileStorageService, state::TagIndexMessage, state::LinkIndexMessage};
+use crate::{DbConn, error::{Error, Result}, models::requests::ToolResponse, chat::models::ToolDefinition, fs::storage::FileStorageService, state::TagIndexMessage, state::LinkIndexMessage};
 use uuid::Uuid;
 use serde_json::Value;
 use async_trait::async_trait;
@@ -162,6 +150,7 @@ pub trait Tool: Send + Sync {
 /// * `Err(Error)` - If tool name is not found
 pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
     match tool_name {
+        // File tools
         "ls" => Ok(ToolExecutor::Ls),
         "read" => Ok(ToolExecutor::Read),
         "write" => Ok(ToolExecutor::Write),
@@ -171,22 +160,25 @@ pub fn get_tool_executor(tool_name: &str) -> Result<ToolExecutor> {
         "edit" => Ok(ToolExecutor::Edit),
         "grep" => Ok(ToolExecutor::Grep),
         "mkdir" => Ok(ToolExecutor::Mkdir),
-        "ask_user" => Ok(ToolExecutor::AskUser),
-        "exit_plan_mode" => Ok(ToolExecutor::ExitPlanMode),
         "glob" => Ok(ToolExecutor::Glob),
         "file_info" => Ok(ToolExecutor::FileInfo),
         "read_multiple_files" => Ok(ToolExecutor::ReadMultipleFiles),
         "find" => Ok(ToolExecutor::Find),
         "cat" => Ok(ToolExecutor::Cat),
+        // Plan tools
+        "ask_user" => Ok(ToolExecutor::AskUser),
+        "exit_plan_mode" => Ok(ToolExecutor::ExitPlanMode),
         "plan_write" => Ok(ToolExecutor::PlanWrite),
         "plan_read" => Ok(ToolExecutor::PlanRead),
         "plan_edit" => Ok(ToolExecutor::PlanEdit),
         "plan_list" => Ok(ToolExecutor::PlanList),
+        // Memory tools
         "memory_set" => Ok(ToolExecutor::MemorySet),
         "memory_get" => Ok(ToolExecutor::MemoryGet),
         "memory_search" => Ok(ToolExecutor::MemorySearch),
         "memory_delete" => Ok(ToolExecutor::MemoryDelete),
         "memory_list" => Ok(ToolExecutor::MemoryList),
+        // Web tools
         "web_fetch" => Ok(ToolExecutor::WebFetch),
         "web_search" => Ok(ToolExecutor::WebSearch),
         _ => Err(Error::NotFound(format!("Tool '{}' not found", tool_name))),
@@ -222,6 +214,7 @@ pub fn normalize_path(path: &str) -> String {
 
 /// Tool executor enum for dispatching tool execution
 pub enum ToolExecutor {
+    // File tools
     Ls,
     Read,
     Write,
@@ -231,22 +224,25 @@ pub enum ToolExecutor {
     Edit,
     Grep,
     Mkdir,
-    AskUser,
-    ExitPlanMode,
     Glob,
     FileInfo,
     ReadMultipleFiles,
     Find,
     Cat,
+    // Plan tools
+    AskUser,
+    ExitPlanMode,
     PlanWrite,
     PlanRead,
     PlanEdit,
     PlanList,
+    // Memory tools
     MemorySet,
     MemoryGet,
     MemorySearch,
     MemoryDelete,
     MemoryList,
+    // Web tools
     WebFetch,
     WebSearch,
 }
@@ -262,6 +258,7 @@ impl ToolExecutor {
         args: Value,
     ) -> Result<ToolResponse> {
         let name = match self {
+            // File tools
             ToolExecutor::Ls => "ls",
             ToolExecutor::Read => "read",
             ToolExecutor::Write => "write",
@@ -271,22 +268,25 @@ impl ToolExecutor {
             ToolExecutor::Edit => "edit",
             ToolExecutor::Grep => "grep",
             ToolExecutor::Mkdir => "mkdir",
-            ToolExecutor::AskUser => "ask_user",
-            ToolExecutor::ExitPlanMode => "exit_plan_mode",
             ToolExecutor::Glob => "glob",
             ToolExecutor::FileInfo => "file_info",
             ToolExecutor::ReadMultipleFiles => "read_multiple_files",
             ToolExecutor::Find => "find",
             ToolExecutor::Cat => "cat",
+            // Plan tools
+            ToolExecutor::AskUser => "ask_user",
+            ToolExecutor::ExitPlanMode => "exit_plan_mode",
             ToolExecutor::PlanWrite => "plan_write",
             ToolExecutor::PlanRead => "plan_read",
             ToolExecutor::PlanEdit => "plan_edit",
             ToolExecutor::PlanList => "plan_list",
+            // Memory tools
             ToolExecutor::MemorySet => "memory_set",
             ToolExecutor::MemoryGet => "memory_get",
             ToolExecutor::MemorySearch => "memory_search",
             ToolExecutor::MemoryDelete => "memory_delete",
             ToolExecutor::MemoryList => "memory_list",
+            // Web tools
             ToolExecutor::WebFetch => "web_fetch",
             ToolExecutor::WebSearch => "web_search",
         };
@@ -297,33 +297,37 @@ impl ToolExecutor {
         tracing::debug!(args = %args, "Tool input");
 
         let result = match self {
-            ToolExecutor::Ls => ls::LsTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Read => read::ReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Write => write::WriteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Rm => rm::RmTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Mv => mv::MvTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Touch => touch::TouchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Edit => edit::EditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Grep => grep::GrepTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Mkdir => mkdir::MkdirTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::AskUser => ask_user::AskUserTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::ExitPlanMode => exit_plan_mode::ExitPlanModeTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Glob => glob::GlobTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::FileInfo => file_info::FileInfoTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::ReadMultipleFiles => read_multiple_files::ReadMultipleFilesTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Find => find::FindTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::Cat => cat::CatTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::PlanWrite => plan_write::PlanWriteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::PlanRead => plan_read::PlanReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::PlanEdit => plan_edit::PlanEditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::PlanList => plan_list::PlanListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::MemorySet => memory_set::MemorySetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::MemoryGet => memory_get::MemoryGetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::MemorySearch => memory_search::MemorySearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::MemoryDelete => memory_delete::MemoryDeleteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::MemoryList => memory_list::MemoryListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::WebFetch => web_fetch::WebFetchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
-            ToolExecutor::WebSearch => web_search::WebSearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            // File tools
+            ToolExecutor::Ls => file::LsTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Read => file::ReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Write => file::WriteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Rm => file::RmTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Mv => file::MvTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Touch => file::TouchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Edit => file::EditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Grep => file::GrepTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Mkdir => file::MkdirTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Glob => file::GlobTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::FileInfo => file::FileInfoTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::ReadMultipleFiles => file::ReadMultipleFilesTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Find => file::FindTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::Cat => file::CatTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            // Plan tools
+            ToolExecutor::AskUser => plan::AskUserTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::ExitPlanMode => plan::ExitPlanModeTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanWrite => plan::PlanWriteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanRead => plan::PlanReadTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanEdit => plan::PlanEditTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::PlanList => plan::PlanListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            // Memory tools
+            ToolExecutor::MemorySet => memory::MemorySetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemoryGet => memory::MemoryGetTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemorySearch => memory::MemorySearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemoryDelete => memory::MemoryDeleteTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::MemoryList => memory::MemoryListTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            // Web tools
+            ToolExecutor::WebFetch => web::WebFetchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
+            ToolExecutor::WebSearch => web::WebSearchTool.execute(conn, storage, workspace_id, user_id, config.clone(), args).await,
         };
 
         match &result {
@@ -354,140 +358,144 @@ impl ToolExecutor {
 /// Returns a list of all available tools with their name, description, and JSON schema parameters.
 pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
     vec![
+        // File tools
         ToolDefinition {
             name: "ls".into(),
-            description: ls::LsTool.description().into(),
-            parameters: ls::LsTool.definition(),
+            description: file::LsTool.description().into(),
+            parameters: file::LsTool.definition(),
         },
         ToolDefinition {
             name: "read".into(),
-            description: read::ReadTool.description().into(),
-            parameters: read::ReadTool.definition(),
+            description: file::ReadTool.description().into(),
+            parameters: file::ReadTool.definition(),
         },
         ToolDefinition {
             name: "write".into(),
-            description: write::WriteTool.description().into(),
-            parameters: write::WriteTool.definition(),
+            description: file::WriteTool.description().into(),
+            parameters: file::WriteTool.definition(),
         },
         ToolDefinition {
             name: "edit".into(),
-            description: edit::EditTool.description().into(),
-            parameters: edit::EditTool.definition(),
+            description: file::EditTool.description().into(),
+            parameters: file::EditTool.definition(),
         },
         ToolDefinition {
             name: "rm".into(),
-            description: rm::RmTool.description().into(),
-            parameters: rm::RmTool.definition(),
+            description: file::RmTool.description().into(),
+            parameters: file::RmTool.definition(),
         },
         ToolDefinition {
             name: "mv".into(),
-            description: mv::MvTool.description().into(),
-            parameters: mv::MvTool.definition(),
+            description: file::MvTool.description().into(),
+            parameters: file::MvTool.definition(),
         },
         ToolDefinition {
             name: "touch".into(),
-            description: touch::TouchTool.description().into(),
-            parameters: touch::TouchTool.definition(),
+            description: file::TouchTool.description().into(),
+            parameters: file::TouchTool.definition(),
         },
         ToolDefinition {
             name: "mkdir".into(),
-            description: mkdir::MkdirTool.description().into(),
-            parameters: mkdir::MkdirTool.definition(),
+            description: file::MkdirTool.description().into(),
+            parameters: file::MkdirTool.definition(),
         },
         ToolDefinition {
             name: "grep".into(),
-            description: grep::GrepTool.description().into(),
-            parameters: grep::GrepTool.definition(),
+            description: file::GrepTool.description().into(),
+            parameters: file::GrepTool.definition(),
         },
         ToolDefinition {
             name: "glob".into(),
-            description: glob::GlobTool.description().into(),
-            parameters: glob::GlobTool.definition(),
+            description: file::GlobTool.description().into(),
+            parameters: file::GlobTool.definition(),
         },
         ToolDefinition {
             name: "file_info".into(),
-            description: file_info::FileInfoTool.description().into(),
-            parameters: file_info::FileInfoTool.definition(),
+            description: file::FileInfoTool.description().into(),
+            parameters: file::FileInfoTool.definition(),
         },
         ToolDefinition {
             name: "find".into(),
-            description: find::FindTool.description().into(),
-            parameters: find::FindTool.definition(),
+            description: file::FindTool.description().into(),
+            parameters: file::FindTool.definition(),
         },
         ToolDefinition {
             name: "cat".into(),
-            description: cat::CatTool.description().into(),
-            parameters: cat::CatTool.definition(),
+            description: file::CatTool.description().into(),
+            parameters: file::CatTool.definition(),
         },
         ToolDefinition {
             name: "read_multiple_files".into(),
-            description: read_multiple_files::ReadMultipleFilesTool.description().into(),
-            parameters: read_multiple_files::ReadMultipleFilesTool.definition(),
+            description: file::ReadMultipleFilesTool.description().into(),
+            parameters: file::ReadMultipleFilesTool.definition(),
         },
+        // Plan tools
         ToolDefinition {
             name: "ask_user".into(),
-            description: ask_user::AskUserTool.description().into(),
-            parameters: ask_user::AskUserTool.definition(),
+            description: plan::AskUserTool.description().into(),
+            parameters: plan::AskUserTool.definition(),
         },
         ToolDefinition {
             name: "exit_plan_mode".into(),
-            description: exit_plan_mode::ExitPlanModeTool.description().into(),
-            parameters: exit_plan_mode::ExitPlanModeTool.definition(),
+            description: plan::ExitPlanModeTool.description().into(),
+            parameters: plan::ExitPlanModeTool.definition(),
         },
         ToolDefinition {
             name: "plan_write".into(),
-            description: plan_write::PlanWriteTool.description().into(),
-            parameters: plan_write::PlanWriteTool.definition(),
+            description: plan::PlanWriteTool.description().into(),
+            parameters: plan::PlanWriteTool.definition(),
         },
         ToolDefinition {
             name: "plan_read".into(),
-            description: plan_read::PlanReadTool.description().into(),
-            parameters: plan_read::PlanReadTool.definition(),
+            description: plan::PlanReadTool.description().into(),
+            parameters: plan::PlanReadTool.definition(),
         },
         ToolDefinition {
             name: "plan_edit".into(),
-            description: plan_edit::PlanEditTool.description().into(),
-            parameters: plan_edit::PlanEditTool.definition(),
+            description: plan::PlanEditTool.description().into(),
+            parameters: plan::PlanEditTool.definition(),
         },
         ToolDefinition {
             name: "plan_list".into(),
-            description: plan_list::PlanListTool.description().into(),
-            parameters: plan_list::PlanListTool.definition(),
+            description: plan::PlanListTool.description().into(),
+            parameters: plan::PlanListTool.definition(),
         },
+        // Memory tools
         ToolDefinition {
             name: "memory_set".into(),
-            description: memory_set::MemorySetTool.description().into(),
-            parameters: memory_set::MemorySetTool.definition(),
+            description: memory::MemorySetTool.description().into(),
+            parameters: memory::MemorySetTool.definition(),
         },
         ToolDefinition {
             name: "memory_get".into(),
-            description: memory_get::MemoryGetTool.description().into(),
-            parameters: memory_get::MemoryGetTool.definition(),
+            description: memory::MemoryGetTool.description().into(),
+            parameters: memory::MemoryGetTool.definition(),
         },
         ToolDefinition {
             name: "memory_search".into(),
-            description: memory_search::MemorySearchTool.description().into(),
-            parameters: memory_search::MemorySearchTool.definition(),
+            description: memory::MemorySearchTool.description().into(),
+            parameters: memory::MemorySearchTool.definition(),
         },
         ToolDefinition {
             name: "memory_delete".into(),
-            description: memory_delete::MemoryDeleteTool.description().into(),
-            parameters: memory_delete::MemoryDeleteTool.definition(),
+            description: memory::MemoryDeleteTool.description().into(),
+            parameters: memory::MemoryDeleteTool.definition(),
         },
         ToolDefinition {
             name: "memory_list".into(),
-            description: memory_list::MemoryListTool.description().into(),
-            parameters: memory_list::MemoryListTool.definition(),
+            description: memory::MemoryListTool.description().into(),
+            parameters: memory::MemoryListTool.definition(),
         },
+        // Web tools
         ToolDefinition {
             name: "web_fetch".into(),
-            description: web_fetch::WebFetchTool.description().into(),
-            parameters: web_fetch::WebFetchTool.definition(),
+            description: web::WebFetchTool.description().into(),
+            parameters: web::WebFetchTool.definition(),
         },
         ToolDefinition {
             name: "web_search".into(),
-            description: web_search::WebSearchTool.description().into(),
-            parameters: web_search::WebSearchTool.definition(),
+            description: web::WebSearchTool.description().into(),
+            parameters: web::WebSearchTool.definition(),
         },
     ]
 }

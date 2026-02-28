@@ -1,20 +1,20 @@
 use buildscale::{
     load_config,
     models::{
-        users::RegisterUser,
         requests::{
             CreateWorkspaceRequest, CreateWorkspaceWithMembersRequest,
             WorkspaceMemberRequest, UserWorkspaceRegistrationRequest
         },
-        roles::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
     },
-    queries::{
-        users::list_users,
-        workspaces::{list_workspaces},
-          workspace_members::{list_workspace_members},
+    users::models::RegisterUser,
+    workspaces::models::role::{ADMIN_ROLE, EDITOR_ROLE, MEMBER_ROLE, VIEWER_ROLE},
+    users::queries::list_users,
+    workspaces::queries::{
+        workspaces::list_workspaces,
+        members::list_workspace_members,
     },
-    services::{
-        users::{register_user, register_user_with_workspace},
+    users::services::{register_user, register_user_with_workspace},
+    workspaces::services::{
         workspaces::{create_workspace, create_workspace_with_members, update_workspace_owner, delete_workspace},
         roles::list_workspace_roles,
     },

@@ -1,0 +1,392 @@
+use crate::error::Error;
+use crate::models::requests::{
+    EditArgs, GrepArgs, GlobArgs, LsArgs, FileInfoArgs, MkdirArgs, MvArgs, ReadArgs, ReadMultipleFilesArgs, RmArgs, TouchArgs, WriteArgs,
+    FindArgs, CatArgs,
+    AskUserArgs, ExitPlanModeArgs,
+    PlanWriteArgs, PlanReadArgs, PlanEditArgs, PlanListArgs,
+    MemorySetArgs, MemoryGetArgs, MemorySearchArgs, MemoryDeleteArgs, MemoryListArgs,
+    WebFetchArgs, WebSearchArgs,
+};
+use crate::fs::storage::FileStorageService;
+use crate::tools;
+
+use crate::DbPool;
+use rig::completion::ToolDefinition;
+use rig::tool::Tool as RigTool;
+use std::future::Future;
+use std::sync::Arc;
+use uuid::Uuid;
+
+/// Macro to generate Rig-compatible wrapper for BuildScale tools.
+///
+/// This macro reduces boilerplate by generating the struct definition and RigTool impl
+/// for each workspace tool. All tools follow the same pattern with only minor variations
+/// in tool name, args type, and core tool type.
+///
+/// # Arguments
+/// * `$rig_tool_name` - Name of the generated struct (e.g., RigLsTool)
+/// * `$core_tool:path` - Path to the core tool type (e.g., tools::ls::LsTool)
+/// * `$args_type:ty` - Type of the args (e.g., LsArgs)
+/// * `$name:expr` - Tool name as string literal (e.g., "ls")
+///
+/// # Example
+/// This example demonstrates the macro usage pattern. The macro invocation below
+/// generates a complete Rig-compatible tool wrapper with struct and RigTool implementation:
+///
+/// ```text
+/// define_rig_tool!(
+///     RigLsTool,
+///     tools::file::LsTool,
+///     LsArgs,
+///     "ls"
+/// );
+/// ```
+///
+/// This expands to:
+/// - A struct `RigLsTool` with `pool`, `workspace_id`, and `user_id` fields
+/// - A `RigTool` implementation with `definition()` and `call()` methods
+/// - Automatic error handling and tool execution logic
+macro_rules! define_rig_tool {
+    (
+        $rig_tool_name:ident,
+        $core_tool:path,
+        $args_type:ty,
+        $name:expr
+    ) => {
+        pub struct $rig_tool_name {
+            pub pool: DbPool,
+            pub storage: Arc<FileStorageService>,
+            pub workspace_id: Uuid,
+            pub chat_id: Uuid,
+            pub user_id: Uuid,
+            pub tool_config: tools::ToolConfig,
+        }
+
+        impl RigTool for $rig_tool_name {
+            type Error = Error;
+            type Args = Option<$args_type>;
+            type Output = serde_json::Value;
+
+            const NAME: &'static str = $name;
+
+            fn definition(
+                &self,
+                _prompt: String,
+            ) -> impl Future<Output = ToolDefinition> + Send + Sync {
+                let name = Self::NAME.to_string();
+                async move {
+                    // Use the core tool's hardcoded definition and description
+                    use crate::tools::Tool;
+                    let core_tool = $core_tool;
+                    let schema = core_tool.definition();
+
+                    ToolDefinition {
+                        name,
+                        description: core_tool.description().to_string(),
+                        parameters: schema,
+                    }
+                }
+            }
+
+            fn call(
+                &self,
+                args: Self::Args,
+            ) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
+                let pool = self.pool.clone();
+                let storage = self.storage.clone();
+                let workspace_id = self.workspace_id;
+                let chat_id = self.chat_id;
+                let user_id = self.user_id;
+                let initial_tool_config = self.tool_config.clone();
+
+                async move {
+                    // Validate that arguments were provided
+                    let args = args.ok_or_else(|| {
+                        Error::Validation(crate::error::ValidationErrors::Single {
+                            field: "arguments".to_string(),
+                            message: format!(
+                                "Tool '{}' requires arguments. You must provide all required fields as a JSON object. \
+                                For example, {{\"pattern\": \"your_search_term\"}}. \
+                                Refer to the tool's JSON schema definition for the required fields.",
+                                $name
+                            ),
+                        })
+                    })?;
+                    let args_val = serde_json::to_value(args).map_err(Error::Json)?;
+                    let mut conn = pool.acquire().await.map_err(Error::Sqlx)?;
+                    let tool = $core_tool;
+
+                    // Read current mode from database to get fresh ToolConfig
+                    // This ensures mode changes mid-stream are respected
+                    // Preserve tag_index_tx and link_index_tx from initial config
+                    let tag_index_tx = initial_tool_config.tag_index_tx.clone();
+                    let link_index_tx = initial_tool_config.link_index_tx.clone();
+                    let tool_config = if let Ok(agent_config) = crate::chat::services::sync::get_agent_config_from_file(&mut conn, &storage, workspace_id, chat_id).await {
+                        tracing::debug!(
+                            tool = $name,
+                            chat_id = %chat_id,
+                            mode = %agent_config.mode,
+                            plan_file = ?agent_config.plan_file,
+                            "Read current mode from database for ToolConfig"
+                        );
+
+                        crate::tools::ToolConfig {
+                            plan_mode: agent_config.mode == "plan",
+                            active_plan_path: agent_config.plan_file,
+                            chat_id: Some(chat_id),
+                            tag_index_tx,
+                            link_index_tx,
+                        }
+                    } else {
+                        tracing::warn!(
+                            tool = $name,
+                            chat_id = %chat_id,
+                            "Failed to read agent config from file, using initial ToolConfig"
+                        );
+                        initial_tool_config
+                    };
+
+                    tracing::debug!(
+                        tool = $name,
+                        workspace_id = %workspace_id,
+                        user_id = %user_id,
+                        plan_mode = tool_config.plan_mode,
+                        args = %args_val,
+                        "Executing tool"
+                    );
+
+                    let response = tools::Tool::execute(
+                        &tool,
+                        &mut conn,
+                        &storage,
+                        workspace_id,
+                        user_id,
+                        tool_config,
+                        args_val.clone(),
+                    )
+                    .await?;
+
+                    if response.success {
+                        tracing::debug!(
+                            tool = $name,
+                            "Tool execution successful"
+                        );
+                        Ok(response.result)
+                    } else {
+                        let error_msg = response
+                            .error
+                            .unwrap_or_else(|| "Unknown tool error".to_string());
+
+                        tracing::error!(
+                            tool = $name,
+                            args = %args_val,
+                            error = %error_msg,
+                            "Tool execution failed"
+                        );
+
+                        Err(Error::Internal(format!(
+                            "Tool '{}' failed with input {}: {}",
+                            $name, args_val, error_msg
+                        )))
+                    }
+                }
+            }
+        }
+    };
+}
+
+// Generate all Rig tool wrappers using the macro
+define_rig_tool!(
+    RigLsTool,
+    tools::file::LsTool,
+    LsArgs,
+    "ls"
+);
+
+define_rig_tool!(
+    RigReadTool,
+    tools::file::ReadTool,
+    ReadArgs,
+    "read"
+);
+
+define_rig_tool!(
+    RigWriteTool,
+    tools::file::WriteTool,
+    WriteArgs,
+    "write"
+);
+
+define_rig_tool!(
+    RigRmTool,
+    tools::file::RmTool,
+    RmArgs,
+    "rm"
+);
+
+define_rig_tool!(
+    RigMvTool,
+    tools::file::MvTool,
+    MvArgs,
+    "mv"
+);
+
+define_rig_tool!(
+    RigTouchTool,
+    tools::file::TouchTool,
+    TouchArgs,
+    "touch"
+);
+
+define_rig_tool!(
+    RigEditTool,
+    tools::file::EditTool,
+    EditArgs,
+    "edit"
+);
+
+define_rig_tool!(
+    RigGrepTool,
+    tools::file::GrepTool,
+    GrepArgs,
+    "grep"
+);
+
+define_rig_tool!(
+    RigMkdirTool,
+    tools::file::MkdirTool,
+    MkdirArgs,
+    "mkdir"
+);
+
+// System tools for Plan Mode workflow
+define_rig_tool!(
+    RigAskUserTool,
+    tools::plan::AskUserTool,
+    AskUserArgs,
+    "ask_user"
+);
+
+define_rig_tool!(
+    RigExitPlanModeTool,
+    tools::plan::ExitPlanModeTool,
+    ExitPlanModeArgs,
+    "exit_plan_mode"
+);
+
+// Phase 1: glob, file_info
+define_rig_tool!(
+    RigGlobTool,
+    tools::file::GlobTool,
+    GlobArgs,
+    "glob"
+);
+
+define_rig_tool!(
+    RigFileInfoTool,
+    tools::file::FileInfoTool,
+    FileInfoArgs,
+    "file_info"
+);
+
+define_rig_tool!(
+    RigReadMultipleFilesTool,
+    tools::file::ReadMultipleFilesTool,
+    ReadMultipleFilesArgs,
+    "read_multiple_files"
+);
+
+define_rig_tool!(
+    RigFindTool,
+    tools::file::FindTool,
+    FindArgs,
+    "find"
+);
+
+define_rig_tool!(
+    RigCatTool,
+    tools::file::CatTool,
+    CatArgs,
+    "cat"
+);
+
+// Plan management tools
+define_rig_tool!(
+    RigPlanWriteTool,
+    tools::plan::PlanWriteTool,
+    PlanWriteArgs,
+    "plan_write"
+);
+
+define_rig_tool!(
+    RigPlanReadTool,
+    tools::plan::PlanReadTool,
+    PlanReadArgs,
+    "plan_read"
+);
+
+define_rig_tool!(
+    RigPlanEditTool,
+    tools::plan::PlanEditTool,
+    PlanEditArgs,
+    "plan_edit"
+);
+
+define_rig_tool!(
+    RigPlanListTool,
+    tools::plan::PlanListTool,
+    PlanListArgs,
+    "plan_list"
+);
+
+// Memory management tools
+define_rig_tool!(
+    RigMemorySetTool,
+    tools::memory::MemorySetTool,
+    MemorySetArgs,
+    "memory_set"
+);
+
+define_rig_tool!(
+    RigMemoryGetTool,
+    tools::memory::MemoryGetTool,
+    MemoryGetArgs,
+    "memory_get"
+);
+
+define_rig_tool!(
+    RigMemorySearchTool,
+    tools::memory::MemorySearchTool,
+    MemorySearchArgs,
+    "memory_search"
+);
+
+define_rig_tool!(
+    RigMemoryDeleteTool,
+    tools::memory::MemoryDeleteTool,
+    MemoryDeleteArgs,
+    "memory_delete"
+);
+
+define_rig_tool!(
+    RigMemoryListTool,
+    tools::memory::MemoryListTool,
+    MemoryListArgs,
+    "memory_list"
+);
+
+// Web tools
+define_rig_tool!(
+    RigWebFetchTool,
+    tools::web::WebFetchTool,
+    WebFetchArgs,
+    "web_fetch"
+);
+
+define_rig_tool!(
+    RigWebSearchTool,
+    tools::web::WebSearchTool,
+    WebSearchArgs,
+    "web_search"
+);
+

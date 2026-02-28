@@ -4,7 +4,7 @@ use reqwest::{Client, redirect::Policy};
 use secrecy::ExposeSecret;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
-use buildscale::models::users::User;
+use buildscale::users::models::User;
 
 /// Configuration options for TestApp
 ///
@@ -123,7 +123,7 @@ impl TestApp {
             .expect("Failed to connect to database");
 
         // Initialize Rig service for tests (dummy key)
-        let rig_service = std::sync::Arc::new(buildscale::services::chat::rig_engine::RigService::dummy());
+        let rig_service = std::sync::Arc::new(buildscale::chat::services::RigService::dummy());
 
         // Initialize archive cleanup channel
         let (archive_cleanup_tx, _archive_cleanup_rx) = tokio::sync::mpsc::unbounded_channel();

@@ -1,6 +1,6 @@
 use buildscale::{
-    models::roles::NewRole,
-    queries::roles::create_role,
+    workspaces::models::role::NewRole,
+    workspaces::queries::roles::create_role,
 };
 use crate::common::database::TestApp;
 

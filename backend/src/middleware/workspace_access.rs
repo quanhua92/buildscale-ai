@@ -13,7 +13,7 @@ use crate::{
     middleware::auth::AuthenticatedUser,
     state::AppState,
     error::{Error, Result},
-    services::workspaces,
+    workspaces::services::workspaces,
 };
 
 /// Workspace access context added to request extensions

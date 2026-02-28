@@ -1,14 +1,14 @@
 use buildscale::{
     load_config,
     models::{
-        users::RegisterUser,
         requests::CreateWorkspaceRequest,
-        workspace_members::{AddMemberRequest, UpdateMemberRoleRequest},
     },
-    services::{
-        users::register_user,
+    users::models::RegisterUser,
+    workspaces::models::member::{AddMemberRequest, UpdateMemberRoleRequest},
+    users::services::register_user,
+    workspaces::services::{
         workspaces::create_workspace,
-        workspace_members::{add_member_by_email, list_members, update_member_role, remove_member, get_my_membership},
+        members::{add_member_by_email, list_members, update_member_role, remove_member, get_my_membership},
     },
 };
 use secrecy::ExposeSecret;
