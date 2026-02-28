@@ -2,32 +2,83 @@
 
 Welcome to the BuildScale.ai Backend documentation. This directory contains comprehensive guides on the system's architecture, security, and APIs.
 
-## 🌟 The Vision
-- **[The Agentic Engine](./AGENTIC_ENGINE.md)**: The specification for the Agentic Engine backend and workflows.
-- **[Agent State Machine](./AGENT_STATE_MACHINE.md)**: State machine specification for ChatActor lifecycle and state transitions.
-- **[Events System](./EVENTS_SYSTEM.md)**: Hybrid architecture combining state handlers and event processors.
-- **[Files Are All You Need](./FILES_ARE_ALL_YOU_NEED.md)**: Our core philosophy on why folders and tools are the future of AI.
-- **[Everything Is A File](./EVERYTHING_IS_A_FILE.md)**: The technical implementation of our unified file-based architecture.
+## Quick Links
 
-## 🏗️ System Architecture
-- **[Architecture Overview](./ARCHITECTURE.md)**: High-level design and database schema.
-- **[User & Workspace Management](./USER_WORKSPACE_MANAGEMENT.md)**: How multi-tenancy and memberships work.
-- **[Role-Based Access Control (RBAC)](./ROLE_MANAGEMENT.md)**: Permission system and role hierarchy.
-- **[Workspace Invitations](./WORKSPACE_INVITATIONS.md)**: Secure onboarding flow for new members.
-- **[Cache Implementation](./CACHE.md)**: Async caching with TTL and Redis compatibility.
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture and layered module structure |
+| [API_REFERENCE.md](./API_REFERENCE.md) | Complete API reference (REST, Tools, Services) |
+| [AI_SYSTEM.md](./AI_SYSTEM.md) | AI agents, context engineering, providers, Rig integration |
+| [AUTHENTICATION.md](./AUTHENTICATION.md) | Authentication, RBAC, and workspace invitations |
+| [FILE_SYSTEM.md](./FILE_SYSTEM.md) | File system architecture and memory tools |
+| [PLAN_SYSTEM.md](./PLAN_SYSTEM.md) | Plan mode workflow and plan tools |
+| [CONFIGURATION.md](./CONFIGURATION.md) | Configuration, cache, events, and chat persistence |
 
-## 🔐 Security & Operations
-- **[Authentication & Security](./AUTHENTICATION.md)**: Dual-token system, Argon2 hashing, and validation rules.
-- **[Configuration Reference](./CONFIGURATION.md)**: Environment variables and system constraints.
-- **[Static File Serving](./STATIC_FILE_SERVING.md)**: Documentation on how files are served to clients.
+## The Vision
 
-## 🔌 API References
-- **[REST API Guide](./REST_API_GUIDE.md)**: HTTP endpoints, request formats, and dual-token usage.
-- **[Tools API Guide](./TOOLS_API_GUIDE.md)**: Extensible tool execution system (ls, read, write, rm).
-- **[Services API Guide](./SERVICES_API_GUIDE.md)**: Internal Rust service layer functions and usage examples.
+BuildScale.ai transforms a standard file system into a **Distributed Operating System** for AI agents:
 
----
+- **Everything is a File**: Every workspace is a self-contained "OS" with standardized folder taxonomy
+- **Agentic Engine**: AI agents live, plan, and execute within workspace environments
+- **Stateful Context**: Structured context management with automatic optimization
+- **Plan-Then-Build**: Separate planning phase from execution for better results
 
-## 🛠️ Ongoing Development
-- **[API Implementation Plan](./API_IMPLEMENTATION_PLAN.md)**: Roadmap for new features.
-- **[Files System TODO](./TODO_FILES.md)**: Pending tasks for the file management engine.
+## Core Concepts
+
+### Authentication & Security
+
+- **Dual-Token System**: JWT access tokens (15 min) + Session refresh tokens (30 days)
+- **Argon2 Password Hashing**: Secure password storage with unique salts
+- **RBAC**: Four-tier role hierarchy (Admin > Editor > Member > Viewer)
+- **Workspace Invitations**: Secure token-based onboarding with role assignment
+
+### File System
+
+- **Database-Backed Registry**: All files tracked in PostgreSQL with versioning
+- **Disk Storage**: Content stored on disk with SHA-256 content addressing
+- **Soft Deletes**: Trash system with restore capability
+- **Knowledge Graph**: Wikilinks and hashtags for file relationships
+
+### AI System
+
+- **State Machine**: FSM-driven agent lifecycle (Idle → Running → Completed)
+- **Context Engineering**: Priority-based pruning and cache-optimized architecture
+- **Multiple Providers**: OpenAI and OpenRouter support
+- **Rig Integration**: AI execution through Rig.rs framework
+
+### Plan Mode
+
+- **Explore First**: AI explores project before modifying files
+- **User Approval**: Plans require user confirmation before execution
+- **Workflow Separation**: Clear division between intent (Plan) and execution (Build)
+
+## Module Structure
+
+```
+src/
+├── users/           # User management (layered)
+├── workspaces/      # Workspace management (layered)
+├── auth/            # Authentication (layered)
+├── ai/              # AI providers and models (layered)
+├── chat/            # Chat and agent services (layered)
+├── tools/           # Core tools (layered)
+│   ├── file/        # File system tools
+│   ├── memory/      # Memory tools
+│   ├── plan/        # Plan mode tools
+│   └── web/         # Web tools
+├── fs/              # File system core (layered)
+├── workers/         # Background workers (layered)
+└── middleware/      # HTTP middleware
+```
+
+## Getting Started
+
+1. **Architecture Overview**: Start with [ARCHITECTURE.md](./ARCHITECTURE.md)
+2. **API Usage**: See [API_REFERENCE.md](./API_REFERENCE.md)
+3. **Configuration**: Check [CONFIGURATION.md](./CONFIGURATION.md)
+4. **Authentication**: Read [AUTHENTICATION.md](./AUTHENTICATION.md)
+
+## Related Documentation
+
+- [CLAUDE.md](../CLAUDE.md) - Development guidelines for Claude Code
+- [.env.example](../.env.example) - Environment configuration template

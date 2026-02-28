@@ -101,48 +101,96 @@ src/
 │       ├── message.rs   # Message endpoints
 │       └── providers.rs # Provider listing
 │
-├── models/          # Shared data structures
+├── users/           # User management (layered architecture)
 │   ├── mod.rs
-│   ├── users.rs
-│   ├── workspaces.rs
-│   ├── roles.rs
-│   ├── files.rs
-│   ├── chat.rs
-│   └── requests.rs
+│   ├── models/
+│   ├── queries/
+│   └── services/
 │
-├── queries/         # Shared database operations
+├── workspaces/      # Workspace management (layered architecture)
 │   ├── mod.rs
-│   ├── users.rs
-│   ├── workspaces.rs
-│   ├── files.rs
-│   ├── chat.rs
-│   └── ai_models.rs
+│   ├── models/
+│   ├── queries/
+│   └── services/
 │
-├── services/        # Shared business logic
+├── auth/            # Authentication (layered architecture)
 │   ├── mod.rs
-│   ├── users.rs
-│   ├── workspaces.rs
-│   ├── files.rs
-│   └── storage.rs
+│   ├── models/
+│   ├── queries/
+│   └── services/
 │
-├── handlers/        # Shared HTTP handlers
+├── ai/              # AI providers and models (layered architecture)
 │   ├── mod.rs
-│   ├── auth.rs
-│   ├── workspaces.rs
-│   ├── members.rs
-│   └── files.rs
+│   ├── models/
+│   └── services/
 │
-├── tools/           # Core tools (layered architecture)
-│   └── ... (see TOOLS_LAYERED_ARCHITECTURE.md)
+├── models/          # Shared data structures (request/response types)
+│   ├── mod.rs
+│   ├── requests.rs
+│   └── sse.rs
 │
-├── fs/              # File system core module
-│   └── ... (layered architecture)
+├── handlers/        # HTTP API handlers (consolidated)
+│   ├── mod.rs
+│   ├── auth/        # Authentication handlers
+│   │   ├── mod.rs
+│   │   └── auth.rs
+│   ├── file/        # File operation handlers
+│   ├── system/      # System/health handlers
+│   └── workspace/   # Workspace handlers
+│       ├── mod.rs
+│       ├── workspaces.rs
+│       └── members.rs
 │
 ├── middleware/      # HTTP middleware
+│   ├── mod.rs
+│   ├── auth.rs
+│   └── workspace_access.rs
+│
 ├── providers/       # AI provider integrations
-├── cache/           # Caching layer
+│   ├── mod.rs
+│   ├── common.rs
+│   ├── openai.rs
+│   └── openrouter.rs
+│
+├── cache.rs         # Caching layer (in-memory cache with TTL)
+│
 ├── utils/           # Utility functions
-├── parsers/         # File format parsers
+│   ├── mod.rs
+│   ├── string.rs       # UTF-8 safe string operations
+│   ├── plan_namer.rs   # Plan file naming
+│   └── memory_metadata.rs
+│
+├── tools/           # Core tools (layered architecture)
+│   ├── mod.rs       # Tool registry, ToolExecutor, Tool trait
+│   ├── helpers.rs   # Shared helper functions
+│   ├── file/        # File system tools (14 tools)
+│   │   ├── mod.rs
+│   │   ├── ls.rs, read.rs, write.rs, edit.rs, rm.rs
+│   │   ├── mv.rs, touch.rs, mkdir.rs, grep.rs, glob.rs
+│   │   ├── find.rs, cat.rs, file_info.rs, read_multiple_files.rs
+│   ├── memory/      # Memory tools (5 tools)
+│   │   ├── mod.rs
+│   │   └── set.rs, get.rs, search.rs, delete.rs, list.rs
+│   ├── plan/        # Plan mode tools (6 tools)
+│   │   ├── mod.rs
+│   │   └── write.rs, read.rs, edit.rs, list.rs, ask_user.rs, exit_plan_mode.rs
+│   └── web/         # Web tools (2 tools)
+│       ├── mod.rs
+│       └── fetch.rs, search.rs
+│
+├── fs/              # File system core module
+│   ├── mod.rs
+│   ├── models.rs
+│   ├── queries.rs
+│   ├── services.rs
+│   ├── storage.rs
+│   ├── parsers/     # File format parsers
+│   │   ├── mod.rs
+│   │   ├── links.rs
+│   │   └── tags.rs
+│   ├── utils/
+│   └── workers/
+│
 └── workers/         # Background workers (layered architecture)
     ├── mod.rs       # Module root, re-exports
     ├── auth/        # Authentication workers
@@ -494,7 +542,7 @@ User Message --> Chat Handler --> ChatService.save_message()
 **Authentication**:
 - Session-based authentication with random HMAC-signed tokens (256-bit randomness)
 - Argon2 password hashing with unique salts
-- Configurable session expiration (default: 30 days)
+- Configurable session expiration (default: 30 days, via BUILDSCALE__SESSIONS__EXPIRATION_HOURS)
 
 **Authorization**:
 - Role-based access control with hardcoded permissions
@@ -546,8 +594,10 @@ For detailed guidelines, see the main CLAUDE.md file.
 
 ## Related Documentation
 
-- [Tools Layered Architecture](./TOOLS_LAYERED_ARCHITECTURE.md) - Core tools module structure
-- [Agent State Machine](./AGENT_STATE_MACHINE.md) - Detailed state machine documentation
-- [Rig Integration](./RIG_INTEGRATION.md) - AI framework integration
-- [Events System](./EVENTS_SYSTEM.md) - Event handling patterns
-- [Authentication](./AUTHENTICATION.md) - Auth system details
+- [README.md](./README.md) - Index and quick start
+- [API_REFERENCE.md](./API_REFERENCE.md) - Complete API reference
+- [AI_SYSTEM.md](./AI_SYSTEM.md) - AI agents, context, providers
+- [AUTHENTICATION.md](./AUTHENTICATION.md) - Auth, RBAC, invitations
+- [FILE_SYSTEM.md](./FILE_SYSTEM.md) - File system architecture
+- [PLAN_SYSTEM.md](./PLAN_SYSTEM.md) - Plan mode and tools
+- [CONFIGURATION.md](./CONFIGURATION.md) - Configuration reference
